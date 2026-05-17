@@ -42,8 +42,17 @@ skills-lock.json
 *.sqlite
 *.sqlite3
 
+# DeFi positions (sensitive — local only, never committed)
+# Holds the user's wallet → pool/position mapping consumed by the defi-analyst skill.
+# The template is at .claude/skills/defi-analyst/assets/positions.example.yaml.
+positions/
+
+# DeFi run artifacts (may reference wallet addresses or position ids)
+runs/defi/
+
 # Desktop (Electron) — will be populated in phase 4
 desktop/node_modules/
 desktop/dist/
 desktop/release/
 desktop/.vite/
+node_modules
