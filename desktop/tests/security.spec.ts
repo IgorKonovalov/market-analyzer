@@ -9,7 +9,10 @@
  * Requires a built desktop bundle. Run with `pnpm --filter desktop test:e2e`.
  */
 import { _electron as electron, test, expect } from "@playwright/test";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 test("renderer cannot access node integration", async () => {
   const app = await electron.launch({
@@ -36,9 +39,13 @@ test("sidecar fetch with injected bearer succeeds", async () => {
   const window = await app.firstWindow();
   await window.waitForLoadState("domcontentloaded");
 
-  await window.waitForFunction(() => document.body.textContent?.includes("sidecar: ok"), {
-    timeout: 15_000,
-  });
+  // OhlcvView fires `/ohlcv` on mount. A response that's not 401 proves the
+  // preload-injected bearer was accepted by the sidecar's auth middleware.
+  const response = await window.waitForResponse(
+    (res) => res.url().includes("/ohlcv?") && res.url().includes("127.0.0.1"),
+    { timeout: 15_000 },
+  );
+  expect(response.status()).not.toBe(401);
 
   await app.close();
 });

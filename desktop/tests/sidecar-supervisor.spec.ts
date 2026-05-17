@@ -4,7 +4,10 @@
  * Requires a built desktop bundle. Run with `pnpm --filter desktop test:e2e`.
  */
 import { _electron as electron, test, expect } from "@playwright/test";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 test("supervisor restarts the sidecar after a single crash", async () => {
   const app = await electron.launch({
@@ -12,9 +15,11 @@ test("supervisor restarts the sidecar after a single crash", async () => {
   });
   const window = await app.firstWindow();
   await window.waitForLoadState("domcontentloaded");
-  await window.waitForFunction(() => document.body.textContent?.includes("sidecar: ok"), {
-    timeout: 15_000,
-  });
+  // Readiness gate: any `/ohlcv` response proves the sidecar is serving auth'd requests.
+  await window.waitForResponse(
+    (res) => res.url().includes("/ohlcv?") && res.url().includes("127.0.0.1"),
+    { timeout: 15_000 },
+  );
 
   // Kill the python sidecar process; supervisor should restart it once and the
   // UI should return to "sidecar: ok" within the timeout.
