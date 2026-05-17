@@ -1,6 +1,6 @@
 """Healthz + auth-before-routing checks for the sidecar.
 
-Covers Plan 0001 slice 1 done-when items:
+Covers Plan 0001 phase 1 done-when items:
 - /healthz returns 200 with and without a bearer secret.
 - /ohlcv returns 401 without a bearer secret and 404 with one (auth runs first).
 - create_app refuses to build with an empty secret.

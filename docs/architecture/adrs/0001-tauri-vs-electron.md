@@ -20,7 +20,7 @@ Forces at play:
 
 We will use **Tauri 2.x** as the desktop shell. The Rust `main.rs` is responsible only for: (1) spawning the Python sidecar as a child process, (2) capturing its chosen port from stdout, (3) opening a single window pointing at the bundled `ui/` build, (4) cleanly killing the sidecar on shutdown. All UI logic lives in the webview (vanilla TS for now, framework choice deferred); all data logic lives in the Python sidecar.
 
-If Tauri's external-binary sidecar pattern proves too painful during bootstrap slice 4 (more than one day of friction), we revisit this ADR rather than work around it — the cost of switching is bounded at slice 4 since no UI code beyond `fetch('/health')` exists yet.
+If Tauri's external-binary sidecar pattern proves too painful during bootstrap phase 4 (more than one day of friction), we revisit this ADR rather than work around it — the cost of switching is bounded at phase 4 since no UI code beyond `fetch('/health')` exists yet.
 
 ## Consequences
 
@@ -32,7 +32,7 @@ If Tauri's external-binary sidecar pattern proves too painful during bootstrap s
 - Rust shell is small enough that a Python+TS developer can maintain it without learning Rust deeply.
 
 ### Negative
-- **Thinner ecosystem for sidecar spawning.** Electron's `child_process.spawn` is one well-documented line; Tauri's external-binary pattern is documented but requires platform-specific binary naming and `tauri.conf.json` config that's easy to get wrong. We pay this cost once in slice 4.
+- **Thinner ecosystem for sidecar spawning.** Electron's `child_process.spawn` is one well-documented line; Tauri's external-binary pattern is documented but requires platform-specific binary naming and `tauri.conf.json` config that's easy to get wrong. We pay this cost once in phase 4.
 - **System webview means cross-browser quirks.** WebKit on macOS, WebView2 on Windows, WebKitGTK on Linux. CSS and JS features that "just work" in Electron's bundled Chromium may not work uniformly. Mitigation: stay close to ES2022 / standard CSS; avoid cutting-edge features. For a table-heavy trading UI this is rarely a constraint.
 - **Smaller hiring pool / smaller AI training data** for Tauri-specific issues. Stack Overflow and LLMs answer Electron questions better.
 - **Rust toolchain becomes a dev prerequisite.** Anyone working on the shell needs `rustup` installed. For a solo project this is fine; if we ever onboard another dev, it's friction.
@@ -53,5 +53,5 @@ All-Python stack, no sidecar needed (UI and data layer in one process). Rejected
 
 ## Notes
 
-- Tauri 2.x is the assumed version (GA since late 2024). If 1.x is needed for some plugin, this ADR doesn't change but the slice 4 design in the (now abandoned) Tauri-era bootstrap draft does. Moot now that the shell is Electron.
-- The "fall back to Electron if slice 4 gets ugly" escape hatch is a real option — it's only one slice's worth of work to redo, and no Python code changes either way. Make the decision explicitly via a new ADR superseding this one, not silently.
+- Tauri 2.x is the assumed version (GA since late 2024). If 1.x is needed for some plugin, this ADR doesn't change but the phase 4 design in the (now abandoned) Tauri-era bootstrap draft does. Moot now that the shell is Electron.
+- The "fall back to Electron if phase 4 gets ugly" escape hatch is a real option — it's only one phase's worth of work to redo, and no Python code changes either way. Make the decision explicitly via a new ADR superseding this one, not silently.

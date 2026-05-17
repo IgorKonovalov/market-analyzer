@@ -7,7 +7,7 @@
 
 ## Context
 
-An earlier abandoned Tauri-era bootstrap draft deliberately deferred persistence — the BTC-screener walking skeleton was in-memory only. The current bootstrap ([Plan 0001](../plans/0001-bootstrap.md)) makes an OHLCV chart the first end-to-end feature, which means we are caching historical bars from day one. We need a persistence story before slice 2 of the bootstrap lands.
+An earlier abandoned Tauri-era bootstrap draft deliberately deferred persistence — the BTC-screener walking skeleton was in-memory only. The current bootstrap ([Plan 0001](../plans/0001-bootstrap.md)) makes an OHLCV chart the first end-to-end feature, which means we are caching historical bars from day one. We need a persistence story before phase 2 of the bootstrap lands.
 
 We persist three categories with different shapes:
 

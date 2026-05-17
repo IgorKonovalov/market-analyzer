@@ -42,7 +42,7 @@ skills-lock.json
 *.sqlite
 *.sqlite3
 
-# Desktop (Electron) — will be populated in slice 4
+# Desktop (Electron) — will be populated in phase 4
 desktop/node_modules/
 desktop/dist/
 desktop/release/

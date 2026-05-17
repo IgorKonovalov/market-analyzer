@@ -1,15 +1,15 @@
 # 0001 — Bootstrap: Electron + Python sidecar walking skeleton with OHLCV chart for one symbol
 
-> **Status:** in-progress (slice 1 — dev)
+> **Status:** in-progress (phase 1 — dev)
 > **Created:** 2026-05-17
-> **Owner skill(s):** human / `dev` (slices 1–4), `ui-builder` (slice 5)
+> **Owner skill(s):** human / `dev` (phases 1–4), `ui-builder` (phase 5)
 > **Related ADRs:** [ADR-0002](../adrs/0002-ipc-local-http.md), [ADR-0003](../adrs/0003-vendoring-strategy.md), [ADR-0005](../adrs/0005-desktop-shell-electron.md), [ADR-0006](../adrs/0006-persistence-layout.md), [ADR-0007](../adrs/0007-market-data-provider.md), [ADR-0008](../adrs/0008-electron-shell-conventions.md)
 > **Strategy / backtest scaffolding** is intentionally out of bootstrap scope; that's owned by [Plan 0002](0002-strategy-interface.md) and a future backtest plan. See "What this plan does NOT do" below.
 > **History:** This is the canonical bootstrap plan. An earlier Tauri-flavoured draft was abandoned on 2026-05-17 before any code was written; see [ADR-0001](../adrs/0001-tauri-vs-electron.md) (superseded) for the rationale of the shell change to Electron.
 
 ## TL;DR
 
-Stand up the empty `market-analyser` repo as an **Electron + Python-sidecar** desktop app. Vendor the minimum slice of `tradingview-mcp` needed to fetch daily OHLCV for a single symbol (Yahoo Finance), wire it through a **unified `MarketDataProvider` Protocol** with **SQLite caching** behind it, expose one HTTP endpoint, and render the result as a **candlestick chart** in the Electron renderer. End state of week one: double-click the app, see a candlestick chart for `AAPL 1d` populated from a fresh fetch on first open and from the local SQLite cache on every subsequent open. No strategies, no backtests, no screeners — just the walking skeleton that proves every architectural seam works end-to-end.
+Stand up the empty `market-analyser` repo as an **Electron + Python-sidecar** desktop app. Vendor the minimum subset of `tradingview-mcp` needed to fetch daily OHLCV for a single symbol (Yahoo Finance), wire it through a **unified `MarketDataProvider` Protocol** with **SQLite caching** behind it, expose one HTTP endpoint, and render the result as a **candlestick chart** in the Electron renderer. End state of week one: double-click the app, see a candlestick chart for `AAPL 1d` populated from a fresh fetch on first open and from the local SQLite cache on every subsequent open. No strategies, no backtests, no screeners — just the walking skeleton that proves every architectural seam works end-to-end.
 
 ## Context & problem
 
@@ -18,19 +18,19 @@ The repo is at zero (`skills-lock.json` and the `.claude/` skills directory only
 1. **Directory layout** that survives contact with all three sibling skills (the data-layer parts; strategy/backtest layouts land in their own plans).
 2. **Heavy tooling baseline** — `uv`, `ruff`, `mypy` (strict), `pytest`, `pip-audit`, pre-commit, GitHub Actions CI on push, conventional-commit enforcement, release automation scaffolding. (Per the bootstrap-rigor decision.)
 3. **Vendoring boundary** — what we copy from `../tradingview-mcp` and where it sits, with the discipline from [ADR-0003](../adrs/0003-vendoring-strategy.md).
-4. **The `MarketDataProvider` Protocol** with stubs for every planned method (per [ADR-0007](../adrs/0007-market-data-provider.md)) and one implemented method (`get_ohlcv`) for slice 2.
+4. **The `MarketDataProvider` Protocol** with stubs for every planned method (per [ADR-0007](../adrs/0007-market-data-provider.md)) and one implemented method (`get_ohlcv`) for phase 2.
 5. **SQLite persistence** with Alembic migrations and a `bars` table behind the provider's cache (per [ADR-0006](../adrs/0006-persistence-layout.md)).
 6. **The Electron shell** with secure renderer defaults, sidecar spawn/supervise, and a React renderer that shows a candlestick chart for `AAPL 1d`.
 
 The walking-skeleton choice — **OHLCV chart for one symbol** rather than the BTC screener table from the abandoned Tauri-era draft — is deliberately the smallest scope that exercises every architectural seam: shell ↔ sidecar IPC, FastAPI handler, MarketDataProvider, persistence cache, vendored adapter, external HTTP. A polled screener would skip the chart and the persistence cache; a strategy or backtest would skip the chart and overshoot scope. A candlestick chart fills the gap.
 
-This plan acknowledges a real tension and resolves it explicitly: we chose **lazy vendoring** (only vendor what each slice needs) and **a full unified provider abstraction** (the whole Protocol surface declared from day one). These reconcile by inverting the order — the Protocol is the schedule, each slice implements one method by vendoring one underlying source. The other methods raise `NotImplementedError("not implemented until slice N")` and a test asserts each method becomes callable in the slice that owns it.
+This plan acknowledges a real tension and resolves it explicitly: we chose **lazy vendoring** (only vendor what each phase needs) and **a full unified provider abstraction** (the whole Protocol surface declared from day one). These reconcile by inverting the order — the Protocol is the schedule, each phase implements one method by vendoring one underlying source. The other methods raise `NotImplementedError("not implemented until phase N")` and a test asserts each method becomes callable in the phase that owns it.
 
 ## Decision
 
-Build an **Electron** desktop shell (per [ADR-0005](../adrs/0005-desktop-shell-electron.md)) that talks to a **local FastAPI Python sidecar** over **localhost HTTP** (per [ADR-0002](../adrs/0002-ipc-local-http.md)) with a per-launch bearer-token shared secret. The sidecar exposes one endpoint (`GET /ohlcv`) for week one, served via a `DefaultMarketDataProvider.get_ohlcv` that dispatches to a `YahooAdapter` wrapping a freshly-vendored copy of `tradingview-mcp`'s `yahoo_finance_service.py`, with **SQLite-backed caching** keyed on `(symbol, timeframe, event_ts)`. The renderer is **React + TypeScript** rendering a candlestick chart with `lightweight-charts`. Heavy tooling — strict `mypy`, `ruff`, `pre-commit`, `pip-audit`, conventional-commit-enforced CI on every push, and a release-stub workflow — lands in slice 1.
+Build an **Electron** desktop shell (per [ADR-0005](../adrs/0005-desktop-shell-electron.md)) that talks to a **local FastAPI Python sidecar** over **localhost HTTP** (per [ADR-0002](../adrs/0002-ipc-local-http.md)) with a per-launch bearer-token shared secret. The sidecar exposes one endpoint (`GET /ohlcv`) for week one, served via a `DefaultMarketDataProvider.get_ohlcv` that dispatches to a `YahooAdapter` wrapping a freshly-vendored copy of `tradingview-mcp`'s `yahoo_finance_service.py`, with **SQLite-backed caching** keyed on `(symbol, timeframe, event_ts)`. The renderer is **React + TypeScript** rendering a candlestick chart with `lightweight-charts`. Heavy tooling — strict `mypy`, `ruff`, `pre-commit`, `pip-audit`, conventional-commit-enforced CI on every push, and a release-stub workflow — lands in phase 1.
 
-We rejected Tauri (per ADR-0005), stdio JSON-RPC for IPC (per ADR-0002), and the "defer abstraction" approach from the abandoned Tauri-era draft (per ADR-0007). We rejected Parquet for OHLCV in slice 2 (premature; revisit when SQLite-bar reads become a measured bottleneck — see Followups).
+We rejected Tauri (per ADR-0005), stdio JSON-RPC for IPC (per ADR-0002), and the "defer abstraction" approach from the abandoned Tauri-era draft (per ADR-0007). We rejected Parquet for OHLCV in phase 2 (premature; revisit when SQLite-bar reads become a measured bottleneck — see Followups).
 
 ## Architecture diagram
 
@@ -70,11 +70,11 @@ flowchart LR
 
 Full reference diagram (including the cache-hit/miss sequence and SQLite schema) lives at [bootstrap-component-map.md](../diagrams/bootstrap-component-map.md).
 
-## Implementation slices
+## Implementation phases
 
-Each slice is small enough to land as a single PR. Slices 1–2 are plumbing-heavy but slice 1 already produces a visible artifact (`/healthz` returns ok over authenticated HTTP), so the skeleton walks from the first PR.
+Each phase is small enough to land as a single PR. Phases 1–2 are plumbing-heavy but phase 1 already produces a visible artifact (`/healthz` returns ok over authenticated HTTP), so the skeleton walks from the first PR.
 
-### Slice 1 — Repo skeleton, heavy tooling, sidecar `/healthz`
+### Phase 1 — Repo skeleton, heavy tooling, sidecar `/healthz`
 
 - **Owner skill:** human
 - **What:** Python project layout under `src/market_analyser/`, `uv`-managed environment, strict tooling baseline, and an empty FastAPI app exposing `GET /healthz` returning `{"ok": true, "version": "0.0.1"}`. No vendored code, no persistence yet.
@@ -96,21 +96,21 @@ Each slice is small enough to land as a single PR. Slices 1–2 are plumbing-hea
   - `pre-commit run --all-files` passes.
   - Coverage gate ≥ 85 % on the trivial code that exists.
 
-### Slice 2 — `MarketDataProvider` Protocol, Yahoo adapter, vendor `yahoo_finance_service`
+### Phase 2 — `MarketDataProvider` Protocol, Yahoo adapter, vendor `yahoo_finance_service`
 
 - **Owner skill:** human
-- **What:** Declare the full Protocol with stubs, vendor the one upstream module needed for the chart, write the Yahoo adapter, wire it into a `DefaultMarketDataProvider` that returns Bars (no caching yet — that's slice 3). This is the largest slice; it locks the data-layer surface that every later slice consumes.
+- **What:** Declare the full Protocol with stubs, vendor the one upstream module needed for the chart, write the Yahoo adapter, wire it into a `DefaultMarketDataProvider` that returns Bars (no caching yet — that's phase 3). This is the largest phase; it locks the data-layer surface that every later phase consumes.
 - **Files touched:**
   - `src/market_analyser/data/__init__.py`.
   - `src/market_analyser/data/types.py` — pydantic models: `Bar`, `Quote`, `SymbolInfo`, `ScreenerRow`, `SentimentSample`, `NewsItem`. (All planned method return types declared from day one; only `Bar` is used yet.)
   - `src/market_analyser/data/provider.py` — the `MarketDataProvider` Protocol with method signatures for `get_ohlcv`, `get_quote`, `search_symbols`, `get_screener`, `get_sentiment`, `get_news`. Each method takes `as_of: datetime | None = None` per [ADR-0007](../adrs/0007-market-data-provider.md).
-  - `src/market_analyser/data/default_provider.py` — `DefaultMarketDataProvider` class. `get_ohlcv` is implemented (delegates to the Yahoo adapter). Other methods raise `NotImplementedError("implemented in slice N — see plan 0001")`.
+  - `src/market_analyser/data/default_provider.py` — `DefaultMarketDataProvider` class. `get_ohlcv` is implemented (delegates to the Yahoo adapter). Other methods raise `NotImplementedError("implemented in phase N — see plan 0001")`.
   - `src/market_analyser/data/adapters/__init__.py`, `src/market_analyser/data/adapters/yahoo.py` — `YahooAdapter.fetch_ohlcv(symbol, timeframe, start, end) -> list[Bar]`. Imports from the vendored module; validates inputs; defends against `None`, `NaN`, negative volumes per `best-practices.md`.
   - `src/market_analyser/data/vendored/__init__.py`, `src/market_analyser/data/vendored/tradingview_mcp/__init__.py` (header comment naming source SHA), `src/market_analyser/data/vendored/tradingview_mcp/core/services/yahoo_finance_service.py` (verbatim from upstream with only import-path rewrites). `vendored.lock` at repo root pins the commit SHA.
   - `src/market_analyser/data/vendored/tradingview_mcp/LICENSE` — upstream MIT license, unchanged.
   - `src/market_analyser/api/routes/ohlcv.py` — `GET /ohlcv?symbol=&timeframe=&start=&end=`. Returns `list[Bar]` as JSON. Calls `request.app.state.provider.get_ohlcv(...)`.
   - `tests/data/test_yahoo_adapter.py` — adapter unit tests with vendored module mocked. Asserts input-validation errors fire on `NaN` close, negative volume, malformed timestamps.
-  - `tests/data/test_provider_protocol.py` — asserts every Protocol method is callable (passes) and that unimplemented methods raise `NotImplementedError` with the documented slice-N message.
+  - `tests/data/test_provider_protocol.py` — asserts every Protocol method is callable (passes) and that unimplemented methods raise `NotImplementedError` with the documented phase-N message.
   - `tests/api/test_ohlcv_route.py` — route test with a `FakeMarketDataProvider` injected.
   - `tests/network/test_yahoo_smoke.py` — `@pytest.mark.network` integration test that hits Yahoo and asserts `AAPL 1d` returns ≥ 5 bars in the last 7 days. Skipped in CI by default.
 - **Done when:**
@@ -119,10 +119,10 @@ Each slice is small enough to land as a single PR. Slices 1–2 are plumbing-hea
   - The protocol-introspection test passes for `get_ohlcv` and raises-NotImplementedError for the five stubs.
   - `vendored.lock` exists and contains the SHA we vendored from.
 
-### Slice 3 — Persistence: SQLite + Alembic + bar-cache
+### Phase 3 — Persistence: SQLite + Alembic + bar-cache
 
 - **Owner skill:** human
-- **What:** Add the persistence layer, run migrations on sidecar startup, and wrap the `DefaultMarketDataProvider` with a caching layer that reads from `bars` first and writes after each remote fetch. This is the slice that lets the second cold-launch of the app render the chart without hitting Yahoo.
+- **What:** Add the persistence layer, run migrations on sidecar startup, and wrap the `DefaultMarketDataProvider` with a caching layer that reads from `bars` first and writes after each remote fetch. This is the phase that lets the second cold-launch of the app render the chart without hitting Yahoo.
 - **Files touched:**
   - `src/market_analyser/persistence/__init__.py`, `src/market_analyser/persistence/engine.py` (SQLAlchemy engine factory; resolves `app.db` path under `%APPDATA%/market-analyser/` on Windows, XDG equivalent elsewhere).
   - `src/market_analyser/persistence/models.py` — SQLAlchemy ORM declaration for `Bar` only. Strategy/run/trade tables land in the plan that introduces them (Plan 0002 / future backtest plan), not here.
@@ -141,14 +141,14 @@ Each slice is small enough to land as a single PR. Slices 1–2 are plumbing-hea
   - `as_of` queries that exceed cached coverage return 422 (no silent network fetch).
   - Migration up-and-down round-trip test passes for `0001_bars_table`.
 
-### Slice 4 — Electron shell, sidecar spawn, secure renderer defaults
+### Phase 4 — Electron shell, sidecar spawn, secure renderer defaults
 
-Conventions referenced below (build pipeline, tsconfigs, IPC discipline, security defaults, packaging) are pinned in [ADR-0008](../adrs/0008-electron-shell-conventions.md). This slice realizes them; the ADR is the source of truth if any concrete detail here drifts.
+Conventions referenced below (build pipeline, tsconfigs, IPC discipline, security defaults, packaging) are pinned in [ADR-0008](../adrs/0008-electron-shell-conventions.md). This phase realizes them; the ADR is the source of truth if any concrete detail here drifts.
 
 - **Owner skill:** human
 - **What:** Stand up the Electron app per ADR-0008 (esbuild for main + preload, Vite for renderer, four tsconfigs, namespaced preload, double-CSP, sandboxed renderer). Spawn the Python sidecar with a free port and a generated bearer secret, expose the auth-aware fetch helper to the renderer via `contextBridge`, and load a blank React route. No chart yet — just proven shell ↔ sidecar comms.
 - **Package manager:** pnpm for the `desktop/` workspace (per ADR-0008 "Neutral" notes — faster, strict-by-default, single lockfile).
-- **Concrete dependency set** (pin exact versions in slice 4 PR):
+- **Concrete dependency set** (pin exact versions in phase 4 PR):
   - **Runtime:** `electron`, `react`, `react-dom`, `zod` (for IPC payload validation per ADR-0008 IPC discipline).
   - **Dev — bundlers:** `vite`, `@vitejs/plugin-react`, `esbuild`.
   - **Dev — TS / lint / format:** `typescript`, `@typescript-eslint/parser`, `@typescript-eslint/eslint-plugin`, `eslint`, `eslint-plugin-react`, `eslint-plugin-react-hooks`, `prettier`.
@@ -190,7 +190,7 @@ Conventions referenced below (build pipeline, tsconfigs, IPC discipline, securit
   - Closing the window terminates the sidecar within 3 s.
   - `pnpm --filter desktop package:win` produces an installer in `desktop/release/` (smoke-test the artifact opens, does not need to install).
 
-### Slice 5 — Candlestick chart for one symbol
+### Phase 5 — Candlestick chart for one symbol
 
 - **Owner skill:** `ui-builder`
 - **What:** Render the OHLCV data for `AAPL 1d` as a candlestick chart using `lightweight-charts`. One controlled symbol input (defaults to `AAPL`), one timeframe selector (defaults to `1d`), a "refresh" button. No watchlist, no multi-symbol, no overlays.
@@ -210,20 +210,20 @@ Conventions referenced below (build pipeline, tsconfigs, IPC discipline, securit
 
 ```mermaid
 flowchart TD
-    Plan[Plan 0001] --> S1[S1: repo + tooling + /healthz]
-    Plan --> S2[S2: provider + Yahoo adapter + vendor]
-    Plan --> S3[S3: SQLite + Alembic + cache]
-    Plan --> S4[S4: Electron shell + sidecar supervise]
-    Plan --> S5[S5: candlestick chart]
+    Plan[Plan 0001] --> P1[P1: repo + tooling + /healthz]
+    Plan --> P2[P2: provider + Yahoo adapter + vendor]
+    Plan --> P3[P3: SQLite + Alembic + cache]
+    Plan --> P4[P4: Electron shell + sidecar supervise]
+    Plan --> P5[P5: candlestick chart]
 
-    S1 -.owned by.-> H1[human / dev]
-    S2 -.owned by.-> H2[human / dev]
-    S3 -.owned by.-> H3[human / dev]
-    S4 -.owned by.-> H4[human / dev]
-    S5 -.owned by.-> UB[ui-builder]
+    P1 -.owned by.-> H1[human / dev]
+    P2 -.owned by.-> H2[human / dev]
+    P3 -.owned by.-> H3[human / dev]
+    P4 -.owned by.-> H4[human / dev]
+    P5 -.owned by.-> UB[ui-builder]
 ```
 
-The bootstrap intentionally ships **no** `strategies/`, `backtest/`, or `contracts/strategy.py` modules — those land under [Plan 0002](0002-strategy-interface.md). A `dev` agent picking up the bootstrap will not create those directories; the first plan that touches them is Plan 0002 slice 1.
+The bootstrap intentionally ships **no** `strategies/`, `backtest/`, or `contracts/strategy.py` modules — those land under [Plan 0002](0002-strategy-interface.md). A `dev` agent picking up the bootstrap will not create those directories; the first plan that touches them is Plan 0002 phase 1.
 
 ## Directory layout (target state at end of bootstrap)
 
@@ -242,7 +242,7 @@ market-analyser/
 │       ├── ci.yml                      # ruff, mypy --strict, pytest, pip-audit
 │       └── release.yml                 # tag-triggered build stub
 ├── docs/
-│   └── architecture/                   # plans, ADRs, diagrams, reviews
+│   └── architecture/                   # plans, ADRs, diagrams
 ├── desktop/                            # Electron + React shell (per ADR-0005)
 │   ├── package.json
 │   ├── tsconfig.json
@@ -320,7 +320,7 @@ market-analyser/
 
 No strategy or backtest packages exist at end of bootstrap. The first plan to create them is [Plan 0002](0002-strategy-interface.md); a future backtest plan creates `src/market_analyser/backtest/`.
 
-## Vendoring manifest (slice 2)
+## Vendoring manifest (phase 2)
 
 Copy exactly one file from `../tradingview-mcp/src/tradingview_mcp/` into `src/market_analyser/data/vendored/tradingview_mcp/`, preserving directory structure. Everything else stays out until a later plan calls for it (lazy vendoring per the bootstrap rigor choice).
 
@@ -336,11 +336,11 @@ If `yahoo_finance_service.py` imports `core/types.py` or `core/utils/validators.
 - The `vendored.lock` file at repo root pins the upstream SHA.
 - A `scripts/check-vendor-drift.py` is a followup (not in scope this plan); the discipline is honour-system until then.
 
-Explicitly **not vendored this week** (with the slice that earns each, when known):
+Explicitly **not vendored this week** (with the phase that earns each, when known):
 - `screener_service.py` + dependencies — earned by the first plan that adds a screener UI.
 - `backtest_service.py` — earned by the backtester plan.
 - `sentiment_service.py`, `news_service.py` — earned when a sentiment UI exists.
-- `bitcoin_market_service.py`, `egx_service.py`, `extended_hours_service.py`, `scanner_service.py`, `multi_agent_service.py`, `proxy_manager.py`, `coinlist.py`, `indicators*.py` — out of scope; bring in when a slice needs them.
+- `bitcoin_market_service.py`, `egx_service.py`, `extended_hours_service.py`, `scanner_service.py`, `multi_agent_service.py`, `proxy_manager.py`, `coinlist.py`, `indicators*.py` — out of scope; bring in when a phase needs them.
 - `portfolio.py` — paper-trading layer, not relevant pre-strategies.
 - `server.py` — MCP entrypoint, never vendored.
 
@@ -362,7 +362,7 @@ class Bar(BaseModel):
     low: float
     close: float
     volume: float = Field(ge=0)
-    source: str             # "yahoo" for slice 2
+    source: str             # "yahoo" for phase 2
 
 class Quote(BaseModel):
     symbol: str
@@ -371,7 +371,7 @@ class Quote(BaseModel):
     source: str
 ```
 
-The Provider Protocol surface (declared upfront with `NotImplementedError` stubs in slice 2; methods filled in by later slices and plans):
+The Provider Protocol surface (declared upfront with `NotImplementedError` stubs in phase 2; methods filled in by later phases and plans):
 
 ```python
 # illustrative
@@ -405,25 +405,25 @@ class MarketDataProvider(Protocol):
 
 - **Risk: Yahoo Finance rate-limits or blocks the unauthenticated `yfinance` path.** `yahoo_finance_service.py` in tradingview-mcp uses the public path; if Yahoo tightens limits during the bootstrap, the chart breaks. Mitigation: cache hits cover the common case after the first fetch; the smoke test is `@pytest.mark.network` and won't break CI. If it becomes a recurring failure, the followup is to add a paid data source behind a new adapter, not to patch the vendored code.
 - **Risk: `lightweight-charts` doesn't quite render our bar shape.** It expects `{ time, open, high, low, close }` with seconds-precision time. Mitigation: a thin adapter function in `desktop/renderer/api/client.ts` maps `Bar` to the chart's expected shape; tests cover the edge cases (Unix-epoch vs ISO, intra-bar timestamps).
-- **Risk: `mypy --strict` is harsh and may slow slice authoring.** Mitigation: accepted by the bootstrap-rigor choice; we pay this cost upfront rather than retrofit. Pragmatic relaxations (`Any` in test fixtures only) are allowed via per-file overrides.
-- **Risk: Alembic migration applied at sidecar startup vs separately is a real fork.** We chose "at startup" for the bootstrap — simpler. The cost is that a broken migration locks the user out of their own data with no way to recover from the UI. Mitigation: every migration has a downgrade test; the persistence repository never deletes user data outside of a migration; we surface migration errors in the fatal-error window in slice 4.
-- **Risk: The `MarketDataProvider` Protocol shape is wrong.** We declare it without yet having implementations for five of its six methods. A wrong shape costs an adapter-rewrite cycle. Mitigation: ADR-0007 captures the rationale; the shape is empirical — refactor the Protocol in the slice that earns the change, write a new ADR if the change is structural.
+- **Risk: `mypy --strict` is harsh and may slow phase authoring.** Mitigation: accepted by the bootstrap-rigor choice; we pay this cost upfront rather than retrofit. Pragmatic relaxations (`Any` in test fixtures only) are allowed via per-file overrides.
+- **Risk: Alembic migration applied at sidecar startup vs separately is a real fork.** We chose "at startup" for the bootstrap — simpler. The cost is that a broken migration locks the user out of their own data with no way to recover from the UI. Mitigation: every migration has a downgrade test; the persistence repository never deletes user data outside of a migration; we surface migration errors in the fatal-error window in phase 4.
+- **Risk: The `MarketDataProvider` Protocol shape is wrong.** We declare it without yet having implementations for five of its six methods. A wrong shape costs an adapter-rewrite cycle. Mitigation: ADR-0007 captures the rationale; the shape is empirical — refactor the Protocol in the phase that earns the change, write a new ADR if the change is structural.
 - **Open question:** Where does the per-launch bearer secret get written so the renderer can read it? Current decision: passed from `electron/main.ts` to the renderer via the `contextBridge` preload, never persisted to disk. The Python sidecar reads it from `argv[--secret=...]`. If `argv` snooping by another local user is a real threat, switch to env-var injection at spawn — captured as a followup.
-- **Open question:** What's the strategy for migrations that need the user's data (e.g., backfilling `source` on existing `bars` rows after slice 3 ships)? Out of scope for the bootstrap; flagged as a followup before any second migration lands.
+- **Open question:** What's the strategy for migrations that need the user's data (e.g., backfilling `source` on existing `bars` rows after phase 3 ships)? Out of scope for the bootstrap; flagged as a followup before any second migration lands.
 
 ## Security & data-integrity checklist (per `best-practices.md`)
 
-These are enforced by slice and must be on the PR description for the slice that owns them.
+These are enforced by phase and must be on the PR description for the phase that owns them.
 
-- [Slice 1] Auth middleware rejects every non-`/healthz` request without a valid bearer token. Test asserts 401 on missing/wrong token.
-- [Slice 1] Sidecar binds to `127.0.0.1` only — never `0.0.0.0` or `::`.
-- [Slice 2] Adapter validates: non-`None` close, finite OHLC values, `volume >= 0`, `event_ts` is UTC-aware. Bad bars raise; the provider never silently drops or zero-pads.
-- [Slice 3] `event_ts` distinct from `ingested_at` on every persisted bar.
-- [Slice 3] `as_of` argument in `get_ohlcv` never triggers a remote fetch (anti-lookahead seam at the data layer).
-- [Slice 4] Electron `BrowserWindow` constructed with `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`, `webSecurity: true`. Test asserts `window.require` is undefined.
-- [Slice 4] CSP allowlists the sidecar base URL and `'self'` only.
-- [Slice 4] The bearer secret is generated fresh per launch (32-byte hex); never logged.
-- [All slices] No secrets are logged. No secrets are persisted to SQLite. `.env`, `secrets.json`, and bearer tokens never appear in logs, ADRs, plans, or diagrams.
+- [Phase 1] Auth middleware rejects every non-`/healthz` request without a valid bearer token. Test asserts 401 on missing/wrong token.
+- [Phase 1] Sidecar binds to `127.0.0.1` only — never `0.0.0.0` or `::`.
+- [Phase 2] Adapter validates: non-`None` close, finite OHLC values, `volume >= 0`, `event_ts` is UTC-aware. Bad bars raise; the provider never silently drops or zero-pads.
+- [Phase 3] `event_ts` distinct from `ingested_at` on every persisted bar.
+- [Phase 3] `as_of` argument in `get_ohlcv` never triggers a remote fetch (anti-lookahead seam at the data layer).
+- [Phase 4] Electron `BrowserWindow` constructed with `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`, `webSecurity: true`. Test asserts `window.require` is undefined.
+- [Phase 4] CSP allowlists the sidecar base URL and `'self'` only.
+- [Phase 4] The bearer secret is generated fresh per launch (32-byte hex); never logged.
+- [All phases] No secrets are logged. No secrets are persisted to SQLite. `.env`, `secrets.json`, and bearer tokens never appear in logs, ADRs, plans, or diagrams.
 
 ## What this plan does NOT do
 
@@ -434,7 +434,7 @@ Out of scope for the bootstrap. Each is intentionally cut, with the plan where i
 - **Sentiment, news, BTC pulse, multi-agent.** All out — they were on the abandoned Tauri-era draft but the current walking skeleton is OHLCV-centric.
 - **Live trading, paper trading, portfolio.** Out indefinitely. No `portfolio.py` vendoring.
 - **Multi-symbol charts, indicator overlays, drawing tools.** Out of bootstrap; first follow-up after `ui-builder` has a baseline.
-- **Auto-update, code-signing, installer packaging.** Out — covered by a future packaging plan. The release workflow stub in slice 1 is intentionally inert.
+- **Auto-update, code-signing, installer packaging.** Out — covered by a future packaging plan. The release workflow stub in phase 1 is intentionally inert.
 - **Cross-platform smoke test.** Develop on Windows (the user's primary OS). macOS/Linux smoke tests are a followup plan once anyone needs them.
 - **`scripts/check-vendor-drift.py`.** Listed in ADR-0003 followups; honour-system until then.
 - **Async sidecar.** All FastAPI handlers stay sync. Async lands when a slow endpoint forces it.

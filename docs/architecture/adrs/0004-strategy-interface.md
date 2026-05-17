@@ -44,13 +44,13 @@ We rejected the class-based approach because it invites mutable instance state (
 
 - **No instance state means no streaming online updates** within a backtest. A strategy that wants to maintain a rolling indicator can't cache it on `self` — it must recompute or rely on the caller to pass precomputed indicators in. For the indicators we have today (RSI, Bollinger, MACD, EMA, Supertrend, Donchian) this is fine; for a future Kalman filter or HMM strategy we may want to revisit. We accept this cost — the alternative (mutable instance state) is the worse trade.
 - **Parameter sweeps construct many `Params` instances.** Cheap, but worth noting — `pydantic` v2 model construction is roughly 1-3 µs which is irrelevant relative to bar processing.
-- **`Signal` is a new shape** that the vendored engine doesn't currently produce; the engine emits closed trades directly. We will write a thin adapter (`signals_to_trades`) that consumes `Signal`s and produces the existing trade dicts, so we don't have to rewrite metrics/equity-curve code in slice 1. See plan 0002 slice 3.
+- **`Signal` is a new shape** that the vendored engine doesn't currently produce; the engine emits closed trades directly. We will write a thin adapter (`signals_to_trades`) that consumes `Signal`s and produces the existing trade dicts, so we don't have to rewrite metrics/equity-curve code in phase 1. See plan 0002 phase 3.
 - **Strategy discovery by directory scan** is implicit. We accept this because it keeps the authoring story simple ("drop a file in `strategies/`"); the alternative (explicit registry) adds a step `strategy-author` would have to remember. We can add a registry later if collision/ordering becomes a real problem.
 
 ### Neutral
 
 - `pydantic` becomes a hard runtime dependency for the backend (already expected per `project-context.md`).
-- The six vendored strategies will be **rewritten as modules under the new contract** in plan 0002 slice 4, not vendored as-is. We are not preserving the `_run_rsi(candles, **_)` signature.
+- The six vendored strategies will be **rewritten as modules under the new contract** in plan 0002 phase 4, not vendored as-is. We are not preserving the `_run_rsi(candles, **_)` signature.
 
 ## Alternatives considered
 
@@ -75,5 +75,5 @@ Rejected because: (1) parameters aren't introspectable, so the UI can't render a
 ## Notes
 
 - The vendored `_STRATEGY_MAP` in `backtest_service.py:196-203` is our reference for the current state. We are explicitly *not* vendoring that pattern.
-- See plan `0002-strategy-interface.md` for the implementation slices that realize this ADR.
+- See plan `0002-strategy-interface.md` for the implementation phases that realize this ADR.
 - A second ADR may be needed once we decide how indicators are computed (in the strategy vs precomputed and passed in). That's a tradeoff between locality and reuse and is deferred — `generate_signals` can do either, the contract doesn't force it.

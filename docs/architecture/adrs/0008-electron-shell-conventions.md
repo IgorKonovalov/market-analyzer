@@ -15,7 +15,7 @@ There is one structural difference between the two projects that shapes everythi
 
 ## Decision
 
-We adopt the following conventions for the `desktop/` workspace, modeled on `music_production_suite`. Concrete config snippets are in this ADR rather than the plan because they describe durable structure, not a one-time slice.
+We adopt the following conventions for the `desktop/` workspace, modeled on `music_production_suite`. Concrete config snippets are in this ADR rather than the plan because they describe durable structure, not a one-time phase.
 
 ### Build pipeline
 
@@ -45,7 +45,7 @@ A `desktop/shared/` directory holds code used by more than one process: IPC chan
 Small surface, strict conventions. The renderer ↔ sidecar HTTP path handles domain operations; this section is about renderer ↔ main only.
 
 - **Channel name constants** live in `desktop/shared/ipc-channels.ts` as a `const IPC_CHANNELS = { ... }` object. Never bare strings in handlers or preload bindings.
-- **Preload API is namespaced.** A single `window.api` object is assembled in `desktop/electron/preload/index.ts` from per-domain modules under `desktop/electron/preload/api/`. Each module exports its slice; `index.ts` only imports and merges. The combined type is exported as `ElectronAPI = typeof api` so the renderer can `declare global { interface Window { api: ElectronAPI } }` for full type inference.
+- **Preload API is namespaced.** A single `window.api` object is assembled in `desktop/electron/preload/index.ts` from per-domain modules under `desktop/electron/preload/api/`. Each module exports its namespace; `index.ts` only imports and merges. The combined type is exported as `ElectronAPI = typeof api` so the renderer can `declare global { interface Window { api: ElectronAPI } }` for full type inference.
 - **Three IPC shapes, no others:**
   1. **Request-response** — `ipcMain.handle(channel, handler)` ↔ `ipcRenderer.invoke(channel, ...args)`. Handler returns a value or Promise.
   2. **Main-to-renderer push** — handler calls `event.sender.send(channel, payload)` (or `BrowserWindow.getAllWindows().forEach(...)` for broadcast); preload wraps `ipcRenderer.on` and **returns a cleanup function** that the renderer calls on unmount. No fire-and-forget event listeners without a cleanup path.
@@ -177,12 +177,12 @@ These are listed so future readers know the omissions were deliberate, not overs
 - **`zundo` (undo/redo middleware).** Domain-irrelevant.
 - **`electron-store`** for renderer-side config. Our config (per [ADR-0006](0006-persistence-layout.md)) lives in the Python sidecar's `config.json`. The renderer reads it via the sidecar's HTTP `/config` endpoint; window state (size, position) can use `electron-store` only if we discover a need.
 - **Puppeteer / Cheerio / WebTorrent / FFmpeg / Essentia.** Domain libraries for a different app.
-- **Their release-only CI (`build.yml` triggers only on `workflow_dispatch` and `tags: v*`).** We keep a separate `ci.yml` (per Plan 0001 slice 1) that runs lint + typecheck + tests on every push and PR. `release.yml` is additive.
+- **Their release-only CI (`build.yml` triggers only on `workflow_dispatch` and `tags: v*`).** We keep a separate `ci.yml` (per Plan 0001 phase 1) that runs lint + typecheck + tests on every push and PR. `release.yml` is additive.
 - **Single Jest config covering both processes.** Their two-config split is fine, but we go further: the sidecar is Python (pytest), so the desktop workspace already has a hard process boundary. Use their split for the TS side only.
 - **Node 22+ requirement.** Electron 40 supports Node 22 internally; we don't need to constrain the user's system Node. Use whatever Node version Electron ships with for the main/preload runtime; require Node 20+ as the host build environment.
 
 ## Notes
 
-- The full IPC surface design (channels, payloads, cleanup contract) is in this ADR rather than the plan because it locks the renderer↔main contract for years. Slice 4 of [Plan 0001](../plans/0001-bootstrap.md) lists which channels land in the bootstrap PR.
+- The full IPC surface design (channels, payloads, cleanup contract) is in this ADR rather than the plan because it locks the renderer↔main contract for years. Phase 4 of [Plan 0001](../plans/0001-bootstrap.md) lists which channels land in the bootstrap PR.
 - The double-CSP pattern is the single most copy-worthy piece of music_production_suite's security code. It exists because Vite's dev server inserts a permissive CSP and that override must be stripped — case-insensitively — before our policy goes on the response. Documented at `src/main/window.ts` in music_production_suite if a reference implementation is needed.
 - We deliberately keep the renderer↔main IPC surface single-digit. Every new channel proposal must justify why it isn't a sidecar HTTP endpoint instead. The strong default is "if it's domain logic, it's a sidecar endpoint".

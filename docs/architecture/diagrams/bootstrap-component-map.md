@@ -27,7 +27,7 @@ flowchart LR
         Migrations -.applies on startup.-> Persistence
     end
 
-    subgraph Vendored["Vendored from tradingview-mcp - per ADR-0003<br/>(lazy, one source per slice)"]
+    subgraph Vendored["Vendored from tradingview-mcp - per ADR-0003<br/>(lazy, one source per phase)"]
         YF[yahoo_finance_service]
         Screener[screener_service]
     end

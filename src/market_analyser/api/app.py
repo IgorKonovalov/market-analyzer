@@ -1,6 +1,6 @@
 """FastAPI application factory and bearer-auth middleware.
 
-Auth contract (per ADR-0002 and Plan 0001 slice 1): every request must carry
+Auth contract (per ADR-0002 and Plan 0001 phase 1): every request must carry
 `Authorization: Bearer <secret>` except `GET /healthz`, which is auth-exempt
 so the Electron supervisor can probe liveness without holding the secret.
 """
