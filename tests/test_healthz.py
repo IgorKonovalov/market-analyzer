@@ -54,7 +54,11 @@ def test_protected_route_with_non_bearer_scheme_returns_401(client: TestClient) 
 def test_protected_route_with_valid_auth_returns_404_when_route_absent(
     client: TestClient,
 ) -> None:
-    response = client.get("/ohlcv", headers={"Authorization": f"Bearer {SECRET}"})
+    # Auth-before-routing: valid bearer reaches the routing layer and finds nothing.
+    # /ohlcv exists from phase 2, so use an unrouted path here.
+    response = client.get(
+        "/does-not-exist", headers={"Authorization": f"Bearer {SECRET}"}
+    )
     assert response.status_code == 404
 
 

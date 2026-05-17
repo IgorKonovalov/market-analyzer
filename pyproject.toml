@@ -39,6 +39,7 @@ extend-exclude = [
     ".claude",
     "desktop",
     "docs",
+    "src/market_analyser/data/vendored",
 ]
 
 [tool.ruff.lint]
@@ -53,6 +54,19 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI requires Query/Path/Body/Depends as parameter defaults.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
 
 [tool.mypy]
 python_version = "3.12"
@@ -70,6 +84,12 @@ files = ["src", "tests"]
 module = "tests.*"
 disallow_untyped_defs = false
 
+# Vendored code is copied verbatim per ADR-0003 and is not strictly typed.
+# Adapters that wrap it ARE strictly typed.
+[[tool.mypy.overrides]]
+module = "market_analyser.data.vendored.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-ra --strict-markers --strict-config"
@@ -81,6 +101,10 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["src/market_analyser"]
+omit = [
+    # Vendored code is copied verbatim per ADR-0003; tested at the adapter boundary.
+    "src/market_analyser/data/vendored/*",
+]
 
 [tool.coverage.report]
 show_missing = true
