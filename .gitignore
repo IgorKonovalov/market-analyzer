@@ -55,4 +55,5 @@ desktop/node_modules/
 desktop/dist/
 desktop/release/
 desktop/.vite/
+desktop/test-results/
 node_modules
