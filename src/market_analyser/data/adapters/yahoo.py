@@ -23,9 +23,7 @@ from market_analyser.data.vendored.tradingview_mcp.core.services.backtest_servic
 
 
 class _FetchOhlcvFn(Protocol):
-    def __call__(
-        self, symbol: str, period: str, interval: str = ...
-    ) -> list[dict[str, Any]]: ...
+    def __call__(self, symbol: str, period: str, interval: str = ...) -> list[dict[str, Any]]: ...
 
 
 # Range strings supported by Yahoo's chart API via the vendored fetcher.

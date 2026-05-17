@@ -1,11 +1,14 @@
 """Uvicorn entrypoint for the market-analyser sidecar.
 
 Usage:
-    python -m market_analyser.api --port=<n> --secret=<hex>
+    python -m market_analyser.api --port=<n> --secret=<hex> [--config=<path>]
 
 Per ADR-0002: binds 127.0.0.1 only; if `--port=0` is passed, the OS picks
 an ephemeral port and we print `PORT=<n>` to stdout on a single line so the
 Electron main process can read it back and forward to the renderer.
+
+Phase 3: builds the SQLite engine from `AppConfig`, runs Alembic migrations
+before serving the first request, and exposes a cache-aware provider.
 """
 
 from __future__ import annotations
@@ -14,10 +17,13 @@ import argparse
 import asyncio
 import socket
 import sys
+from pathlib import Path
 
 import uvicorn
 
 from market_analyser.api.app import create_app
+from market_analyser.config import load_config
+from market_analyser.persistence.engine import make_engine
 
 HOST = "127.0.0.1"
 
@@ -26,6 +32,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="market_analyser.api")
     parser.add_argument("--port", type=int, required=True, help="TCP port; 0 for OS-picked")
     parser.add_argument("--secret", type=str, required=True, help="bearer token for auth")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="optional path to config.json; defaults to AppConfig defaults",
+    )
     return parser.parse_args(argv)
 
 
@@ -36,10 +48,12 @@ def _bind_socket(port: int) -> socket.socket:
     return sock
 
 
-async def _serve(sock: socket.socket, secret: str) -> None:
-    app = create_app(secret=secret)
-    config = uvicorn.Config(app, log_level="info", access_log=False)
-    server = uvicorn.Server(config)
+async def _serve(sock: socket.socket, secret: str, config_path: Path | None) -> None:
+    config = load_config(config_path)
+    engine = make_engine(config.db_path)
+    app = create_app(secret=secret, engine=engine)
+    uvicorn_config = uvicorn.Config(app, log_level="info", access_log=False)
+    server = uvicorn.Server(uvicorn_config)
     await server.serve(sockets=[sock])
 
 
@@ -49,7 +63,7 @@ def main(argv: list[str] | None = None) -> None:
     actual_port = sock.getsockname()[1]
     print(f"PORT={actual_port}", flush=True)
     try:
-        asyncio.run(_serve(sock, args.secret))
+        asyncio.run(_serve(sock, args.secret, args.config))
     finally:
         sock.close()
 

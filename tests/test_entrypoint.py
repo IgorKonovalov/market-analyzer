@@ -43,7 +43,7 @@ def test_bind_socket_uses_loopback_and_ephemeral_port() -> None:
 
 
 def test_serve_constructs_app_and_delegates_to_uvicorn(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any,
 ) -> None:
     captured: dict[str, Any] = {}
 
@@ -56,9 +56,14 @@ def test_serve_constructs_app_and_delegates_to_uvicorn(
 
     monkeypatch.setattr("market_analyser.api.__main__.uvicorn.Server", FakeServer)
 
+    # Make the default db path land in tmp_path so the test doesn't touch %APPDATA%.
+    monkeypatch.setattr(
+        "market_analyser.config.default_app_data_dir", lambda: tmp_path,
+    )
+
     sock = entry._bind_socket(0)
     try:
-        asyncio.run(entry._serve(sock, "secret"))
+        asyncio.run(entry._serve(sock, "secret", None))
     finally:
         sock.close()
 

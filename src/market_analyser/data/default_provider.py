@@ -1,12 +1,10 @@
 """`DefaultMarketDataProvider` — the production implementation of the Protocol.
 
-Phase 2 wires `get_ohlcv` to the Yahoo adapter; every other Protocol method is
-a `NotImplementedError` stub naming the plan that lands it. The protocol-
-introspection test asserts each method is reachable so a forgotten stub fails
-loudly at test time rather than silently in production.
-
-Phase 3 will replace this class (or wrap it) with cache-aware dispatch via the
-SQLite bar repository — see Plan 0001 phase 3.
+Phase 3 wires the cache: `get_ohlcv` reads from the `BarRepository` first and
+only calls the Yahoo adapter when the cache is empty for the requested range.
+With `as_of` set (backtest mode), the cache is the sole source of truth and a
+missing range is an error — never a silent remote fetch. This is the anti-
+lookahead seam declared in ADR-0007.
 """
 
 from __future__ import annotations
@@ -23,13 +21,20 @@ from market_analyser.data.types import (
     SentimentSample,
     SymbolInfo,
 )
+from market_analyser.persistence.repository import BarRepository
 
 
 class DefaultMarketDataProvider:
-    """Dispatches across per-source adapters. See ADR-0007."""
+    """Dispatches across per-source adapters with optional cache. See ADR-0007."""
 
-    def __init__(self, yahoo: YahooAdapter | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        yahoo: YahooAdapter | None = None,
+        bar_repository: BarRepository | None = None,
+    ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
+        self._repo = bar_repository
 
     def get_ohlcv(
         self,
@@ -39,9 +44,30 @@ class DefaultMarketDataProvider:
         end: datetime,
         as_of: datetime | None = None,
     ) -> Sequence[Bar]:
-        # Cache + as_of semantics land in phase 3; for phase 2 we ignore as_of
-        # and fetch live every call.
-        return self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
+        # No cache wired: live-only (phase-2 fallback for tests that don't need persistence).
+        if self._repo is None:
+            if as_of is not None:
+                raise ValueError(
+                    "as_of requires a configured BarRepository — no remote fetch when as_of is set",
+                )
+            return self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
+
+        if as_of is not None:
+            cached = self._repo.get_bars(symbol, timeframe, start, end, as_of=as_of)
+            if not cached:
+                raise ValueError(
+                    f"as_of={as_of.isoformat()}: no cached bars in [{start.isoformat()}, "
+                    f"{end.isoformat()}] — refusing remote fetch (anti-lookahead)",
+                )
+            return cached
+
+        cached = self._repo.get_bars(symbol, timeframe, start, end)
+        if cached:
+            return cached
+        fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
+        if fetched:
+            self._repo.upsert_bars(fetched)
+        return self._repo.get_bars(symbol, timeframe, start, end)
 
     def get_quote(
         self,
