@@ -1,0 +1,81 @@
+/**
+ * Electron main entry point.
+ *
+ * Lifecycle:
+ *   1. `app.whenReady()` →
+ *   2. Spawn the Python sidecar (free port + 32-byte hex secret).
+ *   3. Wait for /healthz to return 200 (max 10s).
+ *   4. Install double-CSP headers.
+ *   5. Register IPC handlers.
+ *   6. Open the renderer window (loads Vite dev server in dev, file in prod).
+ *   On `before-quit`: SIGTERM the sidecar, wait up to 3s, SIGKILL otherwise.
+ */
+import { app, BrowserWindow } from "electron";
+import {
+  createWindow,
+  getRendererPaths,
+  installCsp,
+  showFatalWindow,
+} from "./window";
+import { registerIpcHandlers, cleanupServices } from "./ipc";
+import { SidecarSupervisor } from "./sidecar";
+
+const isDev = !app.isPackaged;
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("io.marketanalyser.desktop");
+}
+
+const supervisor = new SidecarSupervisor();
+
+app.whenReady().then(async () => {
+  installCsp(isDev);
+  try {
+    const info = await supervisor.start();
+    const paths = getRendererPaths();
+    registerIpcHandlers({ supervisor, info });
+    const window = createWindow({
+      isDev,
+      preloadPath: paths.preloadPath,
+      rendererUrl: paths.rendererUrl,
+      rendererFile: paths.rendererFile,
+    });
+
+    supervisor.onStatus((status) => {
+      if (status.kind === "fatal") {
+        if (!window.isDestroyed()) window.close();
+        showFatalWindow(status.message ?? "sidecar fatal error");
+      } else if (!window.isDestroyed()) {
+        window.webContents.send("sidecar:status", status);
+      }
+    });
+  } catch (err) {
+    showFatalWindow(`startup failed: ${(err as Error).message}`);
+  }
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    void app.whenReady().then(() => {
+      const paths = getRendererPaths();
+      createWindow({
+        isDev,
+        preloadPath: paths.preloadPath,
+        rendererUrl: paths.rendererUrl,
+        rendererFile: paths.rendererFile,
+      });
+    });
+  }
+});
+
+app.on("before-quit", async (event) => {
+  if (supervisor.getInfo() === null) return;
+  event.preventDefault();
+  cleanupServices();
+  await supervisor.stop();
+  app.exit(0);
+});

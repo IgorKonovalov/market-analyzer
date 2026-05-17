@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "types": ["jest", "node"],
+    "esModuleInterop": true
+  },
+  "include": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+  "exclude": ["node_modules", "dist", "release", "tests/security.spec.ts", "tests/sidecar-supervisor.spec.ts"]
+}

@@ -1,0 +1,117 @@
+{
+  "name": "@market-analyser/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Electron + React desktop shell for the market-analyser sidecar.",
+  "main": "dist/main/index.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently --names \"main,preload,vite\" -c \"yellow,magenta,cyan\" \"node scripts/build-main.mjs --watch\" \"node scripts/build-preload.mjs --watch\" \"vite\"",
+    "dev:debug": "cross-env DEBUG=electron-builder pnpm dev",
+    "build:main": "node scripts/build-main.mjs",
+    "build:preload": "node scripts/build-preload.mjs",
+    "build:renderer": "vite build",
+    "build": "pnpm build:main && pnpm build:preload && pnpm build:renderer",
+    "start": "cross-env NODE_ENV=production electron .",
+    "package": "pnpm build && electron-builder",
+    "package:win": "pnpm build && electron-builder --win",
+    "package:mac": "pnpm build && electron-builder --mac",
+    "package:linux": "pnpm build && electron-builder --linux",
+    "test": "jest --config jest.config.ts",
+    "test:main": "jest --config jest.config.main.ts --passWithNoTests",
+    "test:all": "pnpm test && pnpm test:main",
+    "test:e2e": "playwright test",
+    "lint": "eslint \"electron/**/*.ts\" \"renderer/**/*.{ts,tsx}\" \"shared/**/*.ts\"",
+    "lint:fix": "pnpm lint --fix",
+    "typecheck": "tsc --noEmit --project tsconfig.renderer.json && tsc --noEmit --project tsconfig.main.json && tsc --noEmit --project tsconfig.preload.json",
+    "prepare": "cd .. && husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,md}": [
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "lightweight-charts": "4.2.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.48.0",
+    "@testing-library/jest-dom": "6.5.0",
+    "@testing-library/react": "16.0.1",
+    "@types/jest": "29.5.13",
+    "@types/node": "22.7.4",
+    "@types/react": "18.3.11",
+    "@types/react-dom": "18.3.0",
+    "@typescript-eslint/eslint-plugin": "8.8.0",
+    "@typescript-eslint/parser": "8.8.0",
+    "@vitejs/plugin-react": "4.3.2",
+    "concurrently": "9.0.1",
+    "cross-env": "7.0.3",
+    "electron": "32.1.2",
+    "electron-builder": "25.0.5",
+    "esbuild": "0.24.0",
+    "eslint": "9.11.1",
+    "eslint-plugin-react": "7.37.1",
+    "eslint-plugin-react-hooks": "5.0.0",
+    "husky": "9.1.6",
+    "jest": "29.7.0",
+    "jest-environment-jsdom": "29.7.0",
+    "lint-staged": "15.2.10",
+    "prettier": "3.3.3",
+    "ts-jest": "29.2.5",
+    "ts-node": "10.9.2",
+    "typescript": "5.6.2",
+    "vite": "5.4.8",
+    "wait-on": "8.0.1"
+  },
+  "build": {
+    "appId": "io.marketanalyser.desktop",
+    "productName": "market-analyser",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../src/market_analyser",
+        "to": "sidecar/market_analyser"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
+    }
+  }
+}

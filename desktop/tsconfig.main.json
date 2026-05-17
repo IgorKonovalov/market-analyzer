@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": "dist/main",
+    "types": ["node"]
+  },
+  "include": ["electron/**/*", "shared/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "release",
+    "electron/preload/**/*",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}

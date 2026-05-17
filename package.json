@@ -1,0 +1,21 @@
+{
+  "name": "market-analyser-workspace",
+  "private": true,
+  "version": "0.0.1",
+  "description": "pnpm workspace root for market-analyser (Python sidecar + desktop shell).",
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "pnpm --filter desktop build",
+    "test": "pnpm --filter desktop test:all",
+    "typecheck": "pnpm --filter desktop typecheck"
+  },
+  "devDependencies": {
+    "husky": "9.1.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}
