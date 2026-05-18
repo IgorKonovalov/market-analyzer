@@ -1,8 +1,8 @@
-"""Yahoo Finance adapter — thin port over the vendored `_fetch_ohlcv` carve-out.
+"""Yahoo Finance adapter — thin wrapper over the in-house OHLCV fetcher.
 
-The adapter does three things the vendored function does not:
+The adapter does three things the raw fetcher does not:
 1. Translates the contract's `start: datetime, end: datetime` window into the
-   range-period strings the vendored Yahoo Chart API call accepts.
+   range-period strings Yahoo's chart API accepts.
 2. Validates every bar through the `Bar` pydantic model — rejecting NaN, negative,
    non-UTC, or out-of-window data per `best-practices.md`'s boundary rule.
 3. Filters the response to the requested `[start, end]` window.
@@ -17,10 +17,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from market_analyser.data.adapters._yahoo_fetch import _fetch_yahoo_ohlcv
 from market_analyser.data.types import Bar
-from market_analyser.data.vendored.tradingview_mcp.core.services.backtest_service import (
-    _fetch_ohlcv as _vendored_fetch_ohlcv,
-)
 
 _logger = logging.getLogger(__name__)
 
@@ -29,7 +27,7 @@ class _FetchOhlcvFn(Protocol):
     def __call__(self, symbol: str, period: str, interval: str = ...) -> list[dict[str, Any]]: ...
 
 
-# Range strings supported by Yahoo's chart API via the vendored fetcher.
+# Range strings supported by Yahoo's chart API via the in-house fetcher.
 # Ordered shortest → longest so we can pick the smallest sufficient period.
 _PERIOD_DAYS: tuple[tuple[str, int], ...] = (
     ("1mo", 31),
@@ -44,10 +42,10 @@ _VALID_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h"})
 
 
 class YahooAdapter:
-    """Adapter over the vendored Yahoo Chart fetcher. Returns validated Bars."""
+    """Adapter over the in-house Yahoo Chart fetcher. Returns validated Bars."""
 
     def __init__(self, fetcher: _FetchOhlcvFn | None = None) -> None:
-        self._fetch = fetcher if fetcher is not None else _vendored_fetch_ohlcv
+        self._fetch = fetcher if fetcher is not None else _fetch_yahoo_ohlcv
 
     def fetch_ohlcv(
         self,

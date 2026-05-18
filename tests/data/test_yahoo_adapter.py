@@ -1,8 +1,9 @@
 """Plan 0001 phase 2: YahooAdapter unit tests.
 
-The vendored `_fetch_ohlcv` is mocked. The tests assert the adapter's input
-validation, the boundary validation on each `Bar`, and the window-filtering
-behavior — covering the done-when items for phase 2.
+The in-house `_fetch_yahoo_ohlcv` is replaced via the adapter's injectable
+``fetcher`` seam. The tests assert the adapter's input validation, the
+boundary validation on each `Bar`, and the window-filtering behavior —
+covering the done-when items for phase 2.
 """
 
 from __future__ import annotations

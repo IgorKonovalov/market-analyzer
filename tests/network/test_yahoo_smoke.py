@@ -1,7 +1,7 @@
 """Plan 0001 phase 2: live-network smoke test, @pytest.mark.network so it
 is skipped in CI by default. Run locally with `uv run pytest -m network`.
 
-Asserts the vendored Yahoo Chart fetcher returns >=5 daily bars for AAPL over
+Asserts the in-house Yahoo Chart fetcher returns >=5 daily bars for AAPL over
 the last 7 days — the plan's smoke threshold.
 """
 

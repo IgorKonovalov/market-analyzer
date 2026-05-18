@@ -1,6 +1,6 @@
 # 0003 — Excise vendored upstream and rewrite Yahoo data path
 
-> **Status:** draft
+> **Status:** in-progress
 > **Created:** 2026-05-17
 > **Owner skill(s):** `dev`
 > **Related ADRs:** [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (supersedes [ADR-0003](../adrs/0003-vendoring-strategy.md))
