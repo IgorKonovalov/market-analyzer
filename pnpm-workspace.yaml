@@ -1,2 +1,5 @@
 packages:
   - desktop
+onlyBuiltDependencies:
+  - electron
+  - esbuild

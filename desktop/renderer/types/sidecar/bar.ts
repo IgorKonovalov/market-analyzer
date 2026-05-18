@@ -6,14 +6,14 @@
  * was not built). Until then, keep this file in sync with the Pydantic model.
  */
 export interface Bar {
-  symbol: string;
-  timeframe: string;
+  symbol: string
+  timeframe: string
   /** ISO 8601 UTC timestamp emitted by FastAPI's JSON encoder. */
-  event_ts: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  source: string;
+  event_ts: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  source: string
 }

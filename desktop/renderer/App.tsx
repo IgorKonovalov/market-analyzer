@@ -4,7 +4,7 @@
  * Multi-route navigation lands in a future plan; the bootstrap is intentionally
  * one screen.
  */
-import { OhlcvView } from "./views/OhlcvView";
+import { OhlcvView } from './views/OhlcvView'
 
 export function App(): JSX.Element {
   return (
@@ -14,5 +14,5 @@ export function App(): JSX.Element {
       </header>
       <OhlcvView />
     </main>
-  );
+  )
 }

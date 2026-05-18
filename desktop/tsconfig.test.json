@@ -1,5 +1,5 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "node",
@@ -7,6 +7,17 @@
     "types": ["jest", "node"],
     "esModuleInterop": true
   },
-  "include": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
-  "exclude": ["node_modules", "dist", "release", "tests/security.spec.ts", "tests/sidecar-supervisor.spec.ts"]
+  "include": [
+    "renderer/**/*.test.ts",
+    "renderer/**/*.test.tsx",
+    "renderer/**/*.spec.ts",
+    "renderer/**/*.spec.tsx",
+    "shared/**/*.test.ts",
+    "shared/**/*.test.tsx",
+    "shared/**/*.spec.ts",
+    "shared/**/*.spec.tsx",
+    "electron/**/*.test.ts",
+    "electron/**/*.spec.ts"
+  ],
+  "exclude": ["node_modules", "dist", "release", "tests/**/*"]
 }

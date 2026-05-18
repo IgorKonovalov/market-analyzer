@@ -1,23 +1,10 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "isolatedModules": true,
-    "forceConsistentCasingInFileNames": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "moduleResolution": "bundler",
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["renderer/*"],
-      "@shared/*": ["shared/*"]
-    }
-  },
-  "exclude": ["node_modules", "dist", "release"]
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.renderer.json" },
+    { "path": "./tsconfig.main.json" },
+    { "path": "./tsconfig.preload.json" },
+    { "path": "./tsconfig.test.json" },
+    { "path": "./tsconfig.e2e.json" }
+  ]
 }

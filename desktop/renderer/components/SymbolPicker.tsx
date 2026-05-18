@@ -3,19 +3,19 @@
  * the value; the parent commits to symbol on form submit (Enter or button)
  * so a fetch isn't triggered on every keystroke.
  */
-import { useState } from "react";
+import { useState } from 'react'
 
-import styles from "./SymbolPicker.module.css";
+import styles from './SymbolPicker.module.css'
 
-export const TIMEFRAMES = ["1d", "1h", "5m", "1m"] as const;
-export type Timeframe = (typeof TIMEFRAMES)[number];
+export const TIMEFRAMES = ['1d', '1h', '5m', '1m'] as const
+export type Timeframe = (typeof TIMEFRAMES)[number]
 
 interface Props {
-  symbol: string;
-  timeframe: Timeframe;
-  onSymbolChange: (symbol: string) => void;
-  onTimeframeChange: (timeframe: Timeframe) => void;
-  disabled?: boolean;
+  symbol: string
+  timeframe: Timeframe
+  onSymbolChange: (symbol: string) => void
+  onTimeframeChange: (timeframe: Timeframe) => void
+  disabled?: boolean
 }
 
 export function SymbolPicker({
@@ -25,22 +25,22 @@ export function SymbolPicker({
   onTimeframeChange,
   disabled = false,
 }: Props): JSX.Element {
-  const [draft, setDraft] = useState(symbol);
+  const [draft, setDraft] = useState(symbol)
 
   const commit = (): void => {
-    const next = draft.trim().toUpperCase();
+    const next = draft.trim().toUpperCase()
     if (next.length > 0 && next !== symbol) {
-      onSymbolChange(next);
+      onSymbolChange(next)
     }
-    setDraft(next);
-  };
+    setDraft(next)
+  }
 
   return (
     <form
       className={styles.root}
       onSubmit={(event) => {
-        event.preventDefault();
-        commit();
+        event.preventDefault()
+        commit()
       }}
     >
       <label className={styles.field}>
@@ -75,5 +75,5 @@ export function SymbolPicker({
         </select>
       </label>
     </form>
-  );
+  )
 }

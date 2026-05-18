@@ -4,4 +4,4 @@
  * `desktop/electron/preload/index.ts`. The renderer's global declaration
  * imports from there.
  */
-export type Unsubscribe = () => void;
+export type Unsubscribe = () => void

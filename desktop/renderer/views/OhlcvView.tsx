@@ -3,29 +3,29 @@
  * owns the four async states (loading / error / empty / populated). Default
  * range is the last 365 days; refresh re-pulls the same window.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState } from 'react'
 
-import { CandlestickChart } from "../components/CandlestickChart";
-import { SymbolPicker } from "../components/SymbolPicker";
-import type { Timeframe } from "../components/SymbolPicker";
-import { useOhlcv } from "../hooks/useOhlcv";
-import styles from "./OhlcvView.module.css";
+import { CandlestickChart } from '../components/CandlestickChart'
+import { SymbolPicker } from '../components/SymbolPicker'
+import type { Timeframe } from '../components/SymbolPicker'
+import { useOhlcv } from '../hooks/useOhlcv'
+import styles from './OhlcvView.module.css'
 
-const DEFAULT_SYMBOL = "AAPL";
-const DEFAULT_TIMEFRAME: Timeframe = "1d";
-const DEFAULT_LOOKBACK_DAYS = 365;
+const DEFAULT_SYMBOL = 'AAPL'
+const DEFAULT_TIMEFRAME: Timeframe = '1d'
+const DEFAULT_LOOKBACK_DAYS = 365
 
 export function OhlcvView(): JSX.Element {
-  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
-  const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME);
+  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL)
+  const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME)
 
   const { start, end } = useMemo(() => {
-    const now = new Date();
-    const past = new Date(now.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
-    return { start: past, end: now };
-  }, []);
+    const now = new Date()
+    const past = new Date(now.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
+    return { start: past, end: now }
+  }, [])
 
-  const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end });
+  const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end })
 
   return (
     <section className={styles.root} aria-label={`OHLCV view for ${symbol} ${timeframe}`}>
@@ -37,12 +37,7 @@ export function OhlcvView(): JSX.Element {
           onTimeframeChange={setTimeframe}
           disabled={isLoading}
         />
-        <button
-          type="button"
-          className={styles.refresh}
-          onClick={refetch}
-          disabled={isLoading}
-        >
+        <button type="button" className={styles.refresh} onClick={refetch} disabled={isLoading}>
           Refresh
         </button>
       </header>
@@ -76,5 +71,5 @@ export function OhlcvView(): JSX.Element {
         )}
       </div>
     </section>
-  );
+  )
 }

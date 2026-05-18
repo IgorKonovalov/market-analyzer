@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod'
 
 /**
  * External-URL opener payload. URLs must be http(s) — anything else is a path
@@ -9,8 +9,8 @@ export const ShellOpenExternalSchema = z.object({
     .string()
     .url()
     .refine((u) => /^https?:\/\//i.test(u), {
-      message: "only http(s) URLs may be opened externally",
+      message: 'only http(s) URLs may be opened externally',
     }),
-});
+})
 
-export type ShellOpenExternalPayload = z.infer<typeof ShellOpenExternalSchema>;
+export type ShellOpenExternalPayload = z.infer<typeof ShellOpenExternalSchema>

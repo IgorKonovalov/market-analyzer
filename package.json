@@ -11,11 +11,5 @@
   },
   "devDependencies": {
     "husky": "9.1.6"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "esbuild"
-    ]
   }
 }

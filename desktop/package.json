@@ -6,7 +6,7 @@
   "main": "dist/main/index.cjs",
   "type": "module",
   "scripts": {
-    "dev": "concurrently --names \"main,preload,vite\" -c \"yellow,magenta,cyan\" \"node scripts/build-main.mjs --watch\" \"node scripts/build-preload.mjs --watch\" \"vite\"",
+    "dev": "concurrently --names \"main,preload,vite,electron\" -c \"yellow,magenta,cyan,green\" \"node scripts/build-main.mjs --watch\" \"node scripts/build-preload.mjs --watch\" \"vite\" \"wait-on http://localhost:5173 file:dist/main/index.cjs file:dist/preload/index.cjs && cross-env ELECTRON_RENDERER_URL=http://localhost:5173 electron .\"",
     "dev:debug": "cross-env DEBUG=electron-builder pnpm dev",
     "build:main": "node scripts/build-main.mjs",
     "build:preload": "node scripts/build-preload.mjs",
@@ -23,7 +23,7 @@
     "test:e2e": "playwright test",
     "lint": "eslint \"electron/**/*.ts\" \"renderer/**/*.{ts,tsx}\" \"shared/**/*.ts\"",
     "lint:fix": "pnpm lint --fix",
-    "typecheck": "tsc --noEmit --project tsconfig.renderer.json && tsc --noEmit --project tsconfig.main.json && tsc --noEmit --project tsconfig.preload.json",
+    "typecheck": "tsc --noEmit --project tsconfig.renderer.json && tsc --noEmit --project tsconfig.main.json && tsc --noEmit --project tsconfig.preload.json && tsc --noEmit --project tsconfig.test.json && tsc --noEmit --project tsconfig.e2e.json",
     "prepare": "cd .. && husky"
   },
   "lint-staged": {
@@ -59,6 +59,7 @@
     "electron-builder": "25.0.5",
     "esbuild": "0.24.0",
     "eslint": "9.11.1",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "7.37.1",
     "eslint-plugin-react-hooks": "5.0.0",
     "husky": "9.1.6",
