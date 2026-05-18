@@ -1,10 +1,14 @@
-"""Plan 0001 phase 3: cache policy on DefaultMarketDataProvider.
+"""Plan 0001 phase 3 + Plan 0004 phase 1: cache policy on DefaultMarketDataProvider.
 
-Asserts:
-  - cache-miss path fetches from the adapter, upserts, and returns bars
-  - cache-hit path serves from the repo with no adapter calls
-  - as_of mode with empty cached coverage raises ValueError (no remote fetch)
-  - as_of mode with cached coverage returns the cached bars
+Asserts coverage-aware behavior:
+  (a) cache covers [start, end] entirely        -> no adapter call
+  (b) cache covers a head slice                  -> adapter asked for the tail gap only
+  (c) cache has a middle hole bigger than the    -> adapter called for the hole only
+      gap-fill threshold
+  (d) empty cache                                -> adapter called for the full window
+  (e) as_of set + partial coverage               -> raises (anti-lookahead)
+
+Plus the pre-existing live-mode and as_of guard cases.
 """
 
 from __future__ import annotations
@@ -33,16 +37,6 @@ def repo() -> Iterator[BarRepository]:
     engine.dispose()
 
 
-def _yahoo_with_calls(rows: list[dict[str, Any]]) -> tuple[YahooAdapter, list[str]]:
-    calls: list[str] = []
-
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
-        calls.append(symbol)
-        return rows
-
-    return YahooAdapter(fetcher=fetcher), calls
-
-
 def _row(date: str) -> dict[str, Any]:
     return {
         "date": date,
@@ -54,7 +48,42 @@ def _row(date: str) -> dict[str, Any]:
     }
 
 
-def test_cache_miss_fetches_upserts_and_returns(repo: BarRepository) -> None:
+def _daily_rows(start: datetime, days: int) -> list[dict[str, Any]]:
+    return [_row((start + timedelta(days=i)).strftime("%Y-%m-%d")) for i in range(days)]
+
+
+def _yahoo_with_calls(
+    rows: list[dict[str, Any]],
+) -> tuple[YahooAdapter, list[str]]:
+    """Fetcher that returns the same `rows` regardless of period (legacy helper)."""
+    calls: list[str] = []
+
+    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        calls.append(symbol)
+        return rows
+
+    return YahooAdapter(fetcher=fetcher), calls
+
+
+def _yahoo_with_call_log(
+    rows: list[dict[str, Any]],
+) -> tuple[YahooAdapter, list[tuple[str, str]]]:
+    """Fetcher that records (symbol, period) per call. The adapter still filters
+    the response to [start, end], so we can return a generous superset of bars
+    and trust the adapter to discard the rest."""
+    calls: list[tuple[str, str]] = []
+
+    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        calls.append((symbol, period))
+        return rows
+
+    return YahooAdapter(fetcher=fetcher), calls
+
+
+# -- case (d): empty cache fetches the full window --------------------------
+
+
+def test_empty_cache_fetches_full_window(repo: BarRepository) -> None:
     yahoo, calls = _yahoo_with_calls([_row("2026-04-15"), _row("2026-04-16")])
     provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
     bars = provider.get_ohlcv(
@@ -65,15 +94,141 @@ def test_cache_miss_fetches_upserts_and_returns(repo: BarRepository) -> None:
     )
     assert len(bars) == 2
     assert calls == ["AAPL"]
-    # Second call must come straight from cache.
-    bars_again = provider.get_ohlcv(
+
+
+# -- case (a): cache covers [start, end] entirely -> no adapter call --------
+
+
+def test_full_cache_coverage_no_fetch(repo: BarRepository) -> None:
+    # Pre-warm the cache with a daily strip dense enough that no gap exceeds
+    # the 10-day fetch threshold. 30 bars across 30 days does it.
+    warming_rows = _daily_rows(datetime(2026, 4, 1, tzinfo=UTC), 30)
+    yahoo_warmer, warm_calls = _yahoo_with_call_log(warming_rows)
+    provider = DefaultMarketDataProvider(yahoo=yahoo_warmer, bar_repository=repo)
+    provider.get_ohlcv(
         "AAPL",
         "1d",
         datetime(2026, 4, 1, tzinfo=UTC),
-        datetime(2026, 5, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
     )
-    assert len(bars_again) == 2
-    assert calls == ["AAPL"], "cache hit must not call the adapter again"
+    assert warm_calls == [("AAPL", "1mo")]
+
+    # Now build a fresh provider whose adapter would scream if called.
+    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        raise AssertionError(
+            f"adapter must not be called for fully cached coverage: {symbol} {period}",
+        )
+
+    no_call_provider = DefaultMarketDataProvider(
+        yahoo=YahooAdapter(fetcher=explode),
+        bar_repository=repo,
+    )
+    bars = no_call_provider.get_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
+    )
+    assert len(bars) == 30
+
+
+# -- case (b): cache covers a head slice -> fetch the tail gap only ---------
+
+
+def test_head_coverage_fetches_tail_only(repo: BarRepository) -> None:
+    # Warm the cache with the first 10 days of April.
+    warming_rows = _daily_rows(datetime(2026, 4, 1, tzinfo=UTC), 10)
+    yahoo_warmer, _warm_calls = _yahoo_with_call_log(warming_rows)
+    DefaultMarketDataProvider(yahoo=yahoo_warmer, bar_repository=repo).get_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 10, tzinfo=UTC),
+    )
+
+    # Now ask for the full month; only the tail gap (>10 days, threshold) should
+    # be fetched. Adapter returns a generous strip; its own filter trims to the
+    # requested window.
+    tail_rows = _daily_rows(datetime(2026, 4, 10, tzinfo=UTC), 21)
+    yahoo, calls = _yahoo_with_call_log(tail_rows)
+    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
+    bars = provider.get_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
+    )
+    assert len(calls) == 1, f"expected 1 fetch for the tail gap, got {calls}"
+    # The cached head bars plus the fetched tail bars cover the month.
+    assert {b.event_ts.date().isoformat() for b in bars} >= {
+        f"2026-04-{d:02d}" for d in range(1, 11)
+    }
+    assert any(b.event_ts.date().isoformat() == "2026-04-30" for b in bars)
+
+
+# -- case (c): cache has a middle hole > threshold -> fetch the hole --------
+
+
+def test_middle_hole_fetches_only_the_hole(repo: BarRepository) -> None:
+    # Cache: April 1-3 and April 25-30. Hole = April 3 -> April 25 = 22 days.
+    head_rows = _daily_rows(datetime(2026, 4, 1, tzinfo=UTC), 3)
+    tail_rows = _daily_rows(datetime(2026, 4, 25, tzinfo=UTC), 6)
+    yahoo_warmer, _warm_calls = _yahoo_with_call_log(head_rows + tail_rows)
+    DefaultMarketDataProvider(yahoo=yahoo_warmer, bar_repository=repo).get_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
+    )
+
+    # Reset the call log: re-query and assert the adapter is called exactly
+    # once, for the middle hole only.
+    hole_rows = _daily_rows(datetime(2026, 4, 3, tzinfo=UTC), 23)
+    yahoo, calls = _yahoo_with_call_log(hole_rows)
+    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
+    provider.get_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
+    )
+    assert len(calls) == 1, f"expected 1 fetch for the middle hole, got {calls}"
+
+
+# -- case (e): as_of with partial coverage -> raises ------------------------
+
+
+def test_as_of_with_partial_coverage_raises(repo: BarRepository) -> None:
+    # Cache only the first half of April.
+    warming_rows = _daily_rows(datetime(2026, 4, 1, tzinfo=UTC), 10)
+    yahoo_warmer, _warm_calls = _yahoo_with_call_log(warming_rows)
+    DefaultMarketDataProvider(yahoo=yahoo_warmer, bar_repository=repo).get_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 10, tzinfo=UTC),
+    )
+
+    # Adapter that explodes if called: anti-lookahead must short-circuit before
+    # any remote fetch.
+    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        raise AssertionError("as_of must never fall through to a remote fetch")
+
+    provider = DefaultMarketDataProvider(
+        yahoo=YahooAdapter(fetcher=explode),
+        bar_repository=repo,
+    )
+    with pytest.raises(ValueError, match="anti-lookahead"):
+        provider.get_ohlcv(
+            "AAPL",
+            "1d",
+            datetime(2026, 4, 1, tzinfo=UTC),
+            datetime(2026, 4, 30, tzinfo=UTC),
+            as_of=datetime.now(tz=UTC) + timedelta(hours=1),
+        )
+
+
+# -- pre-existing guards ----------------------------------------------------
 
 
 def test_as_of_with_empty_cache_raises_no_fetch(repo: BarRepository) -> None:
@@ -90,28 +245,32 @@ def test_as_of_with_empty_cache_raises_no_fetch(repo: BarRepository) -> None:
     assert calls == []
 
 
-def test_as_of_with_cached_data_returns_bars(repo: BarRepository) -> None:
-    yahoo, calls = _yahoo_with_calls([_row("2026-04-15")])
-    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
-    # Warm the cache with a live-mode call.
-    provider.get_ohlcv(
+def test_as_of_with_full_coverage_returns_bars(repo: BarRepository) -> None:
+    # Warm the cache with a dense daily strip so as_of mode finds no gaps.
+    warming_rows = _daily_rows(datetime(2026, 4, 1, tzinfo=UTC), 30)
+    yahoo_warmer, _warm_calls = _yahoo_with_call_log(warming_rows)
+    DefaultMarketDataProvider(yahoo=yahoo_warmer, bar_repository=repo).get_ohlcv(
         "AAPL",
         "1d",
         datetime(2026, 4, 1, tzinfo=UTC),
-        datetime(2026, 5, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
     )
-    assert calls == ["AAPL"]
 
-    # as_of in the future of ingested_at returns the cached row, no second fetch.
+    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        raise AssertionError("as_of with full coverage must not call the adapter")
+
+    provider = DefaultMarketDataProvider(
+        yahoo=YahooAdapter(fetcher=explode),
+        bar_repository=repo,
+    )
     bars = provider.get_ohlcv(
         "AAPL",
         "1d",
         datetime(2026, 4, 1, tzinfo=UTC),
-        datetime(2026, 5, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
         as_of=datetime.now(tz=UTC) + timedelta(hours=1),
     )
-    assert len(bars) == 1
-    assert calls == ["AAPL"], "as_of with cached coverage must not refetch"
+    assert len(bars) == 30
 
 
 def test_no_repo_with_as_of_raises() -> None:
