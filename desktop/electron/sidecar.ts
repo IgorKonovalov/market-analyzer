@@ -2,11 +2,14 @@
  * Python sidecar supervisor.
  *
  * Picks a free port, generates a per-launch 32-byte hex bearer secret, spawns
- * `python -m market_analyser.api --port=<n> --secret=<s>`, awaits a `PORT=<n>`
- * line on stdout, then polls `/healthz` until ready (max 10s).
+ * `python -m market_analyser.api --port=<n>` with the secret injected via
+ * `MARKET_ANALYSER_SECRET` in the child's environment (not argv — see Plan
+ * 0004 phase 3 / ADR-0002 Notes), awaits a `PORT=<n>` line on stdout, then
+ * polls `/healthz` until ready (max 10s).
  *
- * On crash (non-zero exit before shutdown): restart once. A second crash
- * surfaces a fatal-error window via the status push channel.
+ * On crash (non-zero exit before shutdown): restart once with a freshly
+ * rotated secret. A second crash surfaces a fatal-error window via the
+ * status push channel.
  */
 import { ChildProcess, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
@@ -75,11 +78,11 @@ export class SidecarSupervisor {
     this.emit({ kind: 'starting' })
     const cwd = resolvePath(__dirname, '..', '..', '..')
     const pythonExecutable = resolvePythonExecutable(cwd)
-    const child = spawn(
-      pythonExecutable,
-      ['-m', 'market_analyser.api', `--port=${port}`, `--secret=${secretToken}`],
-      { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: process.env },
-    )
+    const child = spawn(pythonExecutable, ['-m', 'market_analyser.api', `--port=${port}`], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, MARKET_ANALYSER_SECRET: secretToken },
+    })
     this.process = child
 
     child.on('exit', (code) => this.handleExit(code))
