@@ -27,16 +27,21 @@ test('cold launch renders a candlestick chart for the default symbol', async () 
     timeout: 15_000,
   })
 
-  // Then wait for the chart canvas OR a visible error state. Both prove the
-  // useOhlcv hook ran end-to-end (success or surfaced failure); a hang here
-  // would mean an infinite spinner, which is the UX failure the four-state
-  // discipline exists to prevent.
+  // Then wait for the chart canvas OR a visible error state OR an empty
+  // state. All three prove the useOhlcv hook ran end-to-end (success,
+  // surfaced failure, or no-bars). A hang here would mean an infinite
+  // spinner, which is the UX failure the four-state discipline exists to
+  // prevent. The empty branch is a real user state (offline + uncached
+  // symbol + bad range) -- Plan 0004 phase 7 added a role+testid so this
+  // predicate can match it without re-routing it through the error state.
   const chart = window.locator('[data-testid="candlestick-chart"]')
   const errorState = window.getByRole('alert')
+  const emptyState = window.locator('[data-testid="ohlcv-empty"]')
   await expect(async () => {
     const chartVisible = await chart.isVisible().catch(() => false)
     const errorVisible = await errorState.isVisible().catch(() => false)
-    expect(chartVisible || errorVisible).toBe(true)
+    const emptyVisible = await emptyState.isVisible().catch(() => false)
+    expect(chartVisible || errorVisible || emptyVisible).toBe(true)
   }).toPass({ timeout: 30_000 })
 
   if (await chart.isVisible()) {

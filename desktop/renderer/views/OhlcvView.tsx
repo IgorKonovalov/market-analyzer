@@ -67,7 +67,7 @@ export function OhlcvView(): JSX.Element {
           </div>
         )}
         {!isLoading && !error && bars && bars.length === 0 && (
-          <div className={styles.empty}>
+          <div className={styles.empty} role="status" data-testid="ohlcv-empty">
             No bars for {symbol} {timeframe} in the last {DEFAULT_LOOKBACK_DAYS} days.
           </div>
         )}
