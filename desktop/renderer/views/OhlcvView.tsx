@@ -18,14 +18,22 @@ const DEFAULT_LOOKBACK_DAYS = 365
 export function OhlcvView(): JSX.Element {
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL)
   const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME)
+  // Bumped by Refresh; rolls the window forward to "now" rather than re-fetching
+  // the same fixed window (Plan 0004 phase 6 — original mount-time useMemo
+  // never advanced, so cached data looked the same hours later).
+  const [refreshTick, setRefreshTick] = useState(0)
 
   const { start, end } = useMemo(() => {
     const now = new Date()
     const past = new Date(now.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
     return { start: past, end: now }
-  }, [])
+    // refreshTick is the trigger, not a value used inside — bumping it is the
+    // mechanism that re-runs `new Date()` to roll the window forward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick])
 
   const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end })
+  const onRefresh = (): void => setRefreshTick((n) => n + 1)
 
   return (
     <section className={styles.root} aria-label={`OHLCV view for ${symbol} ${timeframe}`}>
@@ -37,7 +45,7 @@ export function OhlcvView(): JSX.Element {
           onTimeframeChange={setTimeframe}
           disabled={isLoading}
         />
-        <button type="button" className={styles.refresh} onClick={refetch} disabled={isLoading}>
+        <button type="button" className={styles.refresh} onClick={onRefresh} disabled={isLoading}>
           Refresh
         </button>
       </header>

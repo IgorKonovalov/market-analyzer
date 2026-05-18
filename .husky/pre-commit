@@ -1,1 +1,1 @@
-pnpm --filter desktop exec lint-staged && pnpm --filter desktop typecheck
+pnpm --filter desktop exec lint-staged && pnpm --filter desktop typecheck && pnpm --filter desktop gen-types:check

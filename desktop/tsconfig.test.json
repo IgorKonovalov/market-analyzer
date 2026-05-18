@@ -12,6 +12,7 @@
     "renderer/**/*.test.tsx",
     "renderer/**/*.spec.ts",
     "renderer/**/*.spec.tsx",
+    "renderer/types/global.d.ts",
     "shared/**/*.test.ts",
     "shared/**/*.test.tsx",
     "shared/**/*.spec.ts",

@@ -45,11 +45,60 @@ export class ApiError extends Error {
   readonly status: number
   readonly body: string
   constructor(status: number, body: string) {
-    super(`sidecar ${status}: ${body || '(empty body)'}`)
+    super(`sidecar ${status}: ${sanitizeApiErrorBody(body)}`)
     this.name = 'ApiError'
     this.status = status
     this.body = body
   }
+}
+
+const MAX_MESSAGE_LENGTH = 280
+const WINDOWS_PATH_RE = /[A-Za-z]:[\\/](?:[^\s'"`<>|*?]+[\\/])*[^\s'"`<>|*?]*/g
+const POSIX_PATH_RE = /\/(?:Users|home|var|tmp|opt|etc|root|srv|mnt|usr|private)\/[^\s'"`<>|]+/g
+
+/**
+ * Public for tests. Reduces a raw sidecar error body to something safe to
+ * render in the DOM: pulls out FastAPI's `{detail}` if present, masks
+ * absolute filesystem paths, drops Python traceback frames, and clamps to
+ * a max length so a 4 KB stack dump doesn't blow out a toast.
+ *
+ * The raw body stays on `ApiError.body` for logging.
+ */
+export function sanitizeApiErrorBody(body: string): string {
+  if (!body) return '(empty body)'
+
+  let text = body
+  try {
+    const parsed = JSON.parse(body) as unknown
+    if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
+      const detail = (parsed as { detail: unknown }).detail
+      if (typeof detail === 'string' && detail.length > 0) {
+        text = detail
+      }
+    }
+  } catch {
+    // not JSON — fall through to string sanitization
+  }
+
+  text = text
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim()
+      if (trimmed.startsWith('Traceback (most recent call last)')) return false
+      if (trimmed.startsWith('File "')) return false
+      return true
+    })
+    .join(' ')
+    .replace(WINDOWS_PATH_RE, '<path>')
+    .replace(POSIX_PATH_RE, '<path>')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    text = `${text.slice(0, MAX_MESSAGE_LENGTH - 1)}…`
+  }
+
+  return text || '(empty body)'
 }
 
 async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {

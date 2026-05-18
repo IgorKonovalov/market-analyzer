@@ -46,3 +46,44 @@ test('cold launch renders a candlestick chart for the default symbol', async () 
 
   await app.close()
 })
+
+test('Refresh advances the OHLCV window end timestamp', async () => {
+  const app = await electron.launch({
+    args: [join(__dirname, '..', 'dist', 'main', 'index.cjs')],
+  })
+  const window = await app.firstWindow()
+
+  // Attach the request listener BEFORE awaiting load — the initial /ohlcv
+  // fetch fires as soon as OhlcvView mounts, and we need to capture it.
+  const ohlcvUrls: string[] = []
+  window.on('request', (req) => {
+    const url = req.url()
+    if (/^http:\/\/127\.0\.0\.1:\d+\/ohlcv\?/.test(url)) {
+      ohlcvUrls.push(url)
+    }
+  })
+
+  await window.waitForLoadState('domcontentloaded')
+  await expect(window.getByRole('region', { name: /OHLCV view/ })).toBeVisible({
+    timeout: 15_000,
+  })
+
+  // Wait for the initial fetch to land before clicking Refresh.
+  await expect.poll(() => ohlcvUrls.length, { timeout: 30_000 }).toBeGreaterThanOrEqual(1)
+  const firstEnd = new URL(ohlcvUrls[0]).searchParams.get('end')
+  expect(firstEnd).not.toBeNull()
+
+  // Tiny pause so Date.now() definitely differs between the two memo computes.
+  await window.waitForTimeout(50)
+
+  const refreshButton = window.getByRole('button', { name: 'Refresh' })
+  await expect(refreshButton).toBeEnabled({ timeout: 15_000 })
+  await refreshButton.click()
+
+  await expect.poll(() => ohlcvUrls.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
+  const secondEnd = new URL(ohlcvUrls[1]).searchParams.get('end')
+  expect(secondEnd).not.toBeNull()
+  expect(new Date(secondEnd!).getTime()).toBeGreaterThan(new Date(firstEnd!).getTime())
+
+  await app.close()
+})

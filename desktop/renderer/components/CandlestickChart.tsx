@@ -28,14 +28,22 @@ export function CandlestickChart({ bars, ariaLabel }: Props): JSX.Element {
     const container = containerRef.current
     if (!container) return
 
+    // lightweight-charts hands these strings to canvas APIs that don't
+    // resolve CSS variables; passing `var(--color-fg)` paints with the
+    // browser's invalid-color fallback. Read the computed values once at
+    // mount and feed real color strings in.
+    const computed = getComputedStyle(container)
+    const textColor = computed.getPropertyValue('--color-fg').trim() || '#1a1a1a'
+    const borderColor = computed.getPropertyValue('--color-border').trim() || '#e5e5e5'
+
     const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: 'var(--color-fg)',
+        textColor,
       },
       grid: {
-        vertLines: { color: 'var(--color-border)' },
-        horzLines: { color: 'var(--color-border)' },
+        vertLines: { color: borderColor },
+        horzLines: { color: borderColor },
       },
       timeScale: {
         timeVisible: false,

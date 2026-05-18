@@ -46,3 +46,38 @@ jobs:
 
       - name: pip-audit
         run: uv run pip-audit
+
+  desktop-types:
+    # Verifies `desktop/renderer/types/sidecar/*.ts` is in sync with the
+    # Pydantic models served by FastAPI. Plan 0004 phase 6 picked commit-time
+    # (over build-time) gen-types specifically so CI can catch drift here.
+    name: Desktop type-sync check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync project
+        run: uv sync --frozen
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install desktop deps
+        run: pnpm install --frozen-lockfile
+
+      - name: gen-types --check
+        run: pnpm --filter desktop gen-types:check
