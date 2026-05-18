@@ -2,7 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "module": "CommonJS",
-    "moduleResolution": "node",
+    "moduleResolution": "node10",
     "jsx": "react-jsx",
     "types": ["jest", "node"],
     "esModuleInterop": true
