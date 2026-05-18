@@ -27,20 +27,28 @@ Concretely:
 desktop/
 ├── tsconfig.json           # solution: `files: []`, `references: [renderer, main, preload, test, e2e]`. No compilerOptions.
 ├── tsconfig.base.json      # shared compilerOptions (target, strict, paths, etc.). No `include`/`files`. No `jsx`/`module`.
-├── tsconfig.renderer.json  # extends ./tsconfig.base.json; module ESNext, jsx react-jsx, types [vite/client]
-├── tsconfig.main.json      # extends ./tsconfig.base.json; module CommonJS, types [node]
-├── tsconfig.preload.json   # extends ./tsconfig.base.json; module CommonJS, types [node]
-├── tsconfig.test.json      # extends ./tsconfig.base.json; module CommonJS, jsx react-jsx, types [jest, node]
-└── tsconfig.e2e.json       # extends ./tsconfig.base.json; module ESNext, types [node, @playwright/test]
+├── tsconfig.renderer.json  # extends ./tsconfig.base.json; module ESNext + bundler, jsx react-jsx, types [vite/client]
+├── tsconfig.main.json      # extends ./tsconfig.base.json; module ESNext + bundler, types [node]
+├── tsconfig.preload.json   # extends ./tsconfig.base.json; module ESNext + bundler, types [node]
+├── tsconfig.test.json      # extends ./tsconfig.base.json; module ESNext + bundler, jsx react-jsx, types [jest, node]
+└── tsconfig.e2e.json       # extends ./tsconfig.base.json; module ESNext + bundler, types [node, @playwright/test]
 ```
 
-The Playwright spec config is split out from the Jest config because Playwright specs use `import.meta.url` (requires `module` ≥ ES2020) and load `@playwright/test` types, while Jest unit tests need `module: CommonJS` and `jest` types. A single `tsconfig.test.json` cannot satisfy both — the previous setup silently excluded the Playwright specs to dodge the conflict, which removed them from typechecking entirely.
+All five sub-configs pair `module: ESNext` with `moduleResolution: bundler`. They differ only on `types`, `include`, and (for renderer + test) `jsx`. The `module`/`moduleResolution` setting under `noEmit` drives only TypeScript's source validation — never the runtime emit, which is owned by the relevant downstream tool: `esbuild` (with `format: "cjs"`) for main + preload, `vite` for renderer, `ts-jest` (with `useESM: false`) for tests, and Playwright's own loader for e2e. So validating every config as ESM matches the import/export syntax the source actually uses without changing what those tools emit. The deprecated `module: CommonJS + moduleResolution: node10` pair is gone from the repo.
+
+The Playwright spec config is split out from the Jest config because the two need different ambient `types` (`@playwright/test` vs `jest`) and load disjoint test-runner globals. A single `tsconfig.test.json` cannot carry both without one runner's types polluting the other's spec authoring. Historically there was a second reason — Playwright specs use `import.meta.url`, and the Jest config used `module: CommonJS` which forbids it — but that second reason is moot now that both configs use ESM-style modules.
 
 `baseUrl` is dropped from `tsconfig.base.json`. The `paths` entries become directory-relative (`./renderer/*`, `./shared/*`), which is how modern TypeScript resolves them when no `baseUrl` is set. This removes the TS 7.0 deprecation warning the IDE was showing on every config.
 
 The `typecheck` script in `desktop/package.json` chains all five `--noEmit` invocations (renderer, main, preload, test, e2e). Pre-commit's typecheck now covers test and Playwright code. **Any new sub-config — by anyone, in any future plan — must be added both to `tsconfig.json`'s `references` array (IDE) and to the `typecheck` script (CLI).** Keeping these in sync is the durable obligation this ADR creates.
 
-ADR-0008's "TypeScript configuration" section is **partially superseded** by this ADR: the per-target shapes it described remain correct, but the role of the root `tsconfig.json` (was: extended by sub-configs) and the existence of a separate `tsconfig.base.json` are the new structure. The rest of ADR-0008 — build pipeline, IPC discipline, security defaults, packaging — is unaffected.
+ADR-0008's "TypeScript configuration" section is **partially superseded** by this ADR. Three things change:
+
+1. The root `tsconfig.json`'s role flips — it was extended by sub-configs; it is now a solution config that no sub-config touches.
+2. Shared options live in a new `tsconfig.base.json` instead of in the root.
+3. `module`/`moduleResolution` is harmonized across all sub-configs to `ESNext + bundler`. ADR-0008 specified `module: CommonJS` for main and preload because that matched the eventual runtime; we found that under `noEmit` the tsconfig `module` setting drives only TypeScript's source validation, never the actual emit — esbuild's `format: "cjs"` for main/preload is what dictates runtime shape, and it is set in `desktop/scripts/build-*.mjs` independently. Validating the source as ESM matches the import/export syntax actually written.
+
+The rest of ADR-0008 — build pipeline, IPC discipline, security defaults, packaging — is unaffected.
 
 ## Consequences
 
@@ -51,6 +59,7 @@ ADR-0008's "TypeScript configuration" section is **partially superseded** by thi
 - **Each sub-config is independent.** Adding a future config (e.g. a Storybook one, a CLI tool) is a local change: write the config, add one line to `references`, add one line to the `typecheck` script. No cross-config edits.
 - **The base config is honest about its role.** `tsconfig.base.json` is options-only, never used for compilation, never opened by the IDE. Its contents cannot accidentally leak into the IDE-fallback role because there is no fallback anymore.
 - **`baseUrl` removal future-proofs us.** TypeScript 7.0's removal of `baseUrl` is a non-event for this repo.
+- **No deprecated module/resolution settings.** The TS 6.0-deprecated `moduleResolution: "node"` / `"node10"` pair (slated for removal in 7.0) is gone from every config. `module: ESNext + moduleResolution: bundler` is the same pair Vite, esbuild, and modern Node toolchains all expect — TS's view of the source aligns with what the bundlers do.
 
 ### Negative
 
@@ -61,7 +70,8 @@ ADR-0008's "TypeScript configuration" section is **partially superseded** by thi
 ### Neutral
 
 - The path aliases (`@/*`, `@shared/*`) work identically. Vite's `resolve.alias` config in `vite.config.ts` is unchanged — it has always been independent of tsconfig.
-- The four-config split in ADR-0008 is preserved in shape; only the root's role and the existence of a separate base file change.
+- ADR-0008's four-config split (renderer + main + preload + test) becomes a five-config split with the Playwright-only `tsconfig.e2e.json` added. The renderer/main/preload identity is preserved; only the role of the root and the test/e2e separation change.
+- With `module`/`moduleResolution` identical across all sub-configs, those two settings could in principle move into `tsconfig.base.json`. We deliberately keep them per-config: each sub-config remains self-describing for a reader who opens it alone, and a future divergence (one process needs `nodenext`, say) becomes a local edit rather than a base-config refactor.
 
 ## Alternatives considered
 
