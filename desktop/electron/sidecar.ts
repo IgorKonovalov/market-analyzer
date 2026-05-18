@@ -115,7 +115,11 @@ export class SidecarSupervisor {
       const newSecret = randomBytes(32).toString('hex')
       await this.spawnSidecar(this.info.port, newSecret)
       this.info = { ...this.info, secretToken: newSecret, pid: this.process?.pid ?? null }
-      this.emit({ kind: 'restarted', pid: this.process?.pid ?? null })
+      this.emit({
+        kind: 'restarted',
+        pid: this.process?.pid ?? null,
+        secretToken: newSecret,
+      })
     } catch (err) {
       this.emit({
         kind: 'fatal',

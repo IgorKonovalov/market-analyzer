@@ -6,6 +6,10 @@
  * Do not set `ELECTRON_RENDERER_URL` here — its absence is the signal that
  * selects the `loadFile` branch in `electron/main.ts` (plan 0001 phase 4.1,
  * ADR-0008 Notes).
+ *
+ * `MARKET_ANALYSER_E2E=1` opts the main process into exposing the sidecar
+ * supervisor on globalThis so specs can read the python child PID via
+ * `app.evaluate(...)`. Gated by env so production builds never see the leak.
  */
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
@@ -25,4 +29,5 @@ export default async function globalSetup() {
       `playwright globalSetup: pnpm build failed (exit ${result.status ?? "?"})`,
     );
   }
+  process.env.MARKET_ANALYSER_E2E = "1";
 }

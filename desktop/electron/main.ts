@@ -17,12 +17,21 @@ import { SidecarSupervisor } from './sidecar'
 
 const isDev = !app.isPackaged
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
+const isE2E = process.env.MARKET_ANALYSER_E2E === '1'
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('io.marketanalyser.desktop')
 }
 
 const supervisor = new SidecarSupervisor()
+
+if (isE2E) {
+  // E2E helper: exposes the supervisor on globalThis so Playwright's
+  // `app.evaluate(...)` can read the sidecar PID and target the python child
+  // directly (rather than the Electron main, whose PID is meaningless to the
+  // restart-once policy). Gated by env to keep production builds clean.
+  ;(globalThis as { __sidecarSupervisor?: SidecarSupervisor }).__sidecarSupervisor = supervisor
+}
 
 app.whenReady().then(async () => {
   installCsp(isDev)

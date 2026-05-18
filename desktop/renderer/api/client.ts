@@ -3,6 +3,12 @@
  * bridge on first call and injects `Authorization: Bearer <secret>` plus the
  * sidecar base URL. The secret is held in a module-level closure — never
  * passed back across IPC, never written to disk, never logged.
+ *
+ * On `sidecar:status` events with `kind === 'restarted'`, the cached port is
+ * updated in place so subsequent calls use the freshly-rotated bearer secret
+ * (the supervisor rotates per restart per ADR-0002). The subscription is set up
+ * at module load before any `sidecarFetch` call so a fast restart cannot lose
+ * the event.
  */
 import type { CandlestickData, UTCTimestamp } from 'lightweight-charts'
 
@@ -10,6 +16,14 @@ import type { SidecarPort } from '../../shared/schemas/sidecar'
 import type { Bar } from '../types/sidecar/bar'
 
 let cached: SidecarPort | null = null
+
+if (typeof window !== 'undefined' && window.api?.sidecar?.onStatus) {
+  window.api.sidecar.onStatus((status) => {
+    if (status.kind === 'restarted' && status.secretToken && cached) {
+      cached = { ...cached, secretToken: status.secretToken }
+    }
+  })
+}
 
 async function getSidecarConfig(): Promise<SidecarPort> {
   if (cached) return cached
