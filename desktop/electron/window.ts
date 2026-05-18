@@ -8,24 +8,35 @@
 import { BrowserWindow, session } from 'electron'
 import { join } from 'node:path'
 
-const PROD_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "connect-src 'self' http://127.0.0.1:*",
-].join('; ')
+function prodCsp(sidecarPort: number): string {
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    `connect-src 'self' http://127.0.0.1:${sidecarPort}`,
+  ].join('; ')
+}
 
-const DEV_CSP = [
-  "default-src 'self' http://localhost:5173",
-  "script-src 'self' 'unsafe-inline' http://localhost:5173",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "connect-src 'self' http://127.0.0.1:* http://localhost:5173 ws://localhost:5173",
-].join('; ')
+function devCsp(sidecarPort: number): string {
+  return [
+    "default-src 'self' http://localhost:5173",
+    "script-src 'self' 'unsafe-inline' http://localhost:5173",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    `connect-src 'self' http://127.0.0.1:${sidecarPort} http://localhost:5173 ws://localhost:5173`,
+  ].join('; ')
+}
 
-export function installCsp(isDev: boolean): void {
-  const csp = isDev ? DEV_CSP : PROD_CSP
+/**
+ * Install the double-CSP HTTP header. `sidecarPort` narrows `connect-src` to
+ * the actual sidecar port — wildcards like `http://127.0.0.1:*` would expose
+ * any other localhost listener (devtools, other apps) to renderer-initiated
+ * requests. Must be called AFTER `SidecarSupervisor.start()` resolves so the
+ * port is known.
+ */
+export function installCsp(isDev: boolean, sidecarPort: number): void {
+  const csp = isDev ? devCsp(sidecarPort) : prodCsp(sidecarPort)
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...details.responseHeaders }
     for (const key of Object.keys(headers)) {

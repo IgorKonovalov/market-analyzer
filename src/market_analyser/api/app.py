@@ -11,6 +11,7 @@ Alembic migrations on startup and builds a cache-aware provider when an
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
@@ -62,7 +63,7 @@ def create_app(
             return await call_next(request)
         header = request.headers.get("authorization", "")
         scheme, _, token = header.partition(" ")
-        if scheme.lower() != "bearer" or token != secret:
+        if scheme.lower() != "bearer" or not secrets.compare_digest(token, secret):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return await call_next(request)
 

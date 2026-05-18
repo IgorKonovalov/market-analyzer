@@ -34,9 +34,11 @@ if (isE2E) {
 }
 
 app.whenReady().then(async () => {
-  installCsp(isDev)
   try {
     const info = await supervisor.start()
+    // CSP install MUST follow supervisor.start so connect-src can be pinned to
+    // the actual sidecar port rather than the broader http://127.0.0.1:*.
+    installCsp(isDev, info.port)
     const paths = getRendererPaths()
     registerIpcHandlers({ supervisor, info })
     const window = createWindow({
