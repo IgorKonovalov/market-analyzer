@@ -13,10 +13,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["renderer/*"],
-      "@shared/*": ["shared/*"]
+      "@/*": ["./renderer/*"],
+      "@shared/*": ["./shared/*"]
     }
   }
 }
