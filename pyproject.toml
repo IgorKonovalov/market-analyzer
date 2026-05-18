@@ -41,7 +41,6 @@ extend-exclude = [
     ".claude",
     "desktop",
     "docs",
-    "src/market_analyser/data/vendored",
 ]
 
 [tool.ruff.lint]
@@ -86,12 +85,6 @@ files = ["src", "tests"]
 module = "tests.*"
 disallow_untyped_defs = false
 
-# Vendored code is copied verbatim per ADR-0003 and is not strictly typed.
-# Adapters that wrap it ARE strictly typed.
-[[tool.mypy.overrides]]
-module = "market_analyser.data.vendored.*"
-ignore_errors = true
-
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-ra --strict-markers --strict-config"
@@ -103,10 +96,6 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["src/market_analyser"]
-omit = [
-    # Vendored code is copied verbatim per ADR-0003; tested at the adapter boundary.
-    "src/market_analyser/data/vendored/*",
-]
 
 [tool.coverage.report]
 show_missing = true

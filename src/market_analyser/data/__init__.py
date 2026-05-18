@@ -1,6 +1,6 @@
-"""Data layer: MarketDataProvider Protocol, adapters, and vendored sources.
+"""Data layer: MarketDataProvider Protocol and adapters.
 
 Only `provider.MarketDataProvider`, `default_provider.DefaultMarketDataProvider`,
 and the pydantic models in `types` are part of the downstream contract. Adapters
-and the vendored tree are package-internal per ADR-0007.
+are package-internal per ADR-0007.
 """

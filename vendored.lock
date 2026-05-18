@@ -1,6 +1,0 @@
-# Upstream tradingview-mcp commit SHA at the time of vendoring.
-# Per ADR-0003: vendor-by-copy with this SHA pinned. Bumping is a deliberate plan step.
-# Manifest tracked in docs/architecture/plans/0001-bootstrap.md (Vendoring manifest).
-# Phase 2 carve-out: backtest_service.py contains only _fetch_ohlcv (function-level
-# carve-out) per /dev escalation 2026-05-17. Full vendor deferred to the backtest plan.
-aae08697a0bd0aac486254e5496a122ea94ce79a
