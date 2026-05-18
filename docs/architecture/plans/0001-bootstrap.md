@@ -190,6 +190,27 @@ Conventions referenced below (build pipeline, tsconfigs, IPC discipline, securit
   - Closing the window terminates the sidecar within 3 s.
   - `pnpm --filter desktop package:win` produces an installer in `desktop/release/` (smoke-test the artifact opens, does not need to install).
 
+### Phase 4.1 — e2e renderer load-path gap (followup)
+
+Discovered during phase-4 implementation. `desktop/electron/main.ts:23` derives `isDev = !app.isPackaged`, then `desktop/electron/window.ts:76-80` calls `loadURL("http://localhost:5173")` when `isDev` is true. Playwright's `_electron.launch({ args: [...index.cjs] })` is not packaged, so the renderer reaches for a Vite dev server the test runner never starts, yielding `chrome-error://chromewebdata/`. All four e2e specs (the two phase-4 specs and the two phase-5 specs) are blocked until this is fixed.
+
+The fix replaces the implicit "not packaged ⇒ Vite is up" assumption with an explicit env-var signal, per [ADR-0008](../adrs/0008-electron-shell-conventions.md) Notes (env-var contract). Tests then exercise the production `loadFile(dist/renderer/index.html)` path — closer parity with what packaged users get, and no dev-server-in-CI flake.
+
+- **Owner skill:** `dev`
+- **Why not a new plan:** scope is one branch flip plus a Playwright `globalSetup`; the architectural decision (env-var, not `NODE_ENV`, not `isPackaged`) is settled in ADR-0008.
+- **Files touched:**
+  - `desktop/electron/main.ts` — read `process.env.ELECTRON_RENDERER_URL` and pass it through to `createWindow`. `isDev = !app.isPackaged` stays, but it is used **only** for the CSP dev-mode relaxation, not for the renderer source.
+  - `desktop/electron/window.ts` — `createWindow` accepts an optional `rendererUrl?: string`; branches on its presence (`loadURL(rendererUrl)` if set, `loadFile(rendererFile)` if not). Same-origin check in `will-navigate` widens to "starts with `rendererUrl`" when set.
+  - `desktop/package.json` — `dev` script sets `ELECTRON_RENDERER_URL=http://localhost:5173` via `cross-env` before invoking Electron. Confirms ADR-0008's stated dev-mode loader behaviour.
+  - `desktop/playwright.config.ts` — add `globalSetup` so `pnpm test:e2e` is self-contained.
+  - `desktop/scripts/playwright-global-setup.mjs` (new) — runs `pnpm build` via `child_process.spawnSync` so `dist/{main,preload,renderer}/` exist. The script must **not** set `ELECTRON_RENDERER_URL` — its absence is precisely the signal that selects the `loadFile` branch.
+- **Done when:**
+  - `pnpm --filter desktop test:e2e` is green standalone (globalSetup builds idempotently); all four specs pass.
+  - `pnpm --filter desktop dev` still loads the renderer from `http://localhost:5173` (manual smoke; HMR works).
+  - Packaged build still loads `dist/renderer/index.html` (no regression — `ELECTRON_RENDERER_URL` is unset and `app.isPackaged === true`, so the file branch is taken).
+  - `isDev` no longer governs the renderer source; the only remaining use of `app.isPackaged` for renderer behaviour is the CSP dev-mode `'unsafe-inline'` relaxation.
+  - The phase-4 done-when bullet "the security and supervisor e2e specs are green" is now satisfied (it was pending this fix).
+
 ### Phase 5 — Candlestick chart for one symbol
 
 - **Owner skill:** `ui-builder`
