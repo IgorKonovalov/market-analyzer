@@ -10,10 +10,14 @@ export type SidecarPort = z.infer<typeof SidecarPortSchema>
 /**
  * Status push events from the sidecar supervisor.
  *
- * `secretToken` is required when `kind === 'restarted'` (the renderer needs the
- * new bearer token to keep talking to the restarted sidecar) and forbidden
- * otherwise — the secret never travels on `starting`, `ready`, `crashed`, or
- * `fatal` payloads. Encoded via `superRefine` to keep the inferred type simple.
+ * Field contract (enforced via `superRefine`):
+ *   - `secretToken` is required when `kind === 'restarted'` (the renderer
+ *     needs the new bearer token) and forbidden otherwise — the secret never
+ *     travels on `starting`, `ready`, `crashed`, or `fatal` payloads.
+ *   - `message` is required when `kind ∈ {'crashed', 'fatal'}` because those
+ *     two events are user-facing (they reach the fatal-error window and
+ *     in-app status surfaces); an empty crashed/fatal status would surface a
+ *     blank dialog.
  */
 export const SidecarStatusSchema = z
   .object({
@@ -34,6 +38,13 @@ export const SidecarStatusSchema = z
         code: z.ZodIssueCode.custom,
         message: 'secretToken must be absent when kind is not "restarted"',
         path: ['secretToken'],
+      })
+    }
+    if ((val.kind === 'crashed' || val.kind === 'fatal') && !val.message) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `message is required when kind is "${val.kind}"`,
+        path: ['message'],
       })
     }
   })

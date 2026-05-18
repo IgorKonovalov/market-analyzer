@@ -13,6 +13,7 @@ Per ADR-0007, this adapter is package-internal: downstream code imports the
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -20,6 +21,8 @@ from market_analyser.data.types import Bar
 from market_analyser.data.vendored.tradingview_mcp.core.services.backtest_service import (
     _fetch_ohlcv as _vendored_fetch_ohlcv,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 class _FetchOhlcvFn(Protocol):
@@ -75,6 +78,15 @@ class YahooAdapter:
             )
 
         period = _smallest_period_for(span_days)
+        period_days = next((d for label, d in _PERIOD_DAYS if label == period), span_days)
+        if period_days > span_days:
+            _logger.debug(
+                "yahoo over-fetch: requested span=%dd, picked period=%s (%dd), ratio=%.2fx",
+                span_days,
+                period,
+                period_days,
+                period_days / max(span_days, 1),
+            )
         raw = self._fetch(symbol, period, timeframe)
 
         bars: list[Bar] = []

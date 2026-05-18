@@ -23,6 +23,14 @@ describe('SidecarStatusSchema', () => {
     expect(() => SidecarStatusSchema.parse({ kind: 'fatal', message: 'twice' })).not.toThrow()
   })
 
+  it('rejects crashed without a message', () => {
+    expect(() => SidecarStatusSchema.parse({ kind: 'crashed' })).toThrow(/message is required/)
+  })
+
+  it('rejects fatal without a message', () => {
+    expect(() => SidecarStatusSchema.parse({ kind: 'fatal' })).toThrow(/message is required/)
+  })
+
   it('accepts restarted with a non-empty secretToken', () => {
     expect(() =>
       SidecarStatusSchema.parse({ kind: 'restarted', pid: 9999, secretToken: 'newhex' }),

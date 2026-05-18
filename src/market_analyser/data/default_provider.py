@@ -75,13 +75,18 @@ class DefaultMarketDataProvider:
 
         cached = self._repo.get_bars(symbol, timeframe, start, end)
         gaps = _coverage_gaps(cached, start, end)
-        for gap_start, gap_end in gaps:
-            fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end)
-            if fetched:
-                self._repo.upsert_bars(fetched)
         if not gaps:
             return cached
-        return self._repo.get_bars(symbol, timeframe, start, end)
+        merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
+        for gap_start, gap_end in gaps:
+            fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end)
+            if not fetched:
+                continue
+            self._repo.upsert_bars(fetched)
+            for bar in fetched:
+                if start <= bar.event_ts <= end:
+                    merged[bar.event_ts] = bar
+        return sorted(merged.values(), key=lambda b: b.event_ts)
 
     def get_quote(
         self,

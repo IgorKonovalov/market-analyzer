@@ -92,7 +92,7 @@ export class SidecarSupervisor {
     })
 
     await waitForPortLine(child)
-    await waitForHealthz(port, secretToken)
+    await waitForHealthz(port)
     this.emit({ kind: 'ready', pid: child.pid ?? null })
   }
 
@@ -181,7 +181,7 @@ function waitForPortLine(child: ChildProcess): Promise<void> {
   })
 }
 
-async function waitForHealthz(port: number, _secret: string): Promise<void> {
+async function waitForHealthz(port: number): Promise<void> {
   const url = `http://127.0.0.1:${port}/healthz`
   const deadline = Date.now() + HEALTHZ_TIMEOUT_MS
   while (Date.now() < deadline) {
