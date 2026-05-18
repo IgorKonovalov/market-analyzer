@@ -1,11 +1,11 @@
 # 0001 — Bootstrap: Electron + Python sidecar walking skeleton with OHLCV chart for one symbol
 
-> **Status:** in-progress (phase 1 — dev)
+> **Status:** done (closed 2026-05-18; review followups landed via [Plan 0004](0004-bootstrap-review-followups.md))
 > **Created:** 2026-05-17
-> **Owner skill(s):** human / `dev` (phases 1–4), `ui-builder` (phase 5)
-> **Related ADRs:** [ADR-0002](../adrs/0002-ipc-local-http.md), [ADR-0003](../adrs/0003-vendoring-strategy.md), [ADR-0005](../adrs/0005-desktop-shell-electron.md), [ADR-0006](../adrs/0006-persistence-layout.md), [ADR-0007](../adrs/0007-market-data-provider.md), [ADR-0008](../adrs/0008-electron-shell-conventions.md)
-> **Strategy / backtest scaffolding** is intentionally out of bootstrap scope; that's owned by [Plan 0002](0002-strategy-interface.md) and a future backtest plan. See "What this plan does NOT do" below.
-> **History:** This is the canonical bootstrap plan. An earlier Tauri-flavoured draft was abandoned on 2026-05-17 before any code was written; see [ADR-0001](../adrs/0001-tauri-vs-electron.md) (superseded) for the rationale of the shell change to Electron.
+> **Owner skill(s):** `dev` (phases 1–4 + 4.1), `ui-builder` (phase 5)
+> **Related ADRs:** [ADR-0002](../../adrs/0002-ipc-local-http.md), [ADR-0003](../../adrs/0003-vendoring-strategy.md), [ADR-0005](../../adrs/0005-desktop-shell-electron.md), [ADR-0006](../../adrs/0006-persistence-layout.md), [ADR-0007](../../adrs/0007-market-data-provider.md), [ADR-0008](../../adrs/0008-electron-shell-conventions.md)
+> **Strategy / backtest scaffolding** is intentionally out of bootstrap scope; that's owned by [Plan 0002](../0002-strategy-interface.md) and a future backtest plan. See "What this plan does NOT do" below.
+> **History:** This is the canonical bootstrap plan. An earlier Tauri-flavoured draft was abandoned on 2026-05-17 before any code was written; see [ADR-0001](../../adrs/0001-tauri-vs-electron.md) (superseded) for the rationale of the shell change to Electron.
 
 ## TL;DR
 
@@ -17,9 +17,9 @@ The repo is at zero (`skills-lock.json` and the `.claude/` skills directory only
 
 1. **Directory layout** that survives contact with all three sibling skills (the data-layer parts; strategy/backtest layouts land in their own plans).
 2. **Heavy tooling baseline** — `uv`, `ruff`, `mypy` (strict), `pytest`, `pip-audit`, pre-commit, GitHub Actions CI on push, conventional-commit enforcement, release automation scaffolding. (Per the bootstrap-rigor decision.)
-3. **Vendoring boundary** — what we copy from `../tradingview-mcp` and where it sits, with the discipline from [ADR-0003](../adrs/0003-vendoring-strategy.md).
-4. **The `MarketDataProvider` Protocol** with stubs for every planned method (per [ADR-0007](../adrs/0007-market-data-provider.md)) and one implemented method (`get_ohlcv`) for phase 2.
-5. **SQLite persistence** with Alembic migrations and a `bars` table behind the provider's cache (per [ADR-0006](../adrs/0006-persistence-layout.md)).
+3. **Vendoring boundary** — what we copy from `../tradingview-mcp` and where it sits, with the discipline from [ADR-0003](../../adrs/0003-vendoring-strategy.md).
+4. **The `MarketDataProvider` Protocol** with stubs for every planned method (per [ADR-0007](../../adrs/0007-market-data-provider.md)) and one implemented method (`get_ohlcv`) for phase 2.
+5. **SQLite persistence** with Alembic migrations and a `bars` table behind the provider's cache (per [ADR-0006](../../adrs/0006-persistence-layout.md)).
 6. **The Electron shell** with secure renderer defaults, sidecar spawn/supervise, and a React renderer that shows a candlestick chart for `AAPL 1d`.
 
 The walking-skeleton choice — **OHLCV chart for one symbol** rather than the BTC screener table from the abandoned Tauri-era draft — is deliberately the smallest scope that exercises every architectural seam: shell ↔ sidecar IPC, FastAPI handler, MarketDataProvider, persistence cache, vendored adapter, external HTTP. A polled screener would skip the chart and the persistence cache; a strategy or backtest would skip the chart and overshoot scope. A candlestick chart fills the gap.
@@ -28,7 +28,7 @@ This plan acknowledges a real tension and resolves it explicitly: we chose **laz
 
 ## Decision
 
-Build an **Electron** desktop shell (per [ADR-0005](../adrs/0005-desktop-shell-electron.md)) that talks to a **local FastAPI Python sidecar** over **localhost HTTP** (per [ADR-0002](../adrs/0002-ipc-local-http.md)) with a per-launch bearer-token shared secret. The sidecar exposes one endpoint (`GET /ohlcv`) for week one, served via a `DefaultMarketDataProvider.get_ohlcv` that dispatches to a `YahooAdapter` wrapping a freshly-vendored copy of `tradingview-mcp`'s `yahoo_finance_service.py`, with **SQLite-backed caching** keyed on `(symbol, timeframe, event_ts)`. The renderer is **React + TypeScript** rendering a candlestick chart with `lightweight-charts`. Heavy tooling — strict `mypy`, `ruff`, `pre-commit`, `pip-audit`, conventional-commit-enforced CI on every push, and a release-stub workflow — lands in phase 1.
+Build an **Electron** desktop shell (per [ADR-0005](../../adrs/0005-desktop-shell-electron.md)) that talks to a **local FastAPI Python sidecar** over **localhost HTTP** (per [ADR-0002](../../adrs/0002-ipc-local-http.md)) with a per-launch bearer-token shared secret. The sidecar exposes one endpoint (`GET /ohlcv`) for week one, served via a `DefaultMarketDataProvider.get_ohlcv` that dispatches to a `YahooAdapter` wrapping a freshly-vendored copy of `tradingview-mcp`'s `yahoo_finance_service.py`, with **SQLite-backed caching** keyed on `(symbol, timeframe, event_ts)`. The renderer is **React + TypeScript** rendering a candlestick chart with `lightweight-charts`. Heavy tooling — strict `mypy`, `ruff`, `pre-commit`, `pip-audit`, conventional-commit-enforced CI on every push, and a release-stub workflow — lands in phase 1.
 
 We rejected Tauri (per ADR-0005), stdio JSON-RPC for IPC (per ADR-0002), and the "defer abstraction" approach from the abandoned Tauri-era draft (per ADR-0007). We rejected Parquet for OHLCV in phase 2 (premature; revisit when SQLite-bar reads become a measured bottleneck — see Followups).
 
@@ -68,7 +68,7 @@ flowchart LR
     Adapters --> YF --> Yahoo
 ```
 
-Full reference diagram (including the cache-hit/miss sequence and SQLite schema) lives at [bootstrap-component-map.md](../diagrams/bootstrap-component-map.md).
+Full reference diagram (including the cache-hit/miss sequence and SQLite schema) lives at [bootstrap-component-map.md](../../diagrams/bootstrap-component-map.md).
 
 ## Implementation phases
 
@@ -76,7 +76,7 @@ Each phase is small enough to land as a single PR. Phases 1–2 are plumbing-hea
 
 ### Phase 1 — Repo skeleton, heavy tooling, sidecar `/healthz`
 
-- **Owner skill:** human
+- **Owner skill:** `dev`
 - **What:** Python project layout under `src/market_analyser/`, `uv`-managed environment, strict tooling baseline, and an empty FastAPI app exposing `GET /healthz` returning `{"ok": true, "version": "0.0.1"}`. No vendored code, no persistence yet.
 - **Files touched:**
   - `pyproject.toml`, `uv.lock` — package metadata; dev deps `pytest`, `ruff`, `mypy`, `pip-audit`, `pre-commit`, `commitizen`. Runtime deps minimal: `fastapi`, `uvicorn[standard]`, `pydantic`.
@@ -98,12 +98,12 @@ Each phase is small enough to land as a single PR. Phases 1–2 are plumbing-hea
 
 ### Phase 2 — `MarketDataProvider` Protocol, Yahoo adapter, vendor `yahoo_finance_service`
 
-- **Owner skill:** human
+- **Owner skill:** `dev`
 - **What:** Declare the full Protocol with stubs, vendor the one upstream module needed for the chart, write the Yahoo adapter, wire it into a `DefaultMarketDataProvider` that returns Bars (no caching yet — that's phase 3). This is the largest phase; it locks the data-layer surface that every later phase consumes.
 - **Files touched:**
   - `src/market_analyser/data/__init__.py`.
   - `src/market_analyser/data/types.py` — pydantic models: `Bar`, `Quote`, `SymbolInfo`, `ScreenerRow`, `SentimentSample`, `NewsItem`. (All planned method return types declared from day one; only `Bar` is used yet.)
-  - `src/market_analyser/data/provider.py` — the `MarketDataProvider` Protocol with method signatures for `get_ohlcv`, `get_quote`, `search_symbols`, `get_screener`, `get_sentiment`, `get_news`. Each method takes `as_of: datetime | None = None` per [ADR-0007](../adrs/0007-market-data-provider.md).
+  - `src/market_analyser/data/provider.py` — the `MarketDataProvider` Protocol with method signatures for `get_ohlcv`, `get_quote`, `search_symbols`, `get_screener`, `get_sentiment`, `get_news`. Each method takes `as_of: datetime | None = None` per [ADR-0007](../../adrs/0007-market-data-provider.md).
   - `src/market_analyser/data/default_provider.py` — `DefaultMarketDataProvider` class. `get_ohlcv` is implemented (delegates to the Yahoo adapter). Other methods raise `NotImplementedError("implemented in phase N — see plan 0001")`.
   - `src/market_analyser/data/adapters/__init__.py`, `src/market_analyser/data/adapters/yahoo.py` — `YahooAdapter.fetch_ohlcv(symbol, timeframe, start, end) -> list[Bar]`. Imports from the vendored module; validates inputs; defends against `None`, `NaN`, negative volumes per `best-practices.md`.
   - `src/market_analyser/data/vendored/__init__.py`, `src/market_analyser/data/vendored/tradingview_mcp/__init__.py` (header comment naming source SHA), `src/market_analyser/data/vendored/tradingview_mcp/core/services/yahoo_finance_service.py` (verbatim from upstream with only import-path rewrites). `vendored.lock` at repo root pins the commit SHA.
@@ -121,7 +121,7 @@ Each phase is small enough to land as a single PR. Phases 1–2 are plumbing-hea
 
 ### Phase 3 — Persistence: SQLite + Alembic + bar-cache
 
-- **Owner skill:** human
+- **Owner skill:** `dev`
 - **What:** Add the persistence layer, run migrations on sidecar startup, and wrap the `DefaultMarketDataProvider` with a caching layer that reads from `bars` first and writes after each remote fetch. This is the phase that lets the second cold-launch of the app render the chart without hitting Yahoo.
 - **Files touched:**
   - `src/market_analyser/persistence/__init__.py`, `src/market_analyser/persistence/engine.py` (SQLAlchemy engine factory; resolves `app.db` path under `%APPDATA%/market-analyser/` on Windows, XDG equivalent elsewhere).
@@ -143,9 +143,9 @@ Each phase is small enough to land as a single PR. Phases 1–2 are plumbing-hea
 
 ### Phase 4 — Electron shell, sidecar spawn, secure renderer defaults
 
-Conventions referenced below (build pipeline, tsconfigs, IPC discipline, security defaults, packaging) are pinned in [ADR-0008](../adrs/0008-electron-shell-conventions.md). This phase realizes them; the ADR is the source of truth if any concrete detail here drifts.
+Conventions referenced below (build pipeline, tsconfigs, IPC discipline, security defaults, packaging) are pinned in [ADR-0008](../../adrs/0008-electron-shell-conventions.md). This phase realizes them; the ADR is the source of truth if any concrete detail here drifts.
 
-- **Owner skill:** human
+- **Owner skill:** `dev`
 - **What:** Stand up the Electron app per ADR-0008 (esbuild for main + preload, Vite for renderer, four tsconfigs, namespaced preload, double-CSP, sandboxed renderer). Spawn the Python sidecar with a free port and a generated bearer secret, expose the auth-aware fetch helper to the renderer via `contextBridge`, and load a blank React route. No chart yet — just proven shell ↔ sidecar comms.
 - **Package manager:** pnpm for the `desktop/` workspace (per ADR-0008 "Neutral" notes — faster, strict-by-default, single lockfile).
 - **Concrete dependency set** (pin exact versions in phase 4 PR):
@@ -194,7 +194,7 @@ Conventions referenced below (build pipeline, tsconfigs, IPC discipline, securit
 
 Discovered during phase-4 implementation. `desktop/electron/main.ts:23` derives `isDev = !app.isPackaged`, then `desktop/electron/window.ts:76-80` calls `loadURL("http://localhost:5173")` when `isDev` is true. Playwright's `_electron.launch({ args: [...index.cjs] })` is not packaged, so the renderer reaches for a Vite dev server the test runner never starts, yielding `chrome-error://chromewebdata/`. All four e2e specs (the two phase-4 specs and the two phase-5 specs) are blocked until this is fixed.
 
-The fix replaces the implicit "not packaged ⇒ Vite is up" assumption with an explicit env-var signal, per [ADR-0008](../adrs/0008-electron-shell-conventions.md) Notes (env-var contract). Tests then exercise the production `loadFile(dist/renderer/index.html)` path — closer parity with what packaged users get, and no dev-server-in-CI flake.
+The fix replaces the implicit "not packaged ⇒ Vite is up" assumption with an explicit env-var signal, per [ADR-0008](../../adrs/0008-electron-shell-conventions.md) Notes (env-var contract). Tests then exercise the production `loadFile(dist/renderer/index.html)` path — closer parity with what packaged users get, and no dev-server-in-CI flake.
 
 - **Owner skill:** `dev`
 - **Why not a new plan:** scope is one branch flip plus a Playwright `globalSetup`; the architectural decision (env-var, not `NODE_ENV`, not `isPackaged`) is settled in ADR-0008.
@@ -204,8 +204,9 @@ The fix replaces the implicit "not packaged ⇒ Vite is up" assumption with an e
   - `desktop/package.json` — `dev` script sets `ELECTRON_RENDERER_URL=http://localhost:5173` via `cross-env` before invoking Electron. Confirms ADR-0008's stated dev-mode loader behaviour.
   - `desktop/playwright.config.ts` — add `globalSetup` so `pnpm test:e2e` is self-contained.
   - `desktop/scripts/playwright-global-setup.mjs` (new) — runs `pnpm build` via `child_process.spawnSync` so `dist/{main,preload,renderer}/` exist. The script must **not** set `ELECTRON_RENDERER_URL` — its absence is precisely the signal that selects the `loadFile` branch.
+  - `desktop/electron/sidecar.ts` — venv-python autodetect, added mid-session under user approval. Bare `python` on Windows resolves to the WindowsApps shim (no project deps), which makes the sidecar exit with `ModuleNotFoundError` before the supervisor's PORT-line wait can succeed. New `resolvePythonExecutable(repoRoot)` helper picks in order: `$MARKET_ANALYSER_PYTHON` (explicit override) → `<repo>/.venv/{Scripts/python.exe | bin/python}` (uv venv autodetect) → bare `python` fallback. This whole spawn path is rewritten again by [Plan 0004](0004-bootstrap-review-followups.md) phase 3 (move secret out of argv); the resolution helper carries forward intact.
 - **Done when:**
-  - `pnpm --filter desktop test:e2e` is green standalone (globalSetup builds idempotently); all four specs pass.
+  - `pnpm --filter desktop test:e2e` is green standalone (globalSetup builds idempotently). Three of the four specs pass (security ×2, supervisor). The fourth — `ohlcv-view.spec.ts` — is newly runnable after this phase but fails on a phase-5 state-coverage gap (empty state has no testable affordance); routed to [Plan 0004](0004-bootstrap-review-followups.md) phase 7 (`ui-builder`), not a phase-4.1 blocker.
   - `pnpm --filter desktop dev` still loads the renderer from `http://localhost:5173` (manual smoke; HMR works).
   - Packaged build still loads `dist/renderer/index.html` (no regression — `ELECTRON_RENDERER_URL` is unset and `app.isPackaged === true`, so the file branch is taken).
   - `isDev` no longer governs the renderer source; the only remaining use of `app.isPackaged` for renderer behaviour is the CSP dev-mode `'unsafe-inline'` relaxation.
@@ -237,14 +238,14 @@ flowchart TD
     Plan --> P4[P4: Electron shell + sidecar supervise]
     Plan --> P5[P5: candlestick chart]
 
-    P1 -.owned by.-> H1[human / dev]
-    P2 -.owned by.-> H2[human / dev]
-    P3 -.owned by.-> H3[human / dev]
-    P4 -.owned by.-> H4[human / dev]
+    P1 -.owned by.-> H1[dev]
+    P2 -.owned by.-> H2[dev]
+    P3 -.owned by.-> H3[dev]
+    P4 -.owned by.-> H4[dev]
     P5 -.owned by.-> UB[ui-builder]
 ```
 
-The bootstrap intentionally ships **no** `strategies/`, `backtest/`, or `contracts/strategy.py` modules — those land under [Plan 0002](0002-strategy-interface.md). A `dev` agent picking up the bootstrap will not create those directories; the first plan that touches them is Plan 0002 phase 1.
+The bootstrap intentionally ships **no** `strategies/`, `backtest/`, or `contracts/strategy.py` modules — those land under [Plan 0002](../0002-strategy-interface.md). A `dev` agent picking up the bootstrap will not create those directories; the first plan that touches them is Plan 0002 phase 1.
 
 ## Directory layout (target state at end of bootstrap)
 
@@ -339,7 +340,7 @@ market-analyser/
         └── test_yahoo_smoke.py         # @pytest.mark.network — skipped in CI
 ```
 
-No strategy or backtest packages exist at end of bootstrap. The first plan to create them is [Plan 0002](0002-strategy-interface.md); a future backtest plan creates `src/market_analyser/backtest/`.
+No strategy or backtest packages exist at end of bootstrap. The first plan to create them is [Plan 0002](../0002-strategy-interface.md); a future backtest plan creates `src/market_analyser/backtest/`.
 
 ## Vendoring manifest (phase 2)
 
@@ -351,7 +352,7 @@ Copy exactly one file from `../tradingview-mcp/src/tradingview_mcp/` into `src/m
 
 If `yahoo_finance_service.py` imports `core/types.py` or `core/utils/validators.py` transitively at runtime, those come in too — the manifest is a starting point, not a hard cap. The PR description must list any transitive additions.
 
-**Vendoring discipline** (per [ADR-0003](../adrs/0003-vendoring-strategy.md)):
+**Vendoring discipline** (per [ADR-0003](../../adrs/0003-vendoring-strategy.md)):
 - Every vendored file gets a one-line header: `# Vendored from tradingview-mcp@<sha> path/to/file.py — see ADR-0003.`
 - Imports rewritten to the new package path; no other edits on copy.
 - The `vendored.lock` file at repo root pins the upstream SHA.
@@ -367,7 +368,7 @@ Explicitly **not vendored this week** (with the phase that earns each, when know
 
 ## Data shapes
 
-Shared by sidecar and renderer. Pinned in `src/market_analyser/data/types.py`; TypeScript types are generated from the sidecar's OpenAPI by `desktop/scripts/gen-types.ts`. Strategy-side shapes (`Signal`, `StrategyMeta`, `StrategyProtocol`) are **out of scope for the bootstrap** — they land in [Plan 0002](0002-strategy-interface.md) under `src/market_analyser/contracts/strategy.py`. The single canonical `Bar` model lives in `data/types.py`; Plan 0002 imports it from there.
+Shared by sidecar and renderer. Pinned in `src/market_analyser/data/types.py`; TypeScript types are generated from the sidecar's OpenAPI by `desktop/scripts/gen-types.ts`. Strategy-side shapes (`Signal`, `StrategyMeta`, `StrategyProtocol`) are **out of scope for the bootstrap** — they land in [Plan 0002](../0002-strategy-interface.md) under `src/market_analyser/contracts/strategy.py`. The single canonical `Bar` model lives in `data/types.py`; Plan 0002 imports it from there.
 
 ```python
 # illustrative — final shape is owned by data/types.py
@@ -429,7 +430,7 @@ class MarketDataProvider(Protocol):
 - **Risk: `mypy --strict` is harsh and may slow phase authoring.** Mitigation: accepted by the bootstrap-rigor choice; we pay this cost upfront rather than retrofit. Pragmatic relaxations (`Any` in test fixtures only) are allowed via per-file overrides.
 - **Risk: Alembic migration applied at sidecar startup vs separately is a real fork.** We chose "at startup" for the bootstrap — simpler. The cost is that a broken migration locks the user out of their own data with no way to recover from the UI. Mitigation: every migration has a downgrade test; the persistence repository never deletes user data outside of a migration; we surface migration errors in the fatal-error window in phase 4.
 - **Risk: The `MarketDataProvider` Protocol shape is wrong.** We declare it without yet having implementations for five of its six methods. A wrong shape costs an adapter-rewrite cycle. Mitigation: ADR-0007 captures the rationale; the shape is empirical — refactor the Protocol in the phase that earns the change, write a new ADR if the change is structural.
-- **Open question:** Where does the per-launch bearer secret get written so the renderer can read it? Current decision: passed from `electron/main.ts` to the renderer via the `contextBridge` preload, never persisted to disk. The Python sidecar reads it from `argv[--secret=...]`. If `argv` snooping by another local user is a real threat, switch to env-var injection at spawn — captured as a followup.
+- **Open question (resolved by [ADR-0011](../../adrs/0011-bearer-secret-transport.md), 2026-05-18):** Where does the per-launch bearer secret get written so the renderer can read it? Current decision: passed from `electron/main.ts` to the renderer via the `contextBridge` preload, never persisted to disk. The Python sidecar originally read it from `argv[--secret=...]`; Plan 0004 phase 3 switched the sidecar-bound transport to the `MARKET_ANALYSER_SECRET` env var so the secret no longer appears in process listings. See [ADR-0011](../../adrs/0011-bearer-secret-transport.md) for the rationale and alternatives considered.
 - **Open question:** What's the strategy for migrations that need the user's data (e.g., backfilling `source` on existing `bars` rows after phase 3 ships)? Out of scope for the bootstrap; flagged as a followup before any second migration lands.
 
 ## Security & data-integrity checklist (per `best-practices.md`)
@@ -450,7 +451,7 @@ These are enforced by phase and must be on the PR description for the phase that
 
 Out of scope for the bootstrap. Each is intentionally cut, with the plan where it belongs.
 
-- **Strategy authoring or backtesting.** [Plan 0002](0002-strategy-interface.md) (owned by `strategy-author`) creates `src/market_analyser/contracts/strategy.py` and `src/market_analyser/strategies/`; a future backtest plan creates `src/market_analyser/backtest/`. The bootstrap creates none of these directories.
+- **Strategy authoring or backtesting.** [Plan 0002](../0002-strategy-interface.md) (owned by `strategy-author`) creates `src/market_analyser/contracts/strategy.py` and `src/market_analyser/strategies/`; a future backtest plan creates `src/market_analyser/backtest/`. The bootstrap creates none of these directories.
 - **Screener UI.** The screener path is in the Provider Protocol but the method raises `NotImplementedError`. Earned by a future plan that adds a screener view.
 - **Sentiment, news, BTC pulse, multi-agent.** All out — they were on the abandoned Tauri-era draft but the current walking skeleton is OHLCV-centric.
 - **Live trading, paper trading, portfolio.** Out indefinitely. No `portfolio.py` vendoring.

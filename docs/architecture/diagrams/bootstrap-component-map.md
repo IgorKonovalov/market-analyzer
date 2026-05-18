@@ -37,7 +37,7 @@ flowchart LR
         TV[TradingView]
     end
 
-    Main -. "spawns + supervises<br/>(passes --port, --secret)" .-> API
+    Main -. "spawns + supervises<br/>(--port argv;<br/>MARKET_ANALYSER_SECRET env, ADR-0011)" .-> API
     Renderer -->|"HTTP 127.0.0.1<br/>Bearer per-launch secret"| API
     Adapters --> Vendored
     YF --> Yahoo
@@ -68,7 +68,7 @@ sequenceDiagram
     participant YF as yahoo_finance_service (vendored)
     participant Yahoo as Yahoo Finance
 
-    M->>S: spawn(--port, --secret)
+    M->>S: spawn(--port; MARKET_ANALYSER_SECRET env)
     S->>Repo: migrate to head (Alembic)
     S-->>M: GET /healthz 200
     U->>R: open "AAPL 1d" view
