@@ -2,7 +2,7 @@
 
 > **Status:** draft
 > **Created:** 2026-05-17
-> **Owner skill(s):** dev
+> **Owner skill(s):** `dev`
 > **Related ADRs:** [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (supersedes [ADR-0003](../adrs/0003-vendoring-strategy.md))
 
 ## TL;DR
@@ -56,19 +56,19 @@ flowchart LR
 Each phase is one commit. `dev` runs all phases in one session.
 
 ### Phase 1 — Rewrite the Yahoo OHLCV fetch in-house
-- **Owner skill:** dev
+- **Owner skill:** `dev`
 - **What:** Add a private `_fetch_yahoo_ohlcv(symbol: str, period: str, interval: str) -> list[dict]` in a new module `src/market_analyser/data/adapters/_yahoo_fetch.py`. Same call as today (`GET https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={period}` via `urllib.request`, 15s timeout). UA header is `market-analyser/{version}` (read `__version__` from `market_analyser`). No proxy fallback. Same row shape returned (`date`, `open`, `high`, `low`, `close`, `volume`) so the parsing in `YahooAdapter` does not change. Update `YahooAdapter` to import the new function. Update the smoke test to point at the new module if it patched the vendored path.
 - **Files touched:** new `src/market_analyser/data/adapters/_yahoo_fetch.py`; edit `src/market_analyser/data/adapters/yahoo.py` (replace the vendored import on lines 20–21 and 47); update relevant tests under `tests/`.
 - **Done when:** the full test suite passes; `grep -rn "from market_analyser.data.vendored" src/ tests/` returns zero hits.
 
 ### Phase 2 — Delete the vendored tree and `vendored.lock`
-- **Owner skill:** dev
+- **Owner skill:** `dev`
 - **What:** Remove `src/market_analyser/data/vendored/` entirely (the whole `tradingview_mcp` subtree plus its package `__init__.py`s). Delete `vendored.lock` at the repo root. Update `src/market_analyser/data/__init__.py` to remove the "and vendored sources" / vendored-tree wording from the docstring.
 - **Files touched:** delete `src/market_analyser/data/vendored/` (recursive), delete `vendored.lock`, edit `src/market_analyser/data/__init__.py`.
 - **Done when:** `grep -rn "tradingview_mcp\|vendored\.lock\|data\.vendored\|data/vendored" src/ tests/` returns zero hits; full test suite passes.
 
 ### Phase 3 — Scrub `docs/architecture/`
-- **Owner skill:** dev
+- **Owner skill:** `dev`
 - **What:**
   - Set the `Status:` line of [ADR-0003](../adrs/0003-vendoring-strategy.md) to `superseded by ADR-0009`. Leave the body untouched (ADRs are append-only).
   - In [ADR-0007](../adrs/0007-market-data-provider.md): **do not rewrite the body** (it remains the canonical Protocol design). Add one front-matter line under the `Related ADRs:` line: `> **Amendment:** see [ADR-0009](0009-rewrite-data-layer-in-house.md) — "vendored sources" now reads as "our own implementation".` Same treatment for any other accepted ADR that references vendoring in passing ([ADR-0004](../adrs/0004-strategy-interface.md), [ADR-0006](../adrs/0006-persistence-layout.md)) — single amendment line, no body edits.
@@ -78,7 +78,7 @@ Each phase is one commit. `dev` runs all phases in one session.
 - **Done when:** `grep -rin "tradingview[-_]mcp\|vendored" docs/` matches only (a) the body of ADR-0003, (b) the body of ADR-0009, (c) the body of this plan, and (d) the one-line amendment notes in ADR-0004 / 0006 / 0007.
 
 ### Phase 4 — Scrub skills and root `CLAUDE.md`
-- **Owner skill:** dev (skill description edits need care — see Risks)
+- **Owner skill:** `dev` (skill description edits need care — see Risks)
 - **What:**
   - Edit `CLAUDE.md` to remove the sibling-repo references from the project description, the ADR list, and the pitfalls section.
   - Edit every `.claude/skills/*/SKILL.md` and `.claude/skills/*/references/*.md` to drop mentions. Specifically including: `architect/SKILL.md`, `architect/references/project-context.md`, `architect/references/best-practices.md`, `architect/references/templates/plan.md` (has a tradingview-mcp risk example), `architect/references/templates/diagram-examples.md`; `dev/SKILL.md`, `dev/references/project-context.md`, `dev/references/commit-conventions.md`; `strategy-author/SKILL.md`, `strategy-author/references/project-context.md`, `strategy-author/references/best-practices.md`, `strategy-author/references/templates/strategy-template.py`; `backtester/SKILL.md`, `backtester/references/project-context.md`, `backtester/references/best-practices.md`; `ui-builder/SKILL.md`; `market-analyst/SKILL.md`, `market-analyst/references/project-context.md`.
@@ -89,7 +89,7 @@ Each phase is one commit. `dev` runs all phases in one session.
 - **Done when:** `grep -rin "tradingview[-_]mcp" .claude/ CLAUDE.md` returns zero hits; every modified SKILL.md still parses (frontmatter intact, headings consistent); every `.claude/skills/*/evals/evals.json` either is unchanged or has had eval rows explicitly retired with a one-line note in the eval file's commit message.
 
 ### Phase 5 — Final repo-wide sweep
-- **Owner skill:** dev
+- **Owner skill:** `dev`
 - **What:** Run a final repo-wide `grep -rin "tradingview[-_]mcp\|vendored\.lock\|data\.vendored\|data/vendored"` and confirm matches appear **only** in: `docs/architecture/adrs/0003-vendoring-strategy.md`, `docs/architecture/adrs/0009-rewrite-data-layer-in-house.md`, and `docs/architecture/plans/0003-excise-vendored-upstream.md`. Smoke-test the sidecar end-to-end: start it, call `GET /ohlcv?symbol=AAPL&timeframe=1d&start=<-30d>&end=<now>`, confirm a valid `Bar` list is returned and the data is consistent with the previous vendored implementation on the same window.
 - **Files touched:** none expected — diagnostic phase. If hits surface, fix in place before completing.
 - **Done when:** grep output matches exactly the three grandfathered files; `GET /ohlcv` returns a non-empty valid Bar list on a known symbol.

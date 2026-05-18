@@ -2,7 +2,7 @@
 
 > **Status:** draft
 > **Created:** 2026-05-17
-> **Owner skill(s):** `dev` / human (phases 1–2, 5), `strategy-author` (phase 4), `backtester` (phase 3)
+> **Owner skill(s):** `dev` (phases 1, 2, 5), `backtester` (phase 3), `strategy-author` (phase 4)
 > **Related ADRs:** [ADR-0004](../adrs/0004-strategy-interface.md), [ADR-0007](../adrs/0007-market-data-provider.md)
 > **Depends on:** [Plan 0001](0001-bootstrap.md) phase 2 — `src/market_analyser/data/types.py` (which defines the canonical `Bar` model) must exist before phase 1 of this plan can land.
 
@@ -99,7 +99,7 @@ The contracts module is the only thing all four other modules import. Strategies
 
 ### Phase 3 — Signals-to-trades adapter
 
-- **Owner skill:** backtester
+- **Owner skill:** `backtester`
 - **What:** A `signals_to_trades(bars, signals)` function under `src/market_analyser/backtest/adapter.py` that consumes the new `Signal` event stream and produces the trade-dict shape the vendored `_apply_costs` / `_calc_metrics` / `_build_equity_curve` functions expect. This lets us reuse all the vendored metrics code unchanged in this phase and migrate it cleanly in a later plan.
 - **Files touched:**
   - `src/market_analyser/backtest/__init__.py`
@@ -110,7 +110,7 @@ The contracts module is the only thing all four other modules import. Strategies
 
 ### Phase 4 — Port the five remaining strategies
 
-- **Owner skill:** strategy-author (driven by the template from phase 1)
+- **Owner skill:** `strategy-author` (driven by the template from phase 1)
 - **What:** Port `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian` from the vendored functions into one module each under `strategies/`. Each one gets a `Params` model with field-level constraints (e.g., `period: int = Field(14, ge=2, le=200)`) and a unit test that compares signals against the vendored function on the same fixture bars.
 - **Files touched:**
   - `src/market_analyser/strategies/{bollinger,macd,ema_cross,supertrend,donchian}.py`
@@ -119,8 +119,8 @@ The contracts module is the only thing all four other modules import. Strategies
 
 ### Phase 5 — CLI subcommand `strategies list`
 
-- **Owner skill:** human (small, glues things together; could be backtester)
-- **What:** A first user-visible smoke test. `uv run market-analyser strategies list` calls `discover()`, prints `id`, `name`, `version`, `timeframes`, and the JSON schema of `Params`. Proves the whole contract is real.
+- **Owner skill:** `dev`
+- **What:** A first user-visible smoke test. `uv run market-analyser strategies list` calls `discover()`, prints `id`, `name`, `version`, `timeframes`, and the JSON schema of `Params`. Proves the whole contract is real. CLI scaffolding is plumbing — not strategy or backtest logic — so it lives with `dev` by default. If a future plan extends the CLI to run backtests, that phase can route to `backtester`; this one is pure orchestration around `discover()`.
 - **Files touched:**
   - `src/market_analyser/cli.py` (skeleton — first command this project has)
   - `pyproject.toml` (entry point)
