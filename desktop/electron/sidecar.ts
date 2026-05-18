@@ -11,6 +11,7 @@
 import { ChildProcess, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { resolve as resolvePath } from 'node:path'
 import type { SidecarStatus } from '../shared/schemas/sidecar'
 
@@ -72,8 +73,8 @@ export class SidecarSupervisor {
 
   private async spawnSidecar(port: number, secretToken: string): Promise<void> {
     this.emit({ kind: 'starting' })
-    const pythonExecutable = process.env.MARKET_ANALYSER_PYTHON ?? 'python'
     const cwd = resolvePath(__dirname, '..', '..', '..')
+    const pythonExecutable = resolvePythonExecutable(cwd)
     const child = spawn(
       pythonExecutable,
       ['-m', 'market_analyser.api', `--port=${port}`, `--secret=${secretToken}`],
@@ -122,6 +123,18 @@ export class SidecarSupervisor {
       })
     }
   }
+}
+
+function resolvePythonExecutable(repoRoot: string): string {
+  // Bare `python` on Windows often resolves to the WindowsApps shim, which has no
+  // project deps. Prefer the uv venv interpreter; honour an explicit env override.
+  if (process.env.MARKET_ANALYSER_PYTHON) return process.env.MARKET_ANALYSER_PYTHON
+  const venvPython =
+    process.platform === 'win32'
+      ? resolvePath(repoRoot, '.venv', 'Scripts', 'python.exe')
+      : resolvePath(repoRoot, '.venv', 'bin', 'python')
+  if (existsSync(venvPython)) return venvPython
+  return 'python'
 }
 
 function pickFreePort(): Promise<number> {
