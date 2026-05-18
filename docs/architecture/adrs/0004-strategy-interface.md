@@ -3,6 +3,7 @@
 > **Status:** accepted
 > **Date:** 2026-05-17
 > **Related plan(s):** [0002-strategy-interface](../plans/0002-strategy-interface.md)
+> **Amendment:** see [ADR-0009](0009-rewrite-data-layer-in-house.md) — references in this ADR's body to "vendored" code / engine / strategies / `_STRATEGY_MAP` now refer to the in-house equivalents that Plans 0002 and 0003 build.
 
 ## Context
 

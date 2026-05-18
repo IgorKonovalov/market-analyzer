@@ -3,8 +3,10 @@
 > **Status:** draft
 > **Created:** 2026-05-17
 > **Owner skill(s):** `dev` (phases 1, 2, 5), `backtester` (phase 3), `strategy-author` (phase 4)
-> **Related ADRs:** [ADR-0004](../adrs/0004-strategy-interface.md), [ADR-0007](../adrs/0007-market-data-provider.md)
+> **Related ADRs:** [ADR-0004](../adrs/0004-strategy-interface.md), [ADR-0007](../adrs/0007-market-data-provider.md), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md)
 > **Depends on:** [Plan 0001](0001-bootstrap.md) phase 2 — `src/market_analyser/data/types.py` (which defines the canonical `Bar` model) must exist before phase 1 of this plan can land.
+>
+> **Compatibility note (2026-05-18):** This plan was drafted before [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md), which reverses the vendoring policy. Phase 3 ("signals-to-trades adapter") originally rested on reusing upstream metrics helpers; with no upstream those helpers must be written in-house, and that sourcing decision belongs to the architect before this plan is started. The contract and discovery work (phases 1, 2, 5) is unaffected. The text below has been scrubbed for language consistency; substantive phase reframing is owned by the next architect Mode 4 pass on this plan.
 
 ## TL;DR
 
@@ -16,17 +18,17 @@ ADR-0004 captured *which* shape we chose; this plan captures *how we build it* a
 
 Three skills need this nailed down before they can do useful work:
 
-- `strategy-author` cannot write a strategy until it knows what to write. Right now we'd hand it the vendored `_run_rsi(candles, **_)` shape, which has no parameter metadata, no validation, and conflates signal generation with trade creation.
-- `backtester` cannot consume strategies generically until they all answer to the same protocol. The current vendored engine knows about six string keys hard-coded in `_STRATEGY_MAP`; a seventh requires editing core.
+- `strategy-author` cannot write a strategy until it knows what to write. Without a contract we'd fall back on a `_run_rsi(candles, **_)`-style shape with no parameter metadata, no validation, and signal generation conflated with trade creation.
+- `backtester` cannot consume strategies generically until they all answer to the same protocol. Without one, the engine has to hard-code which strategies it knows about (a `_STRATEGY_MAP` with one string key per strategy); a seventh strategy then requires editing core.
 - `ui-builder` cannot render a parameter form for a strategy until parameters are introspectable. Today they are positional defaults in a Python function signature.
 
-This plan delivers the contract module, the adapter that lets us reuse the vendored engine, the six rewritten strategies, and the CLI subcommand that proves it all works end-to-end.
+This plan delivers the contract module, the signals-to-trades adapter, the six reference strategies, and the CLI subcommand that proves it all works end-to-end.
 
 ## Decision
 
 We implement ADR-0004 in five phases, smallest-valuable-thing first.
 
-Phase 1 ships the contract module (`contracts/`) and a single trivial reference strategy (RSI) so that `strategy-author` has a concrete example to copy and `backtester` has a target to call. Phase 2 ships strategy discovery. Phase 3 ships the adapter that bridges new-shape signals to the vendored engine, so we don't have to rewrite metrics in phase 1. Phase 4 ports the remaining five vendored strategies. Phase 5 is the architect's review.
+Phase 1 ships the contract module (`contracts/`) and a single trivial reference strategy (RSI) so that `strategy-author` has a concrete example to copy and `backtester` has a target to call. Phase 2 ships strategy discovery. Phase 3 ships the adapter that bridges new-shape signals to the backtest engine. Phase 4 ships the remaining five reference strategies. Phase 5 is the architect's review.
 
 We rejected option A (class-based) and option B (declarative DSL) in ADR-0004; see that document for the rationale.
 
@@ -100,22 +102,22 @@ The contracts module is the only thing all four other modules import. Strategies
 ### Phase 3 — Signals-to-trades adapter
 
 - **Owner skill:** `backtester`
-- **What:** A `signals_to_trades(bars, signals)` function under `src/market_analyser/backtest/adapter.py` that consumes the new `Signal` event stream and produces the trade-dict shape the vendored `_apply_costs` / `_calc_metrics` / `_build_equity_curve` functions expect. This lets us reuse all the vendored metrics code unchanged in this phase and migrate it cleanly in a later plan.
+- **What:** A `signals_to_trades(bars, signals)` function under `src/market_analyser/backtest/adapter.py` that consumes the new `Signal` event stream and produces the trade-dict shape the in-house metrics helpers will expect. **Note:** post-[ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md), the metrics-helper sourcing must be re-derived — the original draft expected to reuse upstream helpers, which no longer exist. The architect's next Mode 4 pass on this plan decides whether the in-house helpers ship in this phase or in a follow-up plan.
 - **Files touched:**
   - `src/market_analyser/backtest/__init__.py`
   - `src/market_analyser/backtest/adapter.py` (~60 lines)
-  - `src/market_analyser/backtest/engine.py` — thin orchestrator: `run(strategy, bars, params, **costs) -> BacktestResult`. Imports the vendored metrics+costs helpers (vendored under `src/market_analyser/backtest/_vendored/` in a separate plan; for this phase, copy only `_apply_costs`, `_calc_metrics`, `_build_equity_curve`, `_buy_and_hold_return`).
-  - `tests/backtest/test_engine_against_vendored.py` — golden test: run the new engine on a fixture and compare numerics with the vendored `run_backtest` on the same fixture. They must agree to 4 decimal places.
+  - `src/market_analyser/backtest/engine.py` — thin orchestrator: `run(strategy, bars, params, **costs) -> BacktestResult`. Imports the in-house metrics+costs helpers (sourcing TBD per the compatibility note above; the first time this phase ships, `_apply_costs`, `_calc_metrics`, `_build_equity_curve`, `_buy_and_hold_return` are the four helpers it needs).
+  - `tests/backtest/test_engine_golden.py` — golden test: run the new engine on a fixture and compare numerics against a hand-computed reference. They must agree to 4 decimal places.
 - **Done when:** the golden test passes for RSI on a deterministic 200-bar fixture (no network in tests — use a CSV under `tests/fixtures/`).
 
 ### Phase 4 — Port the five remaining strategies
 
 - **Owner skill:** `strategy-author` (driven by the template from phase 1)
-- **What:** Port `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian` from the vendored functions into one module each under `strategies/`. Each one gets a `Params` model with field-level constraints (e.g., `period: int = Field(14, ge=2, le=200)`) and a unit test that compares signals against the vendored function on the same fixture bars.
+- **What:** Implement `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian` under the new contract — one module each under `strategies/`. Each one gets a `Params` model with field-level constraints (e.g., `period: int = Field(14, ge=2, le=200)`) and a unit test that compares signals against a hand-computed reference on the same fixture bars.
 - **Files touched:**
   - `src/market_analyser/strategies/{bollinger,macd,ema_cross,supertrend,donchian}.py`
   - `tests/strategies/test_<each>.py`
-- **Done when:** for each of the five strategies, the new strategy produces a trade list (after `signals_to_trades`) that matches the vendored function's trade list on the fixture bars, byte-for-byte.
+- **Done when:** for each of the five strategies, the new strategy produces a trade list (after `signals_to_trades`) that matches the hand-computed reference trade list on the fixture bars, byte-for-byte.
 
 ### Phase 5 — CLI subcommand `strategies list`
 
@@ -230,8 +232,7 @@ def generate_signals(bars: Sequence[Bar], params: Params) -> Sequence[Signal]:
 
 ## What this plan does NOT do
 
-- **It does not build a backtest engine.** Phase 3 builds the *thinnest possible* engine that proves the contract end-to-end by reusing vendored metrics code. A real engine (with shorting, stops, walk-forward, parameter sweeps) is a separate plan that depends on this one.
-- **It does not vendor the full `backtest_service.py` from tradingview-mcp.** Only the four helpers needed for phase 3 (`_apply_costs`, `_calc_metrics`, `_build_equity_curve`, `_buy_and_hold_return`). Full vendoring is a separate plan and a separate ADR if we choose to take it on at all.
+- **It does not build a full backtest engine.** Phase 3 builds the *thinnest possible* engine that proves the contract end-to-end. A real engine (with shorting, stops, walk-forward, parameter sweeps) is a separate plan that depends on this one. The four helpers phase 3 needs (`_apply_costs`, `_calc_metrics`, `_build_equity_curve`, `_buy_and_hold_return`) are the minimum surface; everything else is a follow-up plan.
 - **It does not define a `BacktestResult` schema.** That's open ADR #4. We'll write that ADR before the engine plan.
 - **It does not decide indicator architecture.** Each ported strategy computes its own indicators inline for now. If reuse is needed, it'll be its own plan.
 - **It does not include short selling.** `SignalKind` reserves `ENTER_SHORT`/`EXIT_SHORT` but the phase-1 contract only ships `ENTER_LONG`/`EXIT_LONG`. Short selling is out of scope and tracked as a followup.
@@ -242,7 +243,7 @@ def generate_signals(bars: Sequence[Bar], params: Params) -> Sequence[Signal]:
 The user said "skip the questions, just draft", so the following are guesses; corrections welcome:
 
 1. **`pydantic` v2 is acceptable as a hard dependency** for the backend. (Mentioned as "likely" in project-context; treating as "yes".)
-2. **Long-only is acceptable for v1.** The vendored engine is long-only; the new contract reserves short signals but doesn't require them.
+2. **Long-only is acceptable for v1.** The contract reserves short signals (`ENTER_SHORT` / `EXIT_SHORT` in `SignalKind`) but the v1 engine only honours long entries / exits.
 3. **No exotic order types in v1** (no stop-loss, no take-profit, no pyramiding). Add as separate signal kinds later, non-breaking.
 4. **Strategies are discovered from a single directory** (`src/market_analyser/strategies/`). No user-strategies-folder support yet (we can add a second discovery root later without changing the contract).
 5. **The data layer hands strategies `list[Bar]`, not pandas DataFrames.** Keeps the contract pure-Python and the dependency footprint small. We can build a pandas adapter on top if/when the UI needs frame-shaped views.

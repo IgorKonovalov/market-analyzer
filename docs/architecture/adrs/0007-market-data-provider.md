@@ -1,9 +1,10 @@
-# ADR-0007 — Data layer: `MarketDataProvider` abstraction over vendored sources
+# ADR-0007 — Data layer: `MarketDataProvider` abstraction
 
 > **Status:** accepted
 > **Date:** 2026-05-17
 > **Related plan(s):** [0001-bootstrap](../plans/0001-bootstrap.md)
 > **Related ADRs:** [ADR-0003](0003-vendoring-strategy.md), [ADR-0004](0004-strategy-interface.md), [ADR-0006](0006-persistence-layout.md)
+> **Amendment:** see [ADR-0009](0009-rewrite-data-layer-in-house.md) — references in this ADR's body to "vendored sources" / "the vendored data layer" / "wrapping vendored services" now refer to our own in-house implementation.
 
 ## Context
 

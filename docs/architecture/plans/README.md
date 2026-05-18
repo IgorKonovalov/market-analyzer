@@ -6,7 +6,7 @@ Implementation plans for `market-analyser`. Each plan is one file (`NNNN-<slug>.
 
 | #    | File                                                          | Status         | Summary |
 |------|---------------------------------------------------------------|----------------|---------|
-| 0002 | [0002-strategy-interface](0002-strategy-interface.md)         | draft          | Strategy contract module (`Signal`, `Params`, `META`, `StrategyProtocol`) + RSI reference + signals-to-trades adapter + port of 5 vendored strategies + `strategies list` CLI. Three skill boundaries. |
+| 0002 | [0002-strategy-interface](0002-strategy-interface.md)         | draft          | Strategy contract module (`Signal`, `Params`, `META`, `StrategyProtocol`) + RSI reference + signals-to-trades adapter + 5 reference strategies + `strategies list` CLI. Three skill boundaries. |
 | 0003 | [0003-excise-vendored-upstream](0003-excise-vendored-upstream.md) | draft      | Rewrite the Yahoo OHLCV fetch in-house, delete `data/vendored/` and `vendored.lock`, scrub references across docs/skills. Single-skill plan (all `dev`). Unblocked by the 2026-05-18 close of Plans 0001 + 0004. |
 
 ## Recently closed

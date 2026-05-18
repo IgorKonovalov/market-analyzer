@@ -27,29 +27,20 @@ flowchart LR
         Migrations -.applies on startup.-> Persistence
     end
 
-    subgraph Vendored["Vendored from tradingview-mcp - per ADR-0003<br/>(lazy, one source per phase)"]
-        YF[yahoo_finance_service]
-        Screener[screener_service]
-    end
-
     subgraph External[External sources]
         Yahoo[Yahoo Finance]
-        TV[TradingView]
     end
 
     Main -. "spawns + supervises<br/>(--port argv;<br/>MARKET_ANALYSER_SECRET env, ADR-0011)" .-> API
     Renderer -->|"HTTP 127.0.0.1<br/>Bearer per-launch secret"| API
-    Adapters --> Vendored
-    YF --> Yahoo
-    Screener --> TV
+    Adapters --> Yahoo
 ```
 
 Boundaries:
 
 - **Shell** is the Electron app — its only domain responsibility is supervising the Python sidecar and rendering the UI. No business logic.
 - **Sidecar** is the Python process. Owns the data layer, persistence, and (later) backtest and strategy execution. Single source of truth for all market-data answers.
-- **Vendored** is mirrored from `../tradingview-mcp` per [ADR-0003](../adrs/0003-vendoring-strategy.md). Edited only via adapters, never in place.
-- **External** is the network. Anything in here can return garbage, time out, or rate-limit; adapters validate at the seam.
+- **External** is the network. Anything in here can return garbage, time out, or rate-limit; adapters validate at the seam. Per [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) each external source is reached via an in-house adapter (currently only Yahoo for OHLCV); additional sources (TradingView screener, news, sentiment) ship in their own future plans.
 
 The `MarketDataProvider` arrow is the only data-layer dependency `API` is allowed to take. Adapters are package-internal — callers never import them.
 
@@ -65,7 +56,6 @@ sequenceDiagram
     participant P as MarketDataProvider
     participant Repo as Repository (SQLite)
     participant YA as Yahoo adapter
-    participant YF as yahoo_finance_service (vendored)
     participant Yahoo as Yahoo Finance
 
     M->>S: spawn(--port; MARKET_ANALYSER_SECRET env)
@@ -79,10 +69,8 @@ sequenceDiagram
         Repo-->>P: list[Bar]
     else miss or stale
         P->>YA: fetch_ohlcv(...)
-        YA->>YF: fetch(...)
-        YF->>Yahoo: HTTPS
-        Yahoo-->>YF: rows
-        YF-->>YA: rows
+        YA->>Yahoo: HTTPS (urllib, in-house fetcher)
+        Yahoo-->>YA: rows
         YA-->>P: list[Bar]
         P->>Repo: upsert_bars(...)
     end

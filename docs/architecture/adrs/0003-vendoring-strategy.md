@@ -1,6 +1,6 @@
 # ADR-0003 — Vendor tradingview-mcp as a mirrored subtree, not a dependency
 
-> **Status:** accepted
+> **Status:** superseded by [ADR-0009](0009-rewrite-data-layer-in-house.md)
 > **Date:** 2026-05-17
 > **Related plan(s):** [0001-bootstrap](../plans/0001-bootstrap.md)
 

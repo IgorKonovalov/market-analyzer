@@ -4,6 +4,7 @@
 > **Date:** 2026-05-17
 > **Related plan(s):** [0001-bootstrap](../plans/0001-bootstrap.md)
 > **Related ADRs:** [ADR-0003](0003-vendoring-strategy.md), [ADR-0004](0004-strategy-interface.md)
+> **Amendment:** see [ADR-0009](0009-rewrite-data-layer-in-house.md) — references in this ADR's body to "the vendored data layer" / "vendored data services" / "non-vendored adapter code" now refer to the in-house equivalents.
 
 ## Context
 
