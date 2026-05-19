@@ -1,6 +1,6 @@
 # market-analyser
 
-Desktop trading-analysis app. Python sidecar (FastAPI on localhost) + Electron + React + TypeScript renderer + SQLite cache. Data layer vendored from `../tradingview-mcp` per ADR-0003.
+Desktop trading-analysis app. Python sidecar (FastAPI on localhost) + Electron + React + TypeScript renderer + SQLite cache. Data layer written in-house per ADR-0009 (supersedes ADR-0003's vendoring policy).
 
 This file is the orientation map for the project's skill ecosystem. Skills do the actual work; this file says **which skill** does which kind of work and **how they hand off**.
 
@@ -61,7 +61,6 @@ These apply to **every** skill that writes code or analysis in this repo.
 - **No secrets in code or logs.** Bearer tokens, API keys, the IPC per-launch secret — never persisted, never logged. `secrets.json` (when it exists) lives outside the repo.
 - **Security defaults are not optional.** Electron renderer: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, double-CSP. Renderer never imports Node, never reaches the network except via the typed sidecar fetch client (which injects the bearer).
 - **Validate at boundaries.** Pydantic for sidecar inputs, Zod for IPC payloads, typed responses for sidecar HTTP. Don't validate again inside trusted code paths.
-- **Vendored code is read-only.** Files under `data/vendored/tradingview_mcp/` have one-line provenance headers and import-path rewrites only. No edits. Drift handled by re-vendoring at a new SHA.
 - **Conditions are facts, decisions are the user's.** Analyst skills (`market-analyst`, `defi-analyst`) report conditions; they never recommend buy/sell/exit/rebalance.
 
 ## Where things live
@@ -75,7 +74,7 @@ docs/architecture/
 
 src/market_analyser/
 ├── api/          # FastAPI app + routes — dev owns
-├── data/         # MarketDataProvider Protocol, adapters, vendored — dev owns
+├── data/         # MarketDataProvider Protocol, adapters — dev owns
 ├── persistence/  # SQLite + Alembic + repositories — dev owns
 ├── strategies/   # strategy-author owns
 ├── backtest/     # backtester owns
@@ -89,12 +88,12 @@ positions/        # gitignored — defi-analyst's positions.yaml (sensitive)
 
 ADRs that gate frequent decisions:
 - **ADR-0002** — IPC over localhost HTTP with bearer auth
-- **ADR-0003** — vendoring discipline
 - **ADR-0004** — strategy interface (pure function + pydantic Params)
 - **ADR-0005** — why Electron (supersedes ADR-0001's Tauri pick)
 - **ADR-0006** — persistence layout (SQLite + config.json)
 - **ADR-0007** — MarketDataProvider Protocol
 - **ADR-0008** — Electron shell conventions (build pipeline, IPC discipline, CSP, packaging)
+- **ADR-0009** — data layer written in-house (supersedes ADR-0003)
 
 ## Pitfalls to avoid
 
