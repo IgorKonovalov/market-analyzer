@@ -96,6 +96,24 @@ ADRs that gate frequent decisions:
 - **ADR-0008** — Electron shell conventions (build pipeline, IPC discipline, CSP, packaging)
 - **ADR-0009** — data layer written in-house (supersedes ADR-0003)
 
+## Dependency discipline
+
+Two policies, both tracked in git, both applied to PyPI (via `uv`) and the npm registry (via `pnpm`):
+
+- **Cooldown.** Package versions younger than **14 days** are refused at resolution time. Tracked as `[tool.uv] exclude-newer = "YYYY-MM-DD"` in `pyproject.toml` and `minimumReleaseAge: 20160` (minutes) in `pnpm-workspace.yaml`. See [ADR-0012](docs/architecture/adrs/0012-dependency-cooldown.md).
+- **Exact pinning.** Every direct dependency in `pyproject.toml` and `desktop/package.json` is `==X.Y.Z` (Python) or `X.Y.Z` (Node). No `>=`, no `^`, no `~`. Dev tooling is pinned with the same rule as runtime deps. See [ADR-0013](docs/architecture/adrs/0013-pin-direct-dependencies.md).
+
+### Operational handles
+
+- **Weekly cutoff bump.** Every ~7 days, advance `exclude-newer` by ~7 days and update `minimumReleaseAge`'s effective floor as a regular chore commit. The cooldown is meant to lag, not stall — let it drift and ordinary dependency-update work starts failing for unrelated reasons.
+- **CVE-driven bump.** When a security patch lands inside the cooldown window, bump the relevant cutoff past the patch's publish date, run `uv lock` and/or `pnpm install`, and land manifest + lockfile in a **single commit** whose message names the CVE.
+- **Every direct-dep upgrade is a manifest edit.** Bumping `fastapi` from `0.136.1` to `0.137.0` is a one-line `pyproject.toml` change plus `uv lock` plus a commit. `uv lock --upgrade` against a `>=` range is not how upgrades happen here. Same for `pnpm`: edit `desktop/package.json`, then `pnpm install`, both in the same commit.
+
+### Non-negotiables
+
+- **No per-package cooldown allowlist.** `pnpm`'s `minimumReleaseAgeExclude` and any hypothetical per-package exemption mechanism are off the table. ADR-0012 explains why: an allowlist becomes a quietly-growing exception register that undermines the audit property the policy exists to provide.
+- **No range operators in manifests.** Not in runtime deps, not in dev tooling, no `~=`/`^`/`>=` exceptions. ADR-0013 explains why we pin both groups under the same rule.
+
 ## Pitfalls to avoid
 
 - **Don't skip the architect for cross-cutting decisions.** New IPC channel, new dependency, CSP change, new ADR-shaped question → architect, even if it feels like a small edit.

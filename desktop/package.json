@@ -2,6 +2,7 @@
   "name": "@market-analyser/desktop",
   "version": "0.0.1",
   "private": true,
+  "packageManager": "pnpm@11.1.2",
   "description": "Electron + React desktop shell for the market-analyser sidecar.",
   "main": "dist/main/index.cjs",
   "type": "module",
@@ -44,7 +45,7 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "10.0.1",
     "@playwright/test": "1.48.0",
     "@testing-library/jest-dom": "6.5.0",
     "@testing-library/react": "16.0.1",
@@ -61,7 +62,7 @@
     "electron-builder": "25.0.5",
     "esbuild": "0.24.0",
     "eslint": "9.11.1",
-    "eslint-config-prettier": "^10.1.8",
+    "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react": "7.37.1",
     "eslint-plugin-react-hooks": "5.0.0",
     "husky": "9.1.6",
