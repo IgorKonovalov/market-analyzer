@@ -70,7 +70,8 @@ docs/architecture/
 ├── adrs/         # NNNN-<slug>.md — accepted/superseded decisions
 ├── plans/        # NNNN-<slug>.md — drafts and in-progress
 │   └── done/     # architect moves them here after close ceremony
-└── diagrams/     # mermaid in standalone .md files
+├── diagrams/     # mermaid in standalone .md files
+└── roadmap.md    # aspirational direction — not committed scope
 
 src/market_analyser/
 ├── api/          # FastAPI app + routes — dev owns

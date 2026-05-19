@@ -246,8 +246,10 @@ Honest current state. "Designed" means an ADR or plan exists; "not started" mean
 | ------------------------------------------ | ---------------------------------------------------------------------------------- |
 | OHLCV chart for one symbol                 | **Done** ([Plan 0001](docs/architecture/plans/done/0001-bootstrap.md), closed 2026-05-18) |
 | SQLite cache + Alembic migrations          | **Done**                                                                           |
-| Yahoo Finance adapter                      | **Done** (in-house rewrite designed in [Plan 0003](docs/architecture/plans/0003-excise-vendored-upstream.md) — not started) |
+| Yahoo Finance adapter (in-house)           | **Done** ([Plan 0003](docs/architecture/plans/done/0003-excise-vendored-upstream.md), closed 2026-05-19) |
 | Bootstrap review followups                 | **Done** ([Plan 0004](docs/architecture/plans/done/0004-bootstrap-review-followups.md), closed 2026-05-18) |
+| Dependency discipline (cooldown + pins)    | **Designed** ([Plan 0005](docs/architecture/plans/0005-dependency-cooldown.md)) — not started |
+| MCP server + annotations on chart          | **Designed** ([Plan 0006](docs/architecture/plans/0006-annotations-via-mcp.md) + [ADR-0014](docs/architecture/adrs/0014-mcp-as-second-sidecar-protocol.md)) — not started |
 | Strategy contract (`Params`, `Signal`, `META`) | **Designed** ([Plan 0002](docs/architecture/plans/0002-strategy-interface.md)) — not started |
 | Backtest engine + metrics                  | **Designed** (engine in [ADR-0004](docs/architecture/adrs/0004-strategy-interface.md)) — not started |
 | Multi-symbol screener / watchlist          | Not started                                                                        |
@@ -256,7 +258,7 @@ Honest current state. "Designed" means an ADR or plan exists; "not started" mean
 | DeFi pool / LP / lending analysis          | Not started                                                                        |
 | Auto-update                                | Deferred to a future packaging plan                                                |
 
-The [`docs/architecture/plans/README.md`](docs/architecture/plans/README.md) index has the recommended execution order and the current status of every active plan.
+The [`docs/architecture/plans/README.md`](docs/architecture/plans/README.md) index has the recommended execution order and the current status of every active plan. For the **long-horizon vision** — agent-first MCP application, predictive surface, news & investigation — see [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md). That document is aspirational, not committed; this table is the source of truth for current state.
 
 ## Security model
 
