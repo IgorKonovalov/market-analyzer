@@ -31,7 +31,7 @@ requires = ["hatchling==1.29.0"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-exclude-newer = "2026-05-05"
+exclude-newer = "2026-05-14"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/market_analyser"]
