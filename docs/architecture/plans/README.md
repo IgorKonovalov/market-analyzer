@@ -7,8 +7,7 @@ Implementation plans for `market-analyser`. Each plan is one file (`NNNN-<slug>.
 | #    | File                                                          | Status         | Summary |
 |------|---------------------------------------------------------------|----------------|---------|
 | 0002 | [0002-strategy-interface](0002-strategy-interface.md)         | draft          | Strategy contract module (`Signal`, `Params`, `META`, `StrategyProtocol`) + RSI reference + signals-to-trades adapter + 5 reference strategies + `strategies list` CLI. Three skill boundaries. |
-| 0005 | [0005-dependency-cooldown](0005-dependency-cooldown.md)       | draft          | Dependency discipline pair: (a) 14-day minimum release age via `[tool.uv] exclude-newer` + pnpm `minimum-release-age`, and (b) every direct dep in `pyproject.toml` / `desktop/package.json` rewritten from `>=` / `^` ranges to exact `==X.Y.Z` pins. Single-skill plan (all `dev`, 5 phases). See [ADR-0012](../adrs/0012-dependency-cooldown.md) + [ADR-0013](../adrs/0013-pin-direct-dependencies.md). Independent of 0002. |
-| 0006 | [0006-annotations-via-mcp](0006-annotations-via-mcp.md)       | approved       | Mount MCP server (Streamable HTTP, rev 2025-03-26) on the existing sidecar at `/mcp`, sharing the renderer's port with its own long-lived secret in `mcp-secret.json`. Three MCP tools (`get_ohlcv`, `write_annotation`, `list_annotations`), a new `annotations` SQLite table, Settings page to surface + rotate the MCP secret, and chart-marker rendering via 1 Hz polling. Six phases, mixed `dev` + `ui-builder`. See [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md). Depends on Plan 0005 for the `mcp` SDK pin if 0005 lands first. |
+| 0006 | [0006-annotations-via-mcp](0006-annotations-via-mcp.md)       | approved       | Mount MCP server (Streamable HTTP, rev 2025-03-26) on the existing sidecar at `/mcp`, sharing the renderer's port with its own long-lived secret in `mcp-secret.json`. Three MCP tools (`get_ohlcv`, `write_annotation`, `list_annotations`), a new `annotations` SQLite table, Settings page to surface + rotate the MCP secret, and chart-marker rendering via 1 Hz polling. Six phases, mixed `dev` + `ui-builder`. See [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md). |
 
 ## Recently closed
 
@@ -17,20 +16,19 @@ Implementation plans for `market-analyser`. Each plan is one file (`NNNN-<slug>.
 | 0001 | [0001-bootstrap](done/0001-bootstrap.md)                                        | 2026-05-18 | Walking-skeleton Electron + Python-sidecar bootstrap with OHLCV chart for one symbol. Phases 1–5 + 4.1 shipped; closed after Plan 0004 landed. |
 | 0003 | [0003-excise-vendored-upstream](done/0003-excise-vendored-upstream.md)          | 2026-05-19 | Rewrote the Yahoo OHLCV fetch in-house (`data/adapters/_yahoo_fetch.py`), deleted `data/vendored/` and `vendored.lock`, scrubbed `tradingview-mcp` mentions across `docs/`, `CLAUDE.md`, and the (gitignored) skills tree. Implementation shipped in commits `2337ee6`, `1df1be0`, `ae099e4`, `def5e08`; closed cleanly with one minor finding (done-when grep allow-list narrower than the substantive ADR append-only policy — body retentions in ADR-0004 and ADR-0007 are intentional). |
 | 0004 | [0004-bootstrap-review-followups](done/0004-bootstrap-review-followups.md)      | 2026-05-18 | Cleared the architect-review deltas from Plan 0001 — silent cache truncation, post-restart 401, supervisor-spec stub, missing CSP-block test, secret-out-of-argv (now [ADR-0011](../adrs/0011-bearer-secret-transport.md)), renderer DX cluster, OhlcvView empty-state affordance. |
+| 0005 | [0005-dependency-cooldown](done/0005-dependency-cooldown.md)                    | 2026-05-19 | Landed the dependency-discipline pair: `[tool.uv] exclude-newer = "2026-05-05"` + `minimumReleaseAge: 20160` in `pnpm-workspace.yaml` (cooldown; ADR-0012), and every direct dep in `pyproject.toml` + `desktop/package.json` rewritten to exact `==X.Y.Z` / `X.Y.Z` pins (ADR-0013). User-authorized single-commit landing; phase-1 corrected ADR-0012's mechanism (kebab-case in `.npmrc` → camelCase in `pnpm-workspace.yaml`) and bumped CI pnpm 9 → 11.1.2. Followups captured in the plan body. |
 
 ## Recommended execution order
 
-Plan 0003 closed on 2026-05-19; the post-vendoring baseline Plan 0002 was waiting on is now in place. Plan 0005 (dependency discipline — cooldown + exact pins) and Plan 0006 (annotations via MCP) are both unblocked. Plan 0005 should land first because Plan 0006's phase 1 adds the `mcp` Python SDK as a new dependency, and that addition is cheaper to do under an already-enforced pinning policy than to retrofit. Plan 0002's `contracts/` module will be consumed by every plan that follows, so it stays parked until the dependency baseline and the MCP foundation are both in place.
+Plan 0005 closed on 2026-05-19, putting the dependency-discipline pair (cooldown + exact pins) in place. Plan 0006 (annotations via MCP) is unblocked and is next — its phase 1 adds the `mcp` Python SDK, which now lands under the enforced pinning policy. Plan 0002's `contracts/` module is consumed by every plan that follows, so it stays parked until the MCP foundation is in place.
 
 Execution sequence:
 
 ```
-1.  /dev          Plan 0005          (dev session — single-skill, 5 phases, independent)
-2.  /architect    close Plan 0005    (fresh architect session)
-3.  /dev or       Plan 0006          (mixed-skill: dev phases 1–4, ui-builder phases 5–6 —
+1.  /dev or       Plan 0006          (mixed-skill: dev phases 1–4, ui-builder phases 5–6 —
     /ui-builder                       hand off at phase 5 per the cross-skill protocol)
-4.  /architect    close Plan 0006    (fresh architect session)
-5.  ...           Plan 0002          (sequence at draft-approval time; three skill boundaries)
+2.  /architect    close Plan 0006    (fresh architect session)
+3.  ...           Plan 0002          (sequence at draft-approval time; three skill boundaries)
 ```
 
 Plan 0002 has three skill handoffs (`dev` → `backtester` → `strategy-author` → `dev`); consider whether reordering to two could be useful at draft-approval time.
@@ -72,4 +70,4 @@ Plans with mixed-owner phases hand off at every boundary per the [cross-skill ha
 
 ## When you don't know which plan to start
 
-Don't guess. The execution sequence above is the source of truth as of 2026-05-19 (Plans 0001 + 0003 + 0004 closed; Plan 0005 next, then Plan 0006, Plan 0002 still parked). If reality has drifted (the user names a plan not in that sequence, or a status disagrees with a recent commit), trust `git log` and the plan's own `Status:` line over this README — and surface the drift so the README gets refreshed.
+Don't guess. The execution sequence above is the source of truth as of 2026-05-19 (Plans 0001 + 0003 + 0004 + 0005 closed; Plan 0006 next, Plan 0002 still parked). If reality has drifted (the user names a plan not in that sequence, or a status disagrees with a recent commit), trust `git log` and the plan's own `Status:` line over this README — and surface the drift so the README gets refreshed.
