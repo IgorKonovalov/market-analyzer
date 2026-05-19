@@ -6,7 +6,7 @@ Implementation plans for `market-analyser`. Each plan is one file (`NNNN-<slug>.
 
 | #    | File                                                          | Status         | Summary |
 |------|---------------------------------------------------------------|----------------|---------|
-| 0002 | [0002-strategy-interface](0002-strategy-interface.md)         | draft          | Strategy contract module (`Signal`, `Params`, `META`, `StrategyProtocol`) + RSI reference + signals-to-trades adapter + 5 reference strategies + `strategies list` CLI. Three skill boundaries. |
+| 0002 | [0002-strategy-interface](0002-strategy-interface.md)         | approved       | Strategy contract module (`Signal`, `Params`, `META`, `StrategyProtocol`) + RSI reference + signals-to-trades adapter + `Trade` type + 5 reference strategies + `strategies list` CLI. Three skill boundaries. Reframed 2026-05-19 at approval: phase 3 narrowed to adapter only; engine + metrics + `BacktestResult` punted to follow-up. |
 | 0006 | [0006-annotations-via-mcp](0006-annotations-via-mcp.md)       | approved       | Mount MCP server (Streamable HTTP, rev 2025-03-26) on the existing sidecar at `/mcp`, sharing the renderer's port with its own long-lived secret in `mcp-secret.json`. Three MCP tools (`get_ohlcv`, `write_annotation`, `list_annotations`), a new `annotations` SQLite table, Settings page to surface + rotate the MCP secret, and chart-marker rendering via 1 Hz polling. Six phases, mixed `dev` + `ui-builder`. See [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md). |
 
 ## Recently closed
@@ -31,7 +31,7 @@ Execution sequence:
 3.  ...           Plan 0002          (sequence at draft-approval time; three skill boundaries)
 ```
 
-Plan 0002 has three skill handoffs (`dev` → `backtester` → `strategy-author` → `dev`); consider whether reordering to two could be useful at draft-approval time.
+Plan 0002 keeps three skill handoffs (`dev` → `backtester` → `strategy-author` → `dev`). At approval (2026-05-19) the architect considered collapsing to two — either by moving phase 5 (CLI) ahead of phase 4, or by making strategy-author phase 4 tests compare signal lists instead of trade lists. Both options were rejected: phase 5's done-when (six rows printed by `strategies list`) is the integration check that proves discovery + contract + CLI work together, and phase 4's done-when (trade list matches reference byte-for-byte after `signals_to_trades`) is the integration check that proves the contract round-trips through the adapter. Cheap handoffs at clean owner boundaries are worth preserving over fewer-but-weaker acceptance criteria.
 
 ## Status vocabulary
 

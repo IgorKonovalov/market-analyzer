@@ -1,12 +1,13 @@
 # 0002 — Strategy interface and contracts module
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-05-17
+> **Approved:** 2026-05-19
 > **Owner skill(s):** `dev` (phases 1, 2, 5), `backtester` (phase 3), `strategy-author` (phase 4)
 > **Related ADRs:** [ADR-0004](../adrs/0004-strategy-interface.md), [ADR-0007](../adrs/0007-market-data-provider.md), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md)
-> **Depends on:** [Plan 0001](0001-bootstrap.md) phase 2 — `src/market_analyser/data/types.py` (which defines the canonical `Bar` model) must exist before phase 1 of this plan can land.
+> **Depends on:** [Plan 0001](0001-bootstrap.md) phase 2 — `src/market_analyser/data/types.py` (the canonical `Bar` model). Satisfied: Plan 0001 closed 2026-05-18, file exists at `src/market_analyser/data/types.py`.
 >
-> **Compatibility note (2026-05-18):** This plan was drafted before [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md), which reverses the vendoring policy. Phase 3 ("signals-to-trades adapter") originally rested on reusing upstream metrics helpers; with no upstream those helpers must be written in-house, and that sourcing decision belongs to the architect before this plan is started. The contract and discovery work (phases 1, 2, 5) is unaffected. The text below has been scrubbed for language consistency; substantive phase reframing is owned by the next architect Mode 4 pass on this plan.
+> **Reframe note (2026-05-19, architect Mode 4):** Phase 3 originally bundled a thin backtest engine + four metric helpers + a `BacktestResult` schema with the `signals_to_trades` adapter, on the assumption that upstream metrics helpers could be reused. [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) removed that assumption. Phase 3 has been narrowed to **adapter + `Trade` type + golden test on the trade list only**; the engine, metrics, and `BacktestResult` schema move to a dedicated follow-up plan (see "Followups"). This keeps Plan 0002 single-purpose — the strategy contract — and avoids smuggling unresolved engine design into a contract plan.
 
 ## TL;DR
 
@@ -28,7 +29,7 @@ This plan delivers the contract module, the signals-to-trades adapter, the six r
 
 We implement ADR-0004 in five phases, smallest-valuable-thing first.
 
-Phase 1 ships the contract module (`contracts/`) and a single trivial reference strategy (RSI) so that `strategy-author` has a concrete example to copy and `backtester` has a target to call. Phase 2 ships strategy discovery. Phase 3 ships the adapter that bridges new-shape signals to the backtest engine. Phase 4 ships the remaining five reference strategies. Phase 5 is the architect's review.
+Phase 1 ships the contract module (`contracts/`) and a single trivial reference strategy (RSI) so that `strategy-author` has a concrete example to copy and `backtester` has a target to call. Phase 2 ships strategy discovery. Phase 3 ships the `signals_to_trades` adapter and `Trade` type — the bridge a future engine will sit on top of. Phase 4 ships the remaining five reference strategies. Phase 5 ships the `strategies list` CLI subcommand.
 
 We rejected option A (class-based) and option B (declarative DSL) in ADR-0004; see that document for the rationale.
 
@@ -51,9 +52,8 @@ flowchart LR
     end
 
     subgraph Backtest[market_analyser.backtest]
-        Engine[engine.run]
         Adapter[signals_to_trades]
-        Metrics[metrics + equity]
+        Trade[Trade type]
     end
 
     subgraph UI[ui-builder consumers]
@@ -65,21 +65,20 @@ flowchart LR
     BB  -.implements.-> Proto
     Etc -.implements.-> Proto
 
-    Engine --> RSI
-    Engine --> Adapter
-    Adapter --> Metrics
+    Signal --> Adapter
+    Adapter --> Trade
 
     Form -->|model_json_schema| Params
     Picker -->|discover| Strategies
 ```
 
-The contracts module is the only thing all four other modules import. Strategies do not import the engine; the engine does not import any concrete strategy. The UI reaches strategies through the contract, never directly.
+The contracts module is the only thing all four other modules import. Strategies do not import the adapter; the adapter does not import any concrete strategy. The UI reaches strategies through the contract, never directly. The engine, metrics, equity curve, and `BacktestResult` schema are deliberately absent from this diagram — they ship in the follow-up engine plan (see "Followups").
 
 ## Implementation phases
 
 ### Phase 1 — Contracts module + RSI reference strategy
 
-- **Owner skill:** `dev` (writes contract definitions and the RSI module from the template defined below)
+- **Owner skill:** `dev`
 - **What:** Ship `src/market_analyser/contracts/{__init__.py,strategy.py}` with `Signal`, `SignalKind`, `BaseParams`, `StrategyMeta`, and `StrategyProtocol`. `Bar` is **imported from `market_analyser.data.types`** (created by Plan 0001 phase 2) — it is not redefined here, and there is no `contracts/market_data.py`. Ship `src/market_analyser/strategies/rsi.py` as the reference implementation that `strategy-author` will copy for the others.
 - **Files touched:**
   - `src/market_analyser/contracts/__init__.py` — re-exports `Signal`, `SignalKind`, `BaseParams`, `StrategyMeta`, `StrategyProtocol`, and `Bar` (re-exported from `market_analyser.data.types`) so consumers have one import root.
@@ -92,7 +91,7 @@ The contracts module is the only thing all four other modules import. Strategies
 
 ### Phase 2 — Strategy discovery
 
-- **Owner skill:** `dev` (one-shot — small enough to keep in the contracts module)
+- **Owner skill:** `dev`
 - **What:** A `discover()` function in `contracts/strategy.py` that walks `src/market_analyser/strategies/` (using `importlib`) and returns `dict[str, StrategyModule]` keyed by `META.id`. Detect collisions on `META.id` and raise on duplicate. No decorator, no registry — drop-a-file authoring.
 - **Files touched:**
   - `src/market_analyser/contracts/strategy.py` (+~30 lines for `discover` + collision check)
@@ -102,17 +101,18 @@ The contracts module is the only thing all four other modules import. Strategies
 ### Phase 3 — Signals-to-trades adapter
 
 - **Owner skill:** `backtester`
-- **What:** A `signals_to_trades(bars, signals)` function under `src/market_analyser/backtest/adapter.py` that consumes the new `Signal` event stream and produces the trade-dict shape the in-house metrics helpers will expect. **Note:** post-[ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md), the metrics-helper sourcing must be re-derived — the original draft expected to reuse upstream helpers, which no longer exist. The architect's next Mode 4 pass on this plan decides whether the in-house helpers ship in this phase or in a follow-up plan.
+- **What:** Ship `signals_to_trades(bars, signals) -> list[Trade]` and the `Trade` model. Bridges the `Signal` event stream to a trade list under realistic execution semantics: a `ENTER_LONG` at `bar_index = i` opens a trade at the OPEN of bar `i+1`; a subsequent `EXIT_LONG` closes it at the OPEN of its own `i+1`. This phase does **not** ship the engine, metrics, costs, or `BacktestResult` — those move to a follow-up plan (see "Followups" below). The value here is proving the contract end-to-end: a hand-rolled signal list must produce a hand-computed trade list, byte-for-byte.
 - **Files touched:**
-  - `src/market_analyser/backtest/__init__.py`
-  - `src/market_analyser/backtest/adapter.py` (~60 lines)
-  - `src/market_analyser/backtest/engine.py` — thin orchestrator: `run(strategy, bars, params, **costs) -> BacktestResult`. Imports the in-house metrics+costs helpers (sourcing TBD per the compatibility note above; the first time this phase ships, `_apply_costs`, `_calc_metrics`, `_build_equity_curve`, `_buy_and_hold_return` are the four helpers it needs).
-  - `tests/backtest/test_engine_golden.py` — golden test: run the new engine on a fixture and compare numerics against a hand-computed reference. They must agree to 4 decimal places.
-- **Done when:** the golden test passes for RSI on a deterministic 200-bar fixture (no network in tests — use a CSV under `tests/fixtures/`).
+  - `src/market_analyser/backtest/__init__.py` (re-exports `Trade`, `signals_to_trades`).
+  - `src/market_analyser/backtest/types.py` (~30 lines): `Trade` pydantic model with `entry_bar_index: int`, `exit_bar_index: int | None`, `entry_price: float`, `exit_price: float | None`, `kind: Literal["long"]` (short reserved for a future plan). Frozen, `extra="forbid"`.
+  - `src/market_analyser/backtest/adapter.py` (~60 lines): pure function, no I/O, no module-level state. Execution simulated at the OPEN of `bar_index + 1` per `Signal` semantics — no lookahead.
+  - `tests/backtest/test_adapter_unit.py`: hand-rolled `[Signal]` → expected `[Trade]`. Cases must cover: a clean entry→exit pair; an entry that never exits (dangling, `exit_bar_index = None`); an `EXIT_LONG` with no prior `ENTER_LONG` (ignored); back-to-back `ENTER_LONG` events with no intervening exit (second one ignored).
+  - `tests/backtest/test_adapter_golden.py`: golden test running RSI on a deterministic 200-bar fixture (CSV under `tests/fixtures/`); compares the produced trade list byte-for-byte against `tests/fixtures/rsi_signals_to_trades.expected.json`.
+- **Done when:** both adapter tests pass; the golden trade list matches the reference JSON byte-for-byte; no network in tests; `signals_to_trades` is referentially transparent (same inputs → same outputs, verified by running the golden test twice and diffing in-memory results).
 
 ### Phase 4 — Port the five remaining strategies
 
-- **Owner skill:** `strategy-author` (driven by the template from phase 1)
+- **Owner skill:** `strategy-author`
 - **What:** Implement `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian` under the new contract — one module each under `strategies/`. Each one gets a `Params` model with field-level constraints (e.g., `period: int = Field(14, ge=2, le=200)`) and a unit test that compares signals against a hand-computed reference on the same fixture bars.
 - **Files touched:**
   - `src/market_analyser/strategies/{bollinger,macd,ema_cross,supertrend,donchian}.py`
@@ -179,6 +179,11 @@ class BaseParams(BaseModel):
     model_config = {"frozen": True, "extra": "forbid"}
 
 
+# @runtime_checkable here exists for static-type-checker friendliness only.
+# Strategies are *modules*, not classes, so isinstance(mod, StrategyProtocol)
+# at runtime is unreliable for class-attribute protocols. discover() validates
+# META / Params / generate_signals on each module via getattr + type checks
+# rather than isinstance().
 @runtime_checkable
 class StrategyProtocol(Protocol):
     META: StrategyMeta
@@ -232,8 +237,8 @@ def generate_signals(bars: Sequence[Bar], params: Params) -> Sequence[Signal]:
 
 ## What this plan does NOT do
 
-- **It does not build a full backtest engine.** Phase 3 builds the *thinnest possible* engine that proves the contract end-to-end. A real engine (with shorting, stops, walk-forward, parameter sweeps) is a separate plan that depends on this one. The four helpers phase 3 needs (`_apply_costs`, `_calc_metrics`, `_build_equity_curve`, `_buy_and_hold_return`) are the minimum surface; everything else is a follow-up plan.
-- **It does not define a `BacktestResult` schema.** That's open ADR #4. We'll write that ADR before the engine plan.
+- **It does not build a backtest engine.** Phase 3 ships only `signals_to_trades` and the `Trade` type. The engine (`run(strategy, bars, params, **costs)`), the four metric helpers (`_apply_costs`, `_calc_metrics`, `_build_equity_curve`, `_buy_and_hold_return`), costs, and equity-curve construction are a dedicated follow-up plan.
+- **It does not define a `BacktestResult` schema.** That moves to the follow-up engine plan, paired with its own ADR (the open `BacktestResult` ADR in `references/project-context.md`'s backlog).
 - **It does not decide indicator architecture.** Each ported strategy computes its own indicators inline for now. If reuse is needed, it'll be its own plan.
 - **It does not include short selling.** `SignalKind` reserves `ENTER_SHORT`/`EXIT_SHORT` but the phase-1 contract only ships `ENTER_LONG`/`EXIT_LONG`. Short selling is out of scope and tracked as a followup.
 - **It does not address strategy persistence.** Strategies live as Python modules on disk; we are not yet storing them in SQLite or letting the UI edit them in-place.
@@ -253,7 +258,6 @@ If any of these are wrong, correct in this section and re-derive affected phases
 
 ## Followups (after this lands)
 
-- Write a new ADR for the `BacktestResult` schema (one of the open-ADR backlog items in `references/project-context.md`).
-- Write the full backtest-engine plan (shorting, stops, walk-forward).
+- Write the backtest engine plan. It starts thin (`BacktestResult` schema paired with its own ADR, the four metric helpers `_apply_costs` / `_calc_metrics` / `_build_equity_curve` / `_buy_and_hold_return`, and the orchestrator `run(strategy, bars, params, **costs) -> BacktestResult`) and grows over its own phases to shorting, stops, walk-forward, and parameter sweeps. This is the natural sequel to Plan 0002 and gates `ui-builder`'s results view.
 - Write `templates/strategy_stub.py` under the `strategy-author` skill so it has a canonical starting file.
 - Refresh `diagrams/strategy-execution-sequence.md` (and add a new `diagrams/system-overview.md`) once the engine plan lands.
