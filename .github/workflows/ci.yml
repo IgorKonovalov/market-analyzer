@@ -41,8 +41,8 @@ jobs:
       - name: Mypy (strict)
         run: uv run mypy --strict src tests
 
-      - name: Pytest with coverage
-        run: uv run pytest --cov=src --cov-fail-under=85
+      - name: Pytest with coverage (excludes @pytest.mark.network per Plan 0001)
+        run: uv run pytest -m "not network" --cov=src --cov-fail-under=85
 
       - name: pip-audit
         run: uv run pip-audit
