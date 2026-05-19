@@ -1,17 +1,18 @@
 # 0003 — Excise vendored upstream and rewrite Yahoo data path
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-17
+> **Closed:** 2026-05-19
 > **Owner skill(s):** `dev`
-> **Related ADRs:** [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (supersedes [ADR-0003](../adrs/0003-vendoring-strategy.md))
+> **Related ADRs:** [ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md) (supersedes [ADR-0003](../../adrs/0003-vendoring-strategy.md))
 
 ## TL;DR
 
-Rewrite the Yahoo OHLCV fetch as a small in-house function in our adapter package, delete the entire `src/market_analyser/data/vendored/` tree and `vendored.lock`, and scrub every reference to the companion `tradingview-mcp` repository from source code, live docs, diagrams, skill `SKILL.md` / references, and `CLAUDE.md`. After this plan lands, the name survives only in (a) [ADR-0003](../adrs/0003-vendoring-strategy.md) (superseded, historical), (b) [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (the supersession), (c) the one-line amendment notes Phase 3 adds to [ADR-0004](../adrs/0004-strategy-interface.md) / [ADR-0006](../adrs/0006-persistence-layout.md) / [ADR-0007](../adrs/0007-market-data-provider.md), (d) this plan file, (e) [Plan 0001](done/0001-bootstrap.md)'s "Vendoring manifest" section — grandfathered as historical record of what the bootstrap actually did, never rewritten in-place once a plan is archived in `done/`, and (f) `plans/README.md`'s active-roster row for this plan — structurally names the plan's slug + summary. End-to-end OHLCV behaviour is preserved: `GET /ohlcv` still returns the same `Bar` shape and tests pass.
+Rewrite the Yahoo OHLCV fetch as a small in-house function in our adapter package, delete the entire `src/market_analyser/data/vendored/` tree and `vendored.lock`, and scrub every reference to the companion `tradingview-mcp` repository from source code, live docs, diagrams, skill `SKILL.md` / references, and `CLAUDE.md`. After this plan lands, the name survives only in (a) [ADR-0003](../../adrs/0003-vendoring-strategy.md) (superseded, historical), (b) [ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md) (the supersession), (c) the one-line amendment notes Phase 3 adds to [ADR-0004](../../adrs/0004-strategy-interface.md) / [ADR-0006](../../adrs/0006-persistence-layout.md) / [ADR-0007](../../adrs/0007-market-data-provider.md), (d) this plan file, (e) [Plan 0001](0001-bootstrap.md)'s "Vendoring manifest" section — grandfathered as historical record of what the bootstrap actually did, never rewritten in-place once a plan is archived in `done/`, and (f) `plans/README.md`'s active-roster row for this plan — structurally names the plan's slug + summary. End-to-end OHLCV behaviour is preserved: `GET /ohlcv` still returns the same `Bar` shape and tests pass.
 
 ## Context & problem
 
-[ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) reverses [ADR-0003](../adrs/0003-vendoring-strategy.md): the companion repository will be deleted once this project is complete, so the vendoring discipline buys nothing once the upstream is gone. The decision is captured; this plan is the execution.
+[ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md) reverses [ADR-0003](../../adrs/0003-vendoring-strategy.md): the companion repository will be deleted once this project is complete, so the vendoring discipline buys nothing once the upstream is gone. The decision is captured; this plan is the execution.
 
 Concretely, three files live under `src/market_analyser/data/vendored/tradingview_mcp/core/services/`:
 
@@ -70,9 +71,9 @@ Each phase is one commit. `dev` runs all phases in one session.
 ### Phase 3 — Scrub `docs/architecture/`
 - **Owner skill:** `dev`
 - **What:**
-  - Set the `Status:` line of [ADR-0003](../adrs/0003-vendoring-strategy.md) to `superseded by ADR-0009`. Leave the body untouched (ADRs are append-only).
-  - In [ADR-0007](../adrs/0007-market-data-provider.md): **do not rewrite the body** (it remains the canonical Protocol design). Add one front-matter line under the `Related ADRs:` line: `> **Amendment:** see [ADR-0009](0009-rewrite-data-layer-in-house.md) — "vendored sources" now reads as "our own implementation".` Same treatment for any other accepted ADR that references vendoring in passing ([ADR-0004](../adrs/0004-strategy-interface.md), [ADR-0006](../adrs/0006-persistence-layout.md)) — single amendment line, no body edits.
-  - In [Plan 0002](0002-strategy-interface.md) (still `draft`, editable): rewrite the affected sections to point at in-house implementation. [Plan 0001](done/0001-bootstrap.md) is **not** in scope — it closed on 2026-05-18 and lives in `plans/done/`. Its "Vendoring manifest" section is the historical record of what the bootstrap actually did; editing a closed plan in `done/` rewrites that record. Grandfather it instead via the done-when grep allow-list below.
+  - Set the `Status:` line of [ADR-0003](../../adrs/0003-vendoring-strategy.md) to `superseded by ADR-0009`. Leave the body untouched (ADRs are append-only).
+  - In [ADR-0007](../../adrs/0007-market-data-provider.md): **do not rewrite the body** (it remains the canonical Protocol design). Add one front-matter line under the `Related ADRs:` line: `> **Amendment:** see [ADR-0009](0009-rewrite-data-layer-in-house.md) — "vendored sources" now reads as "our own implementation".` Same treatment for any other accepted ADR that references vendoring in passing ([ADR-0004](../../adrs/0004-strategy-interface.md), [ADR-0006](../../adrs/0006-persistence-layout.md)) — single amendment line, no body edits.
+  - In [Plan 0002](../0002-strategy-interface.md) (still `draft`, editable): rewrite the affected sections to point at in-house implementation. [Plan 0001](0001-bootstrap.md) is **not** in scope — it closed on 2026-05-18 and lives in `plans/done/`. Its "Vendoring manifest" section is the historical record of what the bootstrap actually did; editing a closed plan in `done/` rewrites that record. Grandfather it instead via the done-when grep allow-list below.
   - In `docs/architecture/diagrams/bootstrap-component-map.md`: replace "vendored" boxes/labels with the new in-house equivalents. If the diagram is now substantially wrong, re-draw rather than patch.
 - **Files touched:** `docs/architecture/adrs/0003-vendoring-strategy.md`, `0004-strategy-interface.md`, `0006-persistence-layout.md`, `0007-market-data-provider.md`; `docs/architecture/plans/0002-strategy-interface.md`; `docs/architecture/diagrams/bootstrap-component-map.md`.
 - **Done when:** `grep -rin "tradingview[-_]mcp\|vendored" docs/` matches only (a) the body of ADR-0003, (b) the body of ADR-0009, (c) the body of this plan, (d) the one-line amendment notes in ADR-0004 / 0006 / 0007, (e) the body of `plans/done/0001-bootstrap.md` (grandfathered — historical record of the bootstrap's vendoring manifest), and (f) `plans/README.md` (structural — the active-roster row for this plan names its own slug + summary).
@@ -109,7 +110,7 @@ No new data shapes. The `Bar` pydantic model in `src/market_analyser/data/types.
 
 ## What this plan does NOT do
 
-- Rewrite the `MarketDataProvider` Protocol or any of [ADR-0007](../adrs/0007-market-data-provider.md)'s substantive design. The Protocol shape, the `as_of` seam, the cache chokepoint, the lazy bring-in cadence — all unchanged.
+- Rewrite the `MarketDataProvider` Protocol or any of [ADR-0007](../../adrs/0007-market-data-provider.md)'s substantive design. The Protocol shape, the `as_of` seam, the cache chokepoint, the lazy bring-in cadence — all unchanged.
 - Write or rewrite data sources not currently in use (screener, sentiment, news, indicators, BTC market). Those are written fresh by future plans as needed.
 - Restore Webshare proxy support. If we need it, a follow-up plan introduces a slim in-house version.
 - Touch the strategy interface, the persistence layout, the IPC contract, the Electron shell, or any sibling-skill code outside the scrub.
