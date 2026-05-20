@@ -1,13 +1,16 @@
 # 0002 — Strategy interface and contracts module
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-17
 > **Approved:** 2026-05-19
+> **Closed:** 2026-05-20
 > **Owner skill(s):** `dev` (phases 1, 2, 5), `backtester` (phase 3), `strategy-author` (phase 4)
-> **Related ADRs:** [ADR-0004](../adrs/0004-strategy-interface.md), [ADR-0007](../adrs/0007-market-data-provider.md), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md)
+> **Related ADRs:** [ADR-0004](../../adrs/0004-strategy-interface.md), [ADR-0007](../../adrs/0007-market-data-provider.md), [ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md)
 > **Depends on:** [Plan 0001](0001-bootstrap.md) phase 2 — `src/market_analyser/data/types.py` (the canonical `Bar` model). Satisfied: Plan 0001 closed 2026-05-18, file exists at `src/market_analyser/data/types.py`.
 >
-> **Reframe note (2026-05-19, architect Mode 4):** Phase 3 originally bundled a thin backtest engine + four metric helpers + a `BacktestResult` schema with the `signals_to_trades` adapter, on the assumption that upstream metrics helpers could be reused. [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) removed that assumption. Phase 3 has been narrowed to **adapter + `Trade` type + golden test on the trade list only**; the engine, metrics, and `BacktestResult` schema move to a dedicated follow-up plan (see "Followups"). This keeps Plan 0002 single-purpose — the strategy contract — and avoids smuggling unresolved engine design into a contract plan.
+> **Close note (2026-05-20, architect Mode 4):** All five phases landed clean (56/56 specs pass; `market-analyser strategies list` prints six rows byte-identical across runs). Tests are substantive — every strategy carries hand-computed indices, determinism, and no-lookahead specs against truncated bar prefixes. Phase 5 added a `--json` flag not named in the plan; user-authorized at the Step 2 gate, recorded here for the audit trail. One minor open follow-up (CLI smoke test) carried in `plans/README.md` → "Open follow-ups"; two nits (`cli.py` reaches `contracts.strategy` instead of root `contracts`; `supertrend.py` uses raw `"up"`/`"down"` strings instead of `Literal`) noted in the review and not tracked further.
+>
+> **Reframe note (2026-05-19, architect Mode 4):** Phase 3 originally bundled a thin backtest engine + four metric helpers + a `BacktestResult` schema with the `signals_to_trades` adapter, on the assumption that upstream metrics helpers could be reused. [ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md) removed that assumption. Phase 3 has been narrowed to **adapter + `Trade` type + golden test on the trade list only**; the engine, metrics, and `BacktestResult` schema move to a dedicated follow-up plan (see "Followups"). This keeps Plan 0002 single-purpose — the strategy contract — and avoids smuggling unresolved engine design into a contract plan.
 
 ## TL;DR
 
