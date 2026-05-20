@@ -35,6 +35,7 @@ def test_signal_is_frozen() -> None:
     with pytest.raises(ValidationError):
         sig.bar_index = 4
 
+
 def test_signal_default_reason_is_none() -> None:
     sig = Signal(bar_index=0, kind=SignalKind.EXIT_LONG)
     assert sig.reason is None
@@ -51,6 +52,7 @@ def test_strategy_meta_is_frozen() -> None:
     with pytest.raises(ValidationError):
         meta.id = "y"
 
+
 def test_base_params_rejects_extras() -> None:
     class P(BaseParams):
         period: int = 14
@@ -66,6 +68,7 @@ def test_base_params_is_frozen() -> None:
     p = P()
     with pytest.raises(ValidationError):
         p.period = 5
+
 
 def test_rsi_module_has_meta_params_generate_signals() -> None:
     # The contract is a module shape, not a class. `discover()` checks the
