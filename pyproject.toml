@@ -16,6 +16,9 @@ dependencies = [
     "uvicorn[standard]==0.46.0",
 ]
 
+[project.scripts]
+market-analyser = "market_analyser.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest==9.0.3",
