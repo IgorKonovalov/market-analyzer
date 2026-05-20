@@ -28,9 +28,11 @@ from starlette.routing import Route
 
 from market_analyser import __version__
 from market_analyser.api.mcp_app import create_mcp_components
+from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
 from market_analyser.persistence.repository import BarRepository
 
@@ -43,6 +45,7 @@ def create_app(
     secret: str,
     mcp_secret: str | None = None,
     provider: MarketDataProvider | None = None,
+    annotations_repository: AnnotationsRepository | None = None,
     engine: Engine | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
@@ -65,9 +68,11 @@ def create_app(
 
     if engine is not None:
         apply_migrations(engine)
+        session_factory = make_session_factory(engine)
         if provider is None:
-            repo = BarRepository(make_session_factory(engine))
-            provider = DefaultMarketDataProvider(bar_repository=repo)
+            provider = DefaultMarketDataProvider(bar_repository=BarRepository(session_factory))
+        if annotations_repository is None:
+            annotations_repository = AnnotationsRepository(session_factory)
 
     mcp_components = create_mcp_components() if mcp_secret is not None else None
 
@@ -82,6 +87,7 @@ def create_app(
 
     app = FastAPI(title="market-analyser", version=__version__, lifespan=lifespan)
     app.state.provider = provider if provider is not None else DefaultMarketDataProvider()
+    app.state.annotations_repository = annotations_repository
 
     @app.middleware("http")
     async def bearer_auth(
@@ -109,6 +115,9 @@ def create_app(
         return {"ok": True, "version": __version__}
 
     app.include_router(ohlcv_router)
+
+    if annotations_repository is not None:
+        app.include_router(annotations_router)
 
     if mcp_components is not None:
         _, asgi_app = mcp_components
