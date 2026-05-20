@@ -29,8 +29,10 @@ from sqlalchemy import Engine
 from starlette.routing import Route
 
 from market_analyser import __version__
+from market_analyser.api.events import EventBus
 from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.annotations import router as annotations_router
+from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
@@ -42,6 +44,7 @@ from market_analyser.persistence.repository import BarRepository
 
 AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({"/healthz"})
 MCP_PREFIX = "/mcp"
+EVENTS_PATH = "/events"
 
 
 def create_app(
@@ -53,6 +56,7 @@ def create_app(
     annotations_repository: AnnotationsRepository | None = None,
     engine: Engine | None = None,
     dev_origin: str | None = None,
+    event_bus: EventBus | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
 
@@ -119,6 +123,10 @@ def create_app(
     app.state.annotations_repository = annotations_repository
     app.state.mcp_secret = mcp_secret
     app.state.mcp_secret_path = mcp_secret_path
+    # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
+    # and the renderer's `useEventStream` (phase 4 consumer). One per app
+    # instance — fresh per test, persistent in production.
+    app.state.event_bus = event_bus if event_bus is not None else EventBus()
 
     @app.middleware("http")
     async def bearer_auth(
@@ -128,9 +136,17 @@ def create_app(
         path = request.url.path
         if path in AUTH_EXEMPT_PATHS:
             return await call_next(request)
+        # Resolve the bearer token. The Authorization header is the primary
+        # path; for `/events` only (ADR-0017), `?token=<bearer>` is also
+        # accepted so browser `EventSource` (which can't set custom headers)
+        # can subscribe.
         header = request.headers.get("authorization", "")
         scheme, _, token = header.partition(" ")
         if scheme.lower() != "bearer":
+            token = ""
+        if not token and path == EVENTS_PATH:
+            token = request.query_params.get("token", "")
+        if not token:
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         is_mcp = path == MCP_PREFIX or path.startswith(MCP_PREFIX + "/")
         if is_mcp:
@@ -177,6 +193,10 @@ def create_app(
     # Renderer-bearer-gated by the central middleware; an agent on `/mcp`
     # cannot stop the sidecar through this route.
     app.include_router(settings_stop_router)
+
+    # `GET /events` SSE stream. Renderer-bearer-gated; query-string ?token=
+    # accepted only on this route for EventSource compatibility (ADR-0017).
+    app.include_router(events_router)
 
     if mcp_components is not None:
         _, asgi_app = mcp_components
