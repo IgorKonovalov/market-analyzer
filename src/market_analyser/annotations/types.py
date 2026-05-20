@@ -67,4 +67,4 @@ class Annotation(BaseModel):
         return v.astimezone(UTC)
 
 
-__all__ = ["Annotation", "AnnotationKind", "SUPPORTED_TIMEFRAMES"]
+__all__ = ["SUPPORTED_TIMEFRAMES", "Annotation", "AnnotationKind"]

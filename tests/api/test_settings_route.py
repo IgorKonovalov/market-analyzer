@@ -142,7 +142,7 @@ def test_get_returns_current_secret_to_renderer_bearer(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["secret"] == mcp_secret
-    assert "created_at" in body and body["created_at"]
+    assert body.get("created_at")
 
 
 def test_get_rejects_missing_bearer(client: TestClient) -> None:
@@ -164,7 +164,7 @@ def test_post_rotate_returns_new_secret(client: TestClient, mcp_secret: str) -> 
     assert isinstance(new_secret, str)
     assert len(new_secret) == 64  # 32 bytes hex-encoded
     assert new_secret != mcp_secret
-    assert "created_at" in body and body["created_at"]
+    assert body.get("created_at")
 
 
 def test_post_rotate_writes_new_secret_to_disk(
