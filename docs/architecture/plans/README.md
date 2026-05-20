@@ -8,6 +8,7 @@ Implementation plans for `market-analyser`. Each plan is one file (`NNNN-<slug>.
 |------|---------------------------------------------------------------|----------------|---------|
 | 0007 | [0007-live-agent-driven-viewer](0007-live-agent-driven-viewer.md) | approved  | Standalone sidecar (lockfile + idempotent attach) + SSE `/events` stream + three new MCP `show_*` tools (`show_chart`, `update_chart`, `highlight_pattern`) + Electron SSE subscriber + Claude Code config. Closes the deferred items from ADR-0014 and Plan 0006; mechanism for the role inversion in [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md). Five phases: `dev` × 3 → `ui-builder` → `human`. |
 | 0002 | [0002-strategy-interface](0002-strategy-interface.md)         | in-progress    | Strategy contract module (`Signal`, `Params`, `META`, `StrategyProtocol`) + RSI reference + signals-to-trades adapter + `Trade` type + 5 reference strategies + `strategies list` CLI. Three skill boundaries. Reframed 2026-05-19 at approval: phase 3 narrowed to adapter only; engine + metrics + `BacktestResult` punted to follow-up. |
+| 0008 | [0008-backtest-engine-v1](0008-backtest-engine-v1.md)         | approved       | Backtest engine v1: pure `run(strategy, bars, params, **costs) -> BacktestResult` + four metric helpers (`_apply_costs`, `_build_equity_curve`, `_calc_metrics`, `_buy_and_hold_return`) + thin `persist()` (disk + SQLite-indexed `backtest_runs` table) + `run_backtest` MCP tool emitting `run.completed v1` + Electron `BacktestView` (equity curve + metrics + trade log) + `RecentBacktestsView`. Closes Plan 0002's deferred engine half AND gives [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md)'s `run.completed v1` envelope its first producer. Five phases: `backtester` × 2 → `dev` × 2 → `ui-builder`. Paired with [ADR-0018](../adrs/0018-backtest-result-schema.md) (`BacktestResult` schema). Long-only, fixed-fraction sizing, flat-bps costs; sweeps and walk-forward deferred to follow-ups. |
 
 ## Recently closed
 
@@ -21,24 +22,41 @@ Implementation plans for `market-analyser`. Each plan is one file (`NNNN-<slug>.
 
 ## Recommended execution order
 
-Plan 0006 closed on 2026-05-20, putting the MCP server, annotations table, Settings page, and chart-marker polling in place. On the same day the architect accepted [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (Claude Code is now the primary control surface; Electron is the live viewer) plus the two mechanism ADRs it forces ([ADR-0016](../adrs/0016-standalone-sidecar-mode.md), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md)). **Plan 0007 (live agent-driven viewer)** is the implementation of that role inversion and is the next plan to ship — it closes the deferred items from ADR-0014 and Plan 0006, and without it the agent-primary workflow described in ADR-0015 has no mechanism.
+Plan 0006 closed on 2026-05-20, putting the MCP server, annotations table, Settings page, and chart-marker polling in place. On the same day the architect accepted [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (Claude Code is now the primary control surface; Electron is the live viewer) plus the two mechanism ADRs it forces ([ADR-0016](../adrs/0016-standalone-sidecar-mode.md), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md)). **Plan 0007 (live agent-driven viewer)** is the implementation of that role inversion — it closes the deferred items from ADR-0014 and Plan 0006, and without it the agent-primary workflow described in ADR-0015 has no mechanism.
 
-Plan 0002 (strategy interface) is unchanged in scope and is still useful — its contract module is consumed by the backtester regardless of whether Claude or Electron drives. It is sequenced **after** Plan 0007 in the recommended order because the role-inversion mechanism is load-bearing for the whole product direction and gets in front of cycle time on every other plan that follows. Running Plans 0007 and 0002 in parallel sessions is also viable (they touch disjoint files: 0007 is in `src/market_analyser/api/` + `desktop/`, 0002 is in `src/market_analyser/strategies/` + `src/market_analyser/backtest/`); the only constraint is one architect close ceremony at a time.
+Plan 0002 (strategy interface) is unchanged in scope and runs in parallel with Plan 0007 — they touch disjoint files (0007 is in `src/market_analyser/api/` + `desktop/`, 0002 is in `src/market_analyser/strategies/` + `src/market_analyser/backtest/`). Both are in flight on 2026-05-20.
 
-Execution sequence (serial):
-
-```
-1.  /dev          Plan 0007 phases 1–3  (dev block: lockfile + SSE + show_* tools)
-2.  /ui-builder   Plan 0007 phase 4     (Electron SSE subscriber + chart handlers;
-                                         cross-skill handoff from /dev)
-3.  /human        Plan 0007 phase 5     (Claude Code MCP config + end-to-end smoke)
-4.  /architect    close Plan 0007       (fresh architect session)
-5.  /dev          Plan 0002             (mixed-skill: dev → backtester → strategy-author →
-                                         dev; hand off at each owner boundary)
-6.  /architect    close Plan 0002       (fresh architect session)
-```
+**Plan 0008 (backtest engine v1)** is the natural sequel to both. It is the engine half [ADR-0004](../adrs/0004-strategy-interface.md) named but Plan 0002 deliberately deferred — pure `run(strategy, bars, params, **costs) -> BacktestResult` + thin persistence + a `run_backtest` MCP tool. It also closes a load-bearing gap in Plan 0007: the `run.completed v1` SSE envelope was reserved with no producer, and Plan 0008 ships its first one. The plan is paired with [ADR-0018](../adrs/0018-backtest-result-schema.md) (`BacktestResult` schema). Plan 0008 depends on Plan 0002 phases 1–3 (contracts module + `signals_to_trades` adapter + `Trade` type) **and** Plan 0007 phases 1–4 (SSE bus + `useEventStream` hook) — both must close before Plan 0008's relevant phases (1 and 4 respectively) can start.
 
 Plan 0002 keeps three skill handoffs (`dev` → `backtester` → `strategy-author` → `dev`). At approval (2026-05-19) the architect considered collapsing to two — either by moving phase 5 (CLI) ahead of phase 4, or by making strategy-author phase 4 tests compare signal lists instead of trade lists. Both options were rejected: phase 5's done-when (six rows printed by `strategies list`) is the integration check that proves discovery + contract + CLI work together, and phase 4's done-when (trade list matches reference byte-for-byte after `signals_to_trades`) is the integration check that proves the contract round-trips through the adapter. Cheap handoffs at clean owner boundaries are worth preserving over fewer-but-weaker acceptance criteria.
+
+Execution sequence (Plans 0007 and 0002 in parallel; 0008 strictly after both):
+
+```
+[Parallel — already in flight]
+A1. /dev          Plan 0007 phases 1–3  (dev block: lockfile + SSE + show_* tools)
+A2. /ui-builder   Plan 0007 phase 4     (Electron SSE subscriber + chart handlers;
+                                         cross-skill handoff from /dev)
+A3. /human        Plan 0007 phase 5     (Claude Code MCP config + end-to-end smoke)
+A4. /architect    close Plan 0007       (fresh architect session)
+
+B1. /dev          Plan 0002             (mixed-skill: dev → backtester → strategy-author →
+                                         dev; hand off at each owner boundary)
+B2. /architect    close Plan 0002       (fresh architect session)
+
+[Sequential — depends on BOTH A4 and B2 above]
+C1. /backtester   Plan 0008 phases 1–2  (BacktestResult + four pure helpers + run() pure orchestrator;
+                                         depends on Plan 0002 phases 1–3 = contract + adapter + Trade)
+C2. /dev          Plan 0008 phases 3–4  (persist + SQLite migration + GET routes + run_backtest MCP tool;
+                                         cross-skill handoff from /backtester;
+                                         phase 4 depends on Plan 0007 phases 1–4 = SSE bus)
+C3. /ui-builder   Plan 0008 phase 5     (BacktestView + RecentBacktestsView;
+                                         cross-skill handoff from /dev;
+                                         depends on Plan 0007 phase 4 = useEventStream hook)
+C4. /architect    close Plan 0008       (fresh architect session)
+```
+
+Plan 0008 keeps two skill handoffs (`backtester` → `dev` → `ui-builder`). The architect considered collapsing the `dev` block (phases 3 + 4) into the `backtester` block since they both touch `src/market_analyser/backtest/`, but rejected it: phase 3 introduces the SQLite migration + repository + HTTP routes (the persistence layer's center of gravity is `dev`, not the engine), and the cross-skill boundary at the `backtester` → `dev` handoff is the integration check that proves the pure engine is genuinely pure (the `dev` phases can build the I/O layer without changing `engine.py`).
 
 ## Status vocabulary
 
@@ -68,7 +86,7 @@ Plans with mixed-owner phases hand off at every boundary per the [cross-skill ha
 
 ## Conventions
 
-- **Numbering** is sequential and zero-padded to four digits. Next free number is **0008**. ADR numbers are an independent sequence (see [`../adrs/`](../adrs/)) — next free ADR is **0018** (last accepted: ADR-0017, accepted 2026-05-20 alongside ADRs 0015 and 0016 as the role-inversion bundle). Architect runs `Glob docs/architecture/plans/*.md` and `Glob docs/architecture/adrs/*.md` before drafting to pick the next numbers, never trusting memory.
+- **Numbering** is sequential and zero-padded to four digits. Next free number is **0009**. ADR numbers are an independent sequence (see [`../adrs/`](../adrs/)) — next free ADR is **0019** (last drafted: ADR-0018, proposed 2026-05-20 alongside Plan 0008 as the BacktestResult-schema pair; previous accepted ADR was ADR-0017 on 2026-05-20). Architect runs `Glob docs/architecture/plans/*.md` and `Glob docs/architecture/adrs/*.md` before drafting to pick the next numbers, never trusting memory.
 - **One plan per file.** No "Plan 0004a" / "Plan 0004b" splits — if the work grows, write a new numbered plan and reference the parent.
 - **Plans aren't ADRs.** A plan says *what we're building this week and how*; an ADR says *why we chose this design over the alternatives*. Plans expire; ADRs don't. If a plan's decision warrants permanent capture, the architect also writes an ADR (Mode 2).
 - **Plans don't move until the architect's close ceremony.** Implementers commit per phase but never `git mv` a plan to `done/`. The close ceremony reviews the whole plan in one pass, then flips status + moves the file in a single architect-authored commit.
@@ -77,4 +95,4 @@ Plans with mixed-owner phases hand off at every boundary per the [cross-skill ha
 
 ## When you don't know which plan to start
 
-Don't guess. The execution sequence above is the source of truth as of 2026-05-20 (Plans 0001 + 0003 + 0004 + 0005 + 0006 closed; Plan 0002 next). If reality has drifted (the user names a plan not in that sequence, or a status disagrees with a recent commit), trust `git log` and the plan's own `Status:` line over this README — and surface the drift so the README gets refreshed.
+Don't guess. The execution sequence above is the source of truth as of 2026-05-20 (Plans 0001 + 0003 + 0004 + 0005 + 0006 closed; Plans 0007 and 0002 in flight in parallel; Plan 0008 sequenced after both). If reality has drifted (the user names a plan not in that sequence, or a status disagrees with a recent commit), trust `git log` and the plan's own `Status:` line over this README — and surface the drift so the README gets refreshed.
