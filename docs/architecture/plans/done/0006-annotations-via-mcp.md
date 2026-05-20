@@ -1,10 +1,11 @@
 # 0006 — Annotations via MCP: thin layer + chart markers
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-19
 > **Approved:** 2026-05-19
+> **Closed:** 2026-05-20
 > **Owner skill(s):** `dev`, `ui-builder`
-> **Related ADRs:** [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (MCP as second sidecar protocol), [ADR-0002](../adrs/0002-ipc-local-http.md) (renderer transport), [ADR-0006](../adrs/0006-persistence-layout.md) (SQLite for app data), [ADR-0011](../adrs/0011-bearer-secret-transport.md) (per-launch bearer transport)
+> **Related ADRs:** [ADR-0014](../../adrs/0014-mcp-as-second-sidecar-protocol.md) (MCP as second sidecar protocol), [ADR-0002](../../adrs/0002-ipc-local-http.md) (renderer transport), [ADR-0006](../../adrs/0006-persistence-layout.md) (SQLite for app data), [ADR-0011](../../adrs/0011-bearer-secret-transport.md) (per-launch bearer transport)
 
 ## TL;DR
 
@@ -14,13 +15,13 @@ Mount an MCP server (Streamable HTTP, MCP spec rev 2025-03-26) on the existing F
 
 The current architecture (per ADRs 0002, 0007, 0008) makes the sidecar invisible to anything except the in-process renderer. We agreed in the conversation that opened this plan to expose the sidecar to external MCP clients so that an agent (initially Claude Desktop) can query the cached data and write back analyst artifacts the user sees in the app. The interview locked the MVP scope to **annotations only** — the "C" tier of the C → B → A ordering — with strategy result rows (B) and strategy code generation (A) deferred to future plans.
 
-The MCP transport-and-auth decision lives in [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md); this plan is the execution. The visualization piece settled on signal markers as the chart surface for this plan; the indicator overlay piece is a separate parallel plan ("indicators module + chart overlay", not yet drafted) and is **out of scope** here.
+The MCP transport-and-auth decision lives in [ADR-0014](../../adrs/0014-mcp-as-second-sidecar-protocol.md); this plan is the execution. The visualization piece settled on signal markers as the chart surface for this plan; the indicator overlay piece is a separate parallel plan ("indicators module + chart overlay", not yet drafted) and is **out of scope** here.
 
 The plan's success criterion is the visible loop: an agent connected via MCP calls `write_annotation(symbol="AAPL", timeframe="1d", event_ts="2026-05-15T00:00:00Z", kind="bullish_marker", label="hammer at support")`, the annotation lands in SQLite, the renderer (polling `/annotations` for the active chart's window) picks it up within the next poll tick, and the user sees an upward-pointing marker rendered on the 2026-05-15 candle with the label visible on hover. Anything beyond that loop is out of MVP scope.
 
 ## Decision
 
-Adopt **Option 1** from the interview ("thin MCP + annotations table + poll-based refresh") with the scope above. Phases interleave `dev` (sidecar + DB + MCP transport) and `ui-builder` (Settings page + chart markers) ownership and hand off cleanly at owner boundaries per the [cross-skill handoff protocol](../../../.claude/skills/architect/references/templates/cross-skill-handoff.md). The first phase is the walking skeleton (MCP route + a single tool returning a literal) so that phase-1 failures surface the integration risks before the DB or UI work.
+Adopt **Option 1** from the interview ("thin MCP + annotations table + poll-based refresh") with the scope above. Phases interleave `dev` (sidecar + DB + MCP transport) and `ui-builder` (Settings page + chart markers) ownership and hand off cleanly at owner boundaries per the [cross-skill handoff protocol](../../../../.claude/skills/architect/references/templates/cross-skill-handoff.md). The first phase is the walking skeleton (MCP route + a single tool returning a literal) so that phase-1 failures surface the integration risks before the DB or UI work.
 
 We rejected Option 2 (structured kinds + SSE push) because SSE adds an IPC mode the codebase doesn't have yet and the schema bets it makes are bets Plan B (strategy results) is better placed to validate. We rejected Option 3 (two smaller plans, MCP foundation first then annotations) because the visible end-to-end loop is the whole point; deferring it to Plan N+1 turns Plan N into pure plumbing and loses the walking-skeleton property.
 
@@ -92,7 +93,7 @@ Each phase is one commit. Owner tags hand off between `dev` and `ui-builder`.
 ### Phase 3 — Renderer HTTP endpoint for annotations (read path)
 
 - **Owner skill:** `dev`
-- **What:** Add `GET /annotations?symbol=&timeframe=&start=&end=` to the renderer-bearer-gated route set, returning a JSON list of `Annotation` rows in the window. Validation matches `/ohlcv`'s shape (UTC datetimes, start < end, supported timeframe set from [ADR-0007](../adrs/0007-market-data-provider.md)). The endpoint reads through `AnnotationsRepository.list_for` directly — no provider-layer abstraction yet, because annotations are app-private state, not a data-source like Yahoo. Reasoning lives in a one-line code comment at the route handler.
+- **What:** Add `GET /annotations?symbol=&timeframe=&start=&end=` to the renderer-bearer-gated route set, returning a JSON list of `Annotation` rows in the window. Validation matches `/ohlcv`'s shape (UTC datetimes, start < end, supported timeframe set from [ADR-0007](../../adrs/0007-market-data-provider.md)). The endpoint reads through `AnnotationsRepository.list_for` directly — no provider-layer abstraction yet, because annotations are app-private state, not a data-source like Yahoo. Reasoning lives in a one-line code comment at the route handler.
 - **Files touched:** `src/market_analyser/api/routes/` (new `annotations.py`); `src/market_analyser/api/app.py` (register route); new `tests/api/test_annotations_route.py`.
 - **Done when:**
   - A test inserts an annotation via the repository, calls `GET /annotations` with the renderer bearer over the matching window, and asserts the response contains exactly that annotation with all fields.
@@ -104,7 +105,7 @@ Each phase is one commit. Owner tags hand off between `dev` and `ui-builder`.
 
 - **Owner skill:** `dev`
 - **What:** Replace the `ping` stub from phase 1 with the three production tools.
-  - `get_ohlcv(symbol, timeframe, start, end) -> list[Bar]` — reads through the existing `MarketDataProvider` exactly as the renderer's `/ohlcv` does. Same `as_of` discipline (per [ADR-0007](../adrs/0007-market-data-provider.md)): MCP callers do not supply `as_of` — it is fixed to `None` (live mode). When/if a backtest-aware tool variant is needed, it ships as a separate tool, not as an `as_of` parameter exposed to agents (preserves anti-lookahead at the MCP boundary).
+  - `get_ohlcv(symbol, timeframe, start, end) -> list[Bar]` — reads through the existing `MarketDataProvider` exactly as the renderer's `/ohlcv` does. Same `as_of` discipline (per [ADR-0007](../../adrs/0007-market-data-provider.md)): MCP callers do not supply `as_of` — it is fixed to `None` (live mode). When/if a backtest-aware tool variant is needed, it ships as a separate tool, not as an `as_of` parameter exposed to agents (preserves anti-lookahead at the MCP boundary).
   - `write_annotation(symbol, timeframe, event_ts, kind, label, agent_id) -> Annotation` — inserts via `AnnotationsRepository.insert`, returns the persisted row (including its `id` and `created_at`).
   - `list_annotations(symbol, timeframe, start, end) -> list[Annotation]` — reads via `AnnotationsRepository.list_for`. The MCP equivalent of the `/annotations` HTTP route so the agent can read its own (or other agents') prior annotations.
 - **Files touched:** `src/market_analyser/api/mcp_app.py` (remove `ping`, add three tools); new `tests/api/test_mcp_tools.py`.
@@ -185,7 +186,7 @@ JSON envelope (rather than a bare string) so future fields (`last_rotated_at`, `
 - **Strategy code generation (Plan A).** No agent-written Python files. No code execution sandbox. Deferred indefinitely — will require its own ADR(s) on security model and module-loading discipline.
 - **Indicator overlay (RSI, MACD, EMA panel).** The interview confirmed indicators are app-computed and a separate parallel plan ("indicators module + chart overlay" — not yet drafted, eligible for queue after this plan).
 - **SSE / WebSocket push for annotations.** Polling at 1 Hz is the MVP refresh mechanism. Real-time push is a follow-up if and when Plan B's higher-frequency write patterns make polling lossy.
-- **Standalone sidecar mode (sidecar runs without the Electron app).** [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) explicitly defers this; the MCP server is reachable only while the app is running.
+- **Standalone sidecar mode (sidecar runs without the Electron app).** [ADR-0014](../../adrs/0014-mcp-as-second-sidecar-protocol.md) explicitly defers this; the MCP server is reachable only while the app is running.
 - **Per-tool authorization scopes inside the MCP secret** (e.g. "this token can call `list_annotations` but not `write_annotation`"). Today the secret is all-or-nothing. A future ADR may introduce scopes if multi-agent or untrusted-agent workflows surface.
 - **Annotation editing or deletion via either MCP or the renderer.** MVP is write-once. If the agent wrote a wrong annotation, the user sees it until a delete UX is added (future plan). We accept this as part of the smallest-defensible-MVP discipline.
 - **Cross-symbol annotation views.** Annotations are visible only on the chart for the symbol they reference. No "all annotations" inbox, no notifications.
@@ -193,4 +194,17 @@ JSON envelope (rather than a bare string) so future fields (`last_rotated_at`, `
 
 ## Followups (after this lands)
 
-- *(empty at draft time; fill in during the close ceremony if any surface.)*
+Recorded during the close ceremony on 2026-05-20.
+
+**Resolved during implementation** (already shipped):
+
+- *Risk: `mcp-secret*.json` ends up in a packaged installer.* CI guard added in commit `f0a6c52` (`.github/workflows/ci.yml` step "Guard against committed mcp-secret*.json"); belt-and-suspenders `.gitignore` rule added in commit `4ac6796`. These were spotted by the first Mode 4 pass and landed before the re-review.
+
+**Open after close** (carry to next dev / architect touch):
+
+- **`get_ohlcv` MCP tool does not validate `timeframe`.** `src/market_analyser/api/mcp_app.py:79-86` passes `timeframe` straight through to the provider, while sibling tool `list_annotations` (same file, line 122) explicitly rejects `timeframe not in SUPPORTED_TIMEFRAMES`. An agent calling `get_ohlcv("AAPL", "5m", ...)` gets a confusing empty-list / deep-stack error instead of a clean `ValueError` at the MCP boundary. Fix is a two-line `if timeframe not in SUPPORTED_TIMEFRAMES: raise ValueError(...)` at the top of `get_ohlcv`, mirroring `list_annotations`. Owner: `dev`. Cost: trivial; fold into next dev session.
+- **`bootstrap-component-map.md` schema diagram now stale.** `docs/architecture/diagrams/bootstrap-component-map.md:88-126` shows only the `BARS` table; `ANNOTATIONS` is missing. The component-map flowchart above it also doesn't show the MCP route or `mcp-secret.json`. Plan 0006's own embedded diagram is the canonical post-MCP picture, so the immediate hazard is low — but the schema section is labeled "initial" and would mislead a new reader. Owner: `architect`. Either extend the diagram or annotate the schema section as "Plan 0001 era" at the next diagram-refresh touch.
+
+**Known testability ceilings** (not followups — recorded so a future contributor doesn't reopen them):
+
+- The Phase 6 e2e (`desktop/tests/ohlcv-view.spec.ts:145-204`) asserts the renderer received the annotation row within ~5s and the chart canvas is still visible, but does not assert `series.setMarkers(...)` was called — `lightweight-charts` paints markers to canvas pixels which Playwright cannot inspect. The Jest unit test of `annotationsToMarkers` and the one-line `useEffect` that calls `setMarkers` cover the gap by inspection. No code change wanted.
