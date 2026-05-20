@@ -9,10 +9,59 @@
  * Requires a built desktop bundle. Run with `pnpm --filter desktop test:e2e`.
  */
 import { _electron as electron, test, expect } from '@playwright/test'
-import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = resolve(__dirname, '..', '..')
+
+interface InsertAnnotationArgs {
+  symbol: string
+  timeframe: string
+  event_ts: string
+  kind: 'bullish_marker' | 'bearish_marker'
+  label: string
+}
+
+/**
+ * Insert an annotation into the sidecar's SQLite DB via a Python subprocess
+ * that uses the same default config as the running sidecar. Plan 0006 phase 6
+ * uses this to seed annotations without going through the MCP transport (we
+ * test the renderer/chart marker rendering path, not the MCP write path,
+ * which has its own pytest coverage in tests/api/test_mcp_tools.py).
+ *
+ * Returns the inserted annotation's id.
+ */
+function insertAnnotation(args: InsertAnnotationArgs): string {
+  const script = [
+    'import json, sys',
+    'from datetime import datetime',
+    'from market_analyser.annotations.types import Annotation, AnnotationKind',
+    'from market_analyser.config import load_config',
+    'from market_analyser.persistence.annotations_repository import AnnotationsRepository',
+    'from market_analyser.persistence.engine import apply_migrations, make_engine, make_session_factory',
+    'cfg = load_config(None)',
+    'engine = make_engine(cfg.db_path)',
+    'apply_migrations(engine)',
+    'repo = AnnotationsRepository(make_session_factory(engine))',
+    'raw = json.loads(sys.stdin.read())',
+    'a = Annotation(symbol=raw["symbol"], timeframe=raw["timeframe"], event_ts=datetime.fromisoformat(raw["event_ts"]), kind=AnnotationKind(raw["kind"]), label=raw.get("label"), agent_id="e2e")',
+    'repo.insert(a)',
+    'print(a.id)',
+  ].join('; ')
+
+  const result = spawnSync('uv', ['run', '--no-sync', 'python', '-c', script], {
+    cwd: REPO_ROOT,
+    input: JSON.stringify(args),
+    encoding: 'utf-8',
+    shell: false,
+  })
+  if (result.status !== 0) {
+    throw new Error(`insertAnnotation failed (exit ${result.status}): ${result.stderr}`)
+  }
+  return result.stdout.trim()
+}
 
 test('cold launch renders a candlestick chart for the default symbol', async () => {
   const app = await electron.launch({
@@ -89,6 +138,67 @@ test('Refresh advances the OHLCV window end timestamp', async () => {
   const secondEnd = new URL(ohlcvUrls[1]).searchParams.get('end')
   expect(secondEnd).not.toBeNull()
   expect(new Date(secondEnd!).getTime()).toBeGreaterThan(new Date(firstEnd!).getTime())
+
+  await app.close()
+})
+
+test('annotation written to the DB surfaces on the renderer within a poll window', async () => {
+  const app = await electron.launch({
+    args: [join(__dirname, '..', 'dist', 'main', 'index.cjs')],
+  })
+  const window = await app.firstWindow()
+  await window.waitForLoadState('domcontentloaded')
+
+  // Wait for the chart view to mount so the poll loop is alive.
+  await expect(window.getByRole('region', { name: /OHLCV view/ })).toBeVisible({
+    timeout: 15_000,
+  })
+
+  // Capture annotation responses so we can assert the renderer received our row.
+  const annotationsResponses: Array<{ url: string; body: string }> = []
+  window.on('response', async (response) => {
+    const url = response.url()
+    if (!/127\.0\.0\.1:\d+\/annotations\?/.test(url)) return
+    try {
+      const body = await response.text()
+      annotationsResponses.push({ url, body })
+    } catch {
+      // ignore — response may already be discarded
+    }
+  })
+
+  // Insert a bullish annotation at a recent date inside the default 365-day
+  // window. Mid-yesterday-UTC keeps it inside the OhlcvView's lookback.
+  const eventDate = new Date(Date.now() - 24 * 60 * 60 * 1000)
+  eventDate.setUTCHours(12, 0, 0, 0)
+  const expectedLabel = `e2e-marker-${Date.now()}`
+  const annotationId = insertAnnotation({
+    symbol: 'AAPL',
+    timeframe: '1d',
+    event_ts: eventDate.toISOString(),
+    kind: 'bullish_marker',
+    label: expectedLabel,
+  })
+  expect(annotationId).toMatch(/^[0-9a-f]{32}$/)
+
+  // Within ~2 poll cycles, the renderer's GET /annotations should include
+  // the inserted row.
+  await expect
+    .poll(() => annotationsResponses.some((r) => r.body.includes(annotationId)), {
+      timeout: 5_000,
+      intervals: [200],
+    })
+    .toBe(true)
+
+  // Cross-check: the matching response also carries the label verbatim, so
+  // the marker rendered on the chart would have the right tooltip text.
+  const matched = annotationsResponses.find((r) => r.body.includes(annotationId))
+  expect(matched).toBeDefined()
+  expect(matched!.body).toContain(expectedLabel)
+
+  // And the chart canvas is still present (marker rendering layers on, doesn't
+  // recreate the chart).
+  await expect(window.locator('[data-testid="candlestick-chart"]')).toBeVisible()
 
   await app.close()
 })

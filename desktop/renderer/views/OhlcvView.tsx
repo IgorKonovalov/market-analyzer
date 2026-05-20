@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react'
 import { CandlestickChart } from '../components/CandlestickChart'
 import { SymbolPicker } from '../components/SymbolPicker'
 import type { Timeframe } from '../components/SymbolPicker'
+import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useOhlcv } from '../hooks/useOhlcv'
 import styles from './OhlcvView.module.css'
 
@@ -33,6 +34,7 @@ export function OhlcvView(): JSX.Element {
   }, [refreshTick])
 
   const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end })
+  const { annotations } = useAnnotationsPoll({ symbol, timeframe, start, end })
   const onRefresh = (): void => setRefreshTick((n) => n + 1)
 
   return (
@@ -74,6 +76,7 @@ export function OhlcvView(): JSX.Element {
         {!isLoading && !error && bars && bars.length > 0 && (
           <CandlestickChart
             bars={bars}
+            annotations={annotations}
             ariaLabel={`Candlestick chart for ${symbol} ${timeframe}, ${bars.length} bars`}
           />
         )}
