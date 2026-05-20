@@ -1,35 +1,29 @@
-"""Plan 0006 phase 1 done-when: the MCP walking skeleton round-trips.
+"""Plan 0006 phase 1 done-when: the MCP middleware seam (post-phase-4 ping removal).
 
 Covers:
-- `ping(message="hi")` over the real Streamable HTTP transport against a live
-  uvicorn-backed FastAPI app on an ephemeral loopback port.
 - `/mcp` returns 401 without a bearer and with a wrong bearer, and the response
   body does not leak the expected secret.
 - `mcp-secret.json` is created with mode 0600 on POSIX (skipped on Windows).
 - Cross-tenant escalation is blocked: renderer bearer cannot authenticate
   against `/mcp`, and the MCP bearer cannot authenticate against `/ohlcv`.
+
+Phase-4 swapped the `ping` walking-skeleton tool for the production tools, so
+the ping round-trip test moved to `test_mcp_tools.py`. Everything else here is
+unchanged — bearer dispatch, cross-tenant guarantees, and file-mode discipline
+are still the contract this file defends.
 """
 
 from __future__ import annotations
 
-import asyncio
-import socket
 import stat
 import sys
-import threading
-import time
-from collections.abc import AsyncIterator, Iterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Iterator, Sequence
 from datetime import datetime
 from pathlib import Path
 
-import httpx
 import pytest
-import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
@@ -40,6 +34,12 @@ from market_analyser.data.types import (
     ScreenerRow,
     SentimentSample,
     SymbolInfo,
+)
+from market_analyser.persistence.annotations_repository import AnnotationsRepository
+from market_analyser.persistence.engine import (
+    apply_migrations,
+    make_engine,
+    make_session_factory,
 )
 
 RENDERER_SECRET = "renderer-test-secret"
@@ -94,83 +94,26 @@ def mcp_secret(mcp_secret_path: Path) -> str:
 
 
 @pytest.fixture
-def app(mcp_secret: str) -> FastAPI:
+def annotations_repo() -> Iterator[AnnotationsRepository]:
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    yield AnnotationsRepository(make_session_factory(engine))
+    engine.dispose()
+
+
+@pytest.fixture
+def app(mcp_secret: str, annotations_repo: AnnotationsRepository) -> FastAPI:
     return create_app(
         secret=RENDERER_SECRET,
         mcp_secret=mcp_secret,
         provider=_FakeProvider(),
+        annotations_repository=annotations_repo,
     )
 
 
 @pytest.fixture
 def client(app: FastAPI) -> TestClient:
     return TestClient(app)
-
-
-@pytest.fixture
-def live_server(app: FastAPI) -> Iterator[str]:
-    """Run the FastAPI app under uvicorn on an ephemeral loopback port.
-
-    The MCP Streamable HTTP transport needs a real HTTP server (chunked bodies
-    and POST with the right Accept headers), so we spin up uvicorn in a thread
-    rather than relying on httpx's ASGI transport.
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    config = uvicorn.Config(app, log_level="error", access_log=False)
-    server = uvicorn.Server(config)
-
-    def _run() -> None:
-        asyncio.run(server.serve(sockets=[sock]))
-
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 5.0
-    while not server.started and time.monotonic() < deadline:
-        time.sleep(0.02)
-    if not server.started:
-        server.should_exit = True
-        thread.join(timeout=2)
-        raise RuntimeError("uvicorn server failed to start within 5s")
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        thread.join(timeout=5)
-
-
-@asynccontextmanager
-async def _mcp_session(url: str, bearer: str) -> AsyncIterator[ClientSession]:
-    async with (
-        httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {bearer}"},
-            timeout=httpx.Timeout(30.0),
-        ) as http_client,
-        streamable_http_client(
-            f"{url}/mcp",
-            http_client=http_client,
-        ) as (read_stream, write_stream, _get_session_id),
-        ClientSession(read_stream, write_stream) as session,
-    ):
-        await session.initialize()
-        yield session
-
-
-def test_ping_roundtrip_via_streamable_http(live_server: str, mcp_secret: str) -> None:
-    """An MCP client with the MCP bearer can call ping and get the echo back."""
-
-    async def _run() -> str:
-        async with _mcp_session(live_server, mcp_secret) as session:
-            result = await session.call_tool("ping", {"message": "hi"})
-            assert result.content, "tool returned no content"
-            block = result.content[0]
-            text_attr = getattr(block, "text", None)
-            assert isinstance(text_attr, str), f"unexpected content block: {block!r}"
-            return text_attr
-
-    echoed = asyncio.run(_run())
-    assert echoed == "hi"
 
 
 def test_mcp_no_bearer_returns_401(client: TestClient) -> None:

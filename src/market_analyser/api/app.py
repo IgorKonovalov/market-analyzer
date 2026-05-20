@@ -74,7 +74,20 @@ def create_app(
         if annotations_repository is None:
             annotations_repository = AnnotationsRepository(session_factory)
 
-    mcp_components = create_mcp_components() if mcp_secret is not None else None
+    if mcp_secret is not None and annotations_repository is None:
+        raise ValueError(
+            "create_app requires annotations_repository when mcp_secret is set "
+            "(MCP tools read/write annotations)",
+        )
+    effective_provider = provider if provider is not None else DefaultMarketDataProvider()
+    mcp_components = (
+        create_mcp_components(
+            provider=effective_provider,
+            annotations_repository=annotations_repository,
+        )
+        if mcp_secret is not None and annotations_repository is not None
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -86,7 +99,7 @@ def create_app(
             yield
 
     app = FastAPI(title="market-analyser", version=__version__, lifespan=lifespan)
-    app.state.provider = provider if provider is not None else DefaultMarketDataProvider()
+    app.state.provider = effective_provider
     app.state.annotations_repository = annotations_repository
 
     @app.middleware("http")
