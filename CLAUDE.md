@@ -1,6 +1,8 @@
 # market-analyser
 
-Desktop trading-analysis app. Python sidecar (FastAPI on localhost) + Electron + React + TypeScript renderer + SQLite cache. Data layer written in-house per ADR-0009 (supersedes ADR-0003's vendoring policy).
+Desktop trading-analysis app for the user's own use. Python sidecar (FastAPI on `127.0.0.1`) + Electron + React + TypeScript renderer + SQLite cache, with a Streamable-HTTP MCP server mounted on the sidecar at `/mcp`.
+
+**Primary control surface: Claude Code (CLI) via MCP** ([ADR-0015](docs/architecture/adrs/0015-claude-code-primary-control-surface.md)). The user drives the app by talking to an agent, which calls MCP tools on the sidecar. The Electron viewer is a live visualisation surface — it subscribes to a sidecar event stream ([ADR-0017](docs/architecture/adrs/0017-live-ui-updates-via-sse.md)) and renders agent-issued chart commands. The sidecar runs as a standalone process ([ADR-0016](docs/architecture/adrs/0016-standalone-sidecar-mode.md)): Electron auto-attaches via a lockfile if one is already running, and closing the viewer does not stop the sidecar. Data layer written in-house per [ADR-0009](docs/architecture/adrs/0009-rewrite-data-layer-in-house.md) (supersedes ADR-0003's vendoring policy).
 
 This file is the orientation map for the project's skill ecosystem. Skills do the actual work; this file says **which skill** does which kind of work and **how they hand off**.
 
