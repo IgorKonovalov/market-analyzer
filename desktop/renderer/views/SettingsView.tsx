@@ -20,6 +20,8 @@ interface State {
   revealed: boolean
   copiedAt: number | null
   rotatingAt: number | null
+  stoppingAt: number | null
+  stopRequested: boolean
   error: string | null
 }
 
@@ -29,6 +31,8 @@ const INITIAL_STATE: State = {
   revealed: false,
   copiedAt: null,
   rotatingAt: null,
+  stoppingAt: null,
+  stopRequested: false,
   error: null,
 }
 
@@ -89,6 +93,18 @@ export function SettingsView(): JSX.Element {
       const message =
         err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'rotate failed'
       setState((s) => ({ ...s, rotatingAt: null, error: message }))
+    }
+  }, [])
+
+  const handleStop = useCallback(async (): Promise<void> => {
+    setState((s) => ({ ...s, stoppingAt: Date.now(), error: null }))
+    try {
+      await api.stopSidecar()
+      setState((s) => ({ ...s, stoppingAt: null, stopRequested: true, error: null }))
+    } catch (err: unknown) {
+      const message =
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'stop failed'
+      setState((s) => ({ ...s, stoppingAt: null, error: message }))
     }
   }, [])
 
@@ -219,6 +235,34 @@ export function SettingsView(): JSX.Element {
         {state.error != null && state.record != null && (
           <p className={styles.errorInline} role="alert">
             {state.error}
+          </p>
+        )}
+      </div>
+
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>Sidecar lifecycle</span>
+        <p className={styles.lede}>
+          The sidecar runs as a standalone process — closing this window does not stop it. MCP
+          clients can keep talking to it. Click below to stop it explicitly.
+        </p>
+        <div className={styles.controls}>
+          <button
+            type="button"
+            className={styles.danger}
+            onClick={handleStop}
+            disabled={state.stoppingAt != null || state.stopRequested}
+            data-testid="sidecar-stop"
+          >
+            {state.stoppingAt != null
+              ? 'Stopping…'
+              : state.stopRequested
+                ? 'Stop requested'
+                : 'Stop sidecar'}
+          </button>
+        </div>
+        {state.stopRequested && (
+          <p className={styles.warning}>
+            Sidecar shutdown requested. The viewer will lose its sidecar connection.
           </p>
         )}
       </div>

@@ -1,6 +1,6 @@
 # 0007 — Live agent-driven viewer: standalone sidecar + SSE + `show_*` tools
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
 > **Owner skill(s):** `dev`, `ui-builder`, `human`

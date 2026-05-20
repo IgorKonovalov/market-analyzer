@@ -3,7 +3,7 @@ import type { Config } from 'jest'
 const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/electron', '<rootDir>/shared'],
+  roots: ['<rootDir>/electron', '<rootDir>/shared', '<rootDir>/tests/main'],
   testMatch: ['**/*.{test,spec}.ts'],
   transform: {
     '^.+\\.ts$': [

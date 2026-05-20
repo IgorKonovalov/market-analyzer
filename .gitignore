@@ -43,6 +43,11 @@ skills-lock.json
 *.sqlite3
 # MCP bearer secret — lives in the user data dir at runtime (ADR-0014); never commit.
 mcp-secret*.json
+# Sidecar lockfile — written by the standalone sidecar at boot, removed on
+# clean shutdown (ADR-0016, Plan 0007). Carries the per-launch renderer bearer;
+# must never land in the repo. `.tmp` covers the atomic-write tempfile.
+sidecar.lock
+sidecar.lock.tmp
 
 # DeFi positions (sensitive — local only, never committed)
 # Holds the user's wallet → pool/position mapping consumed by the defi-analyst skill.

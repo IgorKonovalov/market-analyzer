@@ -49,6 +49,17 @@ jobs:
             exit 1
           fi
 
+      - name: Guard against committed sidecar.lock* (Plan 0007 phase 1 risk mitigation)
+        shell: bash
+        run: |
+          matches=$(git ls-files | grep -E '(^|/)sidecar\.lock(\.tmp)?$' || true)
+          if [ -n "$matches" ]; then
+            echo "ERROR: found sidecar.lock or sidecar.lock.tmp tracked in the repo:"
+            echo "$matches"
+            echo "The sidecar lockfile carries the per-launch renderer bearer (ADR-0016) and must never be committed."
+            exit 1
+          fi
+
       - name: Mypy (strict)
         run: uv run mypy --strict src tests
 

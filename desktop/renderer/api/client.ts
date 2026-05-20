@@ -145,6 +145,11 @@ export const api = {
   rotateMcpSecret(): Promise<McpSecretRecord> {
     return callJson<McpSecretRecord>('/settings/mcp-secret/rotate', { method: 'POST' })
   },
+  /** Schedule a graceful sidecar shutdown (ADR-0016, Plan 0007). The sidecar
+   * runs its `finally` block: removes `sidecar.lock`, then exits. */
+  stopSidecar(): Promise<{ stopping: boolean }> {
+    return callJson<{ stopping: boolean }>('/settings/stop', { method: 'POST' })
+  },
   /** Exposed so the Settings page can render `http://127.0.0.1:<port>/mcp` for copy-paste. */
   getSidecarPort(): Promise<number> {
     return getSidecarConfig().then((c) => c.port)

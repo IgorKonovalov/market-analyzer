@@ -17,6 +17,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 APP_DIRNAME = "market-analyser"
+DATA_DIR_ENV_VAR = "MARKET_ANALYSER_DATA_DIR"
 
 
 class AppConfig(BaseModel):
@@ -33,7 +34,14 @@ def default_app_data_dir() -> Path:
     Windows: %APPDATA%/market-analyser
     macOS:   ~/Library/Application Support/market-analyser
     Linux:   $XDG_DATA_HOME/market-analyser or ~/.local/share/market-analyser
+
+    `MARKET_ANALYSER_DATA_DIR` overrides the platform default for tests and
+    explicit-relocation use cases. The override is taken verbatim (no
+    APP_DIRNAME suffix appended) — callers control the full path.
     """
+    override = os.environ.get(DATA_DIR_ENV_VAR)
+    if override:
+        return Path(override)
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     elif sys.platform == "darwin":

@@ -33,6 +33,7 @@ from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.settings import router as settings_router
+from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
@@ -171,6 +172,11 @@ def create_app(
 
     if mcp_secret is not None and mcp_secret_path is not None:
         app.include_router(settings_router)
+
+    # `POST /settings/stop` is always registered (no MCP-secret dependency).
+    # Renderer-bearer-gated by the central middleware; an agent on `/mcp`
+    # cannot stop the sidecar through this route.
+    app.include_router(settings_stop_router)
 
     if mcp_components is not None:
         _, asgi_app = mcp_components

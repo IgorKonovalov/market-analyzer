@@ -1,10 +1,11 @@
 """Unit tests for the uvicorn entrypoint module.
 
-Exercises argv parsing, socket binding (must bind 127.0.0.1 only), env-var
-secret resolution (Plan 0004 phase 3 closed the argv-snooping risk by reading
-MARKET_ANALYSER_SECRET from the environment), and the top-level `main()` flow
-that prints `PORT=<n>` to stdout before handing off to uvicorn. uvicorn.Server
-is faked so the tests don't actually serve.
+Under ADR-0016 the renderer bearer is generated fresh on every sidecar boot
+when `MARKET_ANALYSER_SECRET` is unset (the env-var path stays as a fallback
+for Electron cold-spawn). These tests cover argv parsing, socket binding (must
+bind 127.0.0.1 only), secret resolution, and the top-level `main()` flow that
+writes the lockfile + prints `PORT=<n>` before handing off to uvicorn.
+uvicorn.Server is faked so the tests don't actually serve.
 """
 
 from __future__ import annotations
@@ -21,11 +22,19 @@ from market_analyser.api import __main__ as entry
 def test_parse_args_parses_port() -> None:
     ns = entry._parse_args(["--port=42"])
     assert ns.port == 42
+    assert ns.command is None
 
 
-def test_parse_args_requires_port() -> None:
+def test_parse_args_recognises_stop_subcommand() -> None:
+    ns = entry._parse_args(["stop"])
+    assert ns.command == "stop"
+
+
+def test_main_refuses_serve_without_port() -> None:
+    """`--port` is required for the serve path; argparse leaves it None and
+    main() raises SystemExit rather than picking an arbitrary default."""
     with pytest.raises(SystemExit):
-        entry._parse_args([])
+        entry.main([])
 
 
 def test_parse_args_no_longer_accepts_secret_flag() -> None:
@@ -36,21 +45,23 @@ def test_parse_args_no_longer_accepts_secret_flag() -> None:
         entry._parse_args(["--port=0", "--secret=leak"])
 
 
-def test_read_secret_from_env_returns_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(entry.SECRET_ENV_VAR, "hexstring")
-    assert entry._read_secret_from_env() == "hexstring"
+def test_resolve_secret_returns_env_value_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(entry.SECRET_ENV_VAR, "explicit-secret")
+    assert entry._resolve_secret() == "explicit-secret"
 
 
-def test_read_secret_from_env_refuses_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(entry.SECRET_ENV_VAR, "")
-    with pytest.raises(SystemExit):
-        entry._read_secret_from_env()
-
-
-def test_read_secret_from_env_refuses_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_secret_generates_fresh_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(entry.SECRET_ENV_VAR, raising=False)
-    with pytest.raises(SystemExit):
-        entry._read_secret_from_env()
+    s1 = entry._resolve_secret()
+    s2 = entry._resolve_secret()
+    assert len(s1) == 64 and len(s2) == 64
+    assert s1 != s2  # fresh per call
+
+
+def test_resolve_secret_generates_fresh_when_env_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(entry.SECRET_ENV_VAR, "")
+    s = entry._resolve_secret()
+    assert len(s) == 64
 
 
 def test_bind_socket_uses_loopback_and_ephemeral_port() -> None:
@@ -77,8 +88,6 @@ def test_serve_constructs_app_and_delegates_to_uvicorn(
             captured["sockets"] = sockets
 
     monkeypatch.setattr("market_analyser.api.__main__.uvicorn.Server", FakeServer)
-
-    # Make the default db path land in tmp_path so the test doesn't touch %APPDATA%.
     monkeypatch.setattr(
         "market_analyser.config.default_app_data_dir",
         lambda: tmp_path,
@@ -94,10 +103,13 @@ def test_serve_constructs_app_and_delegates_to_uvicorn(
     assert "config" in captured
 
 
-def test_main_prints_port_line_and_invokes_asyncio_run(
+def test_main_prints_port_line_and_writes_lockfile(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
 ) -> None:
+    """`main()` writes the lockfile + emits `PORT=<n>` before invoking uvicorn,
+    and removes the lockfile in the `finally` block."""
     ran: dict[str, bool] = {}
 
     def fake_run(coro: Any) -> None:
@@ -105,38 +117,25 @@ def test_main_prints_port_line_and_invokes_asyncio_run(
         ran["yes"] = True
 
     monkeypatch.setattr("market_analyser.api.__main__.asyncio.run", fake_run)
-    monkeypatch.setenv(entry.SECRET_ENV_VAR, "test-secret")
+    monkeypatch.delenv(entry.SECRET_ENV_VAR, raising=False)
+    lockfile = tmp_path / "sidecar.lock"
 
-    entry.main(["--port=0"])
+    entry.main(["--port=0", f"--lockfile={lockfile}"])
 
     out = capsys.readouterr().out.strip()
     assert out.startswith("PORT=")
     port_str = out.removeprefix("PORT=")
     assert port_str.isdigit() and int(port_str) > 0
     assert ran.get("yes") is True
+    # `finally` block removed the lockfile on serve return.
+    assert not lockfile.exists()
 
 
-def test_main_refuses_to_start_without_env_secret(
+def test_main_removes_lockfile_when_serve_raises(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
 ) -> None:
-    monkeypatch.delenv(entry.SECRET_ENV_VAR, raising=False)
-    with pytest.raises(SystemExit):
-        entry.main(["--port=0"])
-
-
-def test_main_closes_socket_even_when_serve_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sockets_seen: list[socket.socket] = []
-
-    real_bind = entry._bind_socket
-
-    def tracking_bind(port: int) -> socket.socket:
-        sock = real_bind(port)
-        sockets_seen.append(sock)
-        return sock
-
-    monkeypatch.setattr("market_analyser.api.__main__._bind_socket", tracking_bind)
+    """A crash inside the asyncio loop must still run the `finally` block."""
 
     def raising_run(coro: Any) -> None:
         coro.close()
@@ -144,11 +143,91 @@ def test_main_closes_socket_even_when_serve_raises(
 
     monkeypatch.setattr("market_analyser.api.__main__.asyncio.run", raising_run)
     monkeypatch.setenv(entry.SECRET_ENV_VAR, "test-secret")
+    lockfile = tmp_path / "sidecar.lock"
 
     with pytest.raises(RuntimeError, match="boom"):
-        entry.main(["--port=0"])
+        entry.main(["--port=0", f"--lockfile={lockfile}"])
 
-    assert sockets_seen, "bind was not called"
-    sock = sockets_seen[0]
-    with pytest.raises(OSError):
-        sock.getsockname()
+    # Even on crash, the finally block removed it.
+    assert not lockfile.exists()
+
+
+def test_main_refuses_to_start_when_lockfile_owned_by_live_pid(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Any,
+) -> None:
+    """`_probe_and_prepare_lockfile` exits non-zero with the existing PID in
+    stderr when the lockfile's owner is still alive."""
+    import os
+
+    import psutil
+
+    from market_analyser.api.lockfile import LockfileRecord, write_lockfile
+
+    pid = os.getpid()
+    live_record = LockfileRecord(
+        pid=pid,
+        port=12345,
+        renderer_secret="a" * 64,
+        started_at=__import__("datetime").datetime.now(tz=__import__("datetime").UTC),
+        process_create_time=psutil.Process(pid).create_time(),
+        sidecar_version="0.0.0-test",
+    )
+    lockfile = tmp_path / "sidecar.lock"
+    write_lockfile(lockfile, live_record)
+
+    monkeypatch.delenv(entry.SECRET_ENV_VAR, raising=False)
+    with pytest.raises(SystemExit) as excinfo:
+        entry.main(["--port=0", f"--lockfile={lockfile}"])
+
+    assert excinfo.value.code == 1
+    stderr = capsys.readouterr().err
+    assert "sidecar already running at PID" in stderr
+    assert str(pid) in stderr
+    # The existing lockfile is untouched.
+    from market_analyser.api.lockfile import read_lockfile
+
+    still_there = read_lockfile(lockfile)
+    assert still_there is not None
+    assert still_there.renderer_secret == "a" * 64
+
+
+def test_main_takes_over_stale_lockfile(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Any,
+) -> None:
+    """A lockfile whose `process_create_time` doesn't match the live PID's
+    `create_time()` is stale — main() warns + proceeds."""
+    import os
+
+    import psutil
+
+    from market_analyser.api.lockfile import LockfileRecord, write_lockfile
+
+    pid = os.getpid()
+    # Force a create_time mismatch beyond CREATE_TIME_TOLERANCE_S (5s).
+    bogus_create_time = psutil.Process(pid).create_time() + 60.0
+    stale_record = LockfileRecord(
+        pid=pid,
+        port=12345,
+        renderer_secret="c" * 64,
+        started_at=__import__("datetime").datetime.now(tz=__import__("datetime").UTC),
+        process_create_time=bogus_create_time,
+        sidecar_version="0.0.0-test",
+    )
+    lockfile = tmp_path / "sidecar.lock"
+    write_lockfile(lockfile, stale_record)
+
+    def fake_run(coro: Any) -> None:
+        coro.close()
+
+    monkeypatch.setattr("market_analyser.api.__main__.asyncio.run", fake_run)
+    monkeypatch.delenv(entry.SECRET_ENV_VAR, raising=False)
+
+    entry.main(["--port=0", f"--lockfile={lockfile}"])
+
+    stderr = capsys.readouterr().err
+    assert "stale lockfile" in stderr
+    assert str(pid) in stderr

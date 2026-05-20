@@ -1,18 +1,27 @@
 """Uvicorn entrypoint for the market-analyser sidecar.
 
 Usage:
-    MARKET_ANALYSER_SECRET=<hex> python -m market_analyser.api --port=<n> [--config=<path>]
+    python -m market_analyser.api --port=<n> [--config=<path>]
+    python -m market_analyser.api stop
 
 Per ADR-0002: binds 127.0.0.1 only; if `--port=0` is passed, the OS picks
 an ephemeral port and we print `PORT=<n>` to stdout on a single line so the
-Electron main process can read it back and forward to the renderer.
+Electron main process can read it back.
 
-The bearer secret is read from the `MARKET_ANALYSER_SECRET` env var rather
-than argv so it does not appear in process listings (Plan 0004 phase 3,
-closing the Open Question in Plan 0001 noted in ADR-0002's Notes).
+Under ADR-0016 (standalone sidecar mode):
 
-Phase 3 of Plan 0001: builds the SQLite engine from `AppConfig`, runs Alembic
-migrations before serving the first request, and exposes a cache-aware provider.
+- The renderer bearer secret is **generated fresh on every sidecar boot** if
+  `MARKET_ANALYSER_SECRET` is not set. The env-var path is retained as a
+  fallback for cold-spawn from Electron, but the lockfile is the source of
+  truth — Electron reads the bearer from `sidecar.lock` after boot regardless
+  of whether it spawned the sidecar or attached to a running one.
+- A lockfile is written atomically at boot and removed on clean shutdown
+  (SIGTERM / SIGINT / normal exit). Single-instance is enforced via a PID +
+  `process_create_time` cross-check at boot — a stale lockfile (pid dead, or
+  pid alive but create_time mismatched) is taken over with a one-line warning.
+- The `stop` subcommand reads the lockfile, cross-checks the owner's create
+  time, then sends SIGTERM. Refuses if the lockfile is stale or owned by an
+  unrelated process.
 """
 
 from __future__ import annotations
@@ -21,13 +30,25 @@ import argparse
 import asyncio
 import os
 import re
+import secrets
 import socket
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import uvicorn
 
+from market_analyser import __version__
 from market_analyser.api.app import create_app
+from market_analyser.api.lockfile import (
+    DEFAULT_LOCKFILE_NAME,
+    build_self_record,
+    is_owner_alive,
+    read_lockfile,
+    remove_lockfile,
+    write_lockfile,
+)
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.config import default_app_data_dir, load_config
 from market_analyser.persistence.engine import make_engine
@@ -36,11 +57,8 @@ MCP_SECRET_FILENAME = "mcp-secret.json"
 
 HOST = "127.0.0.1"
 SECRET_ENV_VAR = "MARKET_ANALYSER_SECRET"
+SECRET_BYTES = 32  # → 64 hex chars
 
-# Loopback-only by construction: localhost or 127.0.0.1, http (never https),
-# explicit port. The Electron dev script is the only intended caller; refusing
-# everything else stops a misconfigured prod build from accidentally opening
-# the sidecar to a third-party origin.
 _DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
 
 
@@ -55,7 +73,20 @@ def _dev_origin(raw: str) -> str:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="market_analyser.api")
-    parser.add_argument("--port", type=int, required=True, help="TCP port; 0 for OS-picked")
+    subparsers = parser.add_subparsers(dest="command")
+
+    stop_parser = subparsers.add_parser(
+        "stop",
+        help="Stop a running standalone sidecar (reads sidecar.lock, sends SIGTERM).",
+    )
+    stop_parser.add_argument(
+        "--lockfile",
+        type=Path,
+        default=None,
+        help="optional lockfile path; defaults to <user-data>/sidecar.lock",
+    )
+
+    parser.add_argument("--port", type=int, default=None, help="TCP port; 0 for OS-picked")
     parser.add_argument(
         "--config",
         type=Path,
@@ -72,16 +103,28 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "Omitted in packaged builds."
         ),
     )
+    parser.add_argument(
+        "--lockfile",
+        type=Path,
+        default=None,
+        help="optional lockfile path; defaults to <user-data>/sidecar.lock",
+    )
     return parser.parse_args(argv)
 
 
-def _read_secret_from_env() -> str:
-    secret = os.environ.get(SECRET_ENV_VAR, "")
-    if not secret:
-        raise SystemExit(
-            f"{SECRET_ENV_VAR} must be set to a non-empty bearer token; refusing to start.",
-        )
-    return secret
+def _resolve_secret() -> str:
+    """Return the renderer bearer for this sidecar launch.
+
+    Honour `MARKET_ANALYSER_SECRET` if set (cold-spawn from Electron's existing
+    code path; ADR-0016 retains this as a fallback). Otherwise generate a fresh
+    32-byte hex token — the standalone path. Either way, the value is what gets
+    persisted into `sidecar.lock` for downstream readers (Electron attach,
+    Settings page, MCP clients via `/settings/...`).
+    """
+    env_secret = os.environ.get(SECRET_ENV_VAR, "")
+    if env_secret:
+        return env_secret
+    return secrets.token_hex(SECRET_BYTES)
 
 
 def _bind_socket(port: int) -> socket.socket:
@@ -89,6 +132,31 @@ def _bind_socket(port: int) -> socket.socket:
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((HOST, port))
     return sock
+
+
+def _default_lockfile_path() -> Path:
+    return default_app_data_dir() / DEFAULT_LOCKFILE_NAME
+
+
+def _probe_and_prepare_lockfile(lockfile_path: Path) -> None:
+    """Refuse to start when a live sidecar already owns the lockfile.
+
+    Stale lockfiles (pid dead, or pid alive but create_time mismatched) are
+    taken over with a one-line stderr warning naming the prior PID.
+    """
+    existing = read_lockfile(lockfile_path)
+    if existing is None:
+        return
+    if is_owner_alive(existing):
+        sys.stderr.write(
+            f"sidecar already running at PID {existing.pid}, port {existing.port}; stop it first\n",
+        )
+        sys.stderr.flush()
+        raise SystemExit(1)
+    sys.stderr.write(
+        f"stale lockfile from prior PID {existing.pid} (no longer alive); taking over\n",
+    )
+    sys.stderr.flush()
 
 
 async def _serve(
@@ -113,17 +181,98 @@ async def _serve(
     await server.serve(sockets=[sock])
 
 
-def main(argv: list[str] | None = None) -> None:
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
-    secret = _read_secret_from_env()
-    sock = _bind_socket(args.port)
+def _run_serve(
+    *,
+    port: int,
+    config_path: Path | None,
+    dev_origin: str | None,
+    lockfile_path: Path,
+) -> None:
+    """Serve until the OS signals shutdown; remove the lockfile in a `finally`."""
+    _probe_and_prepare_lockfile(lockfile_path)
+    secret = _resolve_secret()
+    sock = _bind_socket(port)
     actual_port = sock.getsockname()[1]
+    record = build_self_record(
+        port=actual_port,
+        renderer_secret=secret,
+        sidecar_version=__version__,
+    )
+    write_lockfile(lockfile_path, record)
+    # PORT line lands AFTER the lockfile is in place — anything that races on
+    # the PORT line and immediately reads the lockfile will see a valid record.
     print(f"PORT={actual_port}", flush=True)
     try:
-        asyncio.run(_serve(sock, secret, args.config, args.dev_origin))
+        asyncio.run(_serve(sock, secret, config_path, dev_origin))
     finally:
         sock.close()
+        remove_lockfile(lockfile_path)
 
+
+def _run_stop(lockfile_path: Path) -> int:
+    """Stop a running sidecar identified by the lockfile.
+
+    Uses the sidecar's `POST /settings/stop` HTTP route rather than cross-
+    process signalling. The route delivers `SIGINT`/`SIGTERM` in-process via
+    `os.kill(os.getpid(), ...)` after writing the 200 response — the only
+    portable way to trigger a graceful shutdown across POSIX and Windows
+    (cross-process `os.kill` with `SIGINT` is a no-op on Windows for processes
+    not attached to the caller's console).
+    """
+    record = read_lockfile(lockfile_path)
+    if record is None:
+        sys.stderr.write(f"no lockfile at {lockfile_path}; sidecar not running\n")
+        return 1
+    if not is_owner_alive(record):
+        sys.stderr.write(
+            f"lockfile points at PID {record.pid} but that process is gone; "
+            "removing stale lockfile\n",
+        )
+        remove_lockfile(lockfile_path)
+        return 1
+    url = f"http://{HOST}:{record.port}/settings/stop"
+    req = urllib.request.Request(
+        url,
+        method="POST",
+        headers={"Authorization": f"Bearer {record.renderer_secret}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            if resp.status != 200:
+                sys.stderr.write(
+                    f"stop endpoint at {url} returned {resp.status}; "
+                    "sidecar may still be running\n",
+                )
+                return 1
+    except urllib.error.URLError as e:
+        sys.stderr.write(f"failed to reach {url}: {e}\n")
+        return 1
+    return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(sys.argv[1:] if argv is None else argv)
+
+    if args.command == "stop":
+        lockfile_path = args.lockfile or _default_lockfile_path()
+        raise SystemExit(_run_stop(lockfile_path))
+
+    if args.port is None:
+        raise SystemExit("--port is required (use 0 for OS-picked)")
+
+    lockfile_path = args.lockfile or _default_lockfile_path()
+    _run_serve(
+        port=args.port,
+        config_path=args.config,
+        dev_origin=args.dev_origin,
+        lockfile_path=lockfile_path,
+    )
+
+
+# Async loop signal-handler hookup: uvicorn installs its own SIGTERM/SIGINT
+# handlers when running; the `finally` block in `_run_serve` runs after uvicorn
+# returns control. The atomic-replace `write_lockfile` + `finally`-removal pair
+# keeps the file lifecycle bounded by the process's serving window.
 
 if __name__ == "__main__":
     main()

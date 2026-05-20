@@ -18,7 +18,9 @@
     "shared/**/*.spec.ts",
     "shared/**/*.spec.tsx",
     "electron/**/*.test.ts",
-    "electron/**/*.spec.ts"
+    "electron/**/*.spec.ts",
+    "tests/main/**/*.spec.ts",
+    "tests/main/**/*.test.ts"
   ],
-  "exclude": ["node_modules", "dist", "release", "tests/**/*"]
+  "exclude": ["node_modules", "dist", "release", "tests/e2e/**/*"]
 }
