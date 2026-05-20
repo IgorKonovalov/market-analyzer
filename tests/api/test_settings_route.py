@@ -135,9 +135,7 @@ def _mcp_headers(secret: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {secret}"}
 
 
-def test_get_returns_current_secret_to_renderer_bearer(
-    client: TestClient, mcp_secret: str
-) -> None:
+def test_get_returns_current_secret_to_renderer_bearer(client: TestClient, mcp_secret: str) -> None:
     response = client.get("/settings/mcp-secret", headers=_renderer_headers())
     assert response.status_code == 200, response.text
     body = response.json()
@@ -179,18 +177,14 @@ def test_post_rotate_writes_new_secret_to_disk(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file mode bits don't apply on Windows")
-def test_post_rotate_preserves_0600_mode(
-    client: TestClient, mcp_secret_path: Path
-) -> None:
+def test_post_rotate_preserves_0600_mode(client: TestClient, mcp_secret_path: Path) -> None:
     response = client.post("/settings/mcp-secret/rotate", headers=_renderer_headers())
     assert response.status_code == 200
     mode_bits = stat.S_IMODE(mcp_secret_path.stat().st_mode)
     assert mode_bits == 0o600, f"expected 0600 after rotation, got {oct(mode_bits)}"
 
 
-def test_post_rotate_invalidates_old_mcp_bearer(
-    client: TestClient, mcp_secret: str
-) -> None:
+def test_post_rotate_invalidates_old_mcp_bearer(client: TestClient, mcp_secret: str) -> None:
     """The handoff-flagged gap: rotation must make the next /mcp request with the
     old bearer 401, not the next process restart."""
     pre_rotation = client.post(

@@ -29,8 +29,7 @@ def get_annotations(
         raise HTTPException(
             status_code=422,
             detail=(
-                f"timeframe {timeframe!r} not supported "
-                f"(supported: {sorted(SUPPORTED_TIMEFRAMES)})"
+                f"timeframe {timeframe!r} not supported (supported: {sorted(SUPPORTED_TIMEFRAMES)})"
             ),
         )
     repo: AnnotationsRepository = request.app.state.annotations_repository

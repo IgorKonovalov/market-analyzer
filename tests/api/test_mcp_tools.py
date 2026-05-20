@@ -323,9 +323,9 @@ def test_write_annotation_visible_via_http_get_annotations(
     assert http_response.status_code == 200, http_response.text
     payload = http_response.json()
     assert isinstance(payload, list)
-    assert any(
-        row["id"] == written_id for row in payload
-    ), f"MCP-written id {written_id} not found in HTTP response: {payload}"
+    assert any(row["id"] == written_id for row in payload), (
+        f"MCP-written id {written_id} not found in HTTP response: {payload}"
+    )
 
 
 def test_write_annotation_invalid_kind_surfaces_mcp_error(
