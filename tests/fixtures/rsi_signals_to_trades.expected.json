@@ -1,0 +1,30 @@
+[
+  {
+    "entry_bar_index": 15,
+    "entry_price": 86.0,
+    "exit_bar_index": 39,
+    "exit_price": 88.0,
+    "kind": "long"
+  },
+  {
+    "entry_bar_index": 62,
+    "entry_price": 89.0,
+    "exit_bar_index": 87,
+    "exit_price": 86.0,
+    "kind": "long"
+  },
+  {
+    "entry_bar_index": 112,
+    "entry_price": 89.0,
+    "exit_bar_index": 137,
+    "exit_price": 86.0,
+    "kind": "long"
+  },
+  {
+    "entry_bar_index": 162,
+    "entry_price": 89.0,
+    "exit_bar_index": 187,
+    "exit_price": 86.0,
+    "kind": "long"
+  }
+]
