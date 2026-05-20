@@ -20,6 +20,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -30,6 +31,7 @@ from market_analyser import __version__
 from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
+from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
@@ -44,6 +46,7 @@ def create_app(
     *,
     secret: str,
     mcp_secret: str | None = None,
+    mcp_secret_path: Path | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     engine: Engine | None = None,
@@ -54,6 +57,16 @@ def create_app(
     `/mcp` and gated by that secret. The session manager's `run()` context is
     composed into the FastAPI lifespan; without this the first MCP request
     raises "Task group is not initialized".
+
+    The MCP bearer is stored on `app.state.mcp_secret` (mutable) rather than
+    closure-captured by the middleware. Plan 0006 phase 5 needs rotation to
+    invalidate active sessions on the next request: the `POST /settings/mcp-
+    secret/rotate` route rewrites the file *and* mutates `app.state.mcp_secret`
+    in the same handler, so the middleware's next read picks up the new value.
+
+    When `mcp_secret_path` is also provided, the settings routes (GET + POST
+    /settings/mcp-secret/...) are registered. Without it, rotation is
+    unavailable (no place to write to) and the routes do not exist.
 
     When `mcp_secret` is `None` (e.g. legacy tests), `/mcp` is unmounted and any
     request to a `/mcp*` path returns 401 (no MCP secret configured), keeping
@@ -101,6 +114,8 @@ def create_app(
     app = FastAPI(title="market-analyser", version=__version__, lifespan=lifespan)
     app.state.provider = effective_provider
     app.state.annotations_repository = annotations_repository
+    app.state.mcp_secret = mcp_secret
+    app.state.mcp_secret_path = mcp_secret_path
 
     @app.middleware("http")
     async def bearer_auth(
@@ -116,7 +131,14 @@ def create_app(
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         is_mcp = path == MCP_PREFIX or path.startswith(MCP_PREFIX + "/")
         if is_mcp:
-            if mcp_secret is None or not secrets.compare_digest(token, mcp_secret):
+            # Read fresh from app.state every request — rotation mutates this in
+            # place and the next request must see the new secret. Closure-
+            # capturing `mcp_secret` here would break the rotate-invalidates
+            # contract from phase 5's done-when.
+            current_mcp_secret = request.app.state.mcp_secret
+            if current_mcp_secret is None or not secrets.compare_digest(
+                token, current_mcp_secret
+            ):
                 return JSONResponse({"detail": "unauthorized"}, status_code=401)
         else:
             if not secrets.compare_digest(token, secret):
@@ -131,6 +153,9 @@ def create_app(
 
     if annotations_repository is not None:
         app.include_router(annotations_router)
+
+    if mcp_secret is not None and mcp_secret_path is not None:
+        app.include_router(settings_router)
 
     if mcp_components is not None:
         _, asgi_app = mcp_components

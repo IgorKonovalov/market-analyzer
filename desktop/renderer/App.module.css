@@ -1,0 +1,31 @@
+.nav {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.tab {
+  font: inherit;
+  font-size: 13px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--color-bg-hover);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.tab[aria-current='page'] {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border-color: var(--color-accent);
+}

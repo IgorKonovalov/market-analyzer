@@ -68,8 +68,14 @@ def _bind_socket(port: int) -> socket.socket:
 async def _serve(sock: socket.socket, secret: str, config_path: Path | None) -> None:
     config = load_config(config_path)
     engine = make_engine(config.db_path)
-    mcp_secret = load_or_generate_mcp_secret(default_app_data_dir() / MCP_SECRET_FILENAME)
-    app = create_app(secret=secret, mcp_secret=mcp_secret, engine=engine)
+    mcp_secret_path = default_app_data_dir() / MCP_SECRET_FILENAME
+    mcp_secret = load_or_generate_mcp_secret(mcp_secret_path)
+    app = create_app(
+        secret=secret,
+        mcp_secret=mcp_secret,
+        mcp_secret_path=mcp_secret_path,
+        engine=engine,
+    )
     uvicorn_config = uvicorn.Config(app, log_level="info", access_log=False)
     server = uvicorn.Server(uvicorn_config)
     await server.serve(sockets=[sock])

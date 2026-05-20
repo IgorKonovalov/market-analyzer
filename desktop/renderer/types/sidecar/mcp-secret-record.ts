@@ -3,15 +3,8 @@
 // models the sidecar surfaces (data/types.py, annotations/types.py,
 // api/mcp_secret.py).
 
-export interface Bar {
-  symbol: string
-  timeframe: string
+export interface McpSecretRecord {
+  secret: string
   /** ISO 8601 UTC timestamp. */
-  event_ts: string
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-  source: string
+  created_at: string
 }

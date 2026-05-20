@@ -13,7 +13,9 @@
 import type { CandlestickData, UTCTimestamp } from 'lightweight-charts'
 
 import type { SidecarPort } from '../../shared/schemas/sidecar'
+import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
+import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 
 let cached: SidecarPort | null = null
 
@@ -116,6 +118,8 @@ export interface GetOhlcvParams {
   end: Date
 }
 
+export type GetAnnotationsParams = GetOhlcvParams
+
 export const api = {
   getOhlcv({ symbol, timeframe, start, end }: GetOhlcvParams): Promise<Bar[]> {
     const params = new URLSearchParams({
@@ -125,6 +129,25 @@ export const api = {
       end: end.toISOString(),
     })
     return callJson<Bar[]>(`/ohlcv?${params.toString()}`)
+  },
+  getAnnotations({ symbol, timeframe, start, end }: GetAnnotationsParams): Promise<Annotation[]> {
+    const params = new URLSearchParams({
+      symbol,
+      timeframe,
+      start: start.toISOString(),
+      end: end.toISOString(),
+    })
+    return callJson<Annotation[]>(`/annotations?${params.toString()}`)
+  },
+  getMcpSecret(): Promise<McpSecretRecord> {
+    return callJson<McpSecretRecord>('/settings/mcp-secret')
+  },
+  rotateMcpSecret(): Promise<McpSecretRecord> {
+    return callJson<McpSecretRecord>('/settings/mcp-secret/rotate', { method: 'POST' })
+  },
+  /** Exposed so the Settings page can render `http://127.0.0.1:<port>/mcp` for copy-paste. */
+  getSidecarPort(): Promise<number> {
+    return getSidecarConfig().then((c) => c.port)
   },
 } as const
 
