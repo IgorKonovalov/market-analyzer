@@ -1,6 +1,6 @@
 # 0006 — Annotations via MCP: thin layer + chart markers
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-19
 > **Approved:** 2026-05-19
 > **Owner skill(s):** `dev`, `ui-builder`

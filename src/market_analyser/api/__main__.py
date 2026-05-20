@@ -27,8 +27,11 @@ from pathlib import Path
 import uvicorn
 
 from market_analyser.api.app import create_app
-from market_analyser.config import load_config
+from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
+from market_analyser.config import default_app_data_dir, load_config
 from market_analyser.persistence.engine import make_engine
+
+MCP_SECRET_FILENAME = "mcp-secret.json"
 
 HOST = "127.0.0.1"
 SECRET_ENV_VAR = "MARKET_ANALYSER_SECRET"
@@ -65,7 +68,8 @@ def _bind_socket(port: int) -> socket.socket:
 async def _serve(sock: socket.socket, secret: str, config_path: Path | None) -> None:
     config = load_config(config_path)
     engine = make_engine(config.db_path)
-    app = create_app(secret=secret, engine=engine)
+    mcp_secret = load_or_generate_mcp_secret(default_app_data_dir() / MCP_SECRET_FILENAME)
+    app = create_app(secret=secret, mcp_secret=mcp_secret, engine=engine)
     uvicorn_config = uvicorn.Config(app, log_level="info", access_log=False)
     server = uvicorn.Server(uvicorn_config)
     await server.serve(sockets=[sock])
