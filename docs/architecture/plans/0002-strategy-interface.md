@@ -1,6 +1,6 @@
 # 0002 — Strategy interface and contracts module
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-17
 > **Approved:** 2026-05-19
 > **Owner skill(s):** `dev` (phases 1, 2, 5), `backtester` (phase 3), `strategy-author` (phase 4)
