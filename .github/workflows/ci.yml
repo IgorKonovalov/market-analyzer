@@ -38,6 +38,17 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check
 
+      - name: Guard against committed mcp-secret*.json (Plan 0006 phase 1 risk mitigation)
+        shell: bash
+        run: |
+          matches=$(git ls-files src desktop tests | grep -E '(^|/)mcp-secret[^/]*\.json$' || true)
+          if [ -n "$matches" ]; then
+            echo "ERROR: found mcp-secret*.json file(s) tracked under src/, desktop/, or tests/:"
+            echo "$matches"
+            echo "MCP secrets must live only in the user data directory at runtime, never in the repo."
+            exit 1
+          fi
+
       - name: Mypy (strict)
         run: uv run mypy --strict src tests
 
