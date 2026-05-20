@@ -86,7 +86,7 @@ def test_serve_constructs_app_and_delegates_to_uvicorn(
 
     sock = entry._bind_socket(0)
     try:
-        asyncio.run(entry._serve(sock, "secret", None))
+        asyncio.run(entry._serve(sock, "secret", None, None))
     finally:
         sock.close()
 

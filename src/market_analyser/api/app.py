@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine
 from starlette.routing import Route
@@ -50,6 +51,7 @@ def create_app(
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     engine: Engine | None = None,
+    dev_origin: str | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
 
@@ -136,14 +138,27 @@ def create_app(
             # capturing `mcp_secret` here would break the rotate-invalidates
             # contract from phase 5's done-when.
             current_mcp_secret = request.app.state.mcp_secret
-            if current_mcp_secret is None or not secrets.compare_digest(
-                token, current_mcp_secret
-            ):
+            if current_mcp_secret is None or not secrets.compare_digest(token, current_mcp_secret):
                 return JSONResponse({"detail": "unauthorized"}, status_code=401)
         else:
             if not secrets.compare_digest(token, secret):
                 return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return await call_next(request)
+
+    # CORS for Electron's Vite dev origin (e.g. http://localhost:5173). Added
+    # AFTER the bearer middleware so Starlette wraps it OUTERMOST and the
+    # browser's OPTIONS preflight is short-circuited before bearer 401s it.
+    # Loopback-only by the `__main__` validator; unset in packaged builds so
+    # this branch never installs in production.
+    if dev_origin is not None:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[dev_origin],
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+            allow_credentials=False,
+            max_age=600,
+        )
 
     @app.get("/healthz")
     def healthz() -> dict[str, object]:

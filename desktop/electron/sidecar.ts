@@ -78,7 +78,16 @@ export class SidecarSupervisor {
     this.emit({ kind: 'starting' })
     const cwd = resolvePath(__dirname, '..', '..', '..')
     const pythonExecutable = resolvePythonExecutable(cwd)
-    const child = spawn(pythonExecutable, ['-m', 'market_analyser.api', `--port=${port}`], {
+    const args = ['-m', 'market_analyser.api', `--port=${port}`]
+    // In `pnpm dev`, the renderer is served by Vite at ELECTRON_RENDERER_URL
+    // (cross-origin from the sidecar's loopback host) and every fetch carries
+    // an Authorization header, triggering a CORS preflight that the bearer
+    // middleware would otherwise 401. Pass the origin to the sidecar so it
+    // installs CORSMiddleware for that one origin. Packaged builds don't set
+    // the env var, so no flag is appended and CORS is not installed.
+    const devOrigin = computeDevOrigin()
+    if (devOrigin) args.push(`--dev-origin=${devOrigin}`)
+    const child = spawn(pythonExecutable, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, MARKET_ANALYSER_SECRET: secretToken },
@@ -129,6 +138,18 @@ export class SidecarSupervisor {
         message: `restart failed: ${(err as Error).message}`,
       })
     }
+  }
+}
+
+function computeDevOrigin(): string | null {
+  const raw = process.env.ELECTRON_RENDERER_URL
+  if (!raw) return null
+  try {
+    return new URL(raw).origin
+  } catch {
+    // Malformed URL — leave CORS off; the sidecar's argparse validator would
+    // reject it anyway, but better to not pass garbage in the first place.
+    return null
   }
 }
 

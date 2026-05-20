@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 import socket
 import sys
 from pathlib import Path
@@ -36,6 +37,21 @@ MCP_SECRET_FILENAME = "mcp-secret.json"
 HOST = "127.0.0.1"
 SECRET_ENV_VAR = "MARKET_ANALYSER_SECRET"
 
+# Loopback-only by construction: localhost or 127.0.0.1, http (never https),
+# explicit port. The Electron dev script is the only intended caller; refusing
+# everything else stops a misconfigured prod build from accidentally opening
+# the sidecar to a third-party origin.
+_DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+
+
+def _dev_origin(raw: str) -> str:
+    if not _DEV_ORIGIN_RE.fullmatch(raw):
+        raise argparse.ArgumentTypeError(
+            f"--dev-origin {raw!r} is not a loopback http URL "
+            f"(must match http://localhost:<port> or http://127.0.0.1:<port>)",
+        )
+    return raw
+
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="market_analyser.api")
@@ -45,6 +61,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         type=Path,
         default=None,
         help="optional path to config.json; defaults to AppConfig defaults",
+    )
+    parser.add_argument(
+        "--dev-origin",
+        type=_dev_origin,
+        default=None,
+        help=(
+            "Electron dev-mode renderer origin to allow via CORS (e.g. "
+            "http://localhost:5173). Loopback-only; set by `pnpm dev`. "
+            "Omitted in packaged builds."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -65,7 +91,12 @@ def _bind_socket(port: int) -> socket.socket:
     return sock
 
 
-async def _serve(sock: socket.socket, secret: str, config_path: Path | None) -> None:
+async def _serve(
+    sock: socket.socket,
+    secret: str,
+    config_path: Path | None,
+    dev_origin: str | None,
+) -> None:
     config = load_config(config_path)
     engine = make_engine(config.db_path)
     mcp_secret_path = default_app_data_dir() / MCP_SECRET_FILENAME
@@ -75,6 +106,7 @@ async def _serve(sock: socket.socket, secret: str, config_path: Path | None) -> 
         mcp_secret=mcp_secret,
         mcp_secret_path=mcp_secret_path,
         engine=engine,
+        dev_origin=dev_origin,
     )
     uvicorn_config = uvicorn.Config(app, log_level="info", access_log=False)
     server = uvicorn.Server(uvicorn_config)
@@ -88,7 +120,7 @@ def main(argv: list[str] | None = None) -> None:
     actual_port = sock.getsockname()[1]
     print(f"PORT={actual_port}", flush=True)
     try:
-        asyncio.run(_serve(sock, secret, args.config))
+        asyncio.run(_serve(sock, secret, args.config, args.dev_origin))
     finally:
         sock.close()
 
