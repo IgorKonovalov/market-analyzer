@@ -41,6 +41,8 @@ skills-lock.json
 *.db
 *.sqlite
 *.sqlite3
+# MCP bearer secret — lives in the user data dir at runtime (ADR-0014); never commit.
+mcp-secret*.json
 
 # DeFi positions (sensitive — local only, never committed)
 # Holds the user's wallet → pool/position mapping consumed by the defi-analyst skill.
