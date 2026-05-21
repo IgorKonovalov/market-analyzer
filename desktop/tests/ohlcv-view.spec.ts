@@ -8,7 +8,7 @@
  *
  * Requires a built desktop bundle. Run with `pnpm --filter desktop test:e2e`.
  */
-import { _electron as electron, test, expect } from '@playwright/test'
+import { _electron as electron, test, expect, type ElectronApplication } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,14 +26,19 @@ interface InsertAnnotationArgs {
 
 /**
  * Insert an annotation into the sidecar's SQLite DB via a Python subprocess
- * that uses the same default config as the running sidecar. Plan 0006 phase 6
- * uses this to seed annotations without going through the MCP transport (we
- * test the renderer/chart marker rendering path, not the MCP write path,
- * which has its own pytest coverage in tests/api/test_mcp_tools.py).
+ * that targets the SAME data dir the running sidecar is using. Plan 0006
+ * phase 6 uses this to seed annotations without going through the MCP
+ * transport.
+ *
+ * `dataDir` MUST be the live Electron's `app.getPath('userData')`, not
+ * Python's `default_app_data_dir()` — Plan 0007 phase 1 made Electron pass
+ * `MARKET_ANALYSER_DATA_DIR=<userData>` to the spawned sidecar, and under
+ * `_electron.launch` (unpackaged) those two paths diverge
+ * (`<Roaming>/Electron/` vs `<Roaming>/market-analyser/`).
  *
  * Returns the inserted annotation's id.
  */
-function insertAnnotation(args: InsertAnnotationArgs): string {
+function insertAnnotation(args: InsertAnnotationArgs, dataDir: string): string {
   const script = [
     'import json, sys',
     'from datetime import datetime',
@@ -56,11 +61,16 @@ function insertAnnotation(args: InsertAnnotationArgs): string {
     input: JSON.stringify(args),
     encoding: 'utf-8',
     shell: false,
+    env: { ...process.env, MARKET_ANALYSER_DATA_DIR: dataDir },
   })
   if (result.status !== 0) {
     throw new Error(`insertAnnotation failed (exit ${result.status}): ${result.stderr}`)
   }
   return result.stdout.trim()
+}
+
+async function getDataDir(app: ElectronApplication): Promise<string> {
+  return app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
 }
 
 test('cold launch renders a candlestick chart for the default symbol', async () => {
@@ -148,6 +158,7 @@ test('annotation written to the DB surfaces on the renderer within a poll window
   })
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
+  const dataDir = await getDataDir(app)
 
   // Wait for the chart view to mount so the poll loop is alive.
   await expect(window.getByRole('region', { name: /OHLCV view/ })).toBeVisible({
@@ -172,13 +183,16 @@ test('annotation written to the DB surfaces on the renderer within a poll window
   const eventDate = new Date(Date.now() - 24 * 60 * 60 * 1000)
   eventDate.setUTCHours(12, 0, 0, 0)
   const expectedLabel = `e2e-marker-${Date.now()}`
-  const annotationId = insertAnnotation({
-    symbol: 'AAPL',
-    timeframe: '1d',
-    event_ts: eventDate.toISOString(),
-    kind: 'bullish_marker',
-    label: expectedLabel,
-  })
+  const annotationId = insertAnnotation(
+    {
+      symbol: 'AAPL',
+      timeframe: '1d',
+      event_ts: eventDate.toISOString(),
+      kind: 'bullish_marker',
+      label: expectedLabel,
+    },
+    dataDir,
+  )
   expect(annotationId).toMatch(/^[0-9a-f]{32}$/)
 
   // Within ~2 poll cycles, the renderer's GET /annotations should include

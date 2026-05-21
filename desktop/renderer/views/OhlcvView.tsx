@@ -1,41 +1,60 @@
 /**
- * The bootstrap's single route. Composes SymbolPicker + CandlestickChart and
- * owns the four async states (loading / error / empty / populated). Default
- * range is the last 365 days; refresh re-pulls the same window.
+ * The chart route. **Controlled** — the parent (App.tsx) owns symbol,
+ * timeframe, range, overlays, and the live-highlights buffer, so SSE
+ * envelopes from `useEventStream` can mutate the chart context without
+ * remounting (Plan 0007 phase 4).
+ *
+ * The view still owns the four async states (loading / error / empty /
+ * populated) and the Refresh button — those are local UI concerns.
+ *
+ * Live highlights and polled annotations are merged here and deduped on
+ * `(event_ts, kind)` so a live `chart.highlight` event followed by the
+ * polled annotation row ~1 s later does not produce a duplicate marker.
  */
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import { CandlestickChart } from '../components/CandlestickChart'
 import { SymbolPicker } from '../components/SymbolPicker'
 import type { Timeframe } from '../components/SymbolPicker'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useOhlcv } from '../hooks/useOhlcv'
+import type { Marker } from '../types/events'
+import type { Annotation } from '../types/sidecar/annotation'
 import styles from './OhlcvView.module.css'
 
-const DEFAULT_SYMBOL = 'AAPL'
-const DEFAULT_TIMEFRAME: Timeframe = '1d'
-const DEFAULT_LOOKBACK_DAYS = 365
+export interface OhlcvViewProps {
+  symbol: string
+  timeframe: Timeframe
+  /** ISO 8601 UTC, inclusive. */
+  range_start: string
+  /** ISO 8601 UTC, inclusive. */
+  range_end: string
+  liveHighlights: Marker[]
+  onSymbolChange: (symbol: string) => void
+  onTimeframeChange: (timeframe: Timeframe) => void
+  onRefresh: () => void
+}
 
-export function OhlcvView(): JSX.Element {
-  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL)
-  const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_TIMEFRAME)
-  // Bumped by Refresh; rolls the window forward to "now" rather than re-fetching
-  // the same fixed window (Plan 0004 phase 6 — original mount-time useMemo
-  // never advanced, so cached data looked the same hours later).
-  const [refreshTick, setRefreshTick] = useState(0)
-
-  const { start, end } = useMemo(() => {
-    const now = new Date()
-    const past = new Date(now.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
-    return { start: past, end: now }
-    // refreshTick is the trigger, not a value used inside — bumping it is the
-    // mechanism that re-runs `new Date()` to roll the window forward.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshTick])
+export function OhlcvView({
+  symbol,
+  timeframe,
+  range_start,
+  range_end,
+  liveHighlights,
+  onSymbolChange,
+  onTimeframeChange,
+  onRefresh,
+}: OhlcvViewProps): JSX.Element {
+  const start = useMemo(() => new Date(range_start), [range_start])
+  const end = useMemo(() => new Date(range_end), [range_end])
 
   const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end })
   const { annotations } = useAnnotationsPoll({ symbol, timeframe, start, end })
-  const onRefresh = (): void => setRefreshTick((n) => n + 1)
+
+  const mergedAnnotations = useMemo(
+    () => mergePolledAndLive(annotations, liveHighlights, symbol, timeframe),
+    [annotations, liveHighlights, symbol, timeframe],
+  )
 
   return (
     <section className={styles.root} aria-label={`OHLCV view for ${symbol} ${timeframe}`}>
@@ -43,8 +62,8 @@ export function OhlcvView(): JSX.Element {
         <SymbolPicker
           symbol={symbol}
           timeframe={timeframe}
-          onSymbolChange={setSymbol}
-          onTimeframeChange={setTimeframe}
+          onSymbolChange={onSymbolChange}
+          onTimeframeChange={onTimeframeChange}
           disabled={isLoading}
         />
         <button type="button" className={styles.refresh} onClick={onRefresh} disabled={isLoading}>
@@ -70,17 +89,52 @@ export function OhlcvView(): JSX.Element {
         )}
         {!isLoading && !error && bars && bars.length === 0 && (
           <div className={styles.empty} role="status" data-testid="ohlcv-empty">
-            No bars for {symbol} {timeframe} in the last {DEFAULT_LOOKBACK_DAYS} days.
+            No bars for {symbol} {timeframe} in this window.
           </div>
         )}
         {!isLoading && !error && bars && bars.length > 0 && (
           <CandlestickChart
             bars={bars}
-            annotations={annotations}
+            annotations={mergedAnnotations}
             ariaLabel={`Candlestick chart for ${symbol} ${timeframe}, ${bars.length} bars`}
           />
         )}
       </div>
     </section>
   )
+}
+
+/**
+ * Merge polled DB annotations (authoritative, ~1 Hz) with the in-memory
+ * live-highlights buffer (immediate, from SSE). Dedup key is
+ * `(event_ts, kind)` — when the polled row arrives for a marker that the
+ * SSE event already surfaced, the polled row wins (it carries the full
+ * Annotation shape, including `id`/`agent_id`/`created_at`).
+ *
+ * Live markers without a polled counterpart are upcast to Annotation
+ * shape with `agent_id: 'live'` so the chart marker layer can treat the
+ * unified list as Annotation[]. The `live` id signals provenance for any
+ * future filtering.
+ *
+ * Exported for direct unit testing.
+ */
+export function mergePolledAndLive(
+  polled: Annotation[],
+  live: Marker[],
+  symbol: string,
+  timeframe: string,
+): Annotation[] {
+  if (live.length === 0) return polled
+  const seen = new Set(polled.map((a) => `${a.event_ts}|${a.kind}`))
+  const onlyLive: Annotation[] = live
+    .filter((m) => !seen.has(`${m.event_ts}|${m.kind}`))
+    .map((m) => ({
+      symbol,
+      timeframe,
+      event_ts: m.event_ts,
+      kind: m.kind,
+      label: m.label ?? null,
+      agent_id: 'live',
+    }))
+  return [...polled, ...onlyLive]
 }

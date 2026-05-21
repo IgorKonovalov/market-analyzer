@@ -154,6 +154,18 @@ export const api = {
   getSidecarPort(): Promise<number> {
     return getSidecarConfig().then((c) => c.port)
   },
+  /**
+   * Build the SSE stream URL for `useEventStream` to hand to `new EventSource(...)`.
+   * The renderer bearer must be passed as `?token=` because `EventSource` cannot
+   * send custom `Authorization` headers (ADR-0017). The query path is only
+   * accepted on `/events` by the sidecar and the access log is suppressed.
+   */
+  buildEventsUrl(): Promise<string> {
+    return getSidecarConfig().then(
+      ({ port, secretToken }) =>
+        `http://127.0.0.1:${port}/events?token=${encodeURIComponent(secretToken)}`,
+    )
+  },
 } as const
 
 export function toLightweightBar(b: Bar): CandlestickData {
