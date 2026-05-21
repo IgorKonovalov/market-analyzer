@@ -31,6 +31,27 @@ from pydantic import BaseModel, ConfigDict
 DEFAULT_QUEUE_CAP = 256
 
 
+class OverlaySpec(BaseModel):
+    """Chart overlay descriptor. The literal set is intentionally narrow — adding
+    a new kind is additive (new literal value, possibly new optional fields)
+    and does NOT bump `chart.show`/`chart.update` payload versions."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["ema", "sma", "rsi", "macd", "bbands"]
+    period: int | None = None
+
+
+class Marker(BaseModel):
+    """`chart.highlight` marker: a single annotation to render on the chart."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    event_ts: datetime
+    kind: Literal["bullish_marker", "bearish_marker"]
+    label: str | None = None
+
+
 class ChartShowPayloadV1(BaseModel):
     """`chart.show v1` payload: render this chart fresh."""
 
@@ -41,7 +62,7 @@ class ChartShowPayloadV1(BaseModel):
     timeframe: str
     range_start: datetime
     range_end: datetime
-    overlays: list[dict[str, Any]] | None = None
+    overlays: list[OverlaySpec] | None = None
 
 
 class ChartUpdatePayloadV1(BaseModel):
@@ -52,7 +73,7 @@ class ChartUpdatePayloadV1(BaseModel):
 
     symbol: str
     timeframe: str
-    overlays: list[dict[str, Any]] | None = None
+    overlays: list[OverlaySpec] | None = None
     range_start: datetime | None = None
     range_end: datetime | None = None
     focus_bar: datetime | None = None
@@ -66,7 +87,7 @@ class ChartHighlightPayloadV1(BaseModel):
 
     symbol: str
     timeframe: str
-    markers: list[dict[str, Any]]
+    markers: list[Marker]
 
 
 class RunCompletedPayloadV1(BaseModel):
@@ -209,7 +230,11 @@ class EventBus:
             type=event_type,
             version=version,
             ts=datetime.now(tz=UTC),
-            payload=validated.model_dump(mode="json"),
+            # `exclude_none=True` keeps unset optional fields out of the wire
+            # JSON — phase-3 `update_chart` relies on this so a call without
+            # `range_start`/`range_end` produces a payload that doesn't carry
+            # those keys at all (rather than `null`).
+            payload=validated.model_dump(mode="json", exclude_none=True),
         )
         self._fan_out(envelope)
         return envelope

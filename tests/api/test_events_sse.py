@@ -285,12 +285,14 @@ def test_stream_emits_published_envelope_as_data_line(live_server: str, app: Fas
         first = next(chunk_iter)
         assert first.startswith(b"retry: 5000\n\n")
         # Publish a chart.show envelope.
-        payload = ChartShowPayloadV1(
-            symbol="AAPL",
-            timeframe="1d",
-            range_start=datetime(2026, 4, 20, tzinfo=UTC),
-            range_end=datetime(2026, 5, 20, tzinfo=UTC),
-            overlays=[{"kind": "ema", "period": 20}],
+        payload = ChartShowPayloadV1.model_validate(
+            {
+                "symbol": "AAPL",
+                "timeframe": "1d",
+                "range_start": datetime(2026, 4, 20, tzinfo=UTC),
+                "range_end": datetime(2026, 5, 20, tzinfo=UTC),
+                "overlays": [{"kind": "ema", "period": 20}],
+            }
         )
         # The bus runs on the server's asyncio loop; we publish from
         # the test thread. The bus's enqueue is sync and thread-safe-ish

@@ -100,10 +100,12 @@ def create_app(
             "(MCP tools read/write annotations)",
         )
     effective_provider = provider if provider is not None else DefaultMarketDataProvider()
+    effective_event_bus = event_bus if event_bus is not None else EventBus()
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
             annotations_repository=annotations_repository,
+            event_bus=effective_event_bus,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None
@@ -126,7 +128,7 @@ def create_app(
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
-    app.state.event_bus = event_bus if event_bus is not None else EventBus()
+    app.state.event_bus = effective_event_bus
 
     @app.middleware("http")
     async def bearer_auth(
