@@ -8,9 +8,15 @@ importers:
 
   .:
     devDependencies:
+      concurrently:
+        specifier: 9.0.1
+        version: 9.0.1
       husky:
         specifier: 9.1.6
         version: 9.1.6
+      wait-on:
+        specifier: 8.0.1
+        version: 8.0.1
 
   desktop:
     dependencies:

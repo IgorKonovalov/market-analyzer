@@ -1,6 +1,6 @@
 # 0015 — `pnpm dev:all`: one-command sidecar + Electron + `.mcp.json` sync
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-22
 > **Approved:** 2026-05-22
 > **Owner skill(s):** `dev`

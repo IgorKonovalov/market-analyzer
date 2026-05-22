@@ -1,4 +1,5 @@
 packages:
+  - .
   - desktop
 allowBuilds:
   electron: true
