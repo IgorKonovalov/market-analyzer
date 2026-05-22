@@ -48,6 +48,10 @@ mcp-secret*.json
 # must never land in the repo. `.tmp` covers the atomic-write tempfile.
 sidecar.lock
 sidecar.lock.tmp
+# Claude Code MCP config — local-only because it carries the MCP bearer inline.
+# The canonical onboarding snippet lives in docs/onboarding/claude-code-setup.md
+# (Plan 0007 phase 5); this file is the user's working copy on their own machine.
+.mcp.json
 
 # DeFi positions (sensitive — local only, never committed)
 # Holds the user's wallet → pool/position mapping consumed by the defi-analyst skill.
