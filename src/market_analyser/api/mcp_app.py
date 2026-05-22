@@ -34,6 +34,7 @@ buffered JSON response.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -53,9 +54,13 @@ from market_analyser.api.events import (
     Marker,
     OverlaySpec,
 )
+from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
+from market_analyser.persistence.repositories.backtest_runs import (
+    BacktestRunsRepository,
+)
 
 
 def _require_supported_timeframe(timeframe: str) -> None:
@@ -88,6 +93,8 @@ def create_mcp_components(
     provider: MarketDataProvider,
     annotations_repository: AnnotationsRepository,
     event_bus: EventBus,
+    backtest_runs_repository: BacktestRunsRepository | None = None,
+    runs_dir: Path | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -96,6 +103,12 @@ def create_mcp_components(
       the first request raises "Task group is not initialized"); and
     - mount `asgi_app` at `/mcp` as a single ASGI route (not a Mount, to avoid
       the trailing-slash redirect).
+
+    The `run_backtest` tool (Plan 0008 phase 4) is registered when both
+    `backtest_runs_repository` and `runs_dir` are supplied. Either alone is
+    insufficient — the tool needs both the SQLite index and the disk root.
+    Legacy callers that omit them keep the pre-Plan-0008 toolset; nothing
+    silently degrades.
     """
     server = FastMCP(
         name="market-analyser",
@@ -290,6 +303,15 @@ def create_mcp_components(
             "type": "chart.highlight",
             "version": ChartHighlightPayloadV1.VERSION,
         }
+
+    if backtest_runs_repository is not None and runs_dir is not None:
+        register_run_backtest(
+            server,
+            provider=provider,
+            repository=backtest_runs_repository,
+            event_bus=event_bus,
+            runs_dir=runs_dir,
+        )
 
     # streamable_http_app() also lazily constructs the session manager; we call
     # it for that side effect even though we discard the returned Starlette app.

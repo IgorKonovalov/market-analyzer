@@ -115,6 +115,8 @@ def create_app(
             provider=effective_provider,
             annotations_repository=annotations_repository,
             event_bus=effective_event_bus,
+            backtest_runs_repository=backtest_runs_repository,
+            runs_dir=runs_dir,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None
