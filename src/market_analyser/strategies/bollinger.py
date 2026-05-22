@@ -32,7 +32,8 @@ META = StrategyMeta(
     id="bollinger",
     name="Bollinger Band Mean Reversion",
     description=(
-        "Enter long when close crosses below the lower band; exit when it crosses above the upper band."
+        "Enter long when close crosses below the lower band; "
+        "exit when it crosses above the upper band."
     ),
     version="1.0.0",
     timeframes=("1h", "1d"),
@@ -70,14 +71,14 @@ def generate_signals(bars: Sequence[Bar], params: Params) -> Sequence[Signal]:
     prev_upper: float | None = None
     prev_lower: float | None = None
     for i in range(len(bars)):
-        u = upper_series[i]
-        l = lower_series[i]
-        if u is None or l is None:
+        upper = upper_series[i]
+        lower = lower_series[i]
+        if upper is None or lower is None:
             continue
         c = closes[i]
         if prev_close is not None and prev_upper is not None and prev_lower is not None:
-            crossed_down_through_lower = prev_close >= prev_lower and c < l
-            crossed_up_through_upper = prev_close <= prev_upper and c > u
+            crossed_down_through_lower = prev_close >= prev_lower and c < lower
+            crossed_up_through_upper = prev_close <= prev_upper and c > upper
             if position == 0 and crossed_down_through_lower:
                 signals.append(Signal(bar_index=i, kind=SignalKind.ENTER_LONG))
                 position = 1
@@ -85,7 +86,7 @@ def generate_signals(bars: Sequence[Bar], params: Params) -> Sequence[Signal]:
                 signals.append(Signal(bar_index=i, kind=SignalKind.EXIT_LONG))
                 position = 0
         prev_close = c
-        prev_upper = u
-        prev_lower = l
+        prev_upper = upper
+        prev_lower = lower
 
     return signals

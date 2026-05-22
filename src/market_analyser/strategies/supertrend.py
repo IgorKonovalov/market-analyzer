@@ -59,8 +59,8 @@ def _true_range(bars: Sequence[Bar]) -> list[float | None]:
     n = len(bars)
     tr: list[float | None] = [None] * n
     for i in range(1, n):
-        h, l, prev_c = bars[i].high, bars[i].low, bars[i - 1].close
-        tr[i] = max(h - l, abs(h - prev_c), abs(l - prev_c))
+        high, low, prev_c = bars[i].high, bars[i].low, bars[i - 1].close
+        tr[i] = max(high - low, abs(high - prev_c), abs(low - prev_c))
     return tr
 
 

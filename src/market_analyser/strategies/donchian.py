@@ -29,7 +29,8 @@ META = StrategyMeta(
     id="donchian",
     name="Donchian Channel Breakout",
     description=(
-        "Enter long when close breaks above the N-bar prior high; exit when it breaks below the N-bar prior low."
+        "Enter long when close breaks above the N-bar prior high; "
+        "exit when it breaks below the N-bar prior low."
     ),
     version="1.0.0",
     timeframes=("1h", "1d"),

@@ -116,7 +116,8 @@ def test_supertrend_emits_no_signals_when_fewer_than_period_plus_two_bars() -> N
     # period=2 needs the ATR seed at i=2 plus at least one decision bar at
     # i=3. A 3-bar series can seed ATR but has no decision bar.
     bars = _bars([50.0, 50.0, 50.0])
-    assert list(supertrend.generate_signals(bars, supertrend.Params(period=2, multiplier=1.0))) == []
+    params = supertrend.Params(period=2, multiplier=1.0)
+    assert list(supertrend.generate_signals(bars, params)) == []
 
 
 def test_supertrend_params_validates_field_constraints() -> None:
