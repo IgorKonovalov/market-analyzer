@@ -39,9 +39,11 @@ Small items carried over from closed plans — too small for their own plan, too
 
 Plan 0006 closed on 2026-05-20, putting the MCP server, annotations table, Settings page, and chart-marker polling in place. On the same day the architect accepted [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (Claude Code is now the primary control surface; Electron is the live viewer) plus the two mechanism ADRs it forces ([ADR-0016](../adrs/0016-standalone-sidecar-mode.md), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md)). **Plan 0007 (live agent-driven viewer)** is the implementation of that role inversion — it closes the deferred items from ADR-0014 and Plan 0006, and without it the agent-primary workflow described in ADR-0015 has no mechanism.
 
-Plan 0002 (strategy interface) **closed on 2026-05-20** with all five phases shipped — its Plan 0008-blocking pieces (contracts module, `signals_to_trades` adapter, `Trade` type) are in place. Plan 0007 remains in flight in parallel on 2026-05-20; it touches disjoint files (0007 is in `src/market_analyser/api/` + `desktop/`).
+Plan 0002 (strategy interface) **closed on 2026-05-20** with all five phases shipped — its Plan 0008-blocking pieces (contracts module, `signals_to_trades` adapter, `Trade` type) are in place. Plan 0007 **closed on 2026-05-22** after five hardening sub-phases 4.1–4.5; the SSE bus + `useEventStream` hook + standalone-sidecar attach are all live, which means every substantive plan downstream has its gates satisfied.
 
-**Plan 0008 (backtest engine v1)** is the natural sequel. It is the engine half [ADR-0004](../adrs/0004-strategy-interface.md) named but Plan 0002 deliberately deferred — pure `run(strategy, bars, params, **costs) -> BacktestResult` + thin persistence + a `run_backtest` MCP tool. It also closes a load-bearing gap in Plan 0007: the `run.completed v1` SSE envelope was reserved with no producer, and Plan 0008 ships its first one. The plan is paired with [ADR-0018](../adrs/0018-backtest-result-schema.md) (`BacktestResult` schema). Plan 0008's Plan 0002 prerequisite (phases 1–3 = contracts module + `signals_to_trades` adapter + `Trade` type) **was satisfied 2026-05-20 at Plan 0002 close**; the remaining gate is Plan 0007 phases 1–4 (SSE bus + `useEventStream` hook), which Plan 0008's relevant phase 4 depends on.
+**Plan 0015 (`pnpm dev:all`) is recommended next** — ahead of every other open plan — because it is pure dev tooling and every subsequent plan's smoke loop runs faster with it. It adds a new root `package.json` and two scripts under `scripts/dev/`, touches `pnpm-workspace.yaml` and `.gitignore`, and writes `docs/onboarding/claude-code-setup.md` (the doc the `.gitignore` comment was promising). No production code is changed; the sidecar, Electron main, and renderer are untouched. The cost is small (three phases, all `dev`) and the payoff repeats across Plan 0008's BacktestView smoke, every Tier 2 adapter smoke (0009–0012), Plan 0013's backfill spinner smoke, and Plan 0014's end-to-end agent-mode smoke. Technically Plan 0015 can ship at any time (no other plan depends on it), so the recommendation is preference — defer it only if you want to keep momentum on the engine/data threads.
+
+**Plan 0008 (backtest engine v1)** is the substantive sequel. It is the engine half [ADR-0004](../adrs/0004-strategy-interface.md) named but Plan 0002 deliberately deferred — pure `run(strategy, bars, params, **costs) -> BacktestResult` + thin persistence + a `run_backtest` MCP tool. It also closes a load-bearing gap in Plan 0007: the `run.completed v1` SSE envelope was reserved with no producer, and Plan 0008 ships its first one. The plan is paired with [ADR-0018](../adrs/0018-backtest-result-schema.md) (`BacktestResult` schema). Both Plan 0008 gates (Plan 0002 phases 1–3 = contracts module + adapter + `Trade` type; Plan 0007 phases 1–4 = SSE bus + `useEventStream` hook) are satisfied; nothing technical blocks the start.
 
 **Tier 2 (data breadth) ships as a series** — Plans 0009–0012 — after the strategy/backtest threads close. The series is anchored by [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (shared resilience module for every external HTTP adapter); each subsequent adapter inherits the module for free, so they sequence cheaply behind 0009. Sequencing rationale:
 
@@ -54,11 +56,9 @@ Reddit-based sentiment is **deliberately deferred** — the `tradingview-mcp` up
 
 **Plans 0013 (auto-backfill on cache miss) and 0014 (interactive chart + agent-mode toggle)** were drafted 2026-05-22 from Plan 0007's close-ceremony Followups. They are sequenced **after** the Tier 2 data series for two reasons: (1) Plan 0007's followups originally framed them as "design after current work lands"; (2) they touch the MCP-tool surface and renderer (overlapping with Plan 0008's `run_backtest` tool + BacktestView), so running them after Plan 0008 closes minimises merge surface. The two are sequenced 0013 → 0014: Plan 0013 establishes the typed-error pattern and the renderer-side event-handler plumbing pattern that Plan 0014 mirrors for UI-event types, and the original Plan 0007 followup explicitly said "architect to design Plan 0014 after Plan 0013 lands". Plan 0014 is paired with [ADR-0021](../adrs/0021-renderer-to-agent-feedback.md), which proposes the resource+notification mechanism for renderer→agent feedback and is itself the gating decision for the plan; ADR-0021 moves to `accepted` at Plan 0014 close. The user may re-prioritise 0013 / 0014 ahead of the Tier 2 series at any time — both touch disjoint files from 0009–0012, so the sequencing is preference, not technical constraint.
 
-**Plan 0015 (`pnpm dev:all`)** was drafted 2026-05-22 in response to repeated Plan 0007 smoke pain. It is **recommended to land first** — ahead of Plan 0008 — because every subsequent plan (0008's BacktestView, 0009–0012's Tier 2 adapter smokes, 0013's backfill spinner, 0014's end-to-end agent-mode smoke) will be exercised through the same one-command dev loop. The plan is pure dev tooling: it adds a new root `package.json` and two scripts under `scripts/dev/`, touches `pnpm-workspace.yaml` and `.gitignore`, and writes `docs/onboarding/claude-code-setup.md` (the doc the `.gitignore` comment was promising). No production code is changed; the sidecar, Electron main, and renderer are untouched. Technically Plan 0015 can ship at any time (it does not depend on 0008 or anything after), so the recommendation is preference: doing it now amortises across every smoke that comes after. The user may defer it if they prefer to keep momentum on the engine/data threads.
-
 Plan 0002 (closed 2026-05-20) used three skill handoffs (`dev` → `backtester` → `strategy-author` → `dev`). At approval (2026-05-19) the architect considered collapsing to two — either by moving phase 5 (CLI) ahead of phase 4, or by making strategy-author phase 4 tests compare signal lists instead of trade lists. Both options were rejected: phase 5's done-when (six rows printed by `strategies list`) is the integration check that proves discovery + contract + CLI work together, and phase 4's done-when (trade list matches reference byte-for-byte after `signals_to_trades`) is the integration check that proves the contract round-trips through the adapter. The structure held — the close review found no blockers and one minor follow-up (CLI smoke test, tracked below).
 
-Execution sequence (Plan 0007 closed 2026-05-22; 0008 next; Tier 2 series after 0008):
+Execution sequence (Plan 0007 closed 2026-05-22; recommended next: Plan 0015 then Plan 0008 then Tier 2 series 0009–0012 then Plans 0013 + 0014):
 
 ```
 [Done — kept for historical sequencing]
@@ -79,53 +79,53 @@ B1. /dev          Plan 0002             (mixed-skill: dev → backtester → str
                                          dev; hand off at each owner boundary)        [done 2026-05-20]
 B2. /architect    close Plan 0002       (fresh architect session)                     [done 2026-05-20]
 
-[Sequential — depends on A6 + B2, both satisfied]
-C1. /backtester   Plan 0008 phases 1–2  (BacktestResult + four pure helpers + run() pure orchestrator;
-                                         Plan 0002 prereq = phases 1–3 satisfied 2026-05-20)
-C2. /dev          Plan 0008 phases 3–4  (persist + SQLite migration + GET routes + run_backtest MCP tool;
-                                         cross-skill handoff from /backtester;
-                                         phase 4 depends on Plan 0007 phases 1–4 = SSE bus, now satisfied)
-C3. /ui-builder   Plan 0008 phase 5     (BacktestView + RecentBacktestsView;
-                                         cross-skill handoff from /dev;
-                                         depends on Plan 0007 phase 4 = useEventStream hook, now satisfied)
-C4. /architect    close Plan 0008       (fresh architect session)
-
-[Tier 2 series — sequential after C4; each inherits the resilience module from D1]
-D1. /dev          Plan 0009             (resilience module + TradingView screener + Yahoo retrofit;
-                                         4 phases all dev)
-D2. /architect    close Plan 0009       (fresh architect session)
-D3. /dev          Plan 0010             (RSS news + per-headline VADER sentiment;
-                                         3 phases all dev; depends on Plan 0009 phase 1)
-D4. /architect    close Plan 0010       (fresh architect session)
-D5. /dev          Plan 0011             (crypto Fear & Greed;
-                                         1 phase; depends on Plan 0009 phase 1)
-D6. /architect    close Plan 0011       (fresh architect session)
-D7. /dev          Plan 0012             (StockTwits sentiment;
-                                         3 phases; depends on Plan 0009 phase 1 + Plan 0010 phase 2)
-D8. /architect    close Plan 0012       (fresh architect session)
-
-[Plan 0007 close-ceremony followups — sequenced after Tier 2; user may re-prioritise]
-E1. /dev          Plan 0013 phases 1–3  (auto-backfill: typed events + typed errors;
-                                         get_ohlcv contract honesty + backfill_ohlcv tool;
-                                         BackfillCoordinator + dedup + partial-failure surfacing)
-E2. /ui-builder   Plan 0013 phase 4     (renderer: backfill spinner + auto-refetch +
-                                         failure toast; cross-skill handoff from /dev)
-E3. /architect    close Plan 0013       (fresh architect session)
-
-E4. /dev          Plan 0014 phases 1–2  (UI-event vocabulary + POST /ui_events +
-                                         agent-mode state; MCP tool + resource +
-                                         resource-update notification)
-E5. /ui-builder   Plan 0014 phase 3     (renderer: agent-mode toggle + range-select +
-                                         bar-click + single-instance Electron;
-                                         cross-skill handoff from /dev)
-E6. /human        Plan 0014 phase 4     (end-to-end smoke with Claude Code)
-E7. /architect    close Plan 0014       (fresh architect session; flips ADR-0021 to accepted)
-
-[Dev tooling — recommended to land FIRST, before C1, so every subsequent smoke uses it]
-F1. /dev          Plan 0015 phases 1–3  (root package.json + dev:all + sidecar wrapper;
+[Recommended next — pure dev tooling; every smoke after this runs through it]
+C1. /dev          Plan 0015 phases 1–3  (root package.json + dev:all + sidecar wrapper;
                                          .mcp.json writer + onboarding doc;
                                          Ctrl+C teardown + --keep-sidecar + reuse-existing)
-F2. /architect    close Plan 0015       (fresh architect session)
+C2. /architect    close Plan 0015       (fresh architect session)
+
+[Substantive thread — backtest engine; both gates (A6 + B2) satisfied]
+D1. /backtester   Plan 0008 phases 1–2  (BacktestResult + four pure helpers + run() pure orchestrator;
+                                         Plan 0002 prereq = phases 1–3 satisfied 2026-05-20)
+D2. /dev          Plan 0008 phases 3–4  (persist + SQLite migration + GET routes + run_backtest MCP tool;
+                                         cross-skill handoff from /backtester;
+                                         phase 4 depends on Plan 0007 phases 1–4 = SSE bus, now satisfied)
+D3. /ui-builder   Plan 0008 phase 5     (BacktestView + RecentBacktestsView;
+                                         cross-skill handoff from /dev;
+                                         depends on Plan 0007 phase 4 = useEventStream hook, now satisfied)
+D4. /architect    close Plan 0008       (fresh architect session)
+
+[Tier 2 data series — sequential after D4; each inherits the resilience module from E1]
+E1. /dev          Plan 0009             (resilience module + TradingView screener + Yahoo retrofit;
+                                         4 phases all dev)
+E2. /architect    close Plan 0009       (fresh architect session)
+E3. /dev          Plan 0010             (RSS news + per-headline VADER sentiment;
+                                         3 phases all dev; depends on Plan 0009 phase 1)
+E4. /architect    close Plan 0010       (fresh architect session)
+E5. /dev          Plan 0011             (crypto Fear & Greed;
+                                         1 phase; depends on Plan 0009 phase 1)
+E6. /architect    close Plan 0011       (fresh architect session)
+E7. /dev          Plan 0012             (StockTwits sentiment;
+                                         3 phases; depends on Plan 0009 phase 1 + Plan 0010 phase 2)
+E8. /architect    close Plan 0012       (fresh architect session)
+
+[Plan 0007 close-ceremony followups — last; user may re-prioritise ahead of Tier 2]
+F1. /dev          Plan 0013 phases 1–3  (auto-backfill: typed events + typed errors;
+                                         get_ohlcv contract honesty + backfill_ohlcv tool;
+                                         BackfillCoordinator + dedup + partial-failure surfacing)
+F2. /ui-builder   Plan 0013 phase 4     (renderer: backfill spinner + auto-refetch +
+                                         failure toast; cross-skill handoff from /dev)
+F3. /architect    close Plan 0013       (fresh architect session)
+
+F4. /dev          Plan 0014 phases 1–2  (UI-event vocabulary + POST /ui_events +
+                                         agent-mode state; MCP tool + resource +
+                                         resource-update notification)
+F5. /ui-builder   Plan 0014 phase 3     (renderer: agent-mode toggle + range-select +
+                                         bar-click + single-instance Electron;
+                                         cross-skill handoff from /dev)
+F6. /human        Plan 0014 phase 4     (end-to-end smoke with Claude Code)
+F7. /architect    close Plan 0014       (fresh architect session; flips ADR-0021 to accepted)
 ```
 
 Plan 0008 keeps two skill handoffs (`backtester` → `dev` → `ui-builder`). The architect considered collapsing the `dev` block (phases 3 + 4) into the `backtester` block since they both touch `src/market_analyser/backtest/`, but rejected it: phase 3 introduces the SQLite migration + repository + HTTP routes (the persistence layer's center of gravity is `dev`, not the engine), and the cross-skill boundary at the `backtester` → `dev` handoff is the integration check that proves the pure engine is genuinely pure (the `dev` phases can build the I/O layer without changing `engine.py`).
