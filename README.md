@@ -4,7 +4,7 @@ A desktop application for analyzing markets and authoring trading strategies. El
 
 **Primary control surface: Claude Code (CLI) via MCP** ([ADR-0015](docs/architecture/adrs/0015-claude-code-primary-control-surface.md)). The user drives the app by talking to an agent, which calls MCP tools on the sidecar. The Electron viewer is a live visualisation surface — it subscribes to a sidecar event stream ([ADR-0017](docs/architecture/adrs/0017-live-ui-updates-via-sse.md)) and renders agent-issued chart commands. The sidecar runs as a standalone process ([ADR-0016](docs/architecture/adrs/0016-standalone-sidecar-mode.md)): Electron auto-attaches via a lockfile if one is already running, and closing the viewer does not stop the sidecar.
 
-**Status.** Bootstrap is closed ([Plan 0001](docs/architecture/plans/done/0001-bootstrap.md), 2026-05-18). MCP server + annotations ([Plan 0006](docs/architecture/plans/done/0006-annotations-via-mcp.md), 2026-05-20) and strategy contract + six reference strategies ([Plan 0002](docs/architecture/plans/done/0002-strategy-interface.md), 2026-05-20) are live. SSE event stream and standalone sidecar mode shipped 2026-05-20 (Plan 0007 phases 1–2). The backtest engine ([Plan 0008](docs/architecture/plans/0008-backtest-engine-v1.md)) and the Tier 2 data adapters — screener, news, sentiment, fear-and-greed ([Plans 0009–0012](docs/architecture/plans/)) — are approved but not yet built. See [Roadmap](#roadmap).
+**Status.** Bootstrap is closed ([Plan 0001](docs/architecture/plans/done/0001-bootstrap.md), 2026-05-18). MCP server + annotations ([Plan 0006](docs/architecture/plans/done/0006-annotations-via-mcp.md), 2026-05-20), strategy contract + six reference strategies ([Plan 0002](docs/architecture/plans/done/0002-strategy-interface.md), 2026-05-20), and the live agent-driven viewer — standalone sidecar + SSE + three `show_*` MCP tools + Electron SSE subscriber ([Plan 0007](docs/architecture/plans/done/0007-live-agent-driven-viewer.md), closed 2026-05-22 after five hardening sub-phases 4.1–4.5) — are all live. Next approved and queued for implementation: backtest engine ([Plan 0008](docs/architecture/plans/0008-backtest-engine-v1.md)), Tier 2 data adapters ([Plans 0009–0012](docs/architecture/plans/) — screener, news, sentiment, fear-and-greed), auto-backfill on cache miss ([Plan 0013](docs/architecture/plans/0013-auto-backfill-on-cache-miss.md)), interactive chart + agent-mode toggle ([Plan 0014](docs/architecture/plans/0014-interactive-chart-and-agent-mode.md) + [ADR-0021](docs/architecture/adrs/0021-renderer-to-agent-feedback.md)), and a one-command dev startup ([Plan 0015](docs/architecture/plans/0015-pnpm-dev-all.md), recommended to land first). See [Roadmap](#roadmap).
 
 This README is the entrypoint for developers cloning the repo. End-user installers are not yet published.
 
@@ -12,10 +12,10 @@ This README is the entrypoint for developers cloning the repo. End-user installe
 
 - **OHLCV view for one symbol.** Pick a symbol (default `AAPL`), pick a timeframe (`1d`, `1h`, …), see a candlestick chart for the last 365 days. Refresh rolls the window forward to "now".
 - **SQLite cache behind the data layer.** First fetch hits Yahoo Finance; subsequent loads serve from a local cache (`%APPDATA%\market-analyser\cache.sqlite` on Windows, equivalent XDG paths on macOS/Linux). The cache is keyed on `(symbol, timeframe, bar timestamp)` and survives app restarts. Adapter is written in-house under `src/market_analyser/data/` per [ADR-0009](docs/architecture/adrs/0009-rewrite-data-layer-in-house.md).
-- **MCP server at `/mcp`.** Streamable HTTP (rev 2025-03-26), dual-bearer auth ([ADR-0014](docs/architecture/adrs/0014-mcp-as-second-sidecar-protocol.md)). Three tools shipped: `get_ohlcv`, `write_annotation`, `list_annotations`. The agent's bearer lives in a long-lived `mcp-secret.json` under the user-data dir; the renderer's per-launch bearer is unchanged.
+- **MCP server at `/mcp`.** Streamable HTTP (rev 2025-03-26), dual-bearer auth ([ADR-0014](docs/architecture/adrs/0014-mcp-as-second-sidecar-protocol.md)). Six tools shipped: `get_ohlcv`, `write_annotation`, `list_annotations`, and the agent-driven viewer triplet `show_chart`, `update_chart`, `highlight_pattern` (Plan 0007). The agent's bearer lives in a long-lived `mcp-secret.json` under the user-data dir; the renderer's per-launch bearer is unchanged.
 - **Annotations on the chart.** Agents call `write_annotation`; bullish/bearish markers appear on the live chart within ~1 s via the renderer's annotation poll loop. Annotations persist in a SQLite table and survive restarts.
 - **Settings page.** Reveal / copy / rotate the MCP secret without leaving the app. Reveal is gated; rotated secrets invalidate all in-flight MCP sessions.
-- **SSE event stream at `/events`.** Renderer-bearer-gated (header or `?token=` query string for `EventSource`). Typed envelope schema with synthetic `chart.update_dropped v1` notifications on subscriber overflow. The mechanism behind [ADR-0017](docs/architecture/adrs/0017-live-ui-updates-via-sse.md); the chart-side subscriber and `show_*` MCP tools land in Plan 0007 phases 3–4.
+- **SSE event stream at `/events`.** Renderer-bearer-gated (header or `?token=` query string for `EventSource`). Typed envelope schema with synthetic `chart.update_dropped v1` notifications on subscriber overflow. The mechanism behind [ADR-0017](docs/architecture/adrs/0017-live-ui-updates-via-sse.md). The renderer's `useEventStream` hook + `lightweight-charts`-driven overlay handlers consume `chart.show`, `chart.update`, and `chart.highlight_pattern` envelopes — agents issue them via the `show_*` MCP tools and the viewer reflects them within a second.
 - **Standalone sidecar.** Lockfile under the user-data dir, idempotent attach. Run `python -m market_analyser.api` once; Electron sessions attach to it instead of double-spawning, and closing the viewer leaves the sidecar running so the agent keeps working. See [ADR-0016](docs/architecture/adrs/0016-standalone-sidecar-mode.md).
 - **Strategy contract + six reference strategies.** Pure `generate_signals(bars, params) -> list[Signal]` modules with a `Params` pydantic model and a `META` constant ([ADR-0004](docs/architecture/adrs/0004-strategy-interface.md)). Live: `rsi`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`. Discover them via `market-analyser strategies list [--json]`. A `signals_to_trades` adapter and `Trade` type already live under `src/market_analyser/backtest/` so the engine has a stable target.
 - **Secure Electron shell.** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, double-layer CSP, no `remote` module. The renderer reaches the sidecar only through a typed `window.api.*` bridge exposed by a preload script.
@@ -33,13 +33,13 @@ flowchart LR
   subgraph desktop["desktop/ (Electron)"]
     main["main process<br/>(supervisor, IPC, lockfile attach)"]
     preload["preload<br/>(window.api bridge)"]
-    renderer["renderer<br/>(React + lightweight-charts<br/>+ annotation poll, SSE next)"]
+    renderer["renderer<br/>(React + lightweight-charts<br/>+ annotation poll + SSE subscriber)"]
     main --> preload --> renderer
   end
 
   subgraph sidecar["src/market_analyser (Python sidecar)"]
     api["FastAPI app<br/>(/healthz, /ohlcv, /annotations,<br/>/events SSE, /settings, /mcp)"]
-    mcpapp["FastMCP server<br/>(get_ohlcv, write_annotation,<br/>list_annotations)"]
+    mcpapp["FastMCP server<br/>(get_ohlcv, write_annotation,<br/>list_annotations, show_chart,<br/>update_chart, highlight_pattern)"]
     provider["MarketDataProvider<br/>(cache-aware, as_of-gated)"]
     strategies["strategies/<br/>(rsi, bollinger, macd,<br/>ema_cross, supertrend, donchian)"]
     backtest["backtest/<br/>(signals_to_trades, Trade)"]
@@ -125,7 +125,7 @@ The MCP endpoint at `/mcp` uses a separate, long-lived bearer stored in `mcp-sec
 
 ### Configuring Claude Code
 
-To drive the app from an agent, point Claude Code's MCP config at the running sidecar's `/mcp` endpoint with the bearer from `mcp-secret.json`. Plan 0007 phase 5 will publish a sample config; until then, see [ADR-0014](docs/architecture/adrs/0014-mcp-as-second-sidecar-protocol.md).
+To drive the app from an agent, point Claude Code's MCP config at the running sidecar's `/mcp` endpoint with the bearer from `mcp-secret.json`. A repo-local `.mcp.json` is the canonical project-scoped config (gitignored — it carries the bearer inline). [Plan 0015](docs/architecture/plans/0015-pnpm-dev-all.md) lands `pnpm dev:all`, which atomic-writes `.mcp.json` from the live `sidecar.lock` + `mcp-secret.json` on every sidecar boot so no manual port/bearer juggling is needed; until that plan ships, copy the port from the sidecar's stdout `PORT=<n>` line and the bearer from `mcp-secret.json` by hand, or see [ADR-0014](docs/architecture/adrs/0014-mcp-as-second-sidecar-protocol.md) for the long-form transport details.
 
 ### Packaging
 
@@ -190,9 +190,10 @@ market-analyser/
 ├── .claude/skills/               # Project-specific Claude Code skills (see below)
 │
 ├── pyproject.toml                # uv-managed Python project
-├── pnpm-workspace.yaml           # pnpm workspace root
-├── package.json                  # root scripts (dev, build, test, typecheck)
-└── README.md
+├── pnpm-workspace.yaml           # pnpm workspace root (currently lists `desktop` only;
+│                                 #   Plan 0015 adds the repo root to the workspace
+│                                 #   so `pnpm dev:all` can orchestrate sidecar + viewer)
+└── README.md                     # this file
 ```
 
 The `runs/` directory (gitignored) will hold backtest and analysis artifacts when those subsystems land. `positions/` (gitignored) will hold the DeFi analyst's positions file when that subsystem lands.
@@ -286,6 +287,10 @@ ADRs that gate frequent decisions:
 - **[ADR-0015](docs/architecture/adrs/0015-claude-code-primary-control-surface.md)** — Claude Code is the primary control surface; Electron is the viewer
 - **[ADR-0016](docs/architecture/adrs/0016-standalone-sidecar-mode.md)** — standalone sidecar (lockfile + idempotent attach)
 - **[ADR-0017](docs/architecture/adrs/0017-live-ui-updates-via-sse.md)** — live UI updates via Server-Sent Events on `/events`
+- **[ADR-0018](docs/architecture/adrs/0018-backtest-result-schema.md)** — `BacktestResult` schema (paired with Plan 0008)
+- **[ADR-0019](docs/architecture/adrs/0019-external-http-adapter-resilience.md)** — shared resilience module for every external HTTP adapter (TTL cache + retry + backoff + concurrency cap); anchors the Tier 2 data series
+- **[ADR-0020](docs/architecture/adrs/0020-shared-data-dir-contract.md)** — single canonical data dir resolution shared by Python sidecar and Electron main (closes the Plan 0007 smoke divergence)
+- **[ADR-0021](docs/architecture/adrs/0021-renderer-to-agent-feedback.md)** — renderer→agent feedback via MCP resources + `notifications/resources/updated`, gated by an agent-mode toggle (paired with Plan 0014)
 
 ## Roadmap
 
@@ -300,12 +305,15 @@ Honest current state. "Designed" means an ADR or plan exists; "approved" means t
 | Dependency discipline (cooldown + pins)    | **Done** ([Plan 0005](docs/architecture/plans/done/0005-dependency-cooldown.md), closed 2026-05-19) |
 | MCP server + annotations on the chart      | **Done** ([Plan 0006](docs/architecture/plans/done/0006-annotations-via-mcp.md), closed 2026-05-20) |
 | Strategy contract + 6 reference strategies | **Done** ([Plan 0002](docs/architecture/plans/done/0002-strategy-interface.md), closed 2026-05-20) |
-| Standalone sidecar + SSE stream            | **In flight** ([Plan 0007](docs/architecture/plans/0007-live-agent-driven-viewer.md)) — phases 1–2 shipped 2026-05-20; `show_*` MCP tools + renderer SSE subscriber pending |
-| Backtest engine v1                         | **Approved** ([Plan 0008](docs/architecture/plans/0008-backtest-engine-v1.md) + [ADR-0018](docs/architecture/adrs/0018-backtest-result-schema.md)) — sequenced after Plan 0007 |
+| Standalone sidecar + SSE stream + agent-driven viewer | **Done** ([Plan 0007](docs/architecture/plans/done/0007-live-agent-driven-viewer.md), closed 2026-05-22 after five hardening sub-phases 4.1–4.5; [ADR-0020](docs/architecture/adrs/0020-shared-data-dir-contract.md) accepted in the same close) |
+| One-command dev startup (`pnpm dev:all`)   | **Approved** ([Plan 0015](docs/architecture/plans/0015-pnpm-dev-all.md)) — recommended to land first; pure dev tooling, no production code |
+| Backtest engine v1                         | **Approved** ([Plan 0008](docs/architecture/plans/0008-backtest-engine-v1.md) + [ADR-0018](docs/architecture/adrs/0018-backtest-result-schema.md)) — Plan 0007 gate satisfied |
 | Shared HTTP resilience + TradingView screener | **Approved** ([Plan 0009](docs/architecture/plans/0009-resilience-and-tradingview-screener.md) + [ADR-0019](docs/architecture/adrs/0019-external-http-adapter-resilience.md)) |
 | News (RSS) + VADER per-headline sentiment  | **Approved** ([Plan 0010](docs/architecture/plans/0010-news-and-vader-sentiment.md)) |
 | Crypto Fear & Greed index                  | **Approved** ([Plan 0011](docs/architecture/plans/0011-fear-and-greed-indices.md)) |
 | StockTwits sentiment                       | **Approved** ([Plan 0012](docs/architecture/plans/0012-stocktwits-sentiment.md)) |
+| Auto-backfill on cache miss + typed adapter errors | **Approved** ([Plan 0013](docs/architecture/plans/0013-auto-backfill-on-cache-miss.md)) — closes a Plan 0007 followup; surfaces fetch progress via SSE |
+| Interactive chart + agent-mode toggle (renderer→agent feedback) | **Approved** ([Plan 0014](docs/architecture/plans/0014-interactive-chart-and-agent-mode.md) + [ADR-0021](docs/architecture/adrs/0021-renderer-to-agent-feedback.md)) — drag-select range, click candle, server-side gated by an explicit toggle |
 | TradFi pattern/trend analysis surface      | Not started |
 | DeFi pool / LP / lending analysis          | Not started |
 | Multi-route navigation                     | Not started |
