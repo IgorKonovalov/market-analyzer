@@ -16,6 +16,16 @@ import { app, BrowserWindow } from 'electron'
 import { createWindow, getRendererPaths, installCsp, showFatalWindow } from './window'
 import { registerIpcHandlers, cleanupServices } from './ipc'
 import { SidecarSupervisor } from './sidecar'
+import { resolveSharedDataDir } from '../shared/data-dir'
+
+// ADR-0020: anchor `app.getName()` to the contract name so OS-level surfaces
+// (window title, taskbar grouping, recent-files) read correctly. The data dir
+// does NOT depend on this — `resolveSharedDataDir()` computes the path from
+// the literal `APP_DIRNAME` directly — but Electron uses the name in places
+// that have no contract-shaped substitute. Must run before any other Electron
+// API touches the name to avoid `userData` getting cached at the wrong path
+// by a third-party plugin.
+app.setName('market-analyser')
 
 const isDev = !app.isPackaged
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
@@ -25,21 +35,7 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('io.marketanalyser.desktop')
 }
 
-/**
- * Shared data directory between Electron and the Python sidecar (ADR-0016).
- *
- * Electron's `userData` defaults to `<appData>/<productName>`, which on Windows
- * and macOS aligns with Python's `default_app_data_dir()`. On Linux, Electron
- * defaults to `~/.config/...` while Python defaults to `~/.local/share/...` —
- * the asymmetry would split lockfile readers between two directories. We
- * resolve it by passing `MARKET_ANALYSER_DATA_DIR` to the sidecar so both
- * processes agree, and the lockfile is always at `<this dir>/sidecar.lock`.
- */
-function resolveDataDir(): string {
-  return app.getPath('userData')
-}
-
-const supervisor = new SidecarSupervisor(resolveDataDir())
+const supervisor = new SidecarSupervisor(resolveSharedDataDir())
 
 if (isE2E) {
   // E2E helper: exposes the supervisor on globalThis so Playwright's

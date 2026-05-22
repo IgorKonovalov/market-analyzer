@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Header, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine
@@ -36,6 +36,7 @@ from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
+from market_analyser.config import default_app_data_dir
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
@@ -180,8 +181,22 @@ def create_app(
         )
 
     @app.get("/healthz")
-    def healthz() -> dict[str, object]:
-        return {"ok": True, "version": __version__}
+    def healthz(authorization: str | None = Header(default=None)) -> dict[str, object]:
+        # Auth-exempt for the unauthenticated liveness probe (spawn-path
+        # `waitForHealthz`), but ADR-0020 has the route disclose the resolved
+        # `data_dir` to callers who present the renderer bearer so the
+        # Electron attach path can confirm sidecar identity. MCP bearer holders
+        # are not authorised — `data_dir` is renderer-only.
+        body: dict[str, object] = {"ok": True, "version": __version__}
+        if authorization:
+            scheme, _, token = authorization.partition(" ")
+            if (
+                scheme.lower() == "bearer"
+                and token
+                and secrets.compare_digest(token, secret)
+            ):
+                body["data_dir"] = str(default_app_data_dir())
+        return body
 
     app.include_router(ohlcv_router)
 
