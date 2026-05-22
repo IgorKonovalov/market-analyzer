@@ -1,25 +1,39 @@
 /**
- * SSE consumer hook (Plan 0007 phase 4).
+ * SSE consumer hook (Plan 0007 phase 4 + 4.4).
  *
- * On mount, opens a single `EventSource` to `/events?token=<renderer_bearer>`,
- * parses every incoming message as an `Envelope<unknown>`, validates the
- * envelope shape, and dispatches to a per-type handler.
+ * On mount, builds the events URL from the cached `{port, secretToken}` and
+ * opens an `EventSource`. Every incoming message is parsed as an
+ * `Envelope<unknown>`, validated, and dispatched to a per-type handler.
  *
  * Versioning discipline (ADR-0017): an envelope with a `version` higher than
- * the handler's known version still dispatches to the v1 handler — the renderer
- * is forward-compatible by default. A `console.warn` records the drift so the
- * mismatch is visible during the transition window.
+ * the handler's known version still dispatches to the v1 handler — the
+ * renderer is forward-compatible by default. A `console.warn` records the
+ * drift so the mismatch is visible during the transition window.
  *
- * Reconnection is left to the browser's `EventSource` implementation; we surface
- * the connection state (`open` | `connecting` | `reconnecting`) so the UI can
- * indicate stream health if it wants. On unmount we call `EventSource.close()`.
+ * Phase 4.4 additions:
+ *   - The URL is recomputed when the api/client cache mutates (a
+ *     `sidecar:status` `kind: 'refreshed'` event flowing through
+ *     `subscribeToConfigChanges`). When the URL changes the previous
+ *     `EventSource` is closed and a new one opens against the new URL —
+ *     transparent to the agent and to the chart handlers.
+ *   - On persistent connection failure (the hook's `onerror` fires 3 times
+ *     within a 10-second window without an intervening `onopen`), the hook
+ *     calls `window.api.sidecar.refresh()` exactly once per window. The
+ *     supervisor's `refresh()` coalesces concurrent calls upstream, so the
+ *     renderer is allowed to be optimistic about firing.
  *
- * The hook does NOT inject `EventSource` via a factory prop — tests install a
- * mock on `globalThis.EventSource` so production code stays free of test seams.
+ * Reconnection between events is left to the browser's `EventSource`
+ * implementation (per ADR-0017's `retry:` hint from the server). The hook
+ * surfaces the connection state (`open` | `connecting` | `reconnecting`).
+ * On unmount we call `EventSource.close()`.
+ *
+ * The hook does NOT inject `EventSource` via a factory prop — tests install
+ * a mock on `globalThis.EventSource` so production code stays free of test
+ * seams.
  */
 import { useEffect, useRef, useState } from 'react'
 
-import { api } from '../api/client'
+import { api, subscribeToConfigChanges } from '../api/client'
 import type {
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
@@ -53,6 +67,15 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'chart.update_dropped': 1,
 }
 
+// Phase 4.4 failure-driven recovery thresholds. 3 errors within a 10-second
+// window with no intervening `onopen` is enough evidence the sidecar is
+// genuinely gone (not a brief flap); the renderer asks the main process to
+// re-attach. After firing, the window resets so the next refresh requires a
+// fresh 3-in-10 — protects against refresh-storm if the new sidecar also
+// can't be reached.
+const ERROR_THRESHOLD = 3
+const ERROR_WINDOW_MS = 10_000
+
 function isEnvelope(value: unknown): value is Envelope<unknown> {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
@@ -66,58 +89,96 @@ function isEnvelope(value: unknown): value is Envelope<unknown> {
 
 export function useEventStream(handlers: EventStreamHandlers): UseEventStreamResult {
   const [state, setState] = useState<ConnectionState>('connecting')
+  const [url, setUrl] = useState<string | null>(null)
 
   // Keep the latest handlers on a ref so we don't have to re-open the stream
   // every time the parent re-renders with new callback identities.
   const handlersRef = useRef(handlers)
   handlersRef.current = handlers
 
+  // Effect 1: fetch the initial URL and subscribe to cache changes. The URL
+  // state is the trigger for effect 2 — recomputing it transparently re-opens
+  // the EventSource against the new port + bearer.
   useEffect(() => {
     let cancelled = false
-    let es: EventSource | null = null
 
-    api
-      .buildEventsUrl()
-      .then((url) => {
-        if (cancelled) return
-        es = new EventSource(url)
-
-        es.onopen = (): void => {
-          setState('open')
-        }
-        es.onerror = (): void => {
-          // EventSource fires `onerror` both on transient drops (it will then
-          // reconnect itself per the server's `retry:` hint) and on fatal
-          // failures (auth reject, etc.). We report `reconnecting` either way
-          // — the user-visible meaning is the same: stream not currently live.
+    const recompute = async (): Promise<void> => {
+      try {
+        const next = await api.buildEventsUrl()
+        if (!cancelled) setUrl(next)
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('[useEventStream] failed to build events URL', err)
           setState('reconnecting')
         }
-        es.onmessage = (ev: MessageEvent<string>): void => {
-          let parsed: unknown
-          try {
-            parsed = JSON.parse(ev.data)
-          } catch {
-            console.warn('[useEventStream] dropping non-JSON message')
-            return
-          }
-          if (!isEnvelope(parsed)) {
-            console.warn('[useEventStream] dropping malformed envelope', parsed)
-            return
-          }
-          dispatchEnvelope(parsed, handlersRef.current)
-        }
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        console.warn('[useEventStream] failed to build events URL', err)
-        setState('reconnecting')
-      })
+      }
+    }
+
+    void recompute()
+    const unsubscribe = subscribeToConfigChanges(() => {
+      void recompute()
+    })
 
     return () => {
       cancelled = true
-      es?.close()
+      unsubscribe()
     }
   }, [])
+
+  // Effect 2: open / re-open the EventSource whenever the URL changes. The
+  // cleanup closes the previous instance; React runs cleanup before the next
+  // effect, so we never have two open at once.
+  useEffect(() => {
+    if (url === null) return
+    const es = new EventSource(url)
+    const errorTimestamps: number[] = []
+    let refreshFired = false
+
+    es.onopen = (): void => {
+      setState('open')
+      // Successful reconnection resets the failure window.
+      errorTimestamps.length = 0
+      refreshFired = false
+    }
+    es.onerror = (): void => {
+      // EventSource fires `onerror` both on transient drops (it will then
+      // reconnect itself per the server's `retry:` hint) and on fatal
+      // failures (auth reject, etc.). We report `reconnecting` either way
+      // — the user-visible meaning is the same: stream not currently live.
+      setState('reconnecting')
+      const now = Date.now()
+      errorTimestamps.push(now)
+      // Drop timestamps older than the rolling window.
+      while (errorTimestamps.length > 0 && now - errorTimestamps[0] > ERROR_WINDOW_MS) {
+        errorTimestamps.shift()
+      }
+      if (errorTimestamps.length >= ERROR_THRESHOLD && !refreshFired) {
+        refreshFired = true
+        errorTimestamps.length = 0
+        void window.api.sidecar.refresh().catch((err: unknown) => {
+          console.warn('[useEventStream] sidecar refresh failed', err)
+        })
+      }
+    }
+    es.onmessage = (ev: MessageEvent<string>): void => {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(ev.data)
+      } catch {
+        console.warn('[useEventStream] dropping non-JSON message')
+        return
+      }
+      if (!isEnvelope(parsed)) {
+        console.warn('[useEventStream] dropping malformed envelope', parsed)
+        return
+      }
+      dispatchEnvelope(parsed, handlersRef.current)
+    }
+
+    return () => {
+      es.close()
+    }
+  }, [url])
 
   return { state }
 }

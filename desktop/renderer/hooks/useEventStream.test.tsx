@@ -211,3 +211,177 @@ describe('useEventStream', () => {
     expect(es.close).toHaveBeenCalledTimes(1)
   })
 })
+
+// ---------- Plan 0007 phase 4.4 — refresh + failure-driven recovery ---------- //
+//
+// These tests reuse the same `client.ts` + `useEventStream` modules as the
+// existing block above. `client.ts`'s `ensureStatusListener` re-registers
+// whenever `window.api.sidecar.onStatus`'s identity changes (the case in
+// tests, where beforeEach installs a fresh capturing mock per case), so we
+// can fire `sidecar:status` events without `jest.isolateModules`.
+//
+// The module-level `cached` state may carry over from earlier tests; we read
+// the first EventSource URL dynamically rather than pinning to known values,
+// and assert that the SECOND URL contains the new port + bearer.
+describe('useEventStream — phase 4.4 refresh + failure-driven recovery', () => {
+  interface StatusEvent {
+    kind: string
+    port?: number
+    secretToken?: string
+    pid?: number | null
+  }
+
+  let capturedListener: ((status: StatusEvent) => void) | null = null
+  let refreshSpy: jest.Mock
+
+  beforeEach(() => {
+    capturedListener = null
+    refreshSpy = jest.fn().mockResolvedValue({ port: FAKE_PORT, secretToken: FAKE_TOKEN })
+    ;(globalThis as unknown as { window: { api: unknown } }).window.api = {
+      sidecar: {
+        getPort: jest.fn().mockResolvedValue({ port: FAKE_PORT, secretToken: FAKE_TOKEN }),
+        onStatus: jest.fn((cb: (status: StatusEvent) => void) => {
+          capturedListener = cb
+          return () => {
+            capturedListener = null
+          }
+        }),
+        refresh: refreshSpy,
+      },
+    }
+  })
+
+  function fireStatus(status: StatusEvent): void {
+    if (!capturedListener) throw new Error('status listener was not registered yet')
+    capturedListener(status)
+  }
+
+  it('on refreshed config change, closes the previous EventSource and opens a new one with the new port+token', async () => {
+    render(<Harness handlers={{}} />)
+    // Wait for the first EventSource. The URL reflects whatever `cached` was
+    // when render mounted — could be FAKE_PORT/FAKE_TOKEN, could be values
+    // left by a prior phase-4.4 test in the same run.
+    await waitFor(() => expect(eventSourceCtor).toHaveBeenCalledTimes(1))
+    const firstES = lastEventSource!
+    expect(firstES.close).not.toHaveBeenCalled()
+
+    // Pick refreshed values guaranteed different from the cache so the URL
+    // visibly changes.
+    const NEW_PORT = 61234
+    const NEW_TOKEN = 'refreshed-bearer-with-special&=chars'
+
+    await act(async () => {
+      fireStatus({ kind: 'refreshed', port: NEW_PORT, secretToken: NEW_TOKEN, pid: 4242 })
+    })
+
+    await waitFor(() => expect(eventSourceCtor).toHaveBeenCalledTimes(2))
+    const secondES = lastEventSource!
+    expect(secondES).not.toBe(firstES)
+    expect(secondES.url).toBe(
+      `http://127.0.0.1:${NEW_PORT}/events?token=${encodeURIComponent(NEW_TOKEN)}`,
+    )
+    // Prior instance closed by the effect cleanup before the new one opened.
+    expect(firstES.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires window.api.sidecar.refresh() exactly once after 3 onerror events within a 10-second window', async () => {
+    const nowSpy = jest.spyOn(Date, 'now')
+    let mockedNow = 1_000_000_000
+    nowSpy.mockImplementation(() => mockedNow)
+
+    try {
+      render(<Harness handlers={{}} />)
+      const es = await waitForStream()
+
+      mockedNow = 1_000_000_000
+      await act(async () => {
+        es._fireError()
+      })
+      mockedNow = 1_000_003_000 // +3s
+      await act(async () => {
+        es._fireError()
+      })
+      mockedNow = 1_000_005_000 // +5s (third within window)
+      await act(async () => {
+        es._fireError()
+      })
+
+      expect(refreshSpy).toHaveBeenCalledTimes(1)
+
+      // Another error inside the same conceptual window does NOT re-fire —
+      // the counter resets to 0 after the refresh, so we'd need 3 more
+      // errors before the next call.
+      mockedNow = 1_000_007_000
+      await act(async () => {
+        es._fireError()
+      })
+      expect(refreshSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('does NOT fire refresh when onopen interleaves the error sequence (successful reconnection resets the counter)', async () => {
+    const nowSpy = jest.spyOn(Date, 'now')
+    let mockedNow = 2_000_000_000
+    nowSpy.mockImplementation(() => mockedNow)
+
+    try {
+      render(<Harness handlers={{}} />)
+      const es = await waitForStream()
+
+      // 2 errors, then an onopen (resets the window), then 1 more error.
+      // Total errors observed: 3 — but only 1 in the post-open window, so
+      // the threshold is not met.
+      mockedNow = 2_000_000_000
+      await act(async () => {
+        es._fireError()
+      })
+      mockedNow = 2_000_001_000
+      await act(async () => {
+        es._fireError()
+      })
+      mockedNow = 2_000_002_000
+      await act(async () => {
+        es._fireOpen()
+      })
+      mockedNow = 2_000_003_000
+      await act(async () => {
+        es._fireError()
+      })
+
+      expect(refreshSpy).not.toHaveBeenCalled()
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('does NOT fire refresh when 3 errors span longer than the 10-second window', async () => {
+    const nowSpy = jest.spyOn(Date, 'now')
+    let mockedNow = 3_000_000_000
+    nowSpy.mockImplementation(() => mockedNow)
+
+    try {
+      render(<Harness handlers={{}} />)
+      const es = await waitForStream()
+
+      mockedNow = 3_000_000_000
+      await act(async () => {
+        es._fireError()
+      })
+      mockedNow = 3_000_006_000 // +6s
+      await act(async () => {
+        es._fireError()
+      })
+      // The first timestamp ages out before the third fires.
+      mockedNow = 3_000_012_000 // +6s (+12s total from the first)
+      await act(async () => {
+        es._fireError()
+      })
+
+      expect(refreshSpy).not.toHaveBeenCalled()
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+})

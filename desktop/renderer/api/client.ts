@@ -4,11 +4,22 @@
  * sidecar base URL. The secret is held in a module-level closure — never
  * passed back across IPC, never written to disk, never logged.
  *
- * On `sidecar:status` events with `kind === 'restarted'`, the cached port is
- * updated in place so subsequent calls use the freshly-rotated bearer secret
- * (the supervisor rotates per restart per ADR-0002). The subscription is set up
- * at module load before any `sidecarFetch` call so a fast restart cannot lose
- * the event.
+ * On `sidecar:status` events the cached `{port, secretToken}` is updated in
+ * place so subsequent calls use the freshly-rotated values:
+ *   - `kind === 'restarted'` — legacy event (pre-ADR-0016 crash-supervised
+ *     restart). The supervisor no longer emits this kind, but the branch
+ *     stays as a no-op-tolerant fallback so a stale main-process binary on
+ *     a user machine can't break the renderer's cache.
+ *   - `kind === 'refreshed'` — Plan 0007 phase 4.3 event from
+ *     `SidecarSupervisor.refresh()`. BOTH `port` and `secretToken` move
+ *     atomically because a standalone-mode sidecar that restarted
+ *     out-of-band can be on a new port (per ADR-0016).
+ *
+ * `subscribeToConfigChanges(cb)` lets the SSE consumer (`useEventStream`) be
+ * notified synchronously when the cache mutates so it can re-open its
+ * `EventSource` against the new URL. The subscription is set up at module
+ * load before any `sidecarFetch` call so a fast restart cannot lose the
+ * event.
  */
 import type { CandlestickData, UTCTimestamp } from 'lightweight-charts'
 
@@ -18,16 +29,59 @@ import type { Bar } from '../types/sidecar/bar'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 
 let cached: SidecarPort | null = null
+const configChangeSubscribers = new Set<() => void>()
 
-if (typeof window !== 'undefined' && window.api?.sidecar?.onStatus) {
-  window.api.sidecar.onStatus((status) => {
-    if (status.kind === 'restarted' && status.secretToken && cached) {
-      cached = { ...cached, secretToken: status.secretToken }
-    }
-  })
+function notifyConfigChange(): void {
+  for (const cb of configChangeSubscribers) cb()
 }
 
+/**
+ * Subscribe to cache-mutation events. The callback fires synchronously on
+ * every update to `{port, secretToken}` triggered by a `sidecar:status`
+ * event. Returns an unsubscribe function.
+ */
+export function subscribeToConfigChanges(cb: () => void): () => void {
+  configChangeSubscribers.add(cb)
+  return () => {
+    configChangeSubscribers.delete(cb)
+  }
+}
+
+// The `onStatus` reference we last subscribed against. In production the
+// preload's `window.api.sidecar.onStatus` is stable and we register once at
+// module load. In tests the mock is replaced between cases, so we re-check
+// the identity on every `getSidecarConfig` call and re-register if it moved.
+// The identity guard keeps production from accumulating duplicate listeners.
+let registeredOnStatus: unknown = null
+
+function ensureStatusListener(): void {
+  if (typeof window === 'undefined') return
+  const onStatus = window.api?.sidecar?.onStatus
+  if (onStatus === undefined || onStatus === registeredOnStatus) return
+  onStatus((status) => {
+    if (status.kind === 'restarted' && status.secretToken && cached) {
+      cached = { ...cached, secretToken: status.secretToken }
+      notifyConfigChange()
+      return
+    }
+    if (status.kind === 'refreshed' && cached) {
+      // SidecarStatusSchema enforces both fields when kind === 'refreshed';
+      // the non-null assertions are TS-only — at runtime the supervisor's
+      // emit path always populates them (validated in main-process tests).
+      cached = { port: status.port!, secretToken: status.secretToken! }
+      notifyConfigChange()
+    }
+  })
+  registeredOnStatus = onStatus
+}
+
+// Try eagerly at module load (production preload is ready by then). The
+// `getSidecarConfig` path below retries on every call so tests that set
+// `window.api` AFTER module load still get a registered listener.
+ensureStatusListener()
+
 async function getSidecarConfig(): Promise<SidecarPort> {
+  ensureStatusListener()
   if (cached) return cached
   cached = await window.api.sidecar.getPort()
   return cached
