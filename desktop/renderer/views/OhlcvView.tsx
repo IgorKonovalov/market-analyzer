@@ -18,7 +18,7 @@ import { SymbolPicker } from '../components/SymbolPicker'
 import type { Timeframe } from '../components/SymbolPicker'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useOhlcv } from '../hooks/useOhlcv'
-import type { Marker } from '../types/events'
+import type { Marker, OverlaySpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
 import styles from './OhlcvView.module.css'
 
@@ -30,6 +30,10 @@ export interface OhlcvViewProps {
   /** ISO 8601 UTC, inclusive. */
   range_end: string
   liveHighlights: Marker[]
+  /** Plan 0007 phase 4.5: overlay specs to render on top of the candlestick
+   * series. The chart renders supported kinds (ema, sma) and logs-and-skips
+   * unsupported ones (rsi, macd, bbands). */
+  overlays: ReadonlyArray<OverlaySpec>
   onSymbolChange: (symbol: string) => void
   onTimeframeChange: (timeframe: Timeframe) => void
   onRefresh: () => void
@@ -41,6 +45,7 @@ export function OhlcvView({
   range_start,
   range_end,
   liveHighlights,
+  overlays,
   onSymbolChange,
   onTimeframeChange,
   onRefresh,
@@ -96,6 +101,7 @@ export function OhlcvView({
           <CandlestickChart
             bars={bars}
             annotations={mergedAnnotations}
+            overlays={overlays}
             ariaLabel={`Candlestick chart for ${symbol} ${timeframe}, ${bars.length} bars`}
           />
         )}

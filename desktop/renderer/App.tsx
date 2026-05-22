@@ -118,6 +118,7 @@ export function App(): JSX.Element {
           range_start={chartState.range_start}
           range_end={chartState.range_end}
           liveHighlights={chartState.liveHighlights}
+          overlays={chartState.overlays}
           onSymbolChange={onSymbolChange}
           onTimeframeChange={onTimeframeChange}
           onRefresh={onRefresh}
