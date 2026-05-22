@@ -103,3 +103,6 @@ jobs:
 
       - name: gen-types --check
         run: pnpm --filter desktop gen-types:check
+
+      - name: Test dev-tooling scripts (Plan 0015)
+        run: pnpm test:dev-scripts

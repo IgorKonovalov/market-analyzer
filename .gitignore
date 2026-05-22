@@ -50,8 +50,8 @@ sidecar.lock
 sidecar.lock.tmp
 # Claude Code MCP config — local-only because it carries the MCP bearer inline.
 # Auto-written by `pnpm dev:all` (Plan 0015) from the live sidecar.lock + the
-# long-lived mcp-secret.json. This file is the user's working copy on their
-# own machine.
+# long-lived mcp-secret.json. See docs/onboarding/claude-code-setup.md for the
+# full workflow; this file is the user's working copy on their own machine.
 .mcp.json
 
 # DeFi positions (sensitive — local only, never committed)

@@ -8,6 +8,7 @@
     "dev:all": "node scripts/dev/dev-all.mjs",
     "build": "pnpm --filter desktop build",
     "test": "pnpm --filter desktop test:all",
+    "test:dev-scripts": "node --test scripts/dev/__tests__/write-mcp-config.test.mjs",
     "typecheck": "pnpm --filter desktop typecheck"
   },
   "devDependencies": {
