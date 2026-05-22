@@ -353,6 +353,7 @@ test('highlight_pattern populates liveHighlights and dedups with the polled row'
     event_ts: eventTs,
     kind: 'bullish_marker',
     label: 'e2e-live-marker',
+    agent_id: 'e2e',
   })
 
   await expect

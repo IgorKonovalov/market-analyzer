@@ -11,6 +11,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   globalSetup: './scripts/playwright-global-setup.mjs',
+  globalTeardown: './scripts/playwright-global-teardown.mjs',
   use: {
     headless: false,
     trace: 'retain-on-failure',
