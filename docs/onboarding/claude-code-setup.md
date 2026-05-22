@@ -20,6 +20,26 @@ pnpm dev:all -- --keep-sidecar
 
 (The `--` is pnpm's pass-through delimiter — the flag reaches the sidecar wrapper, not pnpm.)
 
+## Execution modes
+
+`spawn-sidecar.mjs` (the `[sidecar]` child) has three modes. The wrapper picks one at boot based on whether a sidecar is already running and whether `--keep-sidecar` was passed.
+
+| Mode             | Trigger                                       | Ctrl+C behaviour                                  |
+|------------------|-----------------------------------------------|---------------------------------------------------|
+| **default**      | No `--keep-sidecar`, no live sidecar          | Kills the whole sidecar subtree (POSIX: process group; Windows: `taskkill /T /F`). |
+| **--keep-sidecar** | `--keep-sidecar` passed, no live sidecar    | Detaches the child (`unref` on POSIX, no-op on Windows where the child already has its own console) and exits. The sidecar survives. |
+| **reuse**        | Live sidecar detected via `sidecar.lock`      | No kill attempted — the wrapper did not spawn the sidecar, so it must not kill it. (Kill-only-what-you-spawned.) |
+
+Reuse mode fires whenever `<data-dir>/sidecar.lock` exists AND `is_owner_alive(record)` returns true (the same PID + `process_create_time` cross-check ADR-0016 uses). Typical sequence:
+
+```
+pnpm dev:all -- --keep-sidecar     # spawn detached, Ctrl+C → sidecar survives
+pnpm dev:all                        # reuse the survivor, Ctrl+C → sidecar still survives
+uv run python -m market_analyser.api stop   # explicit stop when you're done
+```
+
+Kill-only-what-you-spawned matters because the user might run `pnpm dev:all` (no flag) against a sidecar from a prior `--keep-sidecar` session, expecting "default mode kills on Ctrl+C". The wrapper does NOT do that — the previous session is the rightful owner. If you want to stop the survivor, use the explicit `stop` subcommand.
+
 ## What `pnpm dev:all` actually does
 
 Three children run under `concurrently`, all logging with `[name]` prefixes:
@@ -52,12 +72,14 @@ Look at the `[sidecar]` log lines — the Python sidecar logs `PORT=<n>` once `u
 
 ### "sidecar already running at PID `<N>`, port `<M>`; stop it first"
 
-A previous `pnpm dev:all --keep-sidecar` left the sidecar running. Stop it with:
+This comes from the Python sidecar itself, not from `pnpm dev:all`'s wrapper — it means the wrapper tried to spawn a fresh sidecar even though a live one already owns the lockfile. The wrapper's reuse path should have caught this; if you see this error, the most likely cause is a `MARKET_ANALYSER_DATA_DIR` override mismatch (the wrapper checked one path; the Python sidecar wrote to another). Confirm `echo $env:MARKET_ANALYSER_DATA_DIR` (PowerShell) or `echo $MARKET_ANALYSER_DATA_DIR` (POSIX) matches between the two contexts.
+
+If the lockfile is genuinely stale (sidecar crashed without cleaning up), it will be taken over automatically on the next start. If you want to force-stop a live sidecar, use:
 
 ```
 uv run python -m market_analyser.api stop
 ```
 
-Then `pnpm dev:all` again.
+### I see two `python -m market_analyser.api` processes
 
-(A phase-3 follow-up lets the wrapper detect this case and reuse the already-running sidecar instead of erroring out. Until then, the explicit stop is the workflow.)
+This shouldn't happen — ADR-0016's lockfile + `process_create_time` check enforces single-instance. If you do see two, one of them is likely orphaned from a previous crashed dev:all run. Find both with `Get-Process python` (Windows) or `pgrep -f market_analyser.api` (POSIX), then stop the one whose PID matches `<data-dir>/sidecar.lock`'s `pid` field via `uv run python -m market_analyser.api stop`. Kill the other directly.
