@@ -1,8 +1,9 @@
 # 0015 — `pnpm dev:all`: one-command sidecar + Electron + `.mcp.json` sync
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-22
 > **Approved:** 2026-05-22
+> **Closed:** 2026-05-22
 > **Owner skill(s):** `dev`
 > **Related ADRs:** [ADR-0016](../adrs/0016-standalone-sidecar-mode.md) (standalone sidecar lifecycle — **dev override**; production unchanged), [ADR-0011](../adrs/0011-bearer-secret-transport.md) (renderer bearer transport), [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (MCP secret + `.mcp.json` shape), [ADR-0020](../adrs/0020-shared-data-dir-contract.md) (canonical data dir holds `sidecar.lock` and `mcp-secret.json` the writer reads)
 
@@ -193,4 +194,11 @@ interface SpawnSidecarArgs {
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect appends close-ceremony findings here once the plan ships.
+Recorded at close (2026-05-22). All four items are nits / minor — none gated the close ceremony.
+
+| # | Severity | Item | Owner | Note |
+|---|----------|------|-------|------|
+| 1 | minor    | Cooldown-bypass mechanism (temporary `minimumReleaseAge` lower-then-restore) used during phase 1 lockfile refresh is not named in [ADR-0012](../../adrs/0012-dependency-cooldown.md) or `CLAUDE.md`'s dependency-discipline section. Decide between (a) amending ADR-0012 to document the pattern, or (b) reaffirming CVE-only and adding a `# Cooldown-bypass log` section to `CLAUDE.md`. | `architect` (decides), `dev` (lands) | The end state was policy-conforming and the commit message honest, but the precedent should be either codified or rejected before the next dependency refresh hits the same cohort. |
+| 2 | nit      | `docs/onboarding/claude-code-setup.md:30` mis-states `--keep-sidecar`'s Windows mechanism — says `unref` is POSIX-only when it's actually called on both platforms (`scripts/dev/spawn-sidecar.mjs:145`). The POSIX-only piece is the spawn-side `detached: true` flag. | `dev` | One-line rewording. |
+| 3 | nit      | `scripts/dev/spawn-sidecar.mjs`'s `parseArgs` intercepts `--lockfile=<path>` for testability; the plan's argv contract says all unknown flags pass through to Python. The collision is hypothetical today (the Python sidecar exposes no `--lockfile`). Rename to `--status-lockfile=` (wrapper-private namespace) or document the reservation in the onboarding doc's "Execution modes" section. | `dev` | Trivial — fix before any sidecar-side `--lockfile` flag lands. |
+| 4 | nit      | Phase 1's "Done when" row about the wrapper exiting with `sidecar already running at PID <N>, port <M>; stop it first` is superseded by phase 3's reuse path. The plan's own parenthetical anticipated this; consider appending `(superseded by phase 3's reuse path)` to that row for hygiene. | `architect` | Closed-plan documentation cleanup. |
