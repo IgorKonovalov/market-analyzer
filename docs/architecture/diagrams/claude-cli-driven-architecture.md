@@ -97,7 +97,10 @@ sequenceDiagram
     E->>LF: read
     LF-->>E: {pid: 12345, port: 53221, renderer_secret, ...}
     E->>S: probe psutil.Process(12345).create_time()
-    Note right of E: matches lockfile<br/>→ attach, do NOT spawn
+    Note right of E: matches lockfile (Python-side)
+    E->>S: GET /healthz (Authorization: Bearer renderer_secret)
+    S-->>E: {ok: true, data_dir: "/.../market-analyser"}
+    Note right of E: data_dir matches resolveSharedDataDir()<br/>(ADR-0020, phase 4.2)<br/>→ attach, do NOT spawn<br/>on mismatch: fall through to spawn
     E->>V: launch with {port, renderer_secret}
     V->>S: open EventSource /events
     User->>C: "now zoom to last 10 days"
@@ -114,6 +117,44 @@ sequenceDiagram
 ```
 
 The "agent-only" branch is the visible payoff of [ADR-0016](../adrs/0016-standalone-sidecar-mode.md): Claude can drive workflows without the viewer being open. The "attach" branch is the payoff of the lockfile mechanism: opening the viewer is one step regardless of prior sidecar state.
+
+## Recovery: renderer-initiated refresh on out-of-band sidecar restart
+
+Standalone-mode sidecars (ADR-0016) don't restart from Electron's perspective — the supervisor decoupled lifecycle. But the sidecar *can* die out-of-band (user `python -m market_analyser.api stop` followed by a fresh start, or a manual kill). The renderer discovers and recovers via the sequence below.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant V as Renderer<br/>useEventStream
+    participant E as Electron main<br/>SidecarSupervisor
+    participant LF as sidecar.lock
+    participant S1 as Old sidecar (dead)
+    participant S2 as New sidecar (alive)
+
+    Note over V,S2: Steady state: old sidecar dies, user starts a new one
+    V->>S1: EventSource open
+    Note over S1: process exits<br/>finally → remove lockfile
+    S2->>LF: atomic write {new pid, new port, new renderer_secret}
+    V->>S1: ❌ onerror (connection lost)
+    V->>S1: ❌ onerror
+    V->>S1: ❌ onerror
+    Note right of V: 3 errors within 10s<br/>without an intervening onopen<br/>(phase 4.4 threshold)
+    V->>E: window.api.sidecar.refresh() (IPC)
+    E->>E: SidecarSupervisor.refresh()
+    Note right of E: re-runs attachOrSpawnSidecar:<br/>reads lockfile, runs PID + healthz check
+    E->>LF: read
+    LF-->>E: {new pid, new port, new renderer_secret}
+    E->>S2: GET /healthz (Bearer new renderer_secret)
+    S2-->>E: {ok: true, data_dir: matches}
+    E-->>V: sidecar:status {kind: refreshed, port: NEW, secretToken: NEW}
+    Note right of V: api/client cache updates<br/>both port + secretToken<br/>subscribeToConfigChanges fires
+    V->>V: close old EventSource
+    V->>S2: open EventSource /events?token=NEW
+    S2-->>V: : ping
+    V-->>V: onopen → state=open, error counter reset
+```
+
+The `refresh()` call coalesces concurrent invocations (phase 4.3) so a renderer-side error storm collapses to one attach cycle upstream. The "refresh fires at most once per `onopen`-bounded window" rule (phase 4.4) prevents an infinite refresh loop if the new sidecar also can't be reached.
 
 ## How this supersedes earlier diagrams
 
