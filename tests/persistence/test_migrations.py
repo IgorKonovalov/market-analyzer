@@ -112,3 +112,78 @@ def test_annotations_table_has_expected_columns_and_index_after_upgrade() -> Non
         assert "ix_annotations_symbol_timeframe_event_ts" in index_names
     finally:
         engine.dispose()
+
+
+def test_backtest_runs_table_has_expected_columns_and_indexes_after_upgrade() -> None:
+    """Plan 0008 phase 3: backtest_runs lands at head with the searchable
+    projection columns and the three planned indexes."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        inspector = inspect(engine)
+        assert "backtest_runs" in inspector.get_table_names()
+        columns = {c["name"] for c in inspector.get_columns("backtest_runs")}
+        assert columns == {
+            "run_id",
+            "strategy_id",
+            "strategy_version",
+            "symbol",
+            "timeframe",
+            "range_start",
+            "range_end",
+            "total_return",
+            "sharpe",
+            "max_drawdown",
+            "win_rate",
+            "trade_count",
+            "finished_at",
+            "artifact_path",
+            "engine_version",
+        }
+        index_names = {idx["name"] for idx in inspector.get_indexes("backtest_runs")}
+        assert {
+            "ix_backtest_runs_finished_at",
+            "ix_backtest_runs_symbol_timeframe",
+            "ix_backtest_runs_strategy_id",
+        } <= index_names
+    finally:
+        engine.dispose()
+
+
+def test_backtest_runs_migration_is_reversible_single_step() -> None:
+    """`upgrade head -> downgrade -1 -> upgrade head` leaves the schema
+    identical to the first upgrade (Plan 0008 phase 3 done-when §163)."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+
+        def snapshot() -> dict[str, set[str]]:
+            insp = inspect(engine)
+            return {
+                table: {c["name"] for c in insp.get_columns(table)}
+                for table in insp.get_table_names()
+            }
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_first = snapshot()
+        assert "backtest_runs" in head_first
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "-1")
+        after_down = snapshot()
+        assert "backtest_runs" not in after_down
+        assert "annotations" in after_down  # other tables survive
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_second = snapshot()
+        assert head_first == head_second
+    finally:
+        engine.dispose()

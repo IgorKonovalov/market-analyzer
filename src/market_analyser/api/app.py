@@ -32,6 +32,7 @@ from market_analyser import __version__
 from market_analyser.api.events import EventBus
 from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.annotations import router as annotations_router
+from market_analyser.api.routes.backtests import router as backtests_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.settings import router as settings_router
@@ -41,6 +42,9 @@ from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
+from market_analyser.persistence.repositories.backtest_runs import (
+    BacktestRunsRepository,
+)
 from market_analyser.persistence.repository import BarRepository
 
 AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({"/healthz"})
@@ -55,6 +59,8 @@ def create_app(
     mcp_secret_path: Path | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
+    backtest_runs_repository: BacktestRunsRepository | None = None,
+    runs_dir: Path | None = None,
     engine: Engine | None = None,
     dev_origin: str | None = None,
     event_bus: EventBus | None = None,
@@ -94,6 +100,8 @@ def create_app(
             provider = DefaultMarketDataProvider(bar_repository=BarRepository(session_factory))
         if annotations_repository is None:
             annotations_repository = AnnotationsRepository(session_factory)
+        if backtest_runs_repository is None:
+            backtest_runs_repository = BacktestRunsRepository(session_factory)
 
     if mcp_secret is not None and annotations_repository is None:
         raise ValueError(
@@ -124,6 +132,11 @@ def create_app(
     app = FastAPI(title="market-analyser", version=__version__, lifespan=lifespan)
     app.state.provider = effective_provider
     app.state.annotations_repository = annotations_repository
+    app.state.backtest_runs_repository = backtest_runs_repository
+    # `runs_dir` is the directory the persist() layer writes artifacts to and
+    # the GET /backtests/{run_id} route reads them from. Tests pass a tmp_path;
+    # production wires `default_app_data_dir() / "runs"` from __main__.
+    app.state.runs_dir = runs_dir
     app.state.mcp_secret = mcp_secret
     app.state.mcp_secret_path = mcp_secret_path
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
@@ -190,11 +203,7 @@ def create_app(
         body: dict[str, object] = {"ok": True, "version": __version__}
         if authorization:
             scheme, _, token = authorization.partition(" ")
-            if (
-                scheme.lower() == "bearer"
-                and token
-                and secrets.compare_digest(token, secret)
-            ):
+            if scheme.lower() == "bearer" and token and secrets.compare_digest(token, secret):
                 body["data_dir"] = str(default_app_data_dir())
         return body
 
@@ -202,6 +211,11 @@ def create_app(
 
     if annotations_repository is not None:
         app.include_router(annotations_router)
+
+    # Backtest routes need both the repository (index) and the runs_dir (disk).
+    # Either alone is insufficient; require both before mounting.
+    if backtest_runs_repository is not None and runs_dir is not None:
+        app.include_router(backtests_router)
 
     if mcp_secret is not None and mcp_secret_path is not None:
         app.include_router(settings_router)

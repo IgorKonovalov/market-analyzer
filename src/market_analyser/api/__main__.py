@@ -169,11 +169,14 @@ async def _serve(
     engine = make_engine(config.db_path)
     mcp_secret_path = default_app_data_dir() / MCP_SECRET_FILENAME
     mcp_secret = load_or_generate_mcp_secret(mcp_secret_path)
+    runs_dir = default_app_data_dir() / "runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
     app = create_app(
         secret=secret,
         mcp_secret=mcp_secret,
         mcp_secret_path=mcp_secret_path,
         engine=engine,
+        runs_dir=runs_dir,
         dev_origin=dev_origin,
     )
     uvicorn_config = uvicorn.Config(app, log_level="info", access_log=False)

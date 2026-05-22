@@ -90,4 +90,32 @@ class BacktestResult(BaseModel):
     metrics: BacktestMetrics
 
 
-__all__ = ["BacktestMetrics", "BacktestResult", "EquityPoint"]
+class BacktestRunSummary(BaseModel):
+    """List-view projection of a persisted backtest run — the SQLite row shape.
+
+    Plan 0008 phase 3: `BacktestRunsRepository.list()` / `.get()` return
+    these so the renderer's Recent Backtests view can render a sortable
+    table without re-reading every artifact from disk. The full
+    `BacktestResult` is still available via `GET /backtests/{run_id}`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: str
+    strategy_id: str
+    strategy_version: str
+    symbol: str
+    timeframe: str
+    range_start: datetime
+    range_end: datetime
+    total_return: float
+    sharpe: float
+    max_drawdown: float
+    win_rate: float
+    trade_count: int
+    finished_at: datetime
+    artifact_path: str
+    engine_version: str
+
+
+__all__ = ["BacktestMetrics", "BacktestResult", "BacktestRunSummary", "EquityPoint"]

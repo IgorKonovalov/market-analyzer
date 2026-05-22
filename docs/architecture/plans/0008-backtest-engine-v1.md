@@ -1,6 +1,6 @@
 # 0008 — Backtest engine v1: pure core, MCP tool, and live results view
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
 > **Owner skill(s):** `backtester` (phases 1, 2), `dev` (phases 3, 4), `ui-builder` (phase 5)

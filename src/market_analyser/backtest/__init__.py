@@ -33,6 +33,7 @@ from market_analyser.backtest.metrics import (
 from market_analyser.backtest.result import (
     BacktestMetrics,
     BacktestResult,
+    BacktestRunSummary,
     EquityPoint,
 )
 from market_analyser.backtest.types import Trade
@@ -41,6 +42,7 @@ __all__ = [
     "ENGINE_VERSION",
     "BacktestMetrics",
     "BacktestResult",
+    "BacktestRunSummary",
     "EquityPoint",
     "StrategyContractError",
     "Trade",
