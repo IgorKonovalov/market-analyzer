@@ -23,7 +23,10 @@ import {
   attachOrSpawnSidecar,
   SidecarSupervisor,
   type AttachOrSpawnDeps,
+  type AttachOrSpawnResult,
+  type SidecarInfo,
 } from '../../electron/sidecar'
+import type { SidecarStatus } from '../../shared/schemas/sidecar'
 
 interface FakeChild extends EventEmitter {
   stderr: EventEmitter | null
@@ -444,5 +447,137 @@ describe('SidecarSupervisor', () => {
     // The only lifecycle-end method exposed is `detach`, asserted above to
     // never call `child.kill`.
     expect(typeof supervisor.detach).toBe('function')
+  })
+})
+
+describe('SidecarSupervisor.refresh — Plan 0007 phase 4.3', () => {
+  /**
+   * Build a SidecarSupervisor whose attachOrSpawn() is replaced with a stub
+   * sequence — each call returns the next pre-recorded result. Lets us
+   * assert "first call after start, second call after refresh" semantics
+   * without exercising the real fs/spawn/healthz seams (already covered by
+   * the attachOrSpawnSidecar test block above).
+   */
+  function makeSupervisorWithSequencedAttaches(results: AttachOrSpawnResult[]): {
+    supervisor: SidecarSupervisor
+    spy: jest.SpyInstance
+  } {
+    const supervisor = new SidecarSupervisor('/tmp/sup-refresh')
+    let call = 0
+    const spy = jest.spyOn(supervisor, 'attachOrSpawn').mockImplementation(async () => {
+      const idx = call
+      call += 1
+      if (idx >= results.length) {
+        throw new Error(`attachOrSpawn called more than ${results.length} times`)
+      }
+      return results[idx]
+    })
+    return { supervisor, spy }
+  }
+
+  function makeInfo(overrides: Partial<SidecarInfo> = {}): SidecarInfo {
+    return { port: 53221, secretToken: 'a'.repeat(64), pid: 12345, ...overrides }
+  }
+
+  function makeResult(info: SidecarInfo): AttachOrSpawnResult {
+    return { info, spawnedChild: null, attached: true }
+  }
+
+  it('no-op refresh (same sidecar): info unchanged, emits refreshed with port+secretToken', async () => {
+    const info = makeInfo()
+    const { supervisor, spy } = makeSupervisorWithSequencedAttaches([
+      makeResult(info),
+      makeResult(info), // second attach returns the same identity
+    ])
+    const statuses: SidecarStatus[] = []
+    supervisor.onStatus((s) => statuses.push(s))
+
+    await supervisor.start()
+    const startEmissions = statuses.length
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    const refreshed = await supervisor.refresh()
+
+    expect(refreshed).toEqual(info)
+    expect(supervisor.getInfo()).toEqual(info)
+    expect(spy).toHaveBeenCalledTimes(2)
+    // After start (which emits 'starting' + 'ready') the refresh adds one event.
+    expect(statuses.length).toBe(startEmissions + 1)
+    const refreshedEvent = statuses[statuses.length - 1]
+    expect(refreshedEvent.kind).toBe('refreshed')
+    expect(refreshedEvent.port).toBe(info.port)
+    expect(refreshedEvent.secretToken).toBe(info.secretToken)
+  })
+
+  it('refresh after sidecar restart: new port + bearer flow through to getInfo and the event', async () => {
+    const before = makeInfo({ port: 50000, secretToken: 'before-bearer', pid: 11111 })
+    const after = makeInfo({ port: 60000, secretToken: 'after-bearer', pid: 22222 })
+    const { supervisor } = makeSupervisorWithSequencedAttaches([
+      makeResult(before),
+      makeResult(after),
+    ])
+    const statuses: SidecarStatus[] = []
+    supervisor.onStatus((s) => statuses.push(s))
+
+    await supervisor.start()
+    expect(supervisor.getInfo()).toEqual(before)
+
+    const refreshed = await supervisor.refresh()
+
+    expect(refreshed).toEqual(after)
+    expect(supervisor.getInfo()).toEqual(after)
+    const refreshedEvent = statuses[statuses.length - 1]
+    expect(refreshedEvent.kind).toBe('refreshed')
+    expect(refreshedEvent.port).toBe(after.port)
+    expect(refreshedEvent.secretToken).toBe(after.secretToken)
+  })
+
+  it('concurrent refresh() calls coalesce onto a single in-flight attach', async () => {
+    // Make attachOrSpawn slow so two refreshes overlap.
+    const info = makeInfo({ port: 50500 })
+    const supervisor = new SidecarSupervisor('/tmp/sup-coalesce')
+    let attachCalls = 0
+    let resolveAttach: ((value: AttachOrSpawnResult) => void) | null = null
+    jest.spyOn(supervisor, 'attachOrSpawn').mockImplementation(
+      () =>
+        new Promise<AttachOrSpawnResult>((resolve) => {
+          attachCalls += 1
+          if (attachCalls === 1) {
+            // First call resolves immediately (the start).
+            resolve(makeResult(info))
+          } else {
+            // Subsequent calls (the refreshes) are held open until we
+            // explicitly resolve, so two parallel refresh()es can race.
+            resolveAttach = resolve
+          }
+        }),
+    )
+
+    await supervisor.start()
+    expect(attachCalls).toBe(1)
+
+    const promise1 = supervisor.refresh()
+    const promise2 = supervisor.refresh()
+
+    expect(promise1).toBe(promise2) // same promise — coalesced
+
+    // Only one attachOrSpawn call should have been scheduled for the two
+    // refreshes (atomically).
+    expect(attachCalls).toBe(2)
+
+    resolveAttach!(makeResult(info))
+    const [a, b] = await Promise.all([promise1, promise2])
+    expect(a).toEqual(info)
+    expect(b).toEqual(info)
+    expect(attachCalls).toBe(2)
+
+    // After the in-flight promise settles, a third refresh starts a new attach.
+    let third = false
+    jest.spyOn(supervisor, 'attachOrSpawn').mockImplementation(async () => {
+      third = true
+      return makeResult(info)
+    })
+    await supervisor.refresh()
+    expect(third).toBe(true)
   })
 })

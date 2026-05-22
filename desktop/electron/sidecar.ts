@@ -360,21 +360,67 @@ export class SidecarSupervisor {
   private spawnedChild: ChildProcess | null = null
   private readonly listeners = new Set<StatusListener>()
   private info: SidecarInfo | null = null
+  // Plan 0007 phase 4.3: in-flight refresh promise. Concurrent refresh()
+  // callers coalesce onto the same promise so a renderer firing multiple
+  // recovery attempts at once (e.g. EventSource onerror storm) doesn't
+  // thunderbird-herd the sidecar with parallel spawns.
+  private refreshPromise: Promise<SidecarInfo> | null = null
   readonly dataDir: string
 
   constructor(dataDir: string) {
     this.dataDir = dataDir
   }
 
-  async start(): Promise<SidecarInfo> {
-    this.emit({ kind: 'starting' })
-    const result = await attachOrSpawnSidecar({
+  /** Internal seam: a single point that calls `attachOrSpawnSidecar` so both
+   * `start()` and `refresh()` share the same configuration AND so tests can
+   * spy on it without monkey-patching the standalone export.
+   */
+  attachOrSpawn(): Promise<AttachOrSpawnResult> {
+    return attachOrSpawnSidecar({
       dataDir: this.dataDir,
       devOrigin: computeDevOrigin(),
     })
+  }
+
+  async start(): Promise<SidecarInfo> {
+    this.emit({ kind: 'starting' })
+    const result = await this.attachOrSpawn()
     this.spawnedChild = result.spawnedChild
     this.info = result.info
     this.emit({ kind: 'ready', pid: result.info.pid })
+    return result.info
+  }
+
+  /**
+   * Re-run the attach-or-spawn flow so the supervisor (and via the
+   * `sidecar:status` event, the renderer) picks up a new port + bearer when
+   * the sidecar was restarted out-of-band — e.g. the user ran
+   * `python -m market_analyser.api stop` and started a fresh one. Emits
+   * `kind: 'refreshed'` with `{port, secretToken}` carrying the current
+   * identity, no matter whether it's unchanged (re-attached to the same
+   * sidecar) or new (attached to a different sidecar / spawned one).
+   *
+   * Concurrent calls coalesce onto the same in-flight promise.
+   */
+  refresh(): Promise<SidecarInfo> {
+    if (this.refreshPromise !== null) return this.refreshPromise
+    const promise = this._doRefresh().finally(() => {
+      this.refreshPromise = null
+    })
+    this.refreshPromise = promise
+    return promise
+  }
+
+  private async _doRefresh(): Promise<SidecarInfo> {
+    const result = await this.attachOrSpawn()
+    this.spawnedChild = result.spawnedChild
+    this.info = result.info
+    this.emit({
+      kind: 'refreshed',
+      port: result.info.port,
+      secretToken: result.info.secretToken,
+      pid: result.info.pid,
+    })
     return result.info
   }
 

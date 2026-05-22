@@ -14,4 +14,12 @@ export const sidecarApi = {
     ipcRenderer.on(IPC_CHANNELS.SIDECAR_STATUS, handler)
     return () => ipcRenderer.off(IPC_CHANNELS.SIDECAR_STATUS, handler)
   },
+
+  // Plan 0007 phase 4.3: renderer-initiated re-attach. The
+  // `useEventStream` hook calls this when its EventSource has been failing
+  // repeatedly without an intervening open — the sidecar may have been
+  // restarted out-of-band with a new port + bearer.
+  refresh(): Promise<SidecarPort> {
+    return ipcRenderer.invoke(IPC_CHANNELS.SIDECAR_REFRESH)
+  },
 }

@@ -54,4 +54,39 @@ describe('SidecarStatusSchema', () => {
       /secretToken must be absent/,
     )
   })
+
+  it('accepts refreshed with both port and secretToken (Plan 0007 phase 4.3)', () => {
+    expect(() =>
+      SidecarStatusSchema.parse({
+        kind: 'refreshed',
+        port: 53221,
+        secretToken: 'newhex',
+        pid: 9999,
+      }),
+    ).not.toThrow()
+  })
+
+  it('rejects refreshed without a secretToken', () => {
+    expect(() => SidecarStatusSchema.parse({ kind: 'refreshed', port: 53221 })).toThrow(
+      /secretToken is required/,
+    )
+  })
+
+  it('rejects refreshed without a port', () => {
+    expect(() => SidecarStatusSchema.parse({ kind: 'refreshed', secretToken: 'newhex' })).toThrow(
+      /port is required/,
+    )
+  })
+
+  it('rejects refreshed with a non-positive port', () => {
+    expect(() =>
+      SidecarStatusSchema.parse({ kind: 'refreshed', port: 0, secretToken: 'newhex' }),
+    ).toThrow()
+  })
+
+  it('rejects non-refreshed kinds that carry a port', () => {
+    expect(() => SidecarStatusSchema.parse({ kind: 'ready', port: 53221 })).toThrow(
+      /port must be absent/,
+    )
+  })
 })
