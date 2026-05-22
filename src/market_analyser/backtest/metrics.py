@@ -10,7 +10,8 @@ dict. Adding a timeframe (e.g. `4h`) means appending to the dict; unknown
 timeframes raise rather than silently picking a wrong factor — the engine
 does not guess annualization.
 
-Long-only, fixed-fraction-at-100% sizing per [ADR-0018](../../../docs/architecture/adrs/0018-backtest-result-schema.md):
+Long-only, fixed-fraction-at-100% sizing per
+[ADR-0018](../../../docs/architecture/adrs/0018-backtest-result-schema.md):
 while flat, equity equals cash; while in a long position, equity equals
 `units * bar.close` where `units = entry_cash / entry_price` was fixed at
 the trade's entry-bar open.
@@ -128,7 +129,8 @@ def _max_drawdown_and_duration(equities: Sequence[float]) -> tuple[float, int]:
 
     Duration: the longest contiguous stretch (in bars) where equity sits
     strictly below the running max. A stretch that runs to the end of the
-    series counts up to its last bar (per [ADR-0018](../../../docs/architecture/adrs/0018-backtest-result-schema.md):
+    series counts up to its last bar (per
+    [ADR-0018](../../../docs/architecture/adrs/0018-backtest-result-schema.md):
     "or end-of-series if never recovered").
     """
 

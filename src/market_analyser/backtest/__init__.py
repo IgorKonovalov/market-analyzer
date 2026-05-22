@@ -8,7 +8,8 @@ Phase 2 lands the pure `run()` orchestrator. Phases 3+ (`persist`, the
 MCP tool, the UI view) live in dev / ui-builder territory and import
 from this module.
 
-`ENGINE_VERSION` is the engine-output-fingerprint. Bump on any
+`ENGINE_VERSION` lives in `_version.py` so both this package and
+`engine.py` can import it without a circular dependency. Bump on any
 output-affecting change to the four helpers (`_apply_costs`,
 `_build_equity_curve`, `_calc_metrics`, `_buy_and_hold_return`) or the
 `run()` orchestrator's composition order. The Plan 0008 phase-2 golden
@@ -19,7 +20,9 @@ golden test and force a deliberate fixture regen + version bump.
 from __future__ import annotations
 
 from market_analyser.backtest._bars_hash import bars_hash
+from market_analyser.backtest._version import ENGINE_VERSION
 from market_analyser.backtest.adapter import signals_to_trades
+from market_analyser.backtest.engine import StrategyContractError, run
 from market_analyser.backtest.metrics import (
     UnknownTimeframeError,
     _apply_costs,
@@ -34,13 +37,12 @@ from market_analyser.backtest.result import (
 )
 from market_analyser.backtest.types import Trade
 
-ENGINE_VERSION = "0.1.0"
-
 __all__ = [
     "ENGINE_VERSION",
     "BacktestMetrics",
     "BacktestResult",
     "EquityPoint",
+    "StrategyContractError",
     "Trade",
     "UnknownTimeframeError",
     "_apply_costs",
@@ -48,5 +50,6 @@ __all__ = [
     "_buy_and_hold_return",
     "_calc_metrics",
     "bars_hash",
+    "run",
     "signals_to_trades",
 ]

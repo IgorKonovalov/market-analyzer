@@ -70,8 +70,20 @@ def test_zero_costs_passthrough_preserves_prices() -> None:
 
 def test_multiple_trades_each_adjusted_independently() -> None:
     trades = [
-        Trade(entry_bar_index=1, exit_bar_index=2, entry_price=100.0, exit_price=110.0, kind="long"),
-        Trade(entry_bar_index=5, exit_bar_index=8, entry_price=200.0, exit_price=180.0, kind="long"),
+        Trade(
+            entry_bar_index=1,
+            exit_bar_index=2,
+            entry_price=100.0,
+            exit_price=110.0,
+            kind="long",
+        ),
+        Trade(
+            entry_bar_index=5,
+            exit_bar_index=8,
+            entry_price=200.0,
+            exit_price=180.0,
+            kind="long",
+        ),
     ]
     [t1, t2] = _apply_costs(trades, commission_bps=10.0, slippage_bps=5.0)
     assert isclose(t1.entry_price, 100.15, abs_tol=1e-9)
