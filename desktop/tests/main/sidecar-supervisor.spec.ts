@@ -118,9 +118,10 @@ describe('attachOrSpawnSidecar', () => {
   it('attaches to a live lockfile and does NOT call spawn', async () => {
     const spawnSpy = jest.fn()
     const lockfilePayload = defaultLockfile()
+    const dataDir = '/tmp/test-data'
 
     const deps: AttachOrSpawnDeps = {
-      dataDir: '/tmp/test-data',
+      dataDir,
       spawnImpl: spawnSpy as AttachOrSpawnDeps['spawnImpl'],
       isPidAlive: (pid) => {
         expect(pid).toBe(lockfilePayload.pid)
@@ -128,7 +129,13 @@ describe('attachOrSpawnSidecar', () => {
       },
       readFileText: async () => JSON.stringify(lockfilePayload),
       fileExists: (p) => isLockfilePath(p),
-      healthz: async () => ({ ok: true }),
+      // Plan 0007 phase 4.2: attach path runs the /healthz identity check.
+      // healthz must (a) be called with the renderer bearer from the lockfile
+      // and (b) return data_dir matching deps.dataDir for the attach to succeed.
+      healthz: async (_url, opts) => {
+        expect(opts?.bearer).toBe(lockfilePayload.renderer_secret)
+        return { ok: true, data_dir: dataDir }
+      },
       pythonExecutable: 'python-test',
     }
 
@@ -217,6 +224,165 @@ describe('attachOrSpawnSidecar', () => {
     expect(capturedEnv).toBeDefined()
     expect(capturedEnv!.MARKET_ANALYSER_DATA_DIR).toBe('/tmp/specific-data-dir')
     expect(capturedEnv!.MARKET_ANALYSER_SECRET).toBeUndefined()
+  })
+})
+
+describe('attachOrSpawnSidecar — Plan 0007 phase 4.2 identity check', () => {
+  let warnSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
+  it('attaches when healthz returns matching data_dir, calling healthz with the renderer bearer from the lockfile', async () => {
+    const spawnSpy = jest.fn()
+    const lockfilePayload = defaultLockfile()
+    const dataDir = '/tmp/test-attach-ok'
+    const healthzSpy = jest.fn(async (_url: string, opts?: { bearer?: string }) => ({
+      ok: true,
+      data_dir: dataDir,
+      _bearer: opts?.bearer,
+    }))
+
+    const deps: AttachOrSpawnDeps = {
+      dataDir,
+      spawnImpl: spawnSpy as AttachOrSpawnDeps['spawnImpl'],
+      isPidAlive: () => true,
+      readFileText: async () => JSON.stringify(lockfilePayload),
+      fileExists: () => true,
+      healthz: healthzSpy as AttachOrSpawnDeps['healthz'],
+      pythonExecutable: 'python-test',
+    }
+
+    const result = await attachOrSpawnSidecar(deps)
+
+    expect(result.attached).toBe(true)
+    expect(spawnSpy).not.toHaveBeenCalled()
+    expect(healthzSpy).toHaveBeenCalledTimes(1)
+    const [calledUrl, calledOpts] = healthzSpy.mock.calls[0]
+    expect(calledUrl).toBe(`http://127.0.0.1:${lockfilePayload.port}/healthz`)
+    expect(calledOpts?.bearer).toBe(lockfilePayload.renderer_secret)
+  })
+
+  /**
+   * Test fixture for the spawn-after-identity-fail tests. The realistic
+   * scenario: the lockfile points at a real, alive process — but at a
+   * different data_dir, or at a sidecar whose bearer has rotated, or to one
+   * that can no longer be reached. The new sidecar we spawn writes the
+   * lockfile atomically via `os.replace`, so by the time `waitForLiveLockfile`
+   * polls, the file already reflects the new identity. We model that with a
+   * synchronous swap inside `spawnImpl` (atomic-rename's microsecond window
+   * collapses to "instant" in the test).
+   */
+  function makeFallThroughDeps(args: {
+    dataDir: string
+    stalePayload: LockfilePayload
+    freshPayload: LockfilePayload
+    spawnSpy: jest.Mock
+    identityCheckBehaviour: (bearer: string) => Promise<{ ok: boolean; data_dir?: string }>
+    onIdentityCheck?: () => void
+  }): AttachOrSpawnDeps {
+    let lockfileContents = JSON.stringify(args.stalePayload)
+    return {
+      dataDir: args.dataDir,
+      spawnImpl: ((cmd, cmdArgs) => {
+        lockfileContents = JSON.stringify(args.freshPayload)
+        return args.spawnSpy(cmd, cmdArgs, {}) as never
+      }) as AttachOrSpawnDeps['spawnImpl'],
+      isPidAlive: (pid) => pid === args.stalePayload.pid || pid === args.freshPayload.pid,
+      readFileText: async () => lockfileContents,
+      fileExists: () => true,
+      healthz: async (_url, opts) => {
+        if (opts?.bearer !== undefined) {
+          args.onIdentityCheck?.()
+          return args.identityCheckBehaviour(opts.bearer)
+        }
+        return { ok: true }
+      },
+      pythonExecutable: 'python-test',
+    }
+  }
+
+  it('falls through to spawn on data_dir mismatch, logging both paths', async () => {
+    const child = makeFakeChild(55555)
+    const spawnSpy = makeSpawnSpy(child)
+    const stalePayload = defaultLockfile({ pid: 22222, port: 50000 })
+    const freshPayload = defaultLockfile({ pid: 55555, port: 60000 })
+    const dataDir = '/tmp/expected-data-dir'
+    const observedDataDir = '/tmp/other-data-dir'
+
+    const deps = makeFallThroughDeps({
+      dataDir,
+      stalePayload,
+      freshPayload,
+      spawnSpy,
+      identityCheckBehaviour: async () => ({ ok: true, data_dir: observedDataDir }),
+    })
+
+    const result = await attachOrSpawnSidecar(deps)
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1)
+    expect(result.attached).toBe(false)
+    expect(result.info.pid).toBe(freshPayload.pid)
+
+    const warnText = warnSpy.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(warnText).toContain(dataDir)
+    expect(warnText).toContain(observedDataDir)
+  })
+
+  it('falls through to spawn when healthz returns non-200', async () => {
+    const child = makeFakeChild(66666)
+    const spawnSpy = makeSpawnSpy(child)
+    const stalePayload = defaultLockfile({ pid: 33333, port: 50001 })
+    const freshPayload = defaultLockfile({ pid: 66666, port: 60001 })
+
+    const deps = makeFallThroughDeps({
+      dataDir: '/tmp/test-non200',
+      stalePayload,
+      freshPayload,
+      spawnSpy,
+      identityCheckBehaviour: async () => ({ ok: false }),
+    })
+
+    const result = await attachOrSpawnSidecar(deps)
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1)
+    expect(result.attached).toBe(false)
+    expect(result.info.pid).toBe(freshPayload.pid)
+    expect(warnSpy).toHaveBeenCalled()
+  })
+
+  it('falls through to spawn when healthz throws, after exactly one retry', async () => {
+    const child = makeFakeChild(77777)
+    const spawnSpy = makeSpawnSpy(child)
+    const stalePayload = defaultLockfile({ pid: 44444, port: 50002 })
+    const freshPayload = defaultLockfile({ pid: 77777, port: 60002 })
+    let identityCheckCalls = 0
+
+    const deps = makeFallThroughDeps({
+      dataDir: '/tmp/test-throws',
+      stalePayload,
+      freshPayload,
+      spawnSpy,
+      identityCheckBehaviour: async () => {
+        throw new Error('ECONNREFUSED')
+      },
+      onIdentityCheck: () => {
+        identityCheckCalls += 1
+      },
+    })
+
+    const result = await attachOrSpawnSidecar(deps)
+
+    expect(identityCheckCalls).toBe(2) // initial + one retry
+    expect(spawnSpy).toHaveBeenCalledTimes(1)
+    expect(result.attached).toBe(false)
+    expect(result.info.pid).toBe(freshPayload.pid)
+    expect(warnSpy).toHaveBeenCalled()
   })
 })
 

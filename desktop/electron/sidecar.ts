@@ -27,6 +27,11 @@ const LOCKFILE_POLL_MS = 100
 const LOCKFILE_TIMEOUT_MS = 15_000
 const HEALTHZ_TIMEOUT_MS = 10_000
 const HEALTHZ_POLL_MS = 200
+// Plan 0007 phase 4.2: the attach-path identity check gets one retry on
+// thrown errors before the lockfile is declared stale. Two failed attempts in
+// quick succession is sufficient evidence the sidecar at the lockfile's port
+// isn't actually serving — falling through to spawn is the recovery.
+const IDENTITY_CHECK_RETRY_DELAY_MS = 50
 
 export interface SidecarInfo {
   port: number
@@ -63,8 +68,16 @@ export interface AttachOrSpawnDeps {
   readFileText?: (path: string) => Promise<string>
   /** Test seam: existence check. Defaults to existsSync. */
   fileExists?: (path: string) => boolean
-  /** Test seam: GET /healthz. Defaults to global `fetch`. */
-  healthz?: (url: string) => Promise<{ ok: boolean }>
+  /** Test seam: GET /healthz. Defaults to global `fetch`.
+   *
+   * Plan 0007 phase 4.2 / ADR-0020: when called with `opts.bearer`, the
+   * default impl sets `Authorization: Bearer <bearer>` so the sidecar
+   * discloses `data_dir`. The attach-path identity check uses this. The
+   * spawn-path `waitForHealthz` calls without a bearer (the unauthenticated
+   * liveness probe is sufficient there — the sidecar's identity is implied by
+   * the fact we just spawned it with our `MARKET_ANALYSER_DATA_DIR`).
+   */
+  healthz?: (url: string, opts?: { bearer?: string }) => Promise<{ ok: boolean; data_dir?: string }>
   /** Resolved python executable. Defaults to the project's `.venv` python. */
   pythonExecutable?: string
   /** Optional dev-origin to inject into the spawned sidecar's CORS allowlist. */
@@ -129,15 +142,37 @@ export async function attachOrSpawnSidecar(deps: AttachOrSpawnDeps): Promise<Att
   const lockfilePath = resolvePath(deps.dataDir, LOCKFILE_NAME)
   const existing = await readLiveLockfile(lockfilePath, merged)
   if (existing !== null) {
-    return {
-      info: {
-        port: existing.port,
-        secretToken: existing.renderer_secret,
-        pid: existing.pid,
-      },
-      spawnedChild: null,
-      attached: true,
+    // Plan 0007 phase 4.2: PID-liveness is a necessary but not sufficient
+    // signal — a recycled PID belonging to an unrelated process passes the
+    // probe. /healthz with the renderer bearer must confirm the running
+    // sidecar's data_dir matches the path we read the lockfile from
+    // (ADR-0020). On any failure mode (mismatch, non-200, throw twice), the
+    // lockfile is declared stale and we fall through to spawn.
+    const identityCheck = await checkAttachIdentity({
+      dataDir: deps.dataDir,
+      port: existing.port,
+      bearer: existing.renderer_secret,
+      healthz: merged.healthz,
+    })
+    if (identityCheck.ok) {
+      return {
+        info: {
+          port: existing.port,
+          secretToken: existing.renderer_secret,
+          pid: existing.pid,
+        },
+        spawnedChild: null,
+        attached: true,
+      }
     }
+    console.warn(
+      `[sidecar] lockfile at ${lockfilePath} rejected: ${identityCheck.reason}` +
+        (identityCheck.observedDataDir !== undefined
+          ? ` (expected data_dir=${deps.dataDir}, observed=${identityCheck.observedDataDir})`
+          : '') +
+        ' — falling through to spawn',
+    )
+    // fall through to spawn
   }
 
   // Spawn path: no live sidecar. The sidecar picks its own port (`--port=0`),
@@ -199,7 +234,7 @@ async function waitForLiveLockfile(
 
 async function waitForHealthz(
   url: string,
-  healthz: (url: string) => Promise<{ ok: boolean }>,
+  healthz: NonNullable<AttachOrSpawnDeps['healthz']>,
 ): Promise<void> {
   const deadline = Date.now() + HEALTHZ_TIMEOUT_MS
   while (Date.now() < deadline) {
@@ -214,6 +249,57 @@ async function waitForHealthz(
   throw new Error(`sidecar did not become healthy at ${url} within ${HEALTHZ_TIMEOUT_MS}ms`)
 }
 
+interface IdentityCheckResult {
+  ok: boolean
+  reason?: string
+  observedDataDir?: string
+}
+
+async function checkAttachIdentity(args: {
+  dataDir: string
+  port: number
+  bearer: string
+  healthz: NonNullable<AttachOrSpawnDeps['healthz']>
+}): Promise<IdentityCheckResult> {
+  const url = `http://127.0.0.1:${args.port}/healthz`
+  const expected = resolvePath(args.dataDir)
+  let lastError: unknown
+  // Two attempts: initial + one retry on throw. Per the plan's done-when, a
+  // single intermittent network error shouldn't kill an otherwise-healthy
+  // attach; two-in-a-row is enough evidence to spawn instead.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await args.healthz(url, { bearer: args.bearer })
+      if (!res.ok) {
+        return {
+          ok: false,
+          reason: 'healthz returned non-200 (likely stale bearer)',
+        }
+      }
+      if (res.data_dir === undefined) {
+        return { ok: false, reason: 'healthz response missing data_dir field' }
+      }
+      if (resolvePath(res.data_dir) !== expected) {
+        return {
+          ok: false,
+          reason: 'data_dir mismatch',
+          observedDataDir: res.data_dir,
+        }
+      }
+      return { ok: true }
+    } catch (err) {
+      lastError = err
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, IDENTITY_CHECK_RETRY_DELAY_MS))
+      }
+    }
+  }
+  return {
+    ok: false,
+    reason: `healthz threw twice: ${(lastError as Error)?.message ?? String(lastError)}`,
+  }
+}
+
 function defaultIsPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
@@ -223,8 +309,23 @@ function defaultIsPidAlive(pid: number): boolean {
   }
 }
 
-function defaultHealthz(url: string): Promise<{ ok: boolean }> {
-  return fetch(url).then((r) => ({ ok: r.ok }))
+function defaultHealthz(
+  url: string,
+  opts?: { bearer?: string },
+): Promise<{ ok: boolean; data_dir?: string }> {
+  const init: RequestInit = {}
+  if (opts?.bearer) {
+    init.headers = { Authorization: `Bearer ${opts.bearer}` }
+  }
+  return fetch(url, init).then(async (r) => {
+    if (!r.ok) return { ok: false }
+    try {
+      const body = (await r.json()) as { data_dir?: string }
+      return { ok: true, data_dir: body.data_dir }
+    } catch {
+      return { ok: true }
+    }
+  })
 }
 
 function resolveDefaultPython(): string {
