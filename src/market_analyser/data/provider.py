@@ -9,7 +9,7 @@ Method-by-method readiness for Plan 0001:
     get_ohlcv          implemented in phase 2 (this phase).
     get_quote          stubbed — earned by a later plan.
     search_symbols     stubbed — earned by a later plan.
-    get_screener       stubbed — earned by a screener-UI plan.
+    get_screener       implemented in Plan 0009 (TradingView screener adapter).
     get_sentiment      stubbed — earned by a sentiment-UI plan.
     get_news           stubbed — earned by a sentiment-UI plan.
 """
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from market_analyser.data.types import (
     Bar,
@@ -57,7 +57,10 @@ class MarketDataProvider(Protocol):
 
     def get_screener(
         self,
-        filters: dict[str, str | float | None],
+        filters: dict[str, Any],
+        market: str = "america",
+        exchange: str | None = None,
+        limit: int = 50,
         as_of: datetime | None = None,
     ) -> Sequence[ScreenerRow]: ...
 

@@ -175,14 +175,15 @@ def test_healthz_with_mcp_bearer_omits_data_dir(tmp_path: Path) -> None:
         def get_quote(self, symbol: str, as_of: datetime | None = None) -> Quote:
             raise NotImplementedError
 
-        def search_symbols(
-            self, query: str, as_of: datetime | None = None
-        ) -> Sequence[SymbolInfo]:
+        def search_symbols(self, query: str, as_of: datetime | None = None) -> Sequence[SymbolInfo]:
             raise NotImplementedError
 
         def get_screener(
             self,
             filters: dict[str, str | float | None],
+            market: str = "america",
+            exchange: str | None = None,
+            limit: int = 50,
             as_of: datetime | None = None,
         ) -> Sequence[ScreenerRow]:
             raise NotImplementedError
@@ -210,9 +211,7 @@ def test_healthz_with_mcp_bearer_omits_data_dir(tmp_path: Path) -> None:
             annotations_repository=annotations_repo,
         )
         with TestClient(app) as client:
-            response = client.get(
-                "/healthz", headers={"Authorization": f"Bearer {mcp_secret}"}
-            )
+            response = client.get("/healthz", headers={"Authorization": f"Bearer {mcp_secret}"})
             assert response.status_code == 200
             assert "data_dir" not in response.json()
     finally:

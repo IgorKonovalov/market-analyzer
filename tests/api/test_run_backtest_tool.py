@@ -116,6 +116,9 @@ class _BarsProvider:
     def get_screener(
         self,
         filters: dict[str, str | float | None],
+        market: str = "america",
+        exchange: str | None = None,
+        limit: int = 50,
         as_of: datetime | None = None,
     ) -> Sequence[ScreenerRow]:
         raise NotImplementedError

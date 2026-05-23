@@ -55,6 +55,7 @@ from market_analyser.api.events import (
     OverlaySpec,
 )
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
+from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
@@ -303,6 +304,10 @@ def create_mcp_components(
             "type": "chart.highlight",
             "version": ChartHighlightPayloadV1.VERSION,
         }
+
+    # Always registered (no extra deps) — screening dispatches through the
+    # provider Protocol; the adapter stays package-internal (ADR-0007).
+    register_screener_query(server, provider=provider)
 
     if backtest_runs_repository is not None and runs_dir is not None:
         register_run_backtest(

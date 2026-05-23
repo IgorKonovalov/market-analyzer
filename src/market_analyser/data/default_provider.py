@@ -14,7 +14,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from itertools import pairwise
+from typing import Any
 
+from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.types import (
     Bar,
@@ -41,9 +43,11 @@ class DefaultMarketDataProvider:
         self,
         *,
         yahoo: YahooAdapter | None = None,
+        screener: TradingViewScreenerAdapter | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
+        self._screener = screener if screener is not None else TradingViewScreenerAdapter()
         self._repo = bar_repository
 
     def get_ohlcv(
@@ -108,12 +112,23 @@ class DefaultMarketDataProvider:
 
     def get_screener(
         self,
-        filters: dict[str, str | float | None],
+        filters: dict[str, Any],
+        market: str = "america",
+        exchange: str | None = None,
+        limit: int = 50,
         as_of: datetime | None = None,
     ) -> Sequence[ScreenerRow]:
-        raise NotImplementedError(
-            "get_screener is not implemented in Plan 0001 — see plan 0001 followups",
-        )
+        # Screener results are wall-clock-sensitive: "RSI < 30 right now" is not
+        # the same query five minutes ago. There is no cached/replayable source
+        # to honour `as_of` against, so reject it at the boundary (Plan 0009 /
+        # ADR-0019). A backtest-replay screener is a future plan with its own
+        # snapshot table.
+        if as_of is not None:
+            raise ValueError(
+                "as_of is not supported for screener queries — results are "
+                "wall-clock-sensitive (Plan 0009 / ADR-0019)",
+            )
+        return self._screener.query(filters, market=market, exchange=exchange, limit=limit)
 
     def get_sentiment(
         self,
