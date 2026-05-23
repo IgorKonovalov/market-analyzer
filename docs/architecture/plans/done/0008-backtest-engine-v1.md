@@ -1,8 +1,9 @@
 # 0008 — Backtest engine v1: pure core, MCP tool, and live results view
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
+> **Closed:** 2026-05-23
 > **Owner skill(s):** `backtester` (phases 1, 2), `dev` (phases 3, 4), `ui-builder` (phase 5)
 > **Related ADRs:** [ADR-0018](../adrs/0018-backtest-result-schema.md) (paired — defines `BacktestResult`), [ADR-0004](../adrs/0004-strategy-interface.md) (strategy contract — engine's input shape), [ADR-0006](../adrs/0006-persistence-layout.md) (SQLite + artifact discipline), [ADR-0007](../adrs/0007-market-data-provider.md) (bars input via `MarketDataProvider`), [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (MCP tool transport), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (`run.completed v1` envelope — this plan ships its first producer)
 > **Depends on:** [Plan 0002](0002-strategy-interface.md) phases 1–3 (contracts module + RSI reference strategy + `signals_to_trades` adapter + `Trade` type) — **must close before this plan's phase 1 starts.** [Plan 0007](0007-live-agent-driven-viewer.md) phases 1–4 (standalone sidecar + SSE event bus + `useEventStream` hook) — **must close before this plan's phase 4 starts.**
@@ -331,4 +332,20 @@ If any are wrong, correct here and re-derive the affected phases.
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes during the close ceremony.
+Populated at close ceremony (2026-05-23) from Mode 4 review findings + phase-5 implementer notes.
+
+### Minor
+
+- **`Trade.pnl_usd` for compounding consistency** (owner: `architect` → `backtester` → `ui-builder`). The plan's done-when §221 pinned the trade-log P&L $ as `(exit - entry) * (initial_capital / entry)`, but the engine's `_build_equity_curve` compounds — `units = cash / entry_price` where `cash` is the running equity at trade entry, not `initial_capital`. For trade N>1 the trade-log row disagrees with the equity curve's delta (worked example: initial=$10k, trade-1 100→110, trade-2 50→55 ⇒ engine cash $12.1k, UI shows $1000 for trade-2 instead of the actual $1100, ~10% low). v1 fixtures are mostly few-trade so visible drift is small, but the formula is structurally inconsistent. Architect to design the seam (either (a) `Trade` carries an engine-computed `pnl_usd` field, or (b) UI derives P&L from `equity_curve[exit_bar] - equity_curve[entry_bar - 1]`). ADR-0018 schema would change under option (a); option (b) is renderer-only.
+
+- **Flip ADR-0018 `proposed → accepted`** (owner: `architect`). Schema has shipped in production with ~50 tests across Python + Jest + Playwright; the close-day flip mirrors the pattern Plan 0014's README entry already documents for ADR-0021. *(Done at close — see `docs/architecture/adrs/0018-backtest-result-schema.md`.)*
+
+### Nit
+
+- **`gen-types.mjs` doesn't narrow Pydantic single-value `Literal` types** (owner: `ui-builder` or `dev`). `Trade.kind` and `BacktestResult.sizing` emit as plain `string` instead of `'long'` / `'fixed_fraction'`. Cosmetic — no phase-5 code branches on these. One-line fix in `mapType`.
+
+- **`useBacktestResult` last-write-wins via cancelled flags** (owner: `ui-builder`). `desktop/renderer/hooks/useBacktestResult.ts:47-69` uses per-effect `cancelled` closures. Correct in practice (envelopes arrive sequentially) but a generation counter or `AbortController` would make ordering provably deterministic.
+
+- **`__test_publish_run_completed__` `useEffect` has no dependency array** (owner: `ui-builder`). `desktop/renderer/App.tsx:109-114` re-attaches the seam on every render. Harmless; low priority.
+
+- **Refresh `docs/architecture/diagrams/claude-cli-driven-architecture.md`** (owner: `architect`). Add a backtest-results lane so the system map reflects the post-0008 reality: `run_backtest` MCP tool, `BacktestView`, `RecentBacktestsView`, the `run.completed v1` producer.

@@ -1,7 +1,8 @@
 # ADR-0018 — BacktestResult schema
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-05-20
+> **Accepted:** 2026-05-23 (at Plan 0008 close — schema shipped in production with ~50 tests across Python + Jest + Playwright; close-day flip per the pattern documented for ADR-0021 / Plan 0014)
 > **Related plan(s):** [0008-backtest-engine-v1](../plans/0008-backtest-engine-v1.md), [0002-strategy-interface](../plans/0002-strategy-interface.md) (deferred the schema to this ADR's pairing plan)
 > **Related ADRs:** [ADR-0004](0004-strategy-interface.md) (strategy contract — names the missing engine half), [ADR-0006](0006-persistence-layout.md) (SQLite + on-disk artifact discipline), [ADR-0007](0007-market-data-provider.md) (`as_of` seam — bars input identity), [ADR-0017](0017-live-ui-updates-via-sse.md) (`run.completed v1` envelope — wire-level consumer of `run_id` + `artifact_path`)
 
