@@ -2,7 +2,7 @@
 
 > **Status:** living document, aspirational. **This is not a plan.** Plans (under [`plans/`](plans/)) commit; this document describes direction. ADRs (under [`adrs/`](adrs/)) decide; this document anticipates what decisions are coming. Specific timelines, orderings, and capability cuts will move; the *shape* is the durable part.
 >
-> Last refreshed: 2026-05-19.
+> Last refreshed: 2026-05-23.
 
 ## Vision
 
@@ -14,33 +14,36 @@ The end state we're aiming at is a **best-in-class single-user research and deci
 
 Each tier is a coherent capability bundle. Tiers are **not** strict serialization — work inside a tier can parallelize and adjacent tiers can interleave when dependencies allow — but the broad ordering reflects what unblocks what. Specific plans inside each tier get authored when the tier surfaces; do not treat the bullet lists below as plan commitments.
 
-### Tier 0 — Foundation (largely complete)
+### Tier 0 — Foundation (complete)
 
-The walking skeleton, the data-layer rewrite, the dependency discipline, and the MCP foundation. After this tier closes, the platform is ready for analyst-grade work to land on top.
+The walking skeleton, the data-layer rewrite, the dependency discipline, the MCP foundation, and the agent-first role inversion (Claude Code primary, Electron a live viewer). This tier has closed; analyst-grade work now lands on top.
 
 - [Plan 0001](plans/done/0001-bootstrap.md) — Electron + sidecar + SQLite + OHLCV chart for one symbol. **Done.**
 - [Plan 0003](plans/done/0003-excise-vendored-upstream.md) — in-house data layer per [ADR-0009](adrs/0009-rewrite-data-layer-in-house.md). **Done.**
 - [Plan 0004](plans/done/0004-bootstrap-review-followups.md) — bootstrap review followups. **Done.**
-- [Plan 0005](plans/0005-dependency-cooldown.md) — 14-day cooldown + exact pins. **Drafted.**
-- [Plan 0006](plans/0006-annotations-via-mcp.md) — MCP server mount + annotations table + chart markers (the "C" tier of the agent-writes ladder). **Drafted.**
+- [Plan 0005](plans/done/0005-dependency-cooldown.md) — 14-day cooldown + exact pins. **Done.**
+- [Plan 0006](plans/done/0006-annotations-via-mcp.md) — MCP server mount + annotations table + chart markers (the "C" tier of the agent-writes ladder). **Done.**
+- [Plan 0007](plans/done/0007-live-agent-driven-viewer.md) — standalone sidecar (lockfile + idempotent attach, [ADR-0016](adrs/0016-standalone-sidecar-mode.md)) + SSE event stream ([ADR-0017](adrs/0017-live-ui-updates-via-sse.md)) + agent-issued chart renders. The implementation of the [ADR-0015](adrs/0015-claude-code-primary-control-surface.md) role inversion. **Done.**
+- [Plan 0015](plans/done/0015-pnpm-dev-all.md) — one-command dev loop (`pnpm dev:all`). **Done.**
 
 ### Tier 1 — Analyst surface
 
 Make the desktop app actually useful for analysis, with deterministic technical primitives the agents can call into. After this tier, the agent can run a strategy, see its output, and the user sees the results visualized.
 
-- **Indicators module** (`src/market_analyser/analysis/indicators.py`) — RSI, MACD, EMA, Bollinger, ATR. Deterministic transforms of cached bars; consumed by the indicator-overlay chart panel and by the agent via a future `compute_indicator` MCP tool.
-- **Pattern detection module** — Japanese candlestick patterns (doji, hammer, engulfing, etc.) consumed by the `market-analyst` skill and by a future `scan_patterns` MCP tool.
-- **Backtest engine** ([ADR-0004](adrs/0004-strategy-interface.md), no plan yet) — the missing half of the strategy contract. Owns equity-curve, Sharpe, drawdown, trade-log shapes.
-- **Plan B from Plan 0006's C → B → A ladder** — strategy result rows persisted via MCP (`write_backtest_result`, `list_backtest_results`). Pairs with the backtest engine landing.
-- **Reference strategies** ([Plan 0002](plans/0002-strategy-interface.md), drafted) — RSI, MACD-cross, and a small catalog the agent can `run_strategy` against.
+- **Indicators module** (`src/market_analyser/analysis/indicators.py`) — RSI, MACD, EMA, Bollinger, ATR. Deterministic transforms of cached bars; consumed by the indicator-overlay chart panel and by the agent via a future `compute_indicator` MCP tool. **Open — no plan yet; the main remaining Tier 1 gap.**
+- **Pattern detection module** — Japanese candlestick patterns (doji, hammer, engulfing, etc.) consumed by the `market-analyst` skill and by a future `scan_patterns` MCP tool. **Open — no plan yet.**
+- **Backtest engine** ([Plan 0008](plans/done/0008-backtest-engine-v1.md), [ADR-0018](adrs/0018-backtest-result-schema.md)) — pure `run` + metric helpers + thin `persist`; owns the equity-curve, Sharpe, drawdown, and trade-log shapes. **Done.**
+- **Strategy result persistence** (Plan B from Plan 0006's C → B → A ladder) — realized by Plan 0008's `backtest_runs` table + `persist()` + the `run_backtest` MCP tool emitting `run.completed v1`, with `BacktestView` / `RecentBacktestsView` in the renderer. **Done.**
+- **Reference strategies** ([Plan 0002](plans/done/0002-strategy-interface.md)) — RSI reference + five ported (Bollinger, MACD-cross, EMA-cross, supertrend, donchian) + the `signals_to_trades` adapter + a `strategies list` CLI. **Done.**
 
 ### Tier 2 — Data breadth
 
 Today only Yahoo OHLCV is wired. Tier 2 widens the data layer to the sources the vision needs.
 
-- **TradingView screener adapter** — `src/market_analyser/data/adapters/tradingview_screener.py`, exposed as `MarketDataProvider.screener_query`. Lets agents and users find candidates ("BTC pairs with RSI < 30 on the 4h").
-- **Sentiment adapter** — Reddit + RSS feeds parsed into a sentiment time series per symbol. New `MarketDataProvider.sentiment_for` method.
-- **News adapter** — article ingestion + per-symbol tagging + dedup. New `MarketDataProvider.news_for`.
+- **TradingView screener adapter** ([Plan 0009](plans/0009-resilience-and-tradingview-screener.md)) — `src/market_analyser/data/adapters/tradingview_screener.py`, exposed as `MarketDataProvider.get_screener` + a `screener_query` MCP tool. Lands paired with the shared `ResilientHttpClient` ([ADR-0019](adrs/0019-external-http-adapter-resilience.md)), which every external adapter below inherits. **In progress.**
+- **News + sentiment adapter** ([Plan 0010](plans/0010-news-and-vader-sentiment.md)) — RSS feeds + per-headline VADER scoring; `get_news` + `get_sentiment`. **Approved.** Reddit-based sentiment is deliberately deferred (upstream keyword scoring was fragile).
+- **StockTwits sentiment** ([Plan 0012](plans/0012-stocktwits-sentiment.md)) — second per-symbol source using explicit Bullish/Bearish label counts (no NLP model); adds a `source` parameter to `get_sentiment`. **Approved.**
+- **Crypto Fear & Greed** ([Plan 0011](plans/0011-fear-and-greed-indices.md)) — market-level sentiment via alternative.me; new `get_market_sentiment` Protocol method. **Approved.**
 - **DeFi data layer** — Aave, Uniswap, Aerodrome, Compound adapters. Consumed by the `defi-analyst` skill. Schema for positions (under `positions/`, gitignored) defined here.
 - **BTC-specific market data** — funding rates, open interest, miner outflows. Single adapter, BTC-only because the data shapes differ from generic equity OHLCV.
 - **Reference data** — sectors, indices, coin metadata. Static lookups loaded into SQLite via Alembic seed.
@@ -93,7 +96,7 @@ Everything that makes Tier 0–5 actually pleasant to live with. Deferred until 
 - **Notifications** — native desktop notifications when the agent surfaces a flagged event. Transport ADR required.
 - **Auto-update** — packaging plan, currently deferred ([README.md](../../README.md#roadmap)).
 - **Themes / accessibility** — light/dark, font scaling, screen-reader audit.
-- **Standalone sidecar mode** — agent workflows that run when the app is closed (overnight ingestion, scheduled scans). [ADR-0014](adrs/0014-mcp-as-second-sidecar-protocol.md) explicitly defers this; Tier 5's "agent-curated digest" likely surfaces the need.
+- **Scheduled / off-app agent workflows** — the standalone sidecar itself shipped ([ADR-0016](adrs/0016-standalone-sidecar-mode.md), [Plan 0007](plans/done/0007-live-agent-driven-viewer.md)): it runs without the viewer and survives the viewer closing. What remains deferred is *scheduled* runs (overnight ingestion, timed scans) and crash-supervision — ADR-0016 explicitly leaves automated restart/scheduling to a future ADR. Tier 5's "agent-curated digest" likely surfaces the need.
 
 ## Cross-cutting decisions ahead
 
@@ -107,7 +110,7 @@ Each of the following will need an ADR before its first dependent capability shi
 | Model versioning and determinism                    | First persisted model output          | Tier 3                          |
 | LLM provenance metadata                             | First agent-produced fact in the DB   | Tier 1 (Plan 0006 phase 2 is already close to this — `agent_id` is a placeholder) |
 | Agent code execution sandbox                        | First agent-written strategy module   | Tier 3                          |
-| Standalone sidecar mode                             | First off-app agent workflow          | Tier 5                          |
+| Sidecar crash-supervision / scheduling              | First *scheduled* off-app workflow    | Tier 5 (standalone mode itself shipped — ADR-0016) |
 | Notification transport                              | First user-facing alert               | Tier 6                          |
 | DeFi positions encryption-at-rest                   | First on-chain position imported      | Tier 2 (DeFi sub-bullet)        |
 
