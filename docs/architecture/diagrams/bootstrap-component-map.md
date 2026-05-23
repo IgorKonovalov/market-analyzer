@@ -58,7 +58,7 @@ sequenceDiagram
     participant YA as Yahoo adapter
     participant Yahoo as Yahoo Finance
 
-    M->>S: spawn(--port; MARKET_ANALYSER_SECRET env)
+    M->>S: spawn(--port, MARKET_ANALYSER_SECRET env)
     S->>Repo: migrate to head (Alembic)
     S-->>M: GET /healthz 200
     U->>R: open "AAPL 1d" view
