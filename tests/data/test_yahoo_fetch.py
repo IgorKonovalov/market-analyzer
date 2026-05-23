@@ -1,55 +1,64 @@
-"""Plan 0003 phase 1: regression tests for the in-house Yahoo Chart parser.
+"""Plan 0003 phase 1 + Plan 0009 phase 3: the in-house Yahoo Chart fetcher.
 
-A recorded Yahoo response is loaded from ``tests/fixtures/yahoo/aapl_1d.json``
-and fed through :func:`_fetch_yahoo_ohlcv` with ``urllib.request.urlopen``
-monkeypatched out. The tests defend the parser's row shape, its
-None-row-skipping behaviour, and the outgoing request's URL / User-Agent /
-timeout, per ADR-0007's "validate at boundaries" rule.
+`_parse_chart_payload` is tested directly on payloads (no I/O). `_fetch_yahoo_ohlcv`
+is tested through a `ResilientHttpClient` whose transport seam is monkeypatched —
+proving the request now goes through the shared client (ADR-0019) and that the
+fetcher builds the expected Yahoo chart URL.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
+from market_analyser.data._http import HttpResponse, ResilientHttpClient
 from market_analyser.data.adapters._yahoo_fetch import (
-    _USER_AGENT,
     _YF_BASE,
     _fetch_yahoo_ohlcv,
+    _parse_chart_payload,
 )
 
 _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "yahoo"
 
 
-def _install_fake_urlopen(
-    monkeypatch: pytest.MonkeyPatch,
-    payload: bytes,
-    captured: dict[str, Any],
-) -> None:
-    @contextmanager
-    def fake_urlopen(req: Any, timeout: float = 15.0) -> Iterator[Any]:
-        captured["url"] = req.full_url
-        captured["user_agent"] = req.get_header("User-agent")
-        captured["timeout"] = timeout
-        response = MagicMock()
-        response.read.return_value = payload
-        yield response
+def _client_returning(payload: bytes, captured: dict[str, Any]) -> ResilientHttpClient:
+    client = ResilientHttpClient(source_name="yahoo-test")
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    def fake(method: str, url: str, body: Any, headers: Any, *, proxy: Any) -> HttpResponse:
+        captured["method"] = method
+        captured["url"] = url
+        return HttpResponse(status_code=200, headers={}, body=payload, elapsed_seconds=0.0)
+
+    # Replace the transport seam; the request still flows through the client's
+    # get() so caching/retry/timeout wrapping is exercised in production.
+    client._perform_request = fake  # type: ignore[method-assign]
+    return client
 
 
-def test_parses_fixture_skipping_none_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_goes_through_client_and_builds_url(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = (_FIXTURE_DIR / "aapl_1d.json").read_bytes()
     captured: dict[str, Any] = {}
-    _install_fake_urlopen(monkeypatch, payload, captured)
+    client = _client_returning(payload, captured)
 
-    rows = _fetch_yahoo_ohlcv("AAPL", "1mo", "1d")
+    rows = _fetch_yahoo_ohlcv("AAPL", "1mo", "1d", client=client)
+
+    assert captured["method"] == "GET"
+    assert captured["url"] == f"{_YF_BASE}/AAPL?interval=1d&range=1mo"
+    assert [r["date"] for r in rows] == [
+        "2026-01-01",
+        "2026-01-02",
+        "2026-01-04",
+        "2026-01-05",
+    ]
+
+
+def test_parse_skips_none_rows() -> None:
+    payload = json.loads((_FIXTURE_DIR / "aapl_1d.json").read_text(encoding="utf-8"))
+
+    rows = _parse_chart_payload(payload, "1d")
 
     assert [r["date"] for r in rows] == [
         "2026-01-01",
@@ -64,20 +73,8 @@ def test_parses_fixture_skipping_none_rows(monkeypatch: pytest.MonkeyPatch) -> N
     assert rows[0]["volume"] == 1000
 
 
-def test_sends_expected_url_and_user_agent(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = (_FIXTURE_DIR / "aapl_1d.json").read_bytes()
-    captured: dict[str, Any] = {}
-    _install_fake_urlopen(monkeypatch, payload, captured)
-
-    _fetch_yahoo_ohlcv("AAPL", "1mo", "1d")
-
-    assert captured["url"] == f"{_YF_BASE}/AAPL?interval=1d&range=1mo"
-    assert captured["user_agent"] == _USER_AGENT
-    assert captured["timeout"] == 15
-
-
-def test_intraday_uses_hourly_date_format(monkeypatch: pytest.MonkeyPatch) -> None:
-    inline_response = {
+def test_parse_intraday_uses_hourly_date_format() -> None:
+    payload = {
         "chart": {
             "error": None,
             "result": [
@@ -92,30 +89,21 @@ def test_intraday_uses_hourly_date_format(monkeypatch: pytest.MonkeyPatch) -> No
                                 "low": [99.0, 100.0],
                                 "close": [101.0, 102.0],
                                 "volume": [1000, 1100],
-                            }
-                        ]
+                            },
+                        ],
                     },
-                }
+                },
             ],
-        }
+        },
     }
-    captured: dict[str, Any] = {}
-    _install_fake_urlopen(
-        monkeypatch,
-        json.dumps(inline_response).encode("utf-8"),
-        captured,
-    )
 
-    rows = _fetch_yahoo_ohlcv("AAPL", "1mo", "1h")
+    rows = _parse_chart_payload(payload, "1h")
 
-    assert [r["date"] for r in rows] == [
-        "2026-01-01 00:00",
-        "2026-01-01 01:00",
-    ]
+    assert [r["date"] for r in rows] == ["2026-01-01 00:00", "2026-01-01 01:00"]
 
 
-def test_null_volume_normalized_to_zero(monkeypatch: pytest.MonkeyPatch) -> None:
-    inline_response = {
+def test_parse_null_volume_normalized_to_zero() -> None:
+    payload = {
         "chart": {
             "error": None,
             "result": [
@@ -130,20 +118,14 @@ def test_null_volume_normalized_to_zero(monkeypatch: pytest.MonkeyPatch) -> None
                                 "low": [99.0],
                                 "close": [101.0],
                                 "volume": [None],
-                            }
-                        ]
+                            },
+                        ],
                     },
-                }
+                },
             ],
-        }
+        },
     }
-    captured: dict[str, Any] = {}
-    _install_fake_urlopen(
-        monkeypatch,
-        json.dumps(inline_response).encode("utf-8"),
-        captured,
-    )
 
-    rows = _fetch_yahoo_ohlcv("AAPL", "1mo", "1d")
+    rows = _parse_chart_payload(payload, "1d")
 
     assert rows[0]["volume"] == 0

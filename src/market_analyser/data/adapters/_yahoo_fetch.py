@@ -1,47 +1,49 @@
 """In-house Yahoo Chart OHLCV fetcher.
 
-A small ``urllib`` + JSON wrapper over Yahoo's chart API. Returns a list of
-raw OHLCV row dicts (keys: ``date``, ``open``, ``high``, ``low``, ``close``,
-``volume``); the caller is responsible for promoting these into validated
+Builds the Yahoo chart request URL and parses the response into raw OHLCV row
+dicts (keys: ``date``, ``open``, ``high``, ``low``, ``close``, ``volume``); the
+caller promotes these into validated
 :class:`~market_analyser.data.types.Bar` objects.
 
-Per ADR-0009 this replaces the previous out-of-repo carve-out. No proxy
-fallback — restoring it is a follow-up plan if Yahoo rate-limits us in
-production.
+Per Plan 0009 phase 3 (ADR-0019) the request itself is issued through the shared
+:class:`~market_analyser.data._http.ResilientHttpClient` — this module no longer
+opens sockets directly. It builds the URL and parses the chart payload; the
+resilience concerns (transient-failure handling, timeouts, concurrency,
+proxying) live entirely in the shared client.
 """
 
 from __future__ import annotations
 
-import json
-import urllib.request
 from datetime import UTC, datetime
 from typing import Any
 
-from market_analyser import __version__
+from market_analyser.data._http import ResilientHttpClient
 
 _YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
-_USER_AGENT = f"market-analyser/{__version__}"
-_TIMEOUT_SECONDS = 15
 
 
 def _fetch_yahoo_ohlcv(
     symbol: str,
     period: str,
     interval: str = "1d",
+    *,
+    client: ResilientHttpClient,
 ) -> list[dict[str, Any]]:
-    """Fetch OHLCV rows from Yahoo's chart API for ``symbol`` over ``period``.
+    """Fetch OHLCV rows from Yahoo's chart API for ``symbol`` over ``period``,
+    issuing the request through ``client``.
 
-    Returns one dict per bar (keys: ``date`` str, ``open`` / ``high`` /
-    ``low`` / ``close`` float, ``volume`` int). ``date`` is formatted
-    ``%Y-%m-%d`` for daily bars and ``%Y-%m-%d %H:%M`` for intraday. Rows
-    with any of open/high/low/close missing are skipped.
+    Returns one dict per bar (keys: ``date`` str, ``open`` / ``high`` / ``low`` /
+    ``close`` float, ``volume`` int). ``date`` is formatted ``%Y-%m-%d`` for daily
+    bars and ``%Y-%m-%d %H:%M`` for intraday. Rows with any of open/high/low/close
+    missing are skipped.
     """
     url = f"{_YF_BASE}/{symbol}?interval={interval}&range={period}"
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    response = client.get(url, expect_json=True)
+    return _parse_chart_payload(response.json(), interval)
 
-    with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
-        payload: Any = json.loads(resp.read().decode("utf-8"))
 
+def _parse_chart_payload(payload: Any, interval: str) -> list[dict[str, Any]]:
+    """Parse a Yahoo chart payload into OHLCV row dicts."""
     result = payload["chart"]["result"][0]
     timestamps = result["timestamp"]
     quote = result["indicators"]["quote"][0]
@@ -64,6 +66,6 @@ def _fetch_yahoo_ohlcv(
                 "low": round(low, 4),
                 "close": round(c, 4),
                 "volume": v or 0,
-            }
+            },
         )
     return rows

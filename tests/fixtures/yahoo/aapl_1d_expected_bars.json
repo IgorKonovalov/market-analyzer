@@ -1,0 +1,46 @@
+[
+  {
+    "symbol": "AAPL",
+    "timeframe": "1d",
+    "event_ts": "2026-01-01T00:00:00Z",
+    "open": 100.0,
+    "high": 102.0,
+    "low": 99.0,
+    "close": 101.5,
+    "volume": 1000.0,
+    "source": "yahoo"
+  },
+  {
+    "symbol": "AAPL",
+    "timeframe": "1d",
+    "event_ts": "2026-01-02T00:00:00Z",
+    "open": 101.0,
+    "high": 103.0,
+    "low": 100.0,
+    "close": 102.5,
+    "volume": 1100.0,
+    "source": "yahoo"
+  },
+  {
+    "symbol": "AAPL",
+    "timeframe": "1d",
+    "event_ts": "2026-01-04T00:00:00Z",
+    "open": 103.0,
+    "high": 105.0,
+    "low": 102.0,
+    "close": 104.5,
+    "volume": 1300.0,
+    "source": "yahoo"
+  },
+  {
+    "symbol": "AAPL",
+    "timeframe": "1d",
+    "event_ts": "2026-01-05T00:00:00Z",
+    "open": 104.0,
+    "high": 106.0,
+    "low": 103.0,
+    "close": 105.5,
+    "volume": 1400.0,
+    "source": "yahoo"
+  }
+]

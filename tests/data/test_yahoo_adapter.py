@@ -8,13 +8,19 @@ covering the done-when items for phase 2.
 
 from __future__ import annotations
 
+import json
 import math
+import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from market_analyser.data._http import HttpResponse, ResilientHttpClient
 from market_analyser.data.adapters.yahoo import YahooAdapter
+
+_FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "yahoo"
 
 
 def _make_fetcher(rows: list[dict[str, Any]]) -> Any:
@@ -182,3 +188,62 @@ def test_fetch_ohlcv_picks_smallest_sufficient_period() -> None:
         datetime(2026, 5, 1, tzinfo=UTC),
     )
     assert captured["period"] == "1mo"
+
+
+# -- Plan 0009 phase 3: HTTP now routes through ResilientHttpClient -----------
+
+
+def _client_returning(payload: bytes) -> ResilientHttpClient:
+    client = ResilientHttpClient(source_name="yahoo-test")
+    client._perform_request = (  # type: ignore[method-assign]
+        lambda method, url, body, headers, *, proxy: HttpResponse(
+            status_code=200, headers={}, body=payload, elapsed_seconds=0.0
+        )
+    )
+    return client
+
+
+def test_fixture_round_trip_is_byte_identical() -> None:
+    """The retrofitted adapter (HTTP via the shared client) reproduces the
+    pre-retrofit Bar output byte-for-byte against the committed fixture."""
+    payload = (_FIXTURE_DIR / "aapl_1d.json").read_bytes()
+    adapter = YahooAdapter(http_client=_client_returning(payload))
+
+    bars = adapter.fetch_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 1, 1, tzinfo=UTC),
+        datetime(2026, 1, 10, tzinfo=UTC),
+    )
+
+    dumped = [bar.model_dump(mode="json") for bar in bars]
+    expected = json.loads((_FIXTURE_DIR / "aapl_1d_expected_bars.json").read_text(encoding="utf-8"))
+    assert dumped == expected
+
+
+def test_transient_failure_retries_via_shared_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transient transport failure is now retried by ResilientHttpClient, not
+    hand-rolled in the adapter — proven by client.stats().retries incrementing."""
+    monkeypatch.setattr(time, "sleep", lambda _s: None)  # skip real backoff sleep
+    payload = (_FIXTURE_DIR / "aapl_1d.json").read_bytes()
+    client = ResilientHttpClient(source_name="yahoo-test")
+    attempts = {"n": 0}
+
+    def fake(method: str, url: str, body: Any, headers: Any, *, proxy: Any) -> HttpResponse:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionError("transient")
+        return HttpResponse(status_code=200, headers={}, body=payload, elapsed_seconds=0.0)
+
+    monkeypatch.setattr(client, "_perform_request", fake)
+    adapter = YahooAdapter(http_client=client)
+
+    bars = adapter.fetch_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 1, 1, tzinfo=UTC),
+        datetime(2026, 1, 10, tzinfo=UTC),
+    )
+
+    assert len(bars) == 4
+    assert client.stats().retries >= 1

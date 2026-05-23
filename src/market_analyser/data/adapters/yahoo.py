@@ -17,10 +17,17 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from market_analyser.data._http import ResilientHttpClient
 from market_analyser.data.adapters._yahoo_fetch import _fetch_yahoo_ohlcv
 from market_analyser.data.types import Bar
 
 _logger = logging.getLogger(__name__)
+
+# Yahoo's chart endpoint occasionally times out under load; the shared client's
+# defaults (transient-failure handling, bounded concurrency) cover it. No
+# in-memory result store: OHLCV bars are persisted cross-session in SQLite, so
+# the shared client runs store-less here and only its request timeout is tuned.
+_REQUEST_TIMEOUT_SECONDS = 15.0
 
 
 class _FetchOhlcvFn(Protocol):
@@ -44,8 +51,28 @@ _VALID_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h"})
 class YahooAdapter:
     """Adapter over the in-house Yahoo Chart fetcher. Returns validated Bars."""
 
-    def __init__(self, fetcher: _FetchOhlcvFn | None = None) -> None:
-        self._fetch = fetcher if fetcher is not None else _fetch_yahoo_ohlcv
+    def __init__(
+        self,
+        fetcher: _FetchOhlcvFn | None = None,
+        http_client: ResilientHttpClient | None = None,
+    ) -> None:
+        self._client = (
+            http_client
+            if http_client is not None
+            else ResilientHttpClient(
+                source_name="yahoo",
+                request_timeout_seconds=_REQUEST_TIMEOUT_SECONDS,
+            )
+        )
+        self._fetch: _FetchOhlcvFn = fetcher if fetcher is not None else self._default_fetch
+
+    def _default_fetch(
+        self,
+        symbol: str,
+        period: str,
+        interval: str = "1d",
+    ) -> list[dict[str, Any]]:
+        return _fetch_yahoo_ohlcv(symbol, period, interval, client=self._client)
 
     def fetch_ohlcv(
         self,
