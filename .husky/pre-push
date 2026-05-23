@@ -1,1 +1,9 @@
-pnpm --filter desktop test:all && uv run pytest -m "not network"
+# Python static gates mirror CI's `test` job so a ruff/format/mypy failure
+# is caught here, not after a push. (Coverage + pip-audit stay CI-only:
+# coverage is slow under instrumentation and pip-audit can fail on a freshly
+# published CVE independent of the push — handled via the CLAUDE.md CVE bump.)
+uv run ruff check &&
+  uv run ruff format --check &&
+  uv run mypy --strict src tests &&
+  pnpm --filter desktop test:all &&
+  uv run pytest -m "not network"
