@@ -375,8 +375,8 @@ def test_summary_trade_count_matches_metrics_trade_count(
             result = await session.call_tool("run_backtest", _params_default())
             assert not result.isError
             assert result.structuredContent is not None
-            summary = dict(result.structuredContent["summary"])  # type: ignore[arg-type]
-            return summary["trade_count"], summary  # type: ignore[return-value]
+            summary = dict(result.structuredContent["summary"])
+            return summary["trade_count"], summary
 
     summary_count, _ = asyncio.run(_run())
     # Cross-check by reading the persisted result.json

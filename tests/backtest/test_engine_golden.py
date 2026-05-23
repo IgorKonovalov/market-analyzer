@@ -20,6 +20,7 @@ import csv
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from market_analyser.backtest import run
 from market_analyser.data.types import Bar
@@ -55,7 +56,7 @@ def _load_bars() -> list[Bar]:
     return bars
 
 
-def _run_with_default_params() -> dict:
+def _run_with_default_params() -> dict[str, Any]:
     bars = _load_bars()
     result = run(
         rsi_strategy,
