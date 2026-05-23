@@ -8,6 +8,7 @@ on a path that never receives the lockfile, and the dev-loop would hang with
 no clear failure. This test asserts the exact stdout shape the wrapper relies
 on so any regression there fails loudly under `uv run pytest`.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -15,10 +16,7 @@ import sys
 
 from market_analyser.config import default_app_data_dir
 
-ONELINER = (
-    "from market_analyser.config import default_app_data_dir; "
-    "print(default_app_data_dir())"
-)
+ONELINER = "from market_analyser.config import default_app_data_dir; print(default_app_data_dir())"
 
 
 def test_oneliner_prints_canonical_data_dir_with_single_trailing_newline() -> None:

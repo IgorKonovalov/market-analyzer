@@ -29,9 +29,7 @@ from market_analyser.contracts import (
 META = StrategyMeta(
     id="macd",
     name="MACD Line/Signal Crossover",
-    description=(
-        "Enter long when MACD crosses above its signal line; exit when it crosses below."
-    ),
+    description=("Enter long when MACD crosses above its signal line; exit when it crosses below."),
     version="1.0.0",
     timeframes=("1h", "1d"),
 )
@@ -45,9 +43,7 @@ class Params(BaseParams):
     @model_validator(mode="after")
     def _fast_strictly_less_than_slow(self) -> Params:
         if self.fast >= self.slow:
-            raise ValueError(
-                f"fast ({self.fast}) must be strictly less than slow ({self.slow})"
-            )
+            raise ValueError(f"fast ({self.fast}) must be strictly less than slow ({self.slow})")
         return self
 
 

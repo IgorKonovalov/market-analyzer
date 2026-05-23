@@ -30,10 +30,7 @@ from market_analyser.backtest import (
 
 def _curve(equities: Sequence[float]) -> list[EquityPoint]:
     start = datetime(2026, 1, 1, tzinfo=UTC)
-    return [
-        EquityPoint(ts=start + timedelta(days=i), equity=eq)
-        for i, eq in enumerate(equities)
-    ]
+    return [EquityPoint(ts=start + timedelta(days=i), equity=eq) for i, eq in enumerate(equities)]
 
 
 def test_total_return_from_equity_endpoints() -> None:
@@ -88,9 +85,7 @@ def test_sharpe_uses_sqrt_252_for_1d() -> None:
         timeframe="1d",
     )
     returns = [equities[i] / equities[i - 1] - 1.0 for i in range(1, len(equities))]
-    expected_sharpe = (
-        statistics.fmean(returns) / statistics.stdev(returns) * math.sqrt(252)
-    )
+    expected_sharpe = statistics.fmean(returns) / statistics.stdev(returns) * math.sqrt(252)
     assert isclose(metrics.sharpe, expected_sharpe, abs_tol=1e-9)
 
 

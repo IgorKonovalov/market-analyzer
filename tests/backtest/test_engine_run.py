@@ -27,14 +27,13 @@ import pytest
 from pydantic import ValidationError
 
 from market_analyser.backtest import (
-    BacktestResult,
     ENGINE_VERSION,
+    BacktestResult,
     StrategyContractError,
     UnknownTimeframeError,
     bars_hash,
     run,
 )
-from market_analyser.contracts.strategy import BaseParams
 from market_analyser.data.types import Bar
 from market_analyser.strategies import rsi as rsi_strategy
 
@@ -69,10 +68,7 @@ def _rsi_friendly_closes() -> list[float]:
 
     import math
 
-    return [
-        round(100.0 + math.sin(i / 4.0) * 12.0, 4)
-        for i in range(30)
-    ]
+    return [round(100.0 + math.sin(i / 4.0) * 12.0, 4) for i in range(30)]
 
 
 def test_happy_path_populates_identity_and_spec() -> None:

@@ -57,11 +57,7 @@ def _apply_costs(
     out: list[Trade] = []
     for trade in trades:
         adjusted_entry = trade.entry_price * (1.0 + factor)
-        adjusted_exit = (
-            trade.exit_price * (1.0 - factor)
-            if trade.exit_price is not None
-            else None
-        )
+        adjusted_exit = trade.exit_price * (1.0 - factor) if trade.exit_price is not None else None
         out.append(
             Trade(
                 entry_bar_index=trade.entry_bar_index,
@@ -95,22 +91,14 @@ def _build_equity_curve(
     equity_curve: list[EquityPoint] = []
 
     for i, bar in enumerate(bars):
-        if (
-            current_trade is not None
-            and in_position
-            and current_trade.exit_bar_index == i
-        ):
+        if current_trade is not None and in_position and current_trade.exit_bar_index == i:
             assert current_trade.exit_price is not None
             cash = units * current_trade.exit_price
             units = 0.0
             in_position = False
             current_trade = next(trade_iter, None)
 
-        if (
-            current_trade is not None
-            and not in_position
-            and current_trade.entry_bar_index == i
-        ):
+        if current_trade is not None and not in_position and current_trade.entry_bar_index == i:
             units = cash / current_trade.entry_price
             cash = 0.0
             in_position = True
@@ -196,8 +184,7 @@ def _calc_metrics(
 
     if timeframe not in _TIMEFRAME_BARS_PER_YEAR:
         raise UnknownTimeframeError(
-            f"unknown timeframe {timeframe!r}; "
-            f"known timeframes: {sorted(_TIMEFRAME_BARS_PER_YEAR)}"
+            f"unknown timeframe {timeframe!r}; known timeframes: {sorted(_TIMEFRAME_BARS_PER_YEAR)}"
         )
     bars_per_year = _TIMEFRAME_BARS_PER_YEAR[timeframe]
 
@@ -206,21 +193,14 @@ def _calc_metrics(
     total_return = (final_equity / initial_capital) - 1.0
 
     if len(equities) >= 2:
-        returns = [
-            (equities[i] / equities[i - 1]) - 1.0
-            for i in range(1, len(equities))
-        ]
+        returns = [(equities[i] / equities[i - 1]) - 1.0 for i in range(1, len(equities))]
     else:
         returns = []
 
     if len(returns) >= 2:
         mean_return = statistics.fmean(returns)
         std_return = statistics.stdev(returns)
-        sharpe = (
-            mean_return / std_return * math.sqrt(bars_per_year)
-            if std_return > 0.0
-            else 0.0
-        )
+        sharpe = mean_return / std_return * math.sqrt(bars_per_year) if std_return > 0.0 else 0.0
     else:
         sharpe = 0.0
 

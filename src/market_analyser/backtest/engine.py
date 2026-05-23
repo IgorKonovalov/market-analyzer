@@ -89,11 +89,7 @@ def run(
         raise ValueError("bars must not be empty")
 
     params_cls = strategy_module.Params
-    params_instance: BaseParams
-    if isinstance(params, BaseParams):
-        params_instance = params
-    else:
-        params_instance = params_cls(**params)
+    params_instance: BaseParams = params if isinstance(params, BaseParams) else params_cls(**params)
 
     started_at = datetime.now(UTC)
 

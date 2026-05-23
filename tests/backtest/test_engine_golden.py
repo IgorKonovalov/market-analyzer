@@ -91,8 +91,7 @@ def test_matches_committed_golden_fixture() -> None:
     )
     for key in expected:
         assert actual[key] == expected[key], (
-            f"golden mismatch at field {key!r}: "
-            f"expected={expected[key]!r}, actual={actual[key]!r}"
+            f"golden mismatch at field {key!r}: expected={expected[key]!r}, actual={actual[key]!r}"
         )
 
 

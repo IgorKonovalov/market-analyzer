@@ -44,9 +44,7 @@ class Params(BaseParams):
     @model_validator(mode="after")
     def _fast_strictly_less_than_slow(self) -> Params:
         if self.fast >= self.slow:
-            raise ValueError(
-                f"fast ({self.fast}) must be strictly less than slow ({self.slow})"
-            )
+            raise ValueError(f"fast ({self.fast}) must be strictly less than slow ({self.slow})")
         return self
 
 
