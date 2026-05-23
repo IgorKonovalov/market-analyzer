@@ -1,6 +1,6 @@
 # 0009 — Resilience module + TradingView screener adapter
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
 > **Owner skill(s):** `dev` (all phases)
