@@ -14,14 +14,19 @@ flowchart LR
 
     subgraph Sidecar["Python sidecar (standalone process)"]
         MCPRoute["/mcp<br/>Streamable HTTP<br/>(mcp-secret bearer)"]
-        Routes["/healthz, /ohlcv,<br/>/annotations, /events (SSE),<br/>/settings/mcp-secret/rotate<br/>(renderer bearer)"]
+        Routes["/healthz, /ohlcv, /annotations,<br/>/backtests, /events (SSE),<br/>/settings/mcp-secret/rotate<br/>(renderer bearer)"]
         Bus["In-process event bus<br/>(per-subscriber asyncio queue)"]
-        Tools["MCP tools<br/>get_ohlcv, list/write_annotation,<br/>show_chart, update_chart,<br/>highlight_pattern"]
+        Tools["MCP tools<br/>get_ohlcv, list/write_annotation,<br/>show_chart, update_chart,<br/>highlight_pattern, run_backtest"]
         DL["MarketDataProvider +<br/>repositories"]
-        Cache[("SQLite cache.sqlite<br/>bars, annotations")]
+        Engine["Backtest engine<br/>(pure run + persist)"]
+        Cache[("SQLite cache.sqlite<br/>bars, annotations,<br/>backtest_runs")]
         MCPRoute --> Tools
         Tools --> DL
         Tools --> Bus
+        Tools --> Engine
+        Engine --> DL
+        Engine --> Cache
+        Engine --> Bus
         Routes --> DL
         Bus --> Routes
         DL --> Cache
@@ -33,7 +38,7 @@ flowchart LR
     end
 
     subgraph Electron["Electron viewer (optional, attachable)"]
-        View["Main process + Renderer<br/>(React, lightweight-charts)"]
+        View["Main process + Renderer<br/>(React, lightweight-charts)<br/>charts · equity curves · trade log"]
     end
 
     User -- "types prompts" --> Claude
@@ -50,7 +55,7 @@ flowchart LR
 Boundaries:
 
 - **CLI** is Claude Code with its built-in MCP client. The user's primary input device — symbols, timeframes, strategies, overlay choices, backtest parameters, render commands all originate here.
-- **Sidecar** is the single Python process. It serves two transports on one loopback port: MCP at `/mcp` (Streamable HTTP, agent-facing, per [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md)) and the renderer HTTP routes (viewer-facing, per [ADR-0002](../adrs/0002-ipc-local-http.md)). Both transports share the same data layer, repositories, and SQLite cache. The event bus is in-process — MCP tools publish; the SSE handler at `/events` is the sole subscriber-dispatch.
+- **Sidecar** is the single Python process. It serves two transports on one loopback port: MCP at `/mcp` (Streamable HTTP, agent-facing, per [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md)) and the renderer HTTP routes (viewer-facing, per [ADR-0002](../adrs/0002-ipc-local-http.md)). Both transports share the same data layer, repositories, and SQLite cache. The backtest engine (pure `run` + thin `persist`, per [ADR-0018](../adrs/0018-backtest-result-schema.md)) sits behind the `run_backtest` tool, persists to the `backtest_runs` table, and emits `run.completed v1`. The event bus is in-process — MCP tools and the engine publish; the SSE handler at `/events` is the sole subscriber-dispatch.
 - **User data dir** holds the two persisted secrets, each `0600`. `mcp-secret.json` is long-lived (ADR-0014); `sidecar.lock` is per-sidecar-launch (ADR-0016).
 - **Electron viewer** is optional. The sidecar runs without it; opening Electron attaches to the running sidecar via the lockfile (or spawns one if none is running). Closing Electron does not stop the sidecar.
 
@@ -59,7 +64,7 @@ Critical invariants:
 - **Cross-tenant bearer isolation.** MCP secret authenticates only on `/mcp/*`. Renderer secret authenticates only on the renderer routes. Each middleware uses constant-time comparison; the dispatcher routes by prefix.
 - **Single sidecar instance per user.** Enforced by `sidecar.lock` + PID liveness probe with `process_create_time` cross-check (ADR-0016).
 - **SQLite single-writer.** Falls out of the single-instance enforcement.
-- **No lookahead in agent-facing tools.** `get_ohlcv` and any future bar-reading tools forward `as_of=None` (live mode); a backtest-aware variant would be a separate tool, not an `as_of` parameter exposed to agents (per ADR-0014 and the [CLAUDE.md non-negotiable](../../../CLAUDE.md#cross-cutting-non-negotiables)).
+- **No lookahead in agent-facing tools.** `get_ohlcv` and bar-reading tools forward `as_of=None` (live mode). The backtest-aware path is the separate `run_backtest` tool (per [ADR-0018](../adrs/0018-backtest-result-schema.md)), not an `as_of` parameter bolted onto `get_ohlcv`; the engine enforces the next-bar-open fill seam internally (see [`strategy-execution-sequence.md`](strategy-execution-sequence.md)) and re-runs deterministically (per ADR-0014 and the [CLAUDE.md non-negotiable](../../../CLAUDE.md#cross-cutting-non-negotiables)).
 
 ## Lifecycle: cold start vs. attach vs. agent-only
 
@@ -156,7 +161,9 @@ sequenceDiagram
 
 The `refresh()` call coalesces concurrent invocations (phase 4.3) so a renderer-side error storm collapses to one attach cycle upstream. The "refresh fires at most once per `onopen`-bounded window" rule (phase 4.4) prevents an infinite refresh loop if the new sidecar also can't be reached.
 
-## How this supersedes earlier diagrams
+## Companion diagrams
 
-- [`bootstrap-component-map.md`](bootstrap-component-map.md) still describes the post-Plan-0001 layout where Electron supervises the sidecar via env-var bearer and there is no MCP route. That diagram is correct for *Plan 0001 era* but is partially stale after Plan 0006 (no MCP route or `mcp-secret.json` shown) and is fully outdated after [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md). A follow-up at the next diagram-refresh touch either annotates it as "Plan 0001 era" or rewrites it to point at this file. Tracked as a Plan 0006 followup.
-- [`strategy-execution-sequence.md`](strategy-execution-sequence.md) is unchanged by this work — strategy execution lives in the sidecar and remains independent of which client (agent vs viewer) requested the run.
+This file owns the **process/component map and the sidecar lifecycle**. Two companions cover narrower cuts:
+
+- [`bootstrap-component-map.md`](bootstrap-component-map.md) — the OHLCV walking-skeleton **data flow** (renderer → sidecar → provider → cache/Yahoo) and the **SQLite schema**. Reach for it when the question is "how does a single chart request resolve" or "what shape is a table", not "how do the processes fit together".
+- [`strategy-execution-sequence.md`](strategy-execution-sequence.md) — the **backtest runtime order** and the next-bar-open anti-lookahead seam. Independent of which client (agent vs viewer) requested the run.

@@ -1,66 +1,27 @@
-# Bootstrap component map
+# OHLCV data flow and persistence schema
 
-Source of truth for the post-bootstrap component layout under [Plan 0001](../plans/0001-bootstrap.md). Update whenever a new component crosses a process or package boundary.
+Companion to [`claude-cli-driven-architecture.md`](claude-cli-driven-architecture.md), which owns the process/component map and the sidecar lifecycle. This file covers two narrower cuts:
 
-## Process and package boundaries
+1. How a single OHLCV chart request resolves through the data layer (cache vs. fetch).
+2. The SQLite schema as actually shipped.
 
-```mermaid
-flowchart LR
-    subgraph Shell[Electron shell - desktop/]
-        Main[main process - Node]
-        Preload[preload - contextBridge]
-        Renderer[renderer - React/TS]
-        Main --> Preload --> Renderer
-    end
+Update the data-flow diagram when the provider's cache decision changes. The schema diagram is **illustrative** — Alembic migrations under `src/market_analyser/persistence/migrations/` are the source of truth for exact columns.
 
-    subgraph Sidecar[Python sidecar - src/market_analyser/]
-        API[FastAPI app - api/]
-        Provider["MarketDataProvider Protocol<br/>data/provider.py"]
-        Adapters[Adapters - data/adapters/]
-        Persistence[(SQLite via repository - persistence/)]
-        Config[(config.json)]
-        Migrations[Alembic migrations]
-        API --> Provider
-        Provider --> Adapters
-        Provider --> Persistence
-        API --> Config
-        Migrations -.applies on startup.-> Persistence
-    end
+## Walking-skeleton data flow — OHLCV chart for one symbol
 
-    subgraph External[External sources]
-        Yahoo[Yahoo Finance]
-    end
-
-    Main -. "spawns + supervises<br/>(--port argv;<br/>MARKET_ANALYSER_SECRET env, ADR-0011)" .-> API
-    Renderer -->|"HTTP 127.0.0.1<br/>Bearer per-launch secret"| API
-    Adapters --> Yahoo
-```
-
-Boundaries:
-
-- **Shell** is the Electron app — its only domain responsibility is supervising the Python sidecar and rendering the UI. No business logic.
-- **Sidecar** is the Python process. Owns the data layer, persistence, and (later) backtest and strategy execution. Single source of truth for all market-data answers.
-- **External** is the network. Anything in here can return garbage, time out, or rate-limit; adapters validate at the seam. Per [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) each external source is reached via an in-house adapter (currently only Yahoo for OHLCV); additional sources (TradingView screener, news, sentiment) ship in their own future plans.
-
-The `MarketDataProvider` arrow is the only data-layer dependency `API` is allowed to take. Adapters are package-internal — callers never import them.
-
-## Walking-skeleton sequence — OHLCV chart for one symbol
+The sidecar migrates the SQLite database to head (Alembic) on startup before serving; that lifecycle step lives in the [system map's cold-start sequence](claude-cli-driven-architecture.md). From a warm sidecar, a chart request resolves like this:
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant U as User
     participant R as Renderer (React)
-    participant M as Main (Node)
     participant S as Sidecar (FastAPI)
     participant P as MarketDataProvider
     participant Repo as Repository (SQLite)
     participant YA as Yahoo adapter
     participant Yahoo as Yahoo Finance
 
-    M->>S: spawn(--port, MARKET_ANALYSER_SECRET env)
-    S->>Repo: migrate to head (Alembic)
-    S-->>M: GET /healthz 200
     U->>R: open "AAPL 1d" view
     R->>S: GET /ohlcv?symbol=AAPL&timeframe=1d
     S->>P: get_ohlcv("AAPL","1d",as_of=None)
@@ -69,7 +30,7 @@ sequenceDiagram
         Repo-->>P: list[Bar]
     else miss or stale
         P->>YA: fetch_ohlcv(...)
-        YA->>Yahoo: HTTPS (urllib, in-house fetcher)
+        YA->>Yahoo: HTTPS via ResilientHttpClient
         Yahoo-->>YA: rows
         YA-->>P: list[Bar]
         P->>Repo: upsert_bars(...)
@@ -79,11 +40,11 @@ sequenceDiagram
     R-->>U: candlestick chart
 ```
 
-Note the cache-hit/miss branch: this is where [ADR-0006](../adrs/0006-persistence-layout.md) and [ADR-0007](../adrs/0007-market-data-provider.md) intersect. The provider is the only code that decides "fetch fresh or serve from cache" — adapters never touch persistence directly.
+The cache-hit/miss branch is where [ADR-0006](../adrs/0006-persistence-layout.md) and [ADR-0007](../adrs/0007-market-data-provider.md) intersect: the provider is the only code that decides "fetch fresh or serve from cache" — adapters never touch persistence directly. External fetches go through the shared `ResilientHttpClient` ([ADR-0019](../adrs/0019-external-http-adapter-resilience.md)), so retry/backoff/TTL behaviour is identical across every adapter. (Plan 0013 makes the miss branch's partial-result and async-backfill behaviour explicit on the agent-facing tool; the renderer path above is unchanged.)
 
-## Initial SQLite schema (illustrative)
+## SQLite schema (illustrative)
 
-Final shape is owned by Alembic migrations under `src/market_analyser/persistence/migrations/`.
+Three independent tables today. There is **no `strategy` table** (strategies are file-discovered via `discover()`) and **no `trade` table** (the full trade list lives on disk in the backtest artifact — only a searchable projection is indexed in SQLite, per [ADR-0018](../adrs/0018-backtest-result-schema.md)).
 
 ```mermaid
 erDiagram
@@ -96,33 +57,38 @@ erDiagram
         float low
         float close
         float volume
-        datetime ingested_at
         string source
+        datetime ingested_at
     }
-    STRATEGY {
+    ANNOTATIONS {
         string id PK
-        string name
-        string version
-        text source_path
+        string symbol
+        string timeframe
+        datetime event_ts
+        string kind
+        string label
+        string agent_id
         datetime created_at
     }
-    BACKTEST_RUN {
-        string id PK
-        string strategy_id FK
-        datetime started_at
+    BACKTEST_RUNS {
+        string run_id PK
+        string strategy_id
+        string strategy_version
+        string symbol
+        string timeframe
+        datetime range_start
+        datetime range_end
+        float total_return
         float sharpe
         float max_drawdown
-        text params_json
+        float win_rate
+        int trade_count
+        datetime finished_at
+        string artifact_path
+        string engine_version
     }
-    TRADE {
-        string id PK
-        string run_id FK
-        datetime entry_ts
-        datetime exit_ts
-        float pnl
-    }
-    BACKTEST_RUN ||--o{ TRADE : produces
-    BACKTEST_RUN ||--|| STRATEGY : uses
 ```
 
-The `BARS` table's `source` column records which adapter wrote the row — important for reproducibility and for debugging "why does this backtest say AAPL=$143 when Yahoo says $142".
+- **`bars`** (migration `0001`) — one OHLCV row, composite PK `(symbol, timeframe, event_ts)`. `source` records which adapter wrote the row, so a backtest can be traced to its data provenance. `event_ts` (market time) is deliberately distinct from `ingested_at` (wall-clock) — that gap is what makes historical replay deterministic ([ADR-0006](../adrs/0006-persistence-layout.md)).
+- **`annotations`** (migration `0002`, Plan 0006) — agent-written chart markers. PK is a uuid `id` so two identical `(symbol, timeframe, event_ts)` inserts don't silently dedupe; the composite index `(symbol, timeframe, event_ts)` serves the chart-marker query.
+- **`backtest_runs`** (migration `0003`, Plan 0008) — the searchable projection of a `BacktestResult` ([ADR-0018](../adrs/0018-backtest-result-schema.md)). SQLite holds only the columns worth filtering/sorting by; the canonical artifact (`spec.json`, `result.json`, `equity_curve.json`, including every trade) lives on disk under `runs/<run_id>/`. `artifact_path` is relative to the sidecar's `runs_dir`; `engine_version` lets regenerated-fixture runs be filtered apart from legacy runs.
