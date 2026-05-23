@@ -60,6 +60,24 @@ The `<data-dir>` is the canonical shared data directory ([ADR-0020](../architect
 
 `.mcp.json` carries the MCP bearer inline. It is always gitignored (`.gitignore` blocks the path) and Claude Code reads it from the repo root at startup.
 
+## Screening
+
+The `screener_query` MCP tool ([Plan 0009](../architecture/plans/0009-resilience-and-tradingview-screener.md)) lets the agent find candidates across a whole market universe, not just symbols you name. Ask in natural language and the agent translates to a filter query:
+
+- *"find oversold large-cap US stocks on the daily"* — `RSI < 30` plus a `market_cap_basic` floor, `market="america"`.
+- *"show me crypto pairs with a bullish MACD cross"* — MACD filters, `market="crypto"`.
+- *"what NASDAQ tickers have a Bollinger-band squeeze right now"* — BB-width filters, `exchange="NASDAQ"`.
+
+Filters are a dict keyed by TradingView column with operator sub-dicts, e.g. `{"RSI": {"lt": 30}, "market_cap_basic": {"gte": 1e10}}`; operators are `lt`/`lte`/`gt`/`gte`/`eq`/`ne`. Unknown columns are rejected (strict by design — a typo fails fast rather than returning a wrong screen).
+
+> **Screener results are wall-clock-sensitive.** "RSI < 30 right now" is not the same query five minutes from now, so the tool has **no historical replay** — there is no `as_of` parameter, and each result carries a `queried_at` timestamp. (Point-in-time OHLCV with `as_of` is a separate path; the screener is live-only.)
+
+The live upstream is TradingView's public scanner (reverse-engineered; it may change without notice). The end-to-end smoke is network-marked and local-only — run it with:
+
+```
+uv run pytest -m network tests/integration/test_screener_end_to_end.py
+```
+
 ## Troubleshooting
 
 ### Claude Code shows the MCP server as `disconnected` or returns 401
