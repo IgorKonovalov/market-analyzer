@@ -1,0 +1,179 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.backButton {
+  font: inherit;
+  font-size: 13px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.backButton:hover {
+  background: var(--color-bg-hover);
+}
+
+.backButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metricsSection,
+.chartSection,
+.tradesSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chartSection {
+  flex: 1;
+  min-height: 240px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+.metricRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-elev);
+}
+
+.metricRow dt {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.metricRow dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
+}
+
+.equityChart {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-elev);
+}
+
+.emptyTrades {
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--color-fg-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.tableScroll {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.trades {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.trades thead {
+  background: var(--color-bg-elev);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.trades th,
+.trades td {
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.trades tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.numCol {
+  text-align: right;
+}
+
+.openBadge,
+.closedBadge {
+  display: inline-block;
+  padding: 1px var(--space-1);
+  border-radius: 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.openBadge {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--color-accent);
+}
+
+.closedBadge {
+  background: var(--color-bg-hover);
+  color: var(--color-fg-muted);
+}

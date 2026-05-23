@@ -157,7 +157,7 @@ export function sanitizeApiErrorBody(body: string): string {
   return text || '(empty body)'
 }
 
-async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function callJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await sidecarFetch(path, init)
   if (!res.ok) {
     throw new ApiError(res.status, await res.text())
