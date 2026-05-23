@@ -1,0 +1,19 @@
+{
+  "skill_name": "backtester",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "run-mode-block-on-missing-engine",
+      "prompt": "Backtest the RSI strategy with default params on the BTC 1h CSV in tests/fixtures, save the result and a markdown report.",
+      "expected_output": "Skill recognizes the backtest engine does not exist yet, refuses to fake a run, names the missing phase (Plan 0002 phase 3 or src/market_analyser/backtest/engine.py), and offers a concrete fork (implement-mode OR route to architect). Does not write result.json or report.md.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "eval_name": "compare-mode-scope-check",
+      "prompt": "Compare RSI(period=14) and RSI(period=7) on the BTC 1h fixture, which one wins on Sharpe?",
+      "expected_output": "Skill enters Mode 2 (compare). Restates the comparison plan (2 runs, period={14,7}, same fixture, same costs). Recognizes that running requires the engine, which doesn't exist yet. Does not fabricate a 'winner' or metrics.",
+      "files": []
+    }
+  ]
+}

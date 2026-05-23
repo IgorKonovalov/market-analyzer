@@ -1,0 +1,94 @@
+# positions.example.yaml — committed template for positions/positions.yaml.
+#
+# Copy this to positions/positions.yaml (which is gitignored) and fill in your
+# real positions. The defi-analyst skill reads positions.yaml on every Mode 2/3/4
+# task; missing positions.yaml means those modes will halt and ask for one.
+#
+# Wallet addresses in this file are referenced in reports as "alias / 0x1234…abcd"
+# (full address masked). The full address is only included in the gitignored
+# report.json for the user's own tooling — never in committed markdown.
+
+wallets:
+  - alias: main
+    address: "0x0000000000000000000000000000000000000000"   # replace with your wallet
+    chains: [ethereum, base, arbitrum]
+
+  # Optional: separate cold / hot wallets — declare each one and tag positions
+  # to whichever wallet holds them.
+  # - alias: cold
+  #   address: "0x..."
+  #   chains: [ethereum]
+
+positions:
+  # ----- Aerodrome LP (Slipstream / v3-style, concentrated) -----
+  - id: aero-cbbtc-eth-1
+    wallet: main
+    protocol: aerodrome
+    chain: base
+    kind: lp
+    pool: "cbBTC/ETH"
+    pool_address: "0x0000000000000000000000000000000000000000"
+    pool_type: slipstream          # vamm | samm | slipstream
+    nft_token_id: 12345            # required for slipstream / v3 positions
+    range:                         # required for slipstream / v3 positions
+      tick_lower: -887200
+      tick_upper: -886000
+    entry:
+      date: 2026-03-12
+      amounts: {cbBTC: 0.42, ETH: 7.1}
+      cost_basis_usd: 24800
+    denomination: ETH              # report P&L in ETH terms (and USD)
+    notes: "narrow-range LP; rebalance when out-of-range > 7 days"
+
+  # ----- Aave v3 supply + borrow -----
+  - id: aave-eth-supply-borrow-1
+    wallet: main
+    protocol: aave-v3
+    chain: ethereum
+    kind: lending_combined         # for paired supply + borrow on the same wallet
+    supplied:
+      - asset: WETH
+        amount: 10.0
+        e_mode: false
+    borrowed:
+      - asset: USDC
+        amount: 12000
+        rate_mode: variable        # variable | stable
+    entry:
+      date: 2026-02-01
+      cost_basis_usd_collateral: 33000
+      cost_basis_usd_debt: 12000
+    denomination: USD
+    notes: "borrowing USDC against ETH to fund a stable yield strategy"
+
+  # ----- Aave v3 supply only -----
+  # - id: aave-usdc-supply-1
+  #   wallet: main
+  #   protocol: aave-v3
+  #   chain: base
+  #   kind: lending_supply
+  #   supplied:
+  #     - asset: USDC
+  #       amount: 15000
+  #   entry:
+  #     date: 2026-04-01
+  #     cost_basis_usd: 15000
+  #   denomination: USD
+
+  # ----- Uniswap v3 LP (Ethereum mainnet) -----
+  # - id: uni-usdc-eth-1
+  #   wallet: main
+  #   protocol: uniswap-v3
+  #   chain: ethereum
+  #   kind: lp
+  #   pool: "USDC/ETH 0.05%"
+  #   pool_address: "0x..."
+  #   nft_token_id: 67890
+  #   range:
+  #     tick_lower: 200000
+  #     tick_upper: 210000
+  #   entry:
+  #     date: 2026-01-15
+  #     amounts: {USDC: 10000, ETH: 3.2}
+  #     cost_basis_usd: 20000
+  #   denomination: USD

@@ -1,0 +1,19 @@
+{
+  "skill_name": "architect",
+  "evals": [
+    {
+      "id": 0,
+      "name": "tauri-vs-electron-adr",
+      "prompt": "we need to decide Tauri vs Electron for the desktop shell of market-analyser. write an ADR. context: solo dev, want fast startup, prefer smaller install footprint, but i also know nothing about Rust so the build pipeline can't require me to write Rust. give me the decision.",
+      "expected_output": "An ADR in docs/architecture/adrs/0001-*.md with status, context, a clear decision (one or the other, not 'it depends'), positive and negative consequences, and at least one rejected alternative with a one-sentence reason.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "strategy-interface-design",
+      "prompt": "design the 'strategy' interface for market-analyser. i mean — what does a strategy actually look like in code, so that the strategy-author skill knows what to write and the backtester knows what to consume. should it be a class? a function? config + function? produce whatever is needed (plan, ADR, diagram, whatever) so the design is locked in.",
+      "expected_output": "Either a plan or an ADR (or both) defining a concrete strategy interface — class vs function vs hybrid, with the inputs/outputs spelled out concretely enough that two separate skills could implement against it. Should reference the sibling-skill handoff and include a diagram.",
+      "files": []
+    }
+  ]
+}

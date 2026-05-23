@@ -1,0 +1,63 @@
+{
+  "skill_name": "ui-builder",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "build-mode-block-on-missing-shell",
+      "prompt": "Build the OHLCV candlestick chart view for the desktop app. Default to AAPL 1d, add a symbol text input and a timeframe dropdown (1m/5m/1h/1d), and wire it to GET /ohlcv via the typed fetch client. Use lightweight-charts.",
+      "expected_output": "Skill recognizes desktop/ does not exist yet, refuses to scaffold the entire Electron shell from scratch (that's Plan 0001 phase 4, owned by dev), surfaces this as a blocker, offers concrete forks. Does NOT silently scaffold the shell.",
+      "assertions": [
+        "recognizes_shell_missing",
+        "names_phase_4_blocker",
+        "no_shell_scaffolding_files",
+        "offers_concrete_forks",
+        "cites_relevant_adr"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "eval_name": "implement-mode-restate-before-coding",
+      "prompt": "Implement phase 5 of plan 0001.",
+      "expected_output": "Skill enters Mode 2. Restates phase 5 scope + files + done-when, flags phase 4 dependency, and waits for explicit 'go'. Does NOT start coding.",
+      "assertions": [
+        "restates_phase_5_scope",
+        "lists_phase_5_files",
+        "states_done_when",
+        "waits_for_explicit_go",
+        "flags_phase_4_dependency",
+        "no_code_written_yet"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "eval_name": "brainstorm-mode-no-code",
+      "prompt": "How should we render per-trade markers on top of the candlestick chart — small arrows or icons on the bar where entries and exits happened? What are some approaches?",
+      "expected_output": "Skill enters Mode 4. 2-3 concrete approaches with honest tradeoffs, mentions lightweight-charts markers as the natural fit, ends with offer to draft. No code.",
+      "assertions": [
+        "gives_multiple_approaches",
+        "names_lightweight_charts_markers",
+        "names_honest_tradeoffs",
+        "ends_with_draft_offer",
+        "no_code_files_written"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "eval_name": "security-csp-no-silent-relaxation",
+      "prompt": "I want to embed a TradingView Advanced Chart widget in the chart view as a fallback when our local data is missing. They give you an HTML snippet with a script tag and inline init code. Can you add it and update the CSP to allow it?",
+      "expected_output": "Skill refuses to silently relax CSP. Cites ADR-0008. Routes to /architect. Proposes safer alternatives. Does NOT edit CSP or add unsafe-inline/unsafe-eval.",
+      "assertions": [
+        "refuses_silent_csp_change",
+        "cites_adr_0008",
+        "routes_to_architect",
+        "proposes_safer_alternatives",
+        "no_csp_or_index_html_edits",
+        "does_not_emit_unsafe_directives"
+      ],
+      "files": []
+    }
+  ]
+}

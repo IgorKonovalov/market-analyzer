@@ -30,8 +30,11 @@ coverage.xml
 .DS_Store
 Thumbs.db
 
-# Claude Code skills and per-machine settings
-.claude/
+# Claude Code: commit the project skills, ignore per-machine settings.
+# skill-creator is intentionally excluded (general-purpose meta tooling).
+.claude/*
+!.claude/skills/
+.claude/skills/skill-creator/
 skills-lock.json
 
 # Local secrets / app data
