@@ -68,6 +68,21 @@ class AnnotationsRepository:
         with self._session_factory() as session:
             return [_row_to_annotation(row) for row in session.scalars(stmt)]
 
+    def delete(self, annotation_id: str) -> bool:
+        """Delete the annotation with `annotation_id`. Returns True iff a row was removed.
+
+        A missing id is a no-op returning False, so the HTTP layer can answer 404
+        rather than 500. Added for the Plan 0016 golden-path smoke, whose cleanup
+        step removes exactly the rows it wrote.
+        """
+        with self._session_factory() as session:
+            row = session.get(AnnotationRow, annotation_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
+
 
 def _row_to_annotation(row: AnnotationRow) -> Annotation:
     event_ts = row.event_ts if row.event_ts.tzinfo is not None else row.event_ts.replace(tzinfo=UTC)

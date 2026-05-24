@@ -182,3 +182,43 @@ def test_empty_window_returns_empty_list(client: TestClient) -> None:
     response = client.get("/annotations", params=_params(), headers=_renderer_auth())
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_delete_removes_annotation(client: TestClient, repo: AnnotationsRepository) -> None:
+    """DELETE /annotations/{id} + renderer bearer returns 204 and the row is gone."""
+    ann = Annotation(
+        symbol="AAPL",
+        timeframe="1d",
+        event_ts=datetime(2026, 4, 15, tzinfo=UTC),
+        kind=AnnotationKind.BULLISH_MARKER,
+        agent_id="smoke",
+    )
+    repo.insert(ann)
+
+    delete_response = client.delete(f"/annotations/{ann.id}", headers=_renderer_auth())
+    assert delete_response.status_code == 204, delete_response.text
+    assert delete_response.content == b""
+
+    get_response = client.get("/annotations", params=_params(), headers=_renderer_auth())
+    assert get_response.status_code == 200
+    assert get_response.json() == []
+
+
+def test_delete_unknown_id_returns_404(client: TestClient) -> None:
+    response = client.delete("/annotations/does-not-exist", headers=_renderer_auth())
+    assert response.status_code == 404
+    assert "does-not-exist" in response.json()["detail"]
+
+
+def test_delete_without_bearer_returns_401(client: TestClient) -> None:
+    response = client.delete("/annotations/whatever")
+    assert response.status_code == 401
+
+
+def test_delete_with_mcp_bearer_returns_401(client: TestClient) -> None:
+    """Cross-tenant escalation blocked: the MCP bearer must not reach the delete path."""
+    response = client.delete(
+        "/annotations/whatever",
+        headers={"Authorization": f"Bearer {MCP_SECRET}"},
+    )
+    assert response.status_code == 401
