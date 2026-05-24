@@ -3,7 +3,7 @@
 > **Status:** accepted
 > **Date:** 2026-05-20
 > **Related plan(s):** [0007-live-agent-driven-viewer](../plans/0007-live-agent-driven-viewer.md)
-> **Related ADRs:** [ADR-0002](0002-ipc-local-http.md) (renderer ↔ sidecar transport), [ADR-0011](0011-bearer-secret-transport.md) (per-launch bearer — **refined here**), [ADR-0014](0014-mcp-as-second-sidecar-protocol.md) (closes deferred standalone question), [ADR-0015](0015-claude-code-primary-control-surface.md) (motivates this)
+> **Related ADRs:** [ADR-0002](0002-ipc-local-http.md) (renderer ↔ sidecar transport), [ADR-0011](0011-bearer-secret-transport.md) (per-launch bearer — **refined here**), [ADR-0014](0014-mcp-as-second-sidecar-protocol.md) (closes deferred standalone question), [ADR-0015](0015-claude-code-primary-control-surface.md) (motivates this), [ADR-0022](0022-sidecar-shutdown-cleanup-in-lifespan.md) (refines the lockfile-cleanup-on-shutdown mechanism — moves it from a post-serve `finally` to the app lifespan)
 
 ## Context
 
