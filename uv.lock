@@ -500,6 +500,18 @@ wheels = [
 ]
 
 [[package]]
+name = "feedparser"
+version = "6.0.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sgmllib3k" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ff/aa/7af346ebeb42a76bf108027fe7f3328bb4e57a3a96e53e21fd9ef9dd6dd0/feedparser-6.0.11.tar.gz", hash = "sha256:c9d0407b64c6f2a065d0ebb292c2b35c01050cc0dc33757461aaabdc4c4184d5", size = 286197, upload-time = "2023-12-10T16:03:20.854Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/d4/8c31aad9cc18f451c49f7f9cfb5799dadffc88177f7917bc90a66459b1d7/feedparser-6.0.11-py3-none-any.whl", hash = "sha256:0be7ee7b395572b19ebeb1d6aafb0028dee11169f1c934e0ed67d54992f4ad45", size = 81343, upload-time = "2023-12-10T16:03:19.484Z" },
+]
+
+[[package]]
 name = "filelock"
 version = "3.29.0"
 source = { registry = "https://pypi.org/simple" }
@@ -791,6 +803,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "feedparser" },
     { name = "mcp" },
     { name = "psutil" },
     { name = "pydantic" },
@@ -817,6 +830,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = "==1.18.4" },
     { name = "fastapi", specifier = "==0.136.1" },
+    { name = "feedparser", specifier = "==6.0.11" },
     { name = "mcp", specifier = "==1.27.1" },
     { name = "psutil", specifier = "==7.2.2" },
     { name = "pydantic", specifier = "==2.13.3" },
@@ -1765,6 +1779,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/33/f1/9614e03e1cdcbf9437570b5400ced8a720b5db22b28d8e0f1bda429f660d/ruff-0.15.12-py3-none-win_amd64.whl", hash = "sha256:c87a162d61ab3adca47c03f7f717c68672edec7d1b5499e652331780fe74950d", size = 11837758, upload-time = "2026-04-24T18:17:00.113Z" },
     { url = "https://files.pythonhosted.org/packages/c0/98/6beb4b351e472e5f4c4613f7c35a5290b8be2497e183825310c4c3a3984b/ruff-0.15.12-py3-none-win_arm64.whl", hash = "sha256:a538f7a82d061cee7be55542aca1d86d1393d55d81d4fcc314370f4340930d4f", size = 11120821, upload-time = "2026-04-24T18:16:57.979Z" },
 ]
+
+[[package]]
+name = "sgmllib3k"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/bd/3704a8c3e0942d711c1299ebf7b9091930adae6675d7c8f476a7ce48653c/sgmllib3k-1.0.0.tar.gz", hash = "sha256:7868fb1c8bfa764c1ac563d3cf369c381d1325d36124933a726f29fcdaa812e9", size = 5750, upload-time = "2010-08-24T14:33:52.445Z" }
 
 [[package]]
 name = "six"
