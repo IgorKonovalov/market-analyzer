@@ -10,8 +10,8 @@ Method-by-method readiness for Plan 0001:
     get_quote          stubbed — earned by a later plan.
     search_symbols     stubbed — earned by a later plan.
     get_screener       implemented in Plan 0009 (TradingView screener adapter).
-    get_sentiment      stubbed — earned by a sentiment-UI plan.
-    get_news           stubbed — earned by a sentiment-UI plan.
+    get_sentiment      implemented in Plan 0010 (news-derived VADER sentiment).
+    get_news           implemented in Plan 0010 (RSS news adapter).
 """
 
 from __future__ import annotations
@@ -73,7 +73,9 @@ class MarketDataProvider(Protocol):
 
     def get_news(
         self,
-        symbol: str,
-        window: str,
+        symbol: str | None = None,
+        window: str = "24h",
+        limit: int = 50,
+        with_sentiment: bool = False,
         as_of: datetime | None = None,
     ) -> Sequence[NewsItem]: ...

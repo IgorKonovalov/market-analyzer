@@ -80,8 +80,10 @@ class _FakeProvider:
 
     def get_news(
         self,
-        symbol: str,
-        window: str,
+        symbol: str | None = None,
+        window: str = "24h",
+        limit: int = 50,
+        with_sentiment: bool = False,
         as_of: datetime | None = None,
     ) -> Sequence[NewsItem]:
         raise NotImplementedError

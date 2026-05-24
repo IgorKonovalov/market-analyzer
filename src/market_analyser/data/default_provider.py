@@ -173,8 +173,10 @@ class DefaultMarketDataProvider:
 
     def get_news(
         self,
-        symbol: str,
-        window: str,
+        symbol: str | None = None,
+        window: str = "24h",
+        limit: int = 50,
+        with_sentiment: bool = False,
         as_of: datetime | None = None,
     ) -> Sequence[NewsItem]:
         # News is wall-clock-sensitive in the same way screener results are:
@@ -185,7 +187,9 @@ class DefaultMarketDataProvider:
                 "as_of is not supported for news queries — results are "
                 "wall-clock-sensitive (Plan 0010 / ADR-0019)",
             )
-        return self._news.fetch(symbol=symbol, window=window)
+        return self._news.fetch(
+            symbol=symbol, window=window, limit=limit, with_sentiment=with_sentiment
+        )
 
 
 def _coverage_gaps(

@@ -194,7 +194,12 @@ def test_healthz_with_mcp_bearer_omits_data_dir(tmp_path: Path) -> None:
             raise NotImplementedError
 
         def get_news(
-            self, symbol: str, window: str, as_of: datetime | None = None
+            self,
+            symbol: str | None = None,
+            window: str = "24h",
+            limit: int = 50,
+            with_sentiment: bool = False,
+            as_of: datetime | None = None,
         ) -> Sequence[NewsItem]:
             raise NotImplementedError
 
