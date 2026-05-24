@@ -17,6 +17,7 @@ dependencies = [
     "tradingview-screener==3.2.0",
     "tradingview-ta==3.3.0",
     "uvicorn[standard]==0.46.0",
+    "vadersentiment==3.3.2",
 ]
 
 [project.scripts]
@@ -100,10 +101,11 @@ module = "tests.*"
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-# feedparser ships no type information (no py.typed, no stubs on typeshed). Its
-# output is treated as untrusted at the boundary and extracted defensively in
-# rss_news.py, so the dynamic typing stays contained to that adapter.
-module = "feedparser"
+# feedparser and vaderSentiment ship no type information (no py.typed, no stubs
+# on typeshed). Their output is treated as untrusted at the boundary and
+# extracted defensively (rss_news.py, _vader.py), so the dynamic typing stays
+# contained to those adapters.
+module = ["feedparser", "vaderSentiment.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
