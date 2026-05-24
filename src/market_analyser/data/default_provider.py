@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from itertools import pairwise
 from typing import Any
 
+from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.types import (
@@ -44,10 +45,12 @@ class DefaultMarketDataProvider:
         *,
         yahoo: YahooAdapter | None = None,
         screener: TradingViewScreenerAdapter | None = None,
+        news: RssNewsAdapter | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
         self._screener = screener if screener is not None else TradingViewScreenerAdapter()
+        self._news = news if news is not None else RssNewsAdapter()
         self._repo = bar_repository
 
     def get_ohlcv(
@@ -146,9 +149,15 @@ class DefaultMarketDataProvider:
         window: str,
         as_of: datetime | None = None,
     ) -> Sequence[NewsItem]:
-        raise NotImplementedError(
-            "get_news is not implemented in Plan 0001 — see plan 0001 followups",
-        )
+        # News is wall-clock-sensitive in the same way screener results are:
+        # there is no cached/replayable source to honour `as_of` against, so
+        # reject it at the boundary (Plan 0010 / ADR-0019).
+        if as_of is not None:
+            raise ValueError(
+                "as_of is not supported for news queries — results are "
+                "wall-clock-sensitive (Plan 0010 / ADR-0019)",
+            )
+        return self._news.fetch(symbol=symbol, window=window)
 
 
 def _coverage_gaps(

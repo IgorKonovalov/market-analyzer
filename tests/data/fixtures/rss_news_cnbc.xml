@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CNBC Top News</title>
+    <link>https://www.cnbc.com/</link>
+    <description>CNBC business and market headlines.</description>
+    <item>
+      <title>Stocks rally on strong earnings</title>
+      <link>https://www.cnbc.com/2026/05/20/stocks-rally-on-strong-earnings.html</link>
+      <description>Major indices climb after a run of upbeat reports.</description>
+      <pubDate>Wed, 20 May 2026 08:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>BTC ETF sees record inflows</title>
+      <link>https://www.cnbc.com/2026/05/20/btc-etf-record-inflows.html</link>
+      <description>Institutional demand rises sharply this quarter.</description>
+      <pubDate>Wed, 20 May 2026 06:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

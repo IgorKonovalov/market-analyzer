@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Yahoo Finance</title>
+    <link>https://finance.yahoo.com/</link>
+    <description>Yahoo Finance top headlines.</description>
+    <item>
+      <title>Together they invest in private markets</title>
+      <link>https://finance.yahoo.com/news/together-they-invest-private-markets.html</link>
+      <description>A profile of a growing co-investment fund.</description>
+      <pubDate>Wed, 20 May 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Apple unveils new product line</title>
+      <link>https://finance.yahoo.com/news/apple-unveils-new-product-line.html</link>
+      <description>AAPL event draws a large crowd of analysts.</description>
+      <pubDate>Wed, 20 May 2026 07:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

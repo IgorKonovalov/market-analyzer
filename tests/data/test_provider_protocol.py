@@ -4,7 +4,8 @@ These tests are the "forgotten stub" tripwire from ADR-0007: every Protocol
 method is reachable, `get_ohlcv` works in phase 2, and the still-unimplemented
 ones raise `NotImplementedError` with a message identifying Plan 0001 as the
 home plan. `get_screener` graduated out of this list in Plan 0009 (positive
-coverage lives in `test_tradingview_screener_adapter.py`).
+coverage lives in `test_tradingview_screener_adapter.py`); `get_news` graduated
+in Plan 0010 (positive coverage lives in `test_rss_news_adapter.py`).
 """
 
 from __future__ import annotations
@@ -60,7 +61,6 @@ def test_get_ohlcv_is_implemented() -> None:
         ("get_quote", ("AAPL",)),
         ("search_symbols", ("apple",)),
         ("get_sentiment", ("AAPL", "1d")),
-        ("get_news", ("AAPL", "1d")),
     ],
 )
 def test_unimplemented_methods_are_reachable_and_raise(

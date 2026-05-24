@@ -109,11 +109,15 @@ class SentimentSample(BaseModel):
 
 
 class NewsItem(BaseModel):
-    """A single news item. Reserved for phase that implements get_news."""
+    """A single news item from the RSS news adapter (Plan 0010)."""
 
     model_config = ConfigDict(frozen=True)
 
-    symbol: str = Field(min_length=1)
+    # "" = no symbol filter was applied (fetch(symbol=None)); otherwise the
+    # applied filter, e.g. "BTC". Permits "" so the no-filter sentinel is
+    # constructible; kept as `str` (not `str | None`) so downstream code does
+    # not grow Optional-handling. See plan 0010 phase 1.
+    symbol: str = ""
     title: str
     url: str
     published_at: datetime
