@@ -1,6 +1,6 @@
 # 0016 — Golden-path smoke for shipped functionality
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (phases 1–2), `human` (phase 3)
