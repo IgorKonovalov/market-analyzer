@@ -18,7 +18,7 @@ Land the shared resilience module `data/_http.py` (TTL cache + retry + backoff +
 Two architectural threads converge here:
 
 1. **Tier 2 (data breadth) needs a base.** The roadmap names five more anonymous-or-cheap HTTP sources (TradingView screener, RSS news, F&G indices, StockTwits, BTC macro). Each needs the same resilience layer. Per [ADR-0019](../adrs/0019-external-http-adapter-resilience.md), we land the resilience pattern as a shared module *before* the second adapter, not by refactoring three of them later.
-2. **The screener is the highest-leverage first Tier 2 capability.** It is the only data source that adds a fundamentally new capability *shape* (the agent finds candidates from a universe) rather than enriching context on a symbol the user already named. The Explore report on `tradingview-mcp` confirmed the `tradingview-screener` + `tradingview-ta` library duo is battle-tested, anonymous, and aligns with our Provider shape.
+2. **The screener is the highest-leverage first Tier 2 capability.** It is the only data source that adds a fundamentally new capability *shape* (the agent finds candidates from a universe) rather than enriching context on a symbol the user already named. Earlier research confirmed the `tradingview-screener` + `tradingview-ta` library duo is battle-tested, anonymous, and aligns with our Provider shape.
 
 The plan therefore bundles the resilience module with its first consumer (TradingView screener) so the abstraction ships against a real adapter, and folds in the Yahoo retrofit so we exit with zero "two retry policies in the codebase" debt.
 
@@ -26,7 +26,7 @@ The plan therefore bundles the resilience module with its first consumer (Tradin
 
 We implement [ADR-0019](../adrs/0019-external-http-adapter-resilience.md)'s resilience pattern in three phases: (1) the module standalone with its own tests, (2) the TradingView screener adapter sitting on it + MCP tool, (3) the Yahoo retrofit. Then a fourth phase exposes the screener through the MCP tool surface (the agent-facing payoff) and validates end-to-end against a real upstream.
 
-We rejected at planning time: (a) "bundle the resilience module into the Yahoo retrofit" — rejected because the screener is the first real new consumer and the abstraction should ship against the use case that drove the design, not the retrofit; (b) "ship the screener with inline resilience first, extract the module later" — rejected because the whole point of [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) is to not repeat the `tradingview-mcp` mistake of per-service ad-hoc resilience that drifted across services.
+We rejected at planning time: (a) "bundle the resilience module into the Yahoo retrofit" — rejected because the screener is the first real new consumer and the abstraction should ship against the use case that drove the design, not the retrofit; (b) "ship the screener with inline resilience first, extract the module later" — rejected because the whole point of [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) is to not repeat the upstream project's mistake of per-service ad-hoc resilience that drifted across services.
 
 ## Architecture diagram
 

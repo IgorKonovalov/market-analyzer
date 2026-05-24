@@ -13,7 +13,7 @@ The smallest Tier 2 plan. One HTTP call to `https://api.alternative.me/fng/?limi
 
 ## Context & problem
 
-The Explore report on `tradingview-mcp` flagged the BTC macro-context call (CoinGecko global stats + dominance) as a small, free, high-leverage addition the current data layer lacks. Crypto F&G — Alternative.me's free unauthenticated index — is a closely-related single-number macro signal that's even smaller in surface area: one endpoint, four fields. Both are good candidates; F&G is the smaller of the two and the better first proof that `ResilientHttpClient` works against an upstream with different shape (a plain JSON endpoint, not a library-mediated screener).
+Earlier research into the upstream project flagged the BTC macro-context call (CoinGecko global stats + dominance) as a small, free, high-leverage addition the current data layer lacks. Crypto F&G — Alternative.me's free unauthenticated index — is a closely-related single-number macro signal that's even smaller in surface area: one endpoint, four fields. Both are good candidates; F&G is the smaller of the two and the better first proof that `ResilientHttpClient` works against an upstream with different shape (a plain JSON endpoint, not a library-mediated screener).
 
 The planning conversation queued F&G as Plan 0011 specifically because it is the smallest possible exercise of the resilience module. If `ResilientHttpClient` has a bug that the screener test suite didn't catch, F&G's tiny surface will surface it cleanly. Plan 0011 also adds the first "no symbol, market-wide" sentiment surface — a shape the existing `get_sentiment(symbol, window)` Protocol method doesn't quite fit, which forces us to make a small Protocol-level decision (covered below).
 

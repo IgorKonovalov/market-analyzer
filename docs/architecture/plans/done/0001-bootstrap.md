@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-Stand up the empty `market-analyser` repo as an **Electron + Python-sidecar** desktop app. Vendor the minimum subset of `tradingview-mcp` needed to fetch daily OHLCV for a single symbol (Yahoo Finance), wire it through a **unified `MarketDataProvider` Protocol** with **SQLite caching** behind it, expose one HTTP endpoint, and render the result as a **candlestick chart** in the Electron renderer. End state of week one: double-click the app, see a candlestick chart for `AAPL 1d` populated from a fresh fetch on first open and from the local SQLite cache on every subsequent open. No strategies, no backtests, no screeners — just the walking skeleton that proves every architectural seam works end-to-end.
+Stand up the empty `market-analyser` repo as an **Electron + Python-sidecar** desktop app. Vendor the minimum subset of the upstream project needed to fetch daily OHLCV for a single symbol (Yahoo Finance), wire it through a **unified `MarketDataProvider` Protocol** with **SQLite caching** behind it, expose one HTTP endpoint, and render the result as a **candlestick chart** in the Electron renderer. End state of week one: double-click the app, see a candlestick chart for `AAPL 1d` populated from a fresh fetch on first open and from the local SQLite cache on every subsequent open. No strategies, no backtests, no screeners — just the walking skeleton that proves every architectural seam works end-to-end.
 
 ## Context & problem
 
@@ -17,7 +17,7 @@ The repo is at zero (`skills-lock.json` and the `.claude/` skills directory only
 
 1. **Directory layout** that survives contact with all three sibling skills (the data-layer parts; strategy/backtest layouts land in their own plans).
 2. **Heavy tooling baseline** — `uv`, `ruff`, `mypy` (strict), `pytest`, `pip-audit`, pre-commit, GitHub Actions CI on push, conventional-commit enforcement, release automation scaffolding. (Per the bootstrap-rigor decision.)
-3. **Vendoring boundary** — what we copy from `../tradingview-mcp` and where it sits, with the discipline from [ADR-0003](../../adrs/0003-vendoring-strategy.md).
+3. **Vendoring boundary** — what we copy from the upstream project and where it sits, with the discipline from [ADR-0003](../../adrs/0003-vendoring-strategy.md).
 4. **The `MarketDataProvider` Protocol** with stubs for every planned method (per [ADR-0007](../../adrs/0007-market-data-provider.md)) and one implemented method (`get_ohlcv`) for phase 2.
 5. **SQLite persistence** with Alembic migrations and a `bars` table behind the provider's cache (per [ADR-0006](../../adrs/0006-persistence-layout.md)).
 6. **The Electron shell** with secure renderer defaults, sidecar spawn/supervise, and a React renderer that shows a candlestick chart for `AAPL 1d`.
@@ -28,7 +28,7 @@ This plan acknowledges a real tension and resolves it explicitly: we chose **laz
 
 ## Decision
 
-Build an **Electron** desktop shell (per [ADR-0005](../../adrs/0005-desktop-shell-electron.md)) that talks to a **local FastAPI Python sidecar** over **localhost HTTP** (per [ADR-0002](../../adrs/0002-ipc-local-http.md)) with a per-launch bearer-token shared secret. The sidecar exposes one endpoint (`GET /ohlcv`) for week one, served via a `DefaultMarketDataProvider.get_ohlcv` that dispatches to a `YahooAdapter` wrapping a freshly-vendored copy of `tradingview-mcp`'s `yahoo_finance_service.py`, with **SQLite-backed caching** keyed on `(symbol, timeframe, event_ts)`. The renderer is **React + TypeScript** rendering a candlestick chart with `lightweight-charts`. Heavy tooling — strict `mypy`, `ruff`, `pre-commit`, `pip-audit`, conventional-commit-enforced CI on every push, and a release-stub workflow — lands in phase 1.
+Build an **Electron** desktop shell (per [ADR-0005](../../adrs/0005-desktop-shell-electron.md)) that talks to a **local FastAPI Python sidecar** over **localhost HTTP** (per [ADR-0002](../../adrs/0002-ipc-local-http.md)) with a per-launch bearer-token shared secret. The sidecar exposes one endpoint (`GET /ohlcv`) for week one, served via a `DefaultMarketDataProvider.get_ohlcv` that dispatches to a `YahooAdapter` wrapping a freshly-vendored copy of the upstream project's `yahoo_finance_service.py`, with **SQLite-backed caching** keyed on `(symbol, timeframe, event_ts)`. The renderer is **React + TypeScript** rendering a candlestick chart with `lightweight-charts`. Heavy tooling — strict `mypy`, `ruff`, `pre-commit`, `pip-audit`, conventional-commit-enforced CI on every push, and a release-stub workflow — lands in phase 1.
 
 We rejected Tauri (per ADR-0005), stdio JSON-RPC for IPC (per ADR-0002), and the "defer abstraction" approach from the abandoned Tauri-era draft (per ADR-0007). We rejected Parquet for OHLCV in phase 2 (premature; revisit when SQLite-bar reads become a measured bottleneck — see Followups).
 
@@ -55,7 +55,7 @@ flowchart LR
         API --> Config
     end
 
-    subgraph Vendored["Vendored - data/vendored/tradingview_mcp/"]
+    subgraph Vendored["Vendored - data/vendored/upstream/"]
         YF[yahoo_finance_service.py]
     end
 
@@ -87,7 +87,7 @@ Each phase is small enough to land as a single PR. Phases 1–2 are plumbing-hea
   - `.pre-commit-config.yaml` — `ruff`, `ruff-format`, `mypy`, `commitizen` for conventional-commit messages.
   - `mypy.ini` or `[tool.mypy]` in pyproject — strict mode (`disallow_untyped_defs`, `warn_return_any`, etc.).
   - `.github/workflows/release.yml` — stub triggered on tag push (`v*.*.*`), runs build + checksum but does not yet publish. Real release wiring in a packaging plan.
-  - `.gitignore`, `README.md` (one paragraph + run command), `LICENSE` (MIT, matching upstream tradingview-mcp).
+  - `.gitignore`, `README.md` (one paragraph + run command), `LICENSE` (MIT, matching the upstream project).
 - **Done when:**
   - `uv sync` succeeds on a clean checkout.
   - `uv run python -m market_analyser.api --port=0 --secret=test` prints the chosen port to stdout and `/healthz` returns 200.
@@ -106,8 +106,8 @@ Each phase is small enough to land as a single PR. Phases 1–2 are plumbing-hea
   - `src/market_analyser/data/provider.py` — the `MarketDataProvider` Protocol with method signatures for `get_ohlcv`, `get_quote`, `search_symbols`, `get_screener`, `get_sentiment`, `get_news`. Each method takes `as_of: datetime | None = None` per [ADR-0007](../../adrs/0007-market-data-provider.md).
   - `src/market_analyser/data/default_provider.py` — `DefaultMarketDataProvider` class. `get_ohlcv` is implemented (delegates to the Yahoo adapter). Other methods raise `NotImplementedError("implemented in phase N — see plan 0001")`.
   - `src/market_analyser/data/adapters/__init__.py`, `src/market_analyser/data/adapters/yahoo.py` — `YahooAdapter.fetch_ohlcv(symbol, timeframe, start, end) -> list[Bar]`. Imports from the vendored module; validates inputs; defends against `None`, `NaN`, negative volumes per `best-practices.md`.
-  - `src/market_analyser/data/vendored/__init__.py`, `src/market_analyser/data/vendored/tradingview_mcp/__init__.py` (header comment naming source SHA), `src/market_analyser/data/vendored/tradingview_mcp/core/services/yahoo_finance_service.py` (verbatim from upstream with only import-path rewrites). `vendored.lock` at repo root pins the commit SHA.
-  - `src/market_analyser/data/vendored/tradingview_mcp/LICENSE` — upstream MIT license, unchanged.
+  - `src/market_analyser/data/vendored/__init__.py`, `src/market_analyser/data/vendored/upstream/__init__.py` (header comment naming source SHA), `src/market_analyser/data/vendored/upstream/core/services/yahoo_finance_service.py` (verbatim from upstream with only import-path rewrites). `vendored.lock` at repo root pins the commit SHA.
+  - `src/market_analyser/data/vendored/upstream/LICENSE` — upstream MIT license, unchanged.
   - `src/market_analyser/api/routes/ohlcv.py` — `GET /ohlcv?symbol=&timeframe=&start=&end=`. Returns `list[Bar]` as JSON. Calls `request.app.state.provider.get_ohlcv(...)`.
   - `tests/data/test_yahoo_adapter.py` — adapter unit tests with vendored module mocked. Asserts input-validation errors fire on `NaN` close, negative volume, malformed timestamps.
   - `tests/data/test_provider_protocol.py` — asserts every Protocol method is callable (passes) and that unimplemented methods raise `NotImplementedError` with the documented phase-N message.
@@ -253,7 +253,7 @@ The bootstrap intentionally ships **no** `strategies/`, `backtest/`, or `contrac
 market-analyser/
 ├── pyproject.toml
 ├── uv.lock
-├── vendored.lock                       # upstream tradingview-mcp commit SHA
+├── vendored.lock                       # upstream project commit SHA
 ├── .env.example
 ├── .gitignore
 ├── .pre-commit-config.yaml
@@ -309,7 +309,7 @@ market-analyser/
 │       │   │   └── yahoo.py
 │       │   └── vendored/
 │       │       ├── __init__.py
-│       │       └── tradingview_mcp/
+│       │       └── upstream/
 │       │           ├── __init__.py
 │       │           ├── LICENSE
 │       │           └── core/
@@ -344,7 +344,7 @@ No strategy or backtest packages exist at end of bootstrap. The first plan to cr
 
 ## Vendoring manifest (phase 2)
 
-Copy exactly one file from `../tradingview-mcp/src/tradingview_mcp/` into `src/market_analyser/data/vendored/tradingview_mcp/`, preserving directory structure. Everything else stays out until a later plan calls for it (lazy vendoring per the bootstrap rigor choice).
+Copy exactly one file from the upstream project's source tree into `src/market_analyser/data/vendored/upstream/`, preserving directory structure. Everything else stays out until a later plan calls for it (lazy vendoring per the bootstrap rigor choice).
 
 | Upstream path                                | Why we need it now                                        |
 |----------------------------------------------|-----------------------------------------------------------|
@@ -353,7 +353,7 @@ Copy exactly one file from `../tradingview-mcp/src/tradingview_mcp/` into `src/m
 If `yahoo_finance_service.py` imports `core/types.py` or `core/utils/validators.py` transitively at runtime, those come in too — the manifest is a starting point, not a hard cap. The PR description must list any transitive additions.
 
 **Vendoring discipline** (per [ADR-0003](../../adrs/0003-vendoring-strategy.md)):
-- Every vendored file gets a one-line header: `# Vendored from tradingview-mcp@<sha> path/to/file.py — see ADR-0003.`
+- Every vendored file gets a one-line header: `# Vendored from upstream@<sha> path/to/file.py — see ADR-0003.`
 - Imports rewritten to the new package path; no other edits on copy.
 - The `vendored.lock` file at repo root pins the upstream SHA.
 - A `scripts/check-vendor-drift.py` is a followup (not in scope this plan); the discipline is honour-system until then.
@@ -425,7 +425,7 @@ class MarketDataProvider(Protocol):
 
 ## Risks & open questions
 
-- **Risk: Yahoo Finance rate-limits or blocks the unauthenticated `yfinance` path.** `yahoo_finance_service.py` in tradingview-mcp uses the public path; if Yahoo tightens limits during the bootstrap, the chart breaks. Mitigation: cache hits cover the common case after the first fetch; the smoke test is `@pytest.mark.network` and won't break CI. If it becomes a recurring failure, the followup is to add a paid data source behind a new adapter, not to patch the vendored code.
+- **Risk: Yahoo Finance rate-limits or blocks the unauthenticated `yfinance` path.** `yahoo_finance_service.py` in the upstream project uses the public path; if Yahoo tightens limits during the bootstrap, the chart breaks. Mitigation: cache hits cover the common case after the first fetch; the smoke test is `@pytest.mark.network` and won't break CI. If it becomes a recurring failure, the followup is to add a paid data source behind a new adapter, not to patch the vendored code.
 - **Risk: `lightweight-charts` doesn't quite render our bar shape.** It expects `{ time, open, high, low, close }` with seconds-precision time. Mitigation: a thin adapter function in `desktop/renderer/api/client.ts` maps `Bar` to the chart's expected shape; tests cover the edge cases (Unix-epoch vs ISO, intra-bar timestamps).
 - **Risk: `mypy --strict` is harsh and may slow phase authoring.** Mitigation: accepted by the bootstrap-rigor choice; we pay this cost upfront rather than retrofit. Pragmatic relaxations (`Any` in test fixtures only) are allowed via per-file overrides.
 - **Risk: Alembic migration applied at sidecar startup vs separately is a real fork.** We chose "at startup" for the bootstrap — simpler. The cost is that a broken migration locks the user out of their own data with no way to recover from the UI. Mitigation: every migration has a downgrade test; the persistence repository never deletes user data outside of a migration; we surface migration errors in the fatal-error window in phase 4.

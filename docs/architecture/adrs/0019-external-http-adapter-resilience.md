@@ -22,7 +22,7 @@ Each needs the same four behaviors:
 3. **Bounded concurrency.** Each upstream has its own politeness limit; without a cap, multiple symbols fanned out from one MCP call will hit the upstream concurrently and trigger rate limits or bans.
 4. **Proxy configuration from environment only.** No secrets in code. Optional Webshare-style rotating proxy support read from a documented env-var bundle, with a direct→proxy fallback chain.
 
-The `tradingview-mcp` upstream (the project we used to vendor before [ADR-0009](0009-rewrite-data-layer-in-house.md)) added a per-service resilience layer ad-hoc in 2026-05-13 after recurring rate-limit incidents. The shapes drifted: the screener service had a 60s TTL with 4-concurrent cap; the Yahoo service had no cache but had proxy support; the news service had neither. The user-visible cost was inconsistent failure modes — one source would silently quietly return stale data, another would 429, another would throw. A maintainer fixing a bug in one had to remember which.
+The upstream project we used to vendor before [ADR-0009](0009-rewrite-data-layer-in-house.md) added a per-service resilience layer ad-hoc in 2026-05-13 after recurring rate-limit incidents. The shapes drifted: the screener service had a 60s TTL with 4-concurrent cap; the Yahoo service had no cache but had proxy support; the news service had neither. The user-visible cost was inconsistent failure modes — one source would silently quietly return stale data, another would 429, another would throw. A maintainer fixing a bug in one had to remember which.
 
 We have the chance to land the pattern once, before the second adapter, instead of refactoring three of them later.
 
@@ -151,7 +151,7 @@ class ProxyConfig(BaseModel):
 
 Each Tier 2 adapter writes its own retry + cache + concurrency code. The Yahoo adapter already does this.
 
-Rejected because four-to-five adapters writing the same logic guarantees drift. The `tradingview-mcp` upstream took this path and ended up with three different retry curves and one source that quietly cached stale data for a week. The avoidance is the entire point of having an ADR here.
+Rejected because four-to-five adapters writing the same logic guarantees drift. The upstream project we used to vendor took this path and ended up with three different retry curves and one source that quietly cached stale data for a week. The avoidance is the entire point of having an ADR here.
 
 ### Alternative B — Third-party libraries (`tenacity` + `cachetools`)
 

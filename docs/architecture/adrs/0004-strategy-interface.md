@@ -9,7 +9,7 @@
 
 A strategy is the central object the `strategy-author` skill writes and the `backtester` skill consumes. We have not yet decided what one *is* in code. Three shapes are in play and the decision is hard to revert: every later layer (backtest engine, parameter UI, persistence of `Strategy` rows, walk-forward optimization) will hard-code the assumption.
 
-The vendored backtest engine from `tradingview-mcp` (`core/services/backtest_service.py`) currently encodes each strategy as a private function plus a string key in `_STRATEGY_MAP`. The function signature is `(candles, **params) -> list[trade_dict]`. Strategy parameters (`oversold=40`, `period=14`, etc.) are positional defaults — they're not introspectable, not validated, and not surfaced anywhere a UI could find them. Adding a seventh strategy today means editing that file and the `_STRATEGY_LABELS` dict. There is no way for a user to author a strategy without editing core.
+The vendored backtest engine from the upstream project (`core/services/backtest_service.py`) currently encodes each strategy as a private function plus a string key in `_STRATEGY_MAP`. The function signature is `(candles, **params) -> list[trade_dict]`. Strategy parameters (`oversold=40`, `period=14`, etc.) are positional defaults — they're not introspectable, not validated, and not surfaced anywhere a UI could find them. Adding a seventh strategy today means editing that file and the `_STRATEGY_LABELS` dict. There is no way for a user to author a strategy without editing core.
 
 Three constraints shape the decision:
 

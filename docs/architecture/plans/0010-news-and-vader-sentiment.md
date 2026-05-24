@@ -17,7 +17,7 @@ Ship an RSS-based news adapter (free feeds: CoinDesk, CoinTelegraph, Yahoo Finan
 
 The merger insight noted in the planning conversation: news and per-headline sentiment can ship as one plan, sharing the same underlying RSS fetch. VADER is a lexicon-based sentiment scorer (~5 MB model, MIT-licensed, no API costs, deterministic on the same input). Running it over headlines we'd fetch anyway costs ~1ms per headline and gives a second output channel for free.
 
-The `tradingview-mcp` upstream's RSS feed list (CoinDesk, CoinTelegraph, Yahoo Finance, MarketWatch, CNBC) is a known-good starting catalog — battle-tested against feed-availability changes, including the 2026-05-14 fix when Reuters' feeds went dark and Yahoo/CNBC required a User-Agent header. We borrow the catalog (not the code; per [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md)).
+The upstream project's RSS feed list (CoinDesk, CoinTelegraph, Yahoo Finance, MarketWatch, CNBC) is a known-good starting catalog — battle-tested against feed-availability changes, including the 2026-05-14 fix when Reuters' feeds went dark and Yahoo/CNBC required a User-Agent header. We borrow the catalog (not the code; per [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md)).
 
 The "no Reddit" choice from the planning conversation stands: keyword-based sentiment is fragile, and VADER over editorial framing is a stronger v1 signal source.
 
@@ -189,7 +189,7 @@ _FEED_CATALOG = {
 
 ## Risks & open questions
 
-- **Risk: feed URLs change without warning.** The `tradingview-mcp` upstream hit this on Reuters in May 2026. Mitigation: per-feed graceful degradation (failed feed → log + continue, not raise). A future plan can add a CI-checked uptime-monitor for the catalog if maintenance burden surfaces.
+- **Risk: feed URLs change without warning.** The upstream project hit this on Reuters in May 2026. Mitigation: per-feed graceful degradation (failed feed → log + continue, not raise). A future plan can add a CI-checked uptime-monitor for the catalog if maintenance burden surfaces.
 - **Risk: VADER is tuned for general English text, not finance.** It scores "bullish" as positive and "bearish" as negative (good) but it doesn't understand "rate cut" as bullish or "hawkish" as bearish. Acceptable for v1; if the signal proves valuable we can layer a finance-tuned lexicon on top (future plan). The fixture tests assert directional correctness on canonical headlines; not absolute calibration.
 - **Risk: per-headline scoring on a 200-item fetch is ~200ms of CPU.** VADER is fast (~1ms per call) but the wall-clock cost matters at the MCP tool boundary. Mitigation: `with_sentiment` is opt-in on `news_for`; `sentiment_for_news` is the only call that always scores. Phase 3's done-when asserts that `sentiment_for_news` returns within 2 s for a 50-item fixture.
 - **Risk: token-match symbol filtering false-negatives long company names.** "AAPL" matches "AAPL hits new high" but not "Apple announces earnings". Mitigation: future plan can add a symbol↔name expansion table (e.g. `AAPL → Apple`) to widen matches. v1 accepts the precision-over-recall trade.
@@ -218,7 +218,7 @@ _FEED_CATALOG = {
 
 1. **VADER's compound score is the right signal extract.** It is the default in the library and well-validated. If a future signal study shows we should be looking at positive-negative differential instead, the `_vader.py` wrapper is the seam.
 2. **5-minute TTL is the right default for news caching.** Feeds publish every few minutes at most; 5 minutes is the sweet spot between freshness and politeness. Adjustable in `_FEED_CATALOG` if needed.
-3. **The five-feed catalog is the right start.** `tradingview-mcp`'s catalog is well-tested. Adding feeds is a one-row change; the plan doesn't gate this.
+3. **The five-feed catalog is the right start.** The upstream project's catalog is well-tested. Adding feeds is a one-row change; the plan doesn't gate this.
 4. **No `as_of` for news / sentiment.** Wall-clock-only; backtest replay deferred.
 
 ## Followups (after this lands)

@@ -8,13 +8,13 @@
 
 ## TL;DR
 
-Rewrite the Yahoo OHLCV fetch as a small in-house function in our adapter package, delete the entire `src/market_analyser/data/vendored/` tree and `vendored.lock`, and scrub every reference to the companion `tradingview-mcp` repository from source code, live docs, diagrams, skill `SKILL.md` / references, and `CLAUDE.md`. After this plan lands, the name survives only in (a) [ADR-0003](../../adrs/0003-vendoring-strategy.md) (superseded, historical), (b) [ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md) (the supersession), (c) the one-line amendment notes Phase 3 adds to [ADR-0004](../../adrs/0004-strategy-interface.md) / [ADR-0006](../../adrs/0006-persistence-layout.md) / [ADR-0007](../../adrs/0007-market-data-provider.md), (d) this plan file, (e) [Plan 0001](0001-bootstrap.md)'s "Vendoring manifest" section — grandfathered as historical record of what the bootstrap actually did, never rewritten in-place once a plan is archived in `done/`, and (f) `plans/README.md`'s active-roster row for this plan — structurally names the plan's slug + summary. End-to-end OHLCV behaviour is preserved: `GET /ohlcv` still returns the same `Bar` shape and tests pass.
+Rewrite the Yahoo OHLCV fetch as a small in-house function in our adapter package, delete the entire `src/market_analyser/data/vendored/` tree and `vendored.lock`, and scrub every reference to the companion upstream repository from source code, live docs, diagrams, skill `SKILL.md` / references, and `CLAUDE.md`. After this plan lands, the name survives only in (a) [ADR-0003](../../adrs/0003-vendoring-strategy.md) (superseded, historical), (b) [ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md) (the supersession), (c) the one-line amendment notes Phase 3 adds to [ADR-0004](../../adrs/0004-strategy-interface.md) / [ADR-0006](../../adrs/0006-persistence-layout.md) / [ADR-0007](../../adrs/0007-market-data-provider.md), (d) this plan file, (e) [Plan 0001](0001-bootstrap.md)'s "Vendoring manifest" section — grandfathered as historical record of what the bootstrap actually did, never rewritten in-place once a plan is archived in `done/`, and (f) `plans/README.md`'s active-roster row for this plan — structurally names the plan's slug + summary. End-to-end OHLCV behaviour is preserved: `GET /ohlcv` still returns the same `Bar` shape and tests pass.
 
 ## Context & problem
 
 [ADR-0009](../../adrs/0009-rewrite-data-layer-in-house.md) reverses [ADR-0003](../../adrs/0003-vendoring-strategy.md): the companion repository will be deleted once this project is complete, so the vendoring discipline buys nothing once the upstream is gone. The decision is captured; this plan is the execution.
 
-Concretely, three files live under `src/market_analyser/data/vendored/tradingview_mcp/core/services/`:
+Concretely, three files live under `src/market_analyser/data/vendored/upstream/core/services/`:
 
 - `backtest_service.py` — function-level carve-out, only `_fetch_ohlcv` (~40 lines of urllib + JSON parsing against Yahoo's Chart API) is retained. The single caller is `YahooAdapter`.
 - `proxy_manager.py` — Webshare rotating-proxy helper, opt-in via environment variables, dormant when env vars are unset. Imported as a fallback inside `_fetch_ohlcv`.
@@ -22,12 +22,12 @@ Concretely, three files live under `src/market_analyser/data/vendored/tradingvie
 
 The Yahoo adapter at `src/market_analyser/data/adapters/yahoo.py:20-21` is the only consumer of vendored code. Once its dependency is replaced, the entire vendored tree becomes unreachable and can be deleted.
 
-Beyond source code, the strings `tradingview-mcp` / `tradingview_mcp` / `vendored` appear across:
+Beyond source code, the upstream project's name, its package name, and `vendored` appear across:
 - ADR bodies (0003, 0004, 0006, 0007 — 0003 is superseded and kept verbatim; the others need surgical scrubs).
 - Plans (0001 — bootstrap, has a "Vendoring manifest" section; 0002 — strategy interface, mentions in passing).
 - Diagrams (`bootstrap-component-map.md`).
-- Skills (`CLAUDE.md`, every `.claude/skills/*/SKILL.md`, every `.claude/skills/*/references/*.md`, including the entire file `strategy-author/references/porting-from-tradingview-mcp.md`).
-- Architect templates (`plan.md` has a tradingview-mcp risk example; `diagram-examples.md` and `best-practices.md` reference the vendoring policy).
+- Skills (`CLAUDE.md`, every `.claude/skills/*/SKILL.md`, every `.claude/skills/*/references/*.md`, including the entire file `strategy-author/references/porting-from-upstream.md`).
+- Architect templates (`plan.md` has an upstream-project risk example; `diagram-examples.md` and `best-practices.md` reference the vendoring policy).
 
 Each location needs a sweep to leave the repo coherent after the upstream disappears.
 
@@ -64,9 +64,9 @@ Each phase is one commit. `dev` runs all phases in one session.
 
 ### Phase 2 — Delete the vendored tree and `vendored.lock`
 - **Owner skill:** `dev`
-- **What:** Remove `src/market_analyser/data/vendored/` entirely (the whole `tradingview_mcp` subtree plus its package `__init__.py`s). Delete `vendored.lock` at the repo root. Update `src/market_analyser/data/__init__.py` to remove the "and vendored sources" / vendored-tree wording from the docstring.
+- **What:** Remove `src/market_analyser/data/vendored/` entirely (the whole vendored upstream subtree plus its package `__init__.py`s). Delete `vendored.lock` at the repo root. Update `src/market_analyser/data/__init__.py` to remove the "and vendored sources" / vendored-tree wording from the docstring.
 - **Files touched:** delete `src/market_analyser/data/vendored/` (recursive), delete `vendored.lock`, edit `src/market_analyser/data/__init__.py`.
-- **Done when:** `grep -rn "tradingview_mcp\|vendored\.lock\|data\.vendored\|data/vendored" src/ tests/` returns zero hits; full test suite passes.
+- **Done when:** `grep -rn "vendored\.lock\|data\.vendored\|data/vendored" src/ tests/` returns zero hits; full test suite passes.
 
 ### Phase 3 — Scrub `docs/architecture/`
 - **Owner skill:** `dev`
@@ -82,10 +82,10 @@ Each phase is one commit. `dev` runs all phases in one session.
 - **Owner skill:** `dev` (skill description edits need care — see Risks)
 - **What:**
   - Edit `CLAUDE.md` to remove the sibling-repo references from the project description, the ADR list, and the pitfalls section.
-  - Edit every `.claude/skills/*/SKILL.md` and `.claude/skills/*/references/*.md` to drop mentions. Specifically including: `architect/SKILL.md`, `architect/references/project-context.md`, `architect/references/best-practices.md`, `architect/references/templates/plan.md` (has a tradingview-mcp risk example), `architect/references/templates/diagram-examples.md`; `dev/SKILL.md`, `dev/references/project-context.md`, `dev/references/commit-conventions.md`; `strategy-author/SKILL.md`, `strategy-author/references/project-context.md`, `strategy-author/references/best-practices.md`, `strategy-author/references/templates/strategy-template.py`; `backtester/SKILL.md`, `backtester/references/project-context.md`, `backtester/references/best-practices.md`; `ui-builder/SKILL.md`; `market-analyst/SKILL.md`, `market-analyst/references/project-context.md`.
-  - **Delete** `.claude/skills/strategy-author/references/porting-from-tradingview-mcp.md` outright — its entire premise is the sibling repo. Update `strategy-author/SKILL.md` to remove any reference to it.
+  - Edit every `.claude/skills/*/SKILL.md` and `.claude/skills/*/references/*.md` to drop mentions. Specifically including: `architect/SKILL.md`, `architect/references/project-context.md`, `architect/references/best-practices.md`, `architect/references/templates/plan.md` (has an upstream-project risk example), `architect/references/templates/diagram-examples.md`; `dev/SKILL.md`, `dev/references/project-context.md`, `dev/references/commit-conventions.md`; `strategy-author/SKILL.md`, `strategy-author/references/project-context.md`, `strategy-author/references/best-practices.md`, `strategy-author/references/templates/strategy-template.py`; `backtester/SKILL.md`, `backtester/references/project-context.md`, `backtester/references/best-practices.md`; `ui-builder/SKILL.md`; `market-analyst/SKILL.md`, `market-analyst/references/project-context.md`.
+  - **Delete** `.claude/skills/strategy-author/references/porting-from-upstream.md` outright — its entire premise is the sibling repo. Update `strategy-author/SKILL.md` to remove any reference to it.
   - Review `.claude/skills/*/evals/evals.json` files — if any eval prompt names the sibling repo, retire that eval row (do not silently rewrite — evals are baselines).
-  - Rewrite the "How it relates to tradingview-mcp" subsection of `architect/references/project-context.md` into a "Data layer — written in-house" subsection that summarises ADR-0009's policy and lists the data sources we plan to write (Yahoo, TradingView screener, sentiment, news) as own-implementation milestones.
+  - Rewrite the "How it relates to the upstream project" subsection of `architect/references/project-context.md` into a "Data layer — written in-house" subsection that summarises ADR-0009's policy and lists the data sources we plan to write (Yahoo, TradingView screener, sentiment, news) as own-implementation milestones.
 - **Files touched:** `CLAUDE.md` + roughly 18 files under `.claude/skills/` + one deletion. Exact list to be enumerated by `dev` via a repo-wide grep before starting.
 - **Done when:** `grep -rin "tradingview[-_]mcp" .claude/ CLAUDE.md` returns zero hits; every modified SKILL.md still parses (frontmatter intact, headings consistent); every `.claude/skills/*/evals/evals.json` either is unchanged or has had eval rows explicitly retired with a one-line note in the eval file's commit message.
 
@@ -101,9 +101,9 @@ No new data shapes. The `Bar` pydantic model in `src/market_analyser/data/types.
 
 ## Risks & open questions
 
-- **Risk: skill description edits change how Claude Code triggers skills.** Several `SKILL.md` files mention `tradingview-mcp` in their `description:` frontmatter (which drives auto-trigger routing). Mitigation: phase 4 edits these minimally — delete the mention, do not rephrase the surrounding sentence. The user should eyeball each `description:` diff before commit.
+- **Risk: skill description edits change how Claude Code triggers skills.** Several `SKILL.md` files mention the upstream project in their `description:` frontmatter (which drives auto-trigger routing). Mitigation: phase 4 edits these minimally — delete the mention, do not rephrase the surrounding sentence. The user should eyeball each `description:` diff before commit.
 - **Risk: Yahoo rate-limits the unauthenticated direct request once the proxy fallback is gone.** Proxy was opt-in (off by default) so this is unlikely in dev. Mitigation: if it manifests, a follow-up plan introduces a slim in-house proxy helper at `src/market_analyser/data/adapters/_proxy.py`. Do not pre-build it as part of Plan 0003.
-- **Risk: deleting `porting-from-tradingview-mcp.md` removes useful porting heuristics.** The file contains transferable advice on adapting strategy ideas, much of which is generic. Mitigation: if `strategy-author` later wants the generic parts back, a new reference doc — written from scratch, not derived from the deleted one — can be added. We do not preserve the file under a renamed path.
+- **Risk: deleting `porting-from-upstream.md` removes useful porting heuristics.** The file contains transferable advice on adapting strategy ideas, much of which is generic. Mitigation: if `strategy-author` later wants the generic parts back, a new reference doc — written from scratch, not derived from the deleted one — can be added. We do not preserve the file under a renamed path.
 - **Risk: ADR-0007's body refers to "vendored sources" in several places, which after this plan will read confusingly.** Phase 3 chooses "front-matter amendment, body untouched" to honour the ADR append-only norm. If review finds the body genuinely misleading rather than merely dated, supersede ADR-0007 in a follow-up rather than editing the body.
 - **Open question: split `_yahoo_fetch.py` as a private module, or inline into `yahoo.py`?** Phase 1 picks the split for testability and to keep `yahoo.py` focused on the adapter contract. Worth a one-line review note.
 - **Open question: do we want a regression test that pins the Yahoo Chart response parser shape?** ADR-0007's "validate at boundaries" rule says yes. Phase 1 should include at least one test fixture from a recorded Yahoo response — even if just a JSON file under `tests/fixtures/`.
