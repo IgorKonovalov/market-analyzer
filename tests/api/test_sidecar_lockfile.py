@@ -31,6 +31,7 @@ import stat
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,33 @@ def _wait_for_lockfile(path: Path, timeout_s: float = 5.0) -> None:
             return
         time.sleep(0.05)
     raise RuntimeError(f"lockfile {path} did not appear within {timeout_s}s")
+
+
+def _wait_until_serving(port: int, timeout_s: float = 10.0) -> None:
+    """Block until the sidecar answers an HTTP request on `port`.
+
+    `__main__` binds the socket and prints `PORT=` *before* `asyncio.run` starts
+    uvicorn and installs its SIGINT/SIGTERM handlers. A signal delivered in that
+    window hits the default disposition, hard-kills the process, and skips the
+    cleanup `finally` (lockfile removal). Waiting for a real HTTP response proves
+    uvicorn is serving — so its signal handlers are installed — which closes the
+    race that made the SIGTERM tests flake on loaded CI runners. Any HTTP status
+    counts; a 401/404 still proves the server is up.
+    """
+    deadline = time.time() + timeout_s
+    last_err: OSError | None = None
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1.0):
+                return
+        except urllib.error.HTTPError:
+            return
+        except OSError as exc:  # URLError (incl. timeout) and raw socket errors
+            last_err = exc
+            time.sleep(0.05)
+    raise RuntimeError(
+        f"sidecar on port {port} did not start serving within {timeout_s}s: {last_err!r}"
+    )
 
 
 def _signal_terminate(proc: subprocess.Popen[Any]) -> None:
@@ -250,8 +278,9 @@ def test_sigterm_removes_lockfile_before_exit(tmp_path: Path) -> None:
     lockfile = tmp_path / "sidecar.lock"
     proc = _spawn_sidecar(lockfile=lockfile, data_dir=tmp_path)
     try:
-        _wait_for_port_line(proc, PORT_LINE_TIMEOUT_S)
+        port = _wait_for_port_line(proc, PORT_LINE_TIMEOUT_S)
         _wait_for_lockfile(lockfile)
+        _wait_until_serving(port)
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=SIGTERM_WAIT_S)
         assert not lockfile.exists(), "lockfile should be removed by the SIGTERM finally block"
@@ -285,6 +314,7 @@ def test_settings_stop_removes_lockfile_on_windows(tmp_path: Path) -> None:
         _wait_for_port_line(proc, PORT_LINE_TIMEOUT_S)
         _wait_for_lockfile(lockfile)
         record = LockfileRecord.model_validate_json(lockfile.read_bytes())
+        _wait_until_serving(record.port)
 
         request = urllib.request.Request(
             f"http://127.0.0.1:{record.port}/settings/stop",
@@ -359,8 +389,9 @@ def test_renderer_secret_rotates_per_sidecar_boot(tmp_path: Path) -> None:
 
     proc1 = _spawn_sidecar(lockfile=lockfile, data_dir=tmp_path)
     try:
-        _wait_for_port_line(proc1, PORT_LINE_TIMEOUT_S)
+        port1 = _wait_for_port_line(proc1, PORT_LINE_TIMEOUT_S)
         _wait_for_lockfile(lockfile)
+        _wait_until_serving(port1)
         secret1 = LockfileRecord.model_validate_json(lockfile.read_bytes()).renderer_secret
     finally:
         rc = _kill_and_wait(proc1)
