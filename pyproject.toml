@@ -39,7 +39,9 @@ requires = ["hatchling==1.29.0"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-exclude-newer = "2026-05-14"
+# Advanced past 2026-05-21 to admit starlette 1.0.1, the fix for PYSEC-2026-161
+# (CVE-driven bump per CLAUDE.md; starlette is transitive via fastapi/uvicorn).
+exclude-newer = "2026-05-22"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/market_analyser"]
