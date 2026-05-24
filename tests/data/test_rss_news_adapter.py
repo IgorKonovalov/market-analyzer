@@ -40,6 +40,12 @@ _EMPTY_RSS = (
 _ATH_TITLE = "Bitcoin surges to a new all-time high"
 _BTC_ETF_TITLE = "BTC ETF sees record inflows"
 _DECOY_TITLE = "Together they invest in private markets"
+_CRASH_TITLE = "Crypto market crashes amid regulatory fears"
+
+# Phase 2 sentiment thresholds for directional-correctness assertions (explicit
+# constants, not magic numbers in the test body).
+_POSITIVE_BAR = 0.3
+_NEGATIVE_BAR = -0.3
 
 
 def _bodies() -> dict[str, bytes]:
@@ -170,3 +176,27 @@ def test_provider_get_news_rejects_as_of(monkeypatch: pytest.MonkeyPatch) -> Non
 
     with pytest.raises(ValueError, match="as_of"):
         provider.get_news(symbol="BTC", window="24h", as_of=datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_with_sentiment_populates_compound(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter, _ = _make_adapter(monkeypatch)
+
+    items = adapter.fetch(symbol=None, window="24h", with_sentiment=True)
+
+    assert all(item.compound_sentiment is not None for item in items)
+    assert all(
+        item.compound_sentiment is not None and -1.0 <= item.compound_sentiment <= 1.0
+        for item in items
+    )
+    by_title = {item.title: item.compound_sentiment for item in items}
+    ath, crash = by_title[_ATH_TITLE], by_title[_CRASH_TITLE]
+    assert ath is not None and ath > _POSITIVE_BAR
+    assert crash is not None and crash < _NEGATIVE_BAR
+
+
+def test_without_sentiment_leaves_compound_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter, _ = _make_adapter(monkeypatch)
+
+    items = adapter.fetch(symbol=None, window="24h")
+
+    assert all(item.compound_sentiment is None for item in items)

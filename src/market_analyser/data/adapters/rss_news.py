@@ -23,6 +23,7 @@ from typing import Any
 import feedparser
 
 from market_analyser import __version__
+from market_analyser.data import _vader
 from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
 from market_analyser.data._symbol_match import symbol_matches
 from market_analyser.data.types import NewsItem
@@ -92,12 +93,15 @@ class RssNewsAdapter:
         symbol: str | None = None,
         window: str = "24h",
         limit: int = 50,
+        with_sentiment: bool = False,
     ) -> list[NewsItem]:
         """Return recent news items newest-first, capped at `limit`.
 
         With `symbol=None`, returns the union across all feeds; otherwise keeps
         only items whose title or summary mentions `symbol` as a whole-word
         token. A feed that fails is logged and skipped (graceful degradation).
+        With `with_sentiment=True`, each item carries a VADER `compound_sentiment`
+        over its title + summary; otherwise that field stays `None`.
         """
         cutoff = _now() - _window_delta(window)
         applied_symbol = symbol if symbol is not None else ""
@@ -108,7 +112,9 @@ class RssNewsAdapter:
             except ResilientHttpError:
                 _logger.warning("rss-news: feed %r unavailable, skipping", name)
                 continue
-            items.extend(self._parse_feed(raw, name, cutoff, symbol, applied_symbol))
+            items.extend(
+                self._parse_feed(raw, name, cutoff, symbol, applied_symbol, with_sentiment)
+            )
         items.sort(key=lambda item: item.published_at, reverse=True)
         return items[:limit]
 
@@ -123,6 +129,7 @@ class RssNewsAdapter:
         cutoff: datetime,
         symbol: str | None,
         applied_symbol: str,
+        with_sentiment: bool,
     ) -> list[NewsItem]:
         parsed = feedparser.parse(raw)
         out: list[NewsItem] = []
@@ -144,6 +151,10 @@ class RssNewsAdapter:
                     url=link,
                     published_at=published,
                     source=source,
+                    summary=summary,
+                    compound_sentiment=(
+                        _vader.score_headline(title, summary) if with_sentiment else None
+                    ),
                 )
             )
         return out

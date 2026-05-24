@@ -97,7 +97,7 @@ class ScreenerRow(BaseModel):
 
 
 class SentimentSample(BaseModel):
-    """Sentiment reading at a moment in time. Reserved for phase that implements get_sentiment."""
+    """Aggregated sentiment reading for a symbol over a window (Plan 0010)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -106,6 +106,8 @@ class SentimentSample(BaseModel):
     window: str
     as_of: datetime
     source: str = Field(min_length=1)
+    # {"positive": n, "negative": n, "neutral": n} over the scored items.
+    breakdown: dict[str, int] = Field(default_factory=dict)
 
 
 class NewsItem(BaseModel):
@@ -122,6 +124,10 @@ class NewsItem(BaseModel):
     url: str
     published_at: datetime
     source: str = Field(min_length=1)
+    summary: str = ""
+    # VADER compound score over title + summary, in [-1.0, 1.0]; None unless the
+    # adapter was asked for sentiment (fetch(with_sentiment=True)). Plan 0010 ph2.
+    compound_sentiment: float | None = None
 
 
 __all__ = [

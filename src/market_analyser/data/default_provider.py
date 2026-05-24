@@ -12,7 +12,7 @@ anti-lookahead seam declared in ADR-0007.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from typing import Any
 
@@ -35,6 +35,12 @@ from market_analyser.persistence.repository import BarRepository
 # picks the smallest period that fits the request anyway, so a 1-day window
 # would over-fetch and discard 30 days of bars. Plan 0004 phase 1 baseline.
 _MIN_FETCH_SPAN: timedelta = timedelta(days=10)
+
+# VADER's conventional compound-score cutoffs for the positive/neutral/negative
+# split used to build the sentiment breakdown.
+_SENTIMENT_POSITIVE = 0.05
+_SENTIMENT_NEGATIVE = -0.05
+_RSS_VADER_SOURCE = "rss-vader"
 
 
 class DefaultMarketDataProvider:
@@ -139,8 +145,30 @@ class DefaultMarketDataProvider:
         window: str,
         as_of: datetime | None = None,
     ) -> SentimentSample:
-        raise NotImplementedError(
-            "get_sentiment is not implemented in Plan 0001 — see plan 0001 followups",
+        # News-derived sentiment is wall-clock-sensitive like the news itself
+        # (Plan 0010 / ADR-0019); reject as_of at the boundary.
+        if as_of is not None:
+            raise ValueError(
+                "as_of is not supported for sentiment queries — results are "
+                "wall-clock-sensitive (Plan 0010 / ADR-0019)",
+            )
+        items = self._news.fetch(symbol=symbol, window=window, with_sentiment=True)
+        scores = [item.compound_sentiment for item in items if item.compound_sentiment is not None]
+        # No news = zero (neutral) sentiment, not unknown sentiment.
+        mean = sum(scores) / len(scores) if scores else 0.0
+        positive = sum(1 for s in scores if s > _SENTIMENT_POSITIVE)
+        negative = sum(1 for s in scores if s < _SENTIMENT_NEGATIVE)
+        return SentimentSample(
+            symbol=symbol,
+            score=mean,
+            window=window,
+            as_of=datetime.now(tz=UTC),
+            source=_RSS_VADER_SOURCE,
+            breakdown={
+                "positive": positive,
+                "negative": negative,
+                "neutral": len(scores) - positive - negative,
+            },
         )
 
     def get_news(
