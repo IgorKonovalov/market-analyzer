@@ -1,6 +1,6 @@
 # 0010 — RSS news adapter + per-headline VADER sentiment
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
 > **Owner skill(s):** `dev` (all phases)
@@ -80,12 +80,13 @@ flowchart LR
   - New `src/market_analyser/data/adapters/rss_news.py` (~120–150 lines including the feed catalog).
   - New `src/market_analyser/data/_symbol_match.py` (the token-match helper — small, reusable later by sentiment / news downstream).
   - `src/market_analyser/data/default_provider.py`: `get_news` now dispatches to the new adapter (no longer raises).
+  - `src/market_analyser/data/types.py`: relax `NewsItem.symbol` — drop `Field(min_length=1)`, default to `""` — so the no-filter sentinel is constructible (see "Data shapes" below). Phase 2 adds `summary` + `compound_sentiment` to the same model.
   - New `tests/data/test_rss_news_adapter.py`.
   - New `tests/data/fixtures/rss_news_coindesk.xml`, `rss_news_yahoo.xml`, `rss_news_cnbc.xml` (captured offline fixtures from each feed shape; scrubbed of tracking pixels).
   - New `tests/data/test_symbol_match.py`.
 - **Done when:**
-  - **Offline fixture parsing:** Given the three captured fixture XML files, `adapter.fetch(symbol=None, window="24h")` (with `ResilientHttpClient` mocked to return the fixture bytes per URL) returns a `list[NewsItem]` whose count equals the sum of items across fixtures with `published_at >= now() - 24h`. Each `NewsItem.title`, `.url`, `.published_at`, `.source` is populated; `.symbol == ""` (sentinel for "no symbol filter applied").
-  - **Symbol filtering:** With `symbol="BTC"`, only items whose title or summary contains `BTC` as a token (case-insensitive, word boundaries) are returned. Specifically: an item titled "BTC reaches new high" matches; an item titled "Together they invest" does not (no false-positive on "ETH"). The `_symbol_match` helper has its own unit tests.
+  - **Offline fixture parsing:** Given the three captured fixture XML files, `adapter.fetch(symbol=None, window="24h")` (with `ResilientHttpClient` mocked to return the fixture bytes per URL) returns a `list[NewsItem]` whose count equals the sum of items across fixtures with `published_at >= now() - 24h`. Each `NewsItem.title`, `.url`, `.published_at`, `.source` is populated; `.symbol == ""` — the no-filter sentinel (`NewsItem.symbol` records the filter that was applied, empty when none was). This requires `NewsItem.symbol` to permit `""`, relaxed in this phase (see Files touched).
+  - **Symbol filtering:** With `symbol="BTC"`, only items whose title or summary contains `BTC` as a token (case-insensitive, word boundaries) are returned, and each returned item carries `.symbol == "BTC"` (the applied filter). Specifically: an item titled "BTC reaches new high" matches; an item titled "Together they invest" does not (no false-positive on "ETH"). The `_symbol_match` helper has its own unit tests.
   - **Window filtering:** With `window="1h"` and fixture items dated 30 min, 90 min, and 5 hours ago, only the 30-min item is returned. Asserted with a frozen-time fixture (`freezegun` is a stdlib-adjacent option OR a `monkeypatch` on `datetime.now`; implementer's call).
   - **Feed-specific quirks:** The Yahoo and CNBC fixture requests have a `User-Agent: market-analyser/<version>` header asserted via the mocked client's request log. Feeds without the quirk requirement do NOT add the User-Agent (or add it harmlessly — implementer's call; asserted either way).
   - **Resilience inheritance:** With a mocked client that raises `ConnectionError` for the CoinDesk fixture URL and returns 200 for the other four: `adapter.fetch()` returns items from the four healthy feeds and does NOT raise. Failed feeds are logged at WARN with the feed name; the log capture asserts the log line exists. (One feed down does not kill the news call — graceful degradation.)
@@ -139,16 +140,21 @@ flowchart LR
 ## Data shapes
 
 ```python
-# Extensions to existing types (additive — Phase 2):
+# NewsItem: the `symbol` relaxation lands in Phase 1; `summary` + `compound_sentiment`
+# are additive Phase 2 extensions. SentimentSample.breakdown is additive Phase 2.
 
 class NewsItem(BaseModel):
-    symbol: str = Field(min_length=1)
+    # "" = no symbol filter was applied (adapter.fetch(symbol=None)); otherwise the
+    # applied filter, e.g. "BTC". Relaxed from Field(min_length=1) so the no-filter
+    # sentinel is constructible (Phase 1). Kept as `str` (not `str | None`) so the MCP
+    # serialization, aggregation, and tests don't grow Optional-handling.
+    symbol: str = ""
     title: str
     url: str
     published_at: datetime
     source: str = Field(min_length=1)
-    summary: str = ""                              # NEW
-    compound_sentiment: float | None = None        # NEW
+    summary: str = ""                              # NEW (Phase 2)
+    compound_sentiment: float | None = None        # NEW (Phase 2)
 
 class SentimentSample(BaseModel):
     symbol: str = Field(min_length=1)
