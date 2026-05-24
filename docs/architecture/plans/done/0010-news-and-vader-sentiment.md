@@ -1,8 +1,9 @@
 # 0010 — RSS news adapter + per-headline VADER sentiment
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
+> **Closed:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (resilience module — inherited from Plan 0009), [ADR-0007](../adrs/0007-market-data-provider.md) (Provider Protocol — implements `get_news` and `get_sentiment` stubs), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house data layer), [ADR-0012](../adrs/0012-dependency-cooldown.md) + [ADR-0013](../adrs/0013-pin-direct-dependencies.md) (new direct deps: `feedparser`, `vaderSentiment`)
 > **Depends on:** [Plan 0009](0009-resilience-and-tradingview-screener.md) phase 1 (`ResilientHttpClient` module).
@@ -229,4 +230,8 @@ _FEED_CATALOG = {
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes during the close ceremony.
+Close-review fired 2026-05-24 (fresh architect session). Verdict: **clean — no blockers, no majors.** All three `dev` phases shipped as planned; 35/35 plan specs pass with assertion bodies read (not just CI), pre-existing MCP regression green (45 passed, 1 known Windows skip), `mypy --strict src tests` clean (148 files). Layering honored (MCP tool → provider Protocol → adapter; tools never import the adapter, ADR-0007); `as_of` rejected on both `get_news` and `get_sentiment` (wall-clock-sensitive anti-lookahead seam, consistent with Plan 0009's screener); dependency discipline clean (`feedparser==6.0.11`, `vadersentiment==3.3.2`, both exact-pinned and years old).
+
+- **(nit, no action) Plan-internal inconsistency in the Risks section.** The "per-headline scoring" risk claimed "Phase 3's done-when asserts that `sentiment_for_news` returns within 2 s for a 50-item fixture." No such perf assertion exists in the phase-3 done-when list, and none was written. The actual done-when (the contract) was met in full; the Risk's description of what it asserted was inaccurate at authoring time. Recorded for honesty; nothing to change.
+- **(done at close) Golden-path smoke step.** Per the Plan 0016 open-followup ("each Tier-2 plan shipping a new agent-facing MCP tool adds one golden-path step at close"), this close added `step_news` to `tests/smoke/golden_path.py` — drives `news_for` (unfiltered, `with_sentiment=true`, asserts ≤5 items each with a float score) then `sentiment_for_news` (asserts `source == "rss-vader"`, score in [-1,1], full breakdown). Steps renumbered (news inserted as step 6). Verified offline (parse + import + `mypy --strict`); **live RSS verification pending the next `pnpm smoke` run** — feed flakiness is non-fatal (the smoke's `UPSTREAM-DOWN` classifier covers it).
+- **(carried, shared) System-map diagram refresh.** `docs/architecture/diagrams/claude-cli-driven-architecture.md` already owes backtest + screener lanes (open-followup from 0008/0009); a news/sentiment lane folds into that same queued pass. No separate action.

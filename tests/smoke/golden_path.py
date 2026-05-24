@@ -4,12 +4,12 @@ A runnable module — *not* pytest-collected (no `test_` prefix) — that attach
 to a live `pnpm dev:all` sidecar and drives one end-to-end golden path through
 every shipped layer against **live** upstreams (Yahoo, TradingView):
 
-    1. attach + /healthz identity     5. screener_query (live TradingView)
-    2. get_ohlcv (live Yahoo)         6. annotation roundtrip + highlight
-    3. show_chart -> viewer           7. SSE liveness (chart.show/run.completed/
+    1. attach + /healthz identity     6. news_for + sentiment_for_news (live RSS)
+    2. get_ohlcv (live Yahoo)         7. annotation roundtrip + highlight
+    3. show_chart -> viewer           8. SSE liveness (chart.show/run.completed/
     4. run_backtest + determinism        chart.highlight observed end-to-end)
-                                       8. strategies list CLI
-                                       9. cleanup (delete the rows it wrote)
+    5. screener_query (live TV)       9. strategies list CLI
+                                      10. cleanup (delete the rows it wrote)
 
 It prints one `PASS`/`FAIL`/`UPSTREAM-DOWN` line per step and exits non-zero iff
 any step is `FAIL`. A step that fails only because the upstream is unavailable
@@ -430,6 +430,45 @@ async def step_screener(session: ClientSession) -> str:
     return f"{len(rows)} rows, queried_at={payload['queried_at']}"
 
 
+async def step_news(session: ClientSession) -> str:
+    # news_for and sentiment_for_news each take a single Pydantic-model param, so
+    # their MCP arguments nest under `params` (like screener_query). Unfiltered
+    # (symbol=None) so the assertion does not hinge on any one ticker being in the
+    # headlines right now; the five feeds in a 24h window are reliably non-empty.
+    news = await _call_tool(
+        session,
+        "news_for",
+        {"params": {"symbol": None, "window": "24h", "limit": 5, "with_sentiment": True}},
+    )
+    items = news["items"]
+    assert isinstance(items, list), f"items is not a list: {type(items).__name__}"
+    assert items, "news_for returned no headlines across all feeds in 24h"
+    assert len(items) <= 5, f"news_for ignored limit: {len(items)} > 5"
+    for item in items:
+        assert item.get("title") and item.get("url") and item.get("source"), (
+            f"news item incomplete: {item}"
+        )
+        assert isinstance(item.get("compound_sentiment"), float), (
+            f"with_sentiment item missing a float score: {item}"
+        )
+    assert news.get("queried_at"), "news_for reply missing queried_at"
+
+    # sentiment_for_news is defined even with zero matching headlines (score 0.0,
+    # all-zero breakdown), so a quiet ticker does not make this step FAIL.
+    sentiment = await _call_tool(
+        session,
+        "sentiment_for_news",
+        {"params": {"symbol": "BTC", "window": "24h"}},
+    )
+    assert sentiment.get("source") == "rss-vader", sentiment
+    score = sentiment["score"]
+    assert -1.0 <= score <= 1.0, f"sentiment score out of range: {score}"
+    breakdown = sentiment["breakdown"]
+    assert set(breakdown) == {"positive", "negative", "neutral"}, breakdown
+    assert sentiment.get("queried_at"), "sentiment reply missing queried_at"
+    return f"{len(items)} headlines; BTC score={score:.3f} {breakdown}"
+
+
 async def step_annotations(session: ClientSession) -> str:
     written = await _call_tool(
         session,
@@ -582,17 +621,18 @@ async def _amain() -> int:
                     "4. run_backtest + determinism", step_backtest(session, conn)
                 )
                 await results.run_async("5. screener (live TradingView)", step_screener(session))
+                await results.run_async("6. news + sentiment (live RSS)", step_news(session))
                 await results.run_async(
-                    "6. annotation roundtrip + highlight", step_annotations(session)
+                    "7. annotation roundtrip + highlight", step_annotations(session)
                 )
-                results.run_sync("7. SSE liveness", lambda: step_sse_liveness(reader))
+                results.run_sync("8. SSE liveness", lambda: step_sse_liveness(reader))
             finally:
                 reader.stop()
     except Exception as exc:  # a connect/teardown failure is one FAIL, not a crash
         results.items.append(StepResult("MCP session", classify_error(exc), _describe(exc)))
 
-    results.run_sync("8. strategies list CLI", step_cli)
-    results.run_sync("9. cleanup", lambda: step_cleanup(conn))
+    results.run_sync("9. strategies list CLI", step_cli)
+    results.run_sync("10. cleanup", lambda: step_cleanup(conn))
 
     print(format_report(results.items))
     print("\n" + MANUAL_CHECKLIST)
