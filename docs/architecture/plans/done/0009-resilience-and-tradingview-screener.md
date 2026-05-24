@@ -1,8 +1,9 @@
 # 0009 — Resilience module + TradingView screener adapter
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
+> **Closed:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (paired — defines the shared resilience pattern), [ADR-0007](../adrs/0007-market-data-provider.md) (Provider Protocol — `get_screener` is the stubbed method this plan implements), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house data layer), [ADR-0012](../adrs/0012-dependency-cooldown.md) + [ADR-0013](../adrs/0013-pin-direct-dependencies.md) (new direct deps), [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (MCP tool transport)
 
@@ -199,4 +200,11 @@ The Mode 1 interview locked the series + screener-first direction. Beyond that:
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes during the close ceremony.
+Populated at the close ceremony (2026-05-24) from review findings + the implementer's commit-message flags. No blockers; all four phases shipped with done-when assertions verified against a live test run (371 passed / 4 known Windows skips / 3 network-deselected; mypy `--strict` clean on the seven touched modules).
+
+| # | Item | Owner | Note |
+|---|------|-------|------|
+| 1 | `tradingview-ta==3.3.0` is an unused direct dependency | `dev` | The adapter uses `tradingview-screener` purely as a query/URL builder and POSTs through `ResilientHttpClient` (`get_scanner_data` is deliberately not called per ADR-0019's single-HTTP-path invariant). `tradingview-ta` is imported nowhere in `src/` (`git grep tradingview_ta src/` → 0 matches). The plan's phase-2 file list named both libs, but only `tradingview-screener` is consumed. Against ADR-0013 parsimony. Remove from `pyproject.toml` + re-run `uv lock` in a single commit — unless a near-term plan (0010–0012) is expected to consume it, in which case add a one-line comment recording the intent. Implementer flagged this in commit `6aaa638` for the ceremony. |
+| 2 | `_http.py` is 513 lines — just over the ~500-line package-split trigger | `dev` | ADR-0019's open-question set ~500 lines as the point to promote `data/_http.py` to an `_http/` package (cache + retry in their own files). The line count is over, but the cache/retry *logic* is well under budget — the bulk is the type definitions (`HttpResponse`, `ProxyConfig`, `HttpClientStats`, `ResilientHttpError`, `ErrorKind`) and docstrings. No action recommended now; revisit only if the retry/cache logic itself grows. Recorded so the threshold isn't silently blown past in 0010–0012 as more classifier overrides land. |
+| 3 | Dual `limit` cap is undocumented | `dev` | Adapter `_MAX_LIMIT = 500`; MCP boundary `Field(le=200)`. Defensible split (MCP is the agent-facing gate, the adapter is reusable defense-in-depth) but the two ceilings aren't cross-referenced. One-line comment on `_MAX_LIMIT` pointing at the MCP boundary would close the gap. Nit. |
+| 4 | Screener path not yet on the system map | `architect` | `docs/architecture/diagrams/claude-cli-driven-architecture.md` predates both `run_backtest` (Plan 0008, already a queued followup) and now `screener_query` + the TradingView upstream. Fold the screener lane into the same diagram-refresh pass already tracked in the plans-index open-followups for Plan 0008. |

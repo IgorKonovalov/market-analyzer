@@ -1,7 +1,7 @@
 # ADR-0019 — External HTTP adapter resilience pattern (shared module)
 
-> **Status:** proposed
-> **Date:** 2026-05-20
+> **Status:** accepted
+> **Date:** 2026-05-20 (accepted 2026-05-24 at Plan 0009 close)
 > **Related plan(s):** [0009-resilience-and-tradingview-screener](../plans/0009-resilience-and-tradingview-screener.md) (lands this module + the first adapter that sits on it), [0010-news-and-vader-sentiment](../plans/0010-news-and-vader-sentiment.md), [0011-fear-and-greed-indices](../plans/0011-fear-and-greed-indices.md), [0012-stocktwits-sentiment](../plans/0012-stocktwits-sentiment.md)
 > **Related ADRs:** [ADR-0007](0007-market-data-provider.md) (`MarketDataProvider` Protocol — adapters that sit on this module), [ADR-0009](0009-rewrite-data-layer-in-house.md) (in-house data layer — superseded ADR-0003), [ADR-0006](0006-persistence-layout.md) (SQLite cache vs in-memory TTL cache distinction)
 
