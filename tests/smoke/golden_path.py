@@ -4,12 +4,13 @@ A runnable module — *not* pytest-collected (no `test_` prefix) — that attach
 to a live `pnpm dev:all` sidecar and drives one end-to-end golden path through
 every shipped layer against **live** upstreams (Yahoo, TradingView):
 
-    1. attach + /healthz identity     6. news_for + sentiment_for_news (live RSS)
-    2. get_ohlcv (live Yahoo)         7. annotation roundtrip + highlight
-    3. show_chart -> viewer           8. SSE liveness (chart.show/run.completed/
-    4. run_backtest + determinism        chart.highlight observed end-to-end)
-    5. screener_query (live TV)       9. strategies list CLI
-                                      10. cleanup (delete the rows it wrote)
+    1. attach + /healthz identity      7. crypto_fear_greed (live Alternative.me)
+    2. get_ohlcv (live Yahoo)          8. annotation roundtrip + highlight
+    3. show_chart -> viewer            9. SSE liveness (chart.show/run.completed/
+    4. run_backtest + determinism         chart.highlight observed end-to-end)
+    5. screener_query (live TV)       10. strategies list CLI
+    6. news_for + sentiment_for_news  11. cleanup (delete the rows it wrote)
+       (live RSS)
 
 It prints one `PASS`/`FAIL`/`UPSTREAM-DOWN` line per step and exits non-zero iff
 any step is `FAIL`. A step that fails only because the upstream is unavailable
@@ -81,7 +82,7 @@ SSE_LIVENESS_TIMEOUT_S = 20.0
 MANUAL_CHECKLIST = """\
 Manual visual checklist - watch the live viewer (the script cannot assert these):
   [ ] 1. AAPL daily candles render in the viewer after step 3 (show_chart).
-  [ ] 2. A bullish marker lands on the AAPL chart after step 6 (highlight_pattern).
+  [ ] 2. A bullish marker lands on the AAPL chart after step 8 (highlight_pattern).
   [ ] 3. BacktestView shows a non-empty equity curve + metrics after step 4.
   [ ] 4. The screener reply surfaces an "as of HH:MM" wall-clock (queried_at, step 5)."""
 
@@ -469,6 +470,30 @@ async def step_news(session: ClientSession) -> str:
     return f"{len(items)} headlines; BTC score={score:.3f} {breakdown}"
 
 
+async def step_fear_greed(session: ClientSession) -> str:
+    # crypto_fear_greed takes a single empty Pydantic-model param, so its MCP
+    # arguments nest under `params` (like screener_query / news_for) with no
+    # fields. The index is market-wide and updates ~daily, so the only stable
+    # assertions are the response shape plus the value/label invariants.
+    payload = await _call_tool(session, "crypto_fear_greed", {"params": {}})
+    assert set(payload) == {"value", "classification", "published_at", "queried_at", "source"}, (
+        f"crypto_fear_greed shape unexpected: {sorted(payload)}"
+    )
+    value = payload["value"]
+    assert isinstance(value, int) and 0 <= value <= 100, f"F&G value out of range: {value!r}"
+    assert payload["classification"] in (
+        "Extreme Fear",
+        "Fear",
+        "Neutral",
+        "Greed",
+        "Extreme Greed",
+    ), f"unknown F&G classification: {payload['classification']!r}"
+    assert payload.get("published_at"), "crypto_fear_greed missing published_at"
+    assert payload.get("queried_at"), "crypto_fear_greed missing queried_at"
+    assert payload["source"] == "alternative.me-fng", payload
+    return f"value={value} ({payload['classification']})"
+
+
 async def step_annotations(session: ClientSession) -> str:
     written = await _call_tool(
         session,
@@ -623,16 +648,19 @@ async def _amain() -> int:
                 await results.run_async("5. screener (live TradingView)", step_screener(session))
                 await results.run_async("6. news + sentiment (live RSS)", step_news(session))
                 await results.run_async(
-                    "7. annotation roundtrip + highlight", step_annotations(session)
+                    "7. crypto F&G (live Alternative.me)", step_fear_greed(session)
                 )
-                results.run_sync("8. SSE liveness", lambda: step_sse_liveness(reader))
+                await results.run_async(
+                    "8. annotation roundtrip + highlight", step_annotations(session)
+                )
+                results.run_sync("9. SSE liveness", lambda: step_sse_liveness(reader))
             finally:
                 reader.stop()
     except Exception as exc:  # a connect/teardown failure is one FAIL, not a crash
         results.items.append(StepResult("MCP session", classify_error(exc), _describe(exc)))
 
-    results.run_sync("9. strategies list CLI", step_cli)
-    results.run_sync("10. cleanup", lambda: step_cleanup(conn))
+    results.run_sync("10. strategies list CLI", step_cli)
+    results.run_sync("11. cleanup", lambda: step_cleanup(conn))
 
     print(format_report(results.items))
     print("\n" + MANUAL_CHECKLIST)

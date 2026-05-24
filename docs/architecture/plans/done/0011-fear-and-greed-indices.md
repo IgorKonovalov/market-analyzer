@@ -1,8 +1,9 @@
 # 0011 — Crypto Fear & Greed index (Alternative.me)
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
+> **Closed:** 2026-05-24
 > **Owner skill(s):** `dev` (single phase)
 > **Related ADRs:** [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (resilience module — inherited), [ADR-0007](../adrs/0007-market-data-provider.md) (Provider Protocol), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house data layer)
 > **Depends on:** [Plan 0009](0009-resilience-and-tradingview-screener.md) phase 1 (`ResilientHttpClient`).
@@ -141,4 +142,13 @@ class CryptoFearGreedInput(BaseModel):
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes during the close ceremony.
+**Close-review (2026-05-24): no blockers, no majors, no minors.** The single phase landed in one commit (`0697e1c`) exactly as decided.
+
+- **Verification (read, not trusted).** Re-ran `tests/data/test_crypto_fear_greed_adapter.py` + `tests/api/test_crypto_fear_greed_tool.py` + `tests/api/test_mcp_tools.py` → 22 passed; `mypy --strict src` clean across 71 files. Every assertion body was read against the plan's done-when claims — none are stubs: range-out-of-bounds and unknown-label both assert `ValidationError` at parse (not silent truncation); the TTL test asserts `requests == 1 && cache_hits == 1`; the MCP test asserts the response shape key-by-key and that any supplied argument raises `ToolError`; the provider test asserts `as_of` → `ValueError` and `market="equity"` → `NotImplementedError`. The `MarketSentimentSample` model is a clean additive Protocol change (frozen, `extra="forbid"`, bounded `value`, five-value `Literal` label); existing provider test-doubles gained a matching stub so the additive change stays `--strict` clean.
+- **Golden-path smoke step added (recurring Tier-2 close followup, owner `architect`).** `step_fear_greed` now drives `crypto_fear_greed` live as step 7 of `tests/smoke/golden_path.py`; the SSE/annotation/CLI/cleanup steps renumber to 8–11 and a stale manual-checklist step number (highlight_pattern, left at "step 6" since the Plan 0010 close) is corrected to step 8. Offline-verified (import + helpers suite green); live run pending — see the bug note below for why the live smoke is currently red on unrelated steps.
+
+**Not Plan 0011 work — recorded for provenance.** The live close smoke surfaced two **pre-existing** defects in the Yahoo OHLCV path (none in this plan's crypto-F&G code):
+1. `data/adapters/_yahoo_fetch.py` interpolates the symbol into the request URL un-encoded, so a symbol with a space (e.g. `"BTC USD"`) raises `http.client.InvalidURL` before any request goes out → wrapped as `ResilientHttpError`.
+2. `api/routes/ohlcv.py` catches only `ValueError`, so a `ResilientHttpError` becomes an unhandled 500 with a full traceback in the logs.
+
+Both are being fixed in a separate `dev` bug-fix commit (URL-encode the path segment + a minimal `ResilientHttpError` → 502 guard on `/ohlcv`). The systematic error taxonomy (`UnknownSymbolError`/`RateLimitedError`/`UpstreamUnavailableError`, distinct status codes, the honest `{bars, partial_reason, message}` shape) and crypto-symbol guidance remain [Plan 0013](0013-auto-backfill-on-cache-miss.md)'s scope.
