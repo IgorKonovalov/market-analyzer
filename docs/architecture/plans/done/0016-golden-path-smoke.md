@@ -1,8 +1,9 @@
 # 0016 — Golden-path smoke for shipped functionality
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
+> **Closed:** 2026-05-24
 > **Owner skill(s):** `dev` (phases 1–2), `human` (phase 3)
 > **Related ADRs:** [ADR-0016](../adrs/0016-standalone-sidecar-mode.md) (lockfile attach — the smoke reads the live sidecar's port + bearer), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (`/events` SSE — the smoke subscribes and the SSE-publishing tools feed the live viewer), [ADR-0020](../adrs/0020-shared-data-dir-contract.md) (data-dir contract — where the lockfile + secrets live), [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (MCP transport — the tools the smoke drives), [ADR-0018](../adrs/0018-backtest-result-schema.md) (BacktestResult shape the backtest step asserts), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (typed upstream errors the driver uses to distinguish "upstream down" from "our integration broke")
 > **Related plans:** [Plan 0015](done/0015-pnpm-dev-all.md) (`pnpm dev:all` — the smoke attaches to the sidecar it starts; this plan adds a sibling `pnpm smoke`). No paired ADR — like Plan 0015, this is dev tooling, not a durable architectural tradeoff.
@@ -156,4 +157,9 @@ The interview locked the three load-bearing forks: **hybrid** (scripted asserts 
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes during the close ceremony. (Pre-seed: each Tier-2 plan that adds an agent-facing MCP tool should add one golden-path line at its close — see Risks.)
+Close review (2026-05-24) found **no blockers and no majors**. Phases 1–2 (`dev`) landed clean; phase 3 (`human`) ran green end-to-end (all automated steps `PASS`, exit 0, all four visual checklist items confirmed, clean second run). Verified at close: 17 offline tests pass (7 helper + 10 `DELETE /annotations` route), `mypy --strict` clean on the four touched files, the driver is not pytest-collected (`tests/smoke/` collects only the 7 helper tests), and the `mcp==1.27.1` client API (`streamable_http_client(url, *, http_client=...)`) matches the driver's usage.
+
+Carried items:
+
+1. **Golden-path maintenance hook (recurring).** Each Tier-2 plan (0010–0012) that ships an agent-facing MCP tool should add one golden-path step to `tests/smoke/golden_path.py` at its own close, so the smoke keeps covering the shipped surface (plan Risk: "smoke drifts as new tools ship"). Recorded in the plans-index open-followups table so future close ceremonies pick it up. Owner: the closing `architect` session per plan.
+2. **Production HTTP surface shipped (resolved open-question, recorded for the map).** The plan's cleanup open-question ("repository delete method or a new `DELETE` route?") resolved to **both** — `AnnotationsRepository.delete()` plus a renderer-bearer-only `DELETE /annotations/{id}` (204/404), with cross-tenant (MCP bearer → 401) + not-found coverage. This is the one piece of this plan that is durable `src/` product, not `tests/` tooling; it's append-only-from-the-agent by design (no MCP delete tool). When the system-map diagram is next refreshed (the queued 0008/0009 diagram pass), the renderer's annotation-delete edge belongs on it. Owner: `architect` (folds into the queued diagram refresh).
