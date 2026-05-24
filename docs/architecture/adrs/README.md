@@ -42,22 +42,22 @@ How decisions have replaced or evolved one another. Most ADRs are standalone and
 ```mermaid
 flowchart LR
   %% Supersessions (a later ADR replaces an earlier one)
-  0001["0001 · Tauri shell"] -->|superseded by| 0005["0005 · Electron shell"]
-  0003["0003 · vendor upstream"] -->|superseded by| 0009["0009 · in-house data layer"]
+  a0001["0001 · Tauri shell"] -->|superseded by| a0005["0005 · Electron shell"]
+  a0003["0003 · vendor upstream"] -->|superseded by| a0009["0009 · in-house data layer"]
 
   %% Refinements (earlier decision stands; later ADR narrows/extends it)
-  0002["0002 · IPC over HTTP"] -->|refined by| 0011["0011 · bearer transport"]
-  0011 -->|refined by| 0016["0016 · standalone sidecar"]
-  0016 -->|refined by| 0020["0020 · data-dir contract"]
-  0016 -->|refined by| 0022["0022 · shutdown cleanup"]
-  0014["0014 · MCP protocol"] -->|refined by| 0015["0015 · Claude primary"]
+  a0002["0002 · IPC over HTTP"] -->|refined by| a0011["0011 · bearer transport"]
+  a0011 -->|refined by| a0016["0016 · standalone sidecar"]
+  a0016 -->|refined by| a0020["0020 · data-dir contract"]
+  a0016 -->|refined by| a0022["0022 · shutdown cleanup"]
+  a0014["0014 · MCP protocol"] -->|refined by| a0015["0015 · Claude primary"]
 
   %% Partial supersede / amend / extend (dashed: earlier ADR's prose still stands)
-  0008["0008 · Electron conventions"] -.->|tsconfig partly superseded by| 0010["0010 · tsconfig layout"]
-  0009 -.->|amends| 0004["0004 · strategy interface"]
-  0009 -.->|amends| 0006["0006 · persistence"]
-  0009 -.->|amends| 0007["0007 · MarketDataProvider"]
-  0018["0018 · BacktestResult"] -.->|extended by| 0024["0024 · extended metrics"]
+  a0008["0008 · Electron conventions"] -.->|tsconfig partly superseded by| a0010["0010 · tsconfig layout"]
+  a0009 -.->|amends| a0004["0004 · strategy interface"]
+  a0009 -.->|amends| a0006["0006 · persistence"]
+  a0009 -.->|amends| a0007["0007 · MarketDataProvider"]
+  a0018["0018 · BacktestResult"] -.->|extended by| a0024["0024 · extended metrics"]
 ```
 
 **Reading the edges:** solid = supersede or refine (the later ADR changes which decision is in force); dashed = amend / extend / partial-supersede (the earlier ADR's body still stands, the later one adjusts its interpretation or appends to it — e.g. ADR-0009 didn't rewrite 0004/0006/0007, it reinterpreted "vendored" as "in-house" across them).
