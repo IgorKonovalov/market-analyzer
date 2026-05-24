@@ -28,6 +28,7 @@ not exist in this version; no raw-JSON-RPC fallback was needed).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import shutil
@@ -78,7 +79,7 @@ SSE_LIVENESS_TIMEOUT_S = 20.0
 # the live viewer, but only a human can confirm they rendered. Kept in sync with
 # the "Smoke check" section of docs/onboarding/claude-code-setup.md.
 MANUAL_CHECKLIST = """\
-Manual visual checklist — watch the live viewer (the script cannot assert these):
+Manual visual checklist - watch the live viewer (the script cannot assert these):
   [ ] 1. AAPL daily candles render in the viewer after step 3 (show_chart).
   [ ] 2. A bullish marker lands on the AAPL chart after step 6 (highlight_pattern).
   [ ] 3. BacktestView shows a non-empty equity curve + metrics after step 4.
@@ -180,7 +181,7 @@ def exit_code(results: Sequence[StepResult]) -> int:
 def format_report(results: Sequence[StepResult]) -> str:
     """Render the one-line-per-step report plus a one-line tally."""
     lines = [
-        f"[{r.status.value:>13}] {r.name}" + (f" — {r.detail}" if r.detail else "") for r in results
+        f"[{r.status.value:>13}] {r.name}" + (f" - {r.detail}" if r.detail else "") for r in results
     ]
     n_pass = sum(1 for r in results if r.status is Status.PASS)
     n_fail = sum(1 for r in results if r.status is Status.FAIL)
@@ -405,14 +406,19 @@ async def step_backtest(session: ClientSession, conn: Connection) -> str:
 
 
 async def step_screener(session: ClientSession) -> str:
+    # screener_query is the one tool that takes a single Pydantic-model param,
+    # so its MCP arguments nest the fields under `params` (every other tool
+    # takes flat top-level parameters).
     payload = await _call_tool(
         session,
         "screener_query",
         {
-            "filters": {"RSI": {"lt": 35}},
-            "market": "america",
-            "exchange": "NASDAQ",
-            "limit": 5,
+            "params": {
+                "filters": {"RSI": {"lt": 35}},
+                "market": "america",
+                "exchange": "NASDAQ",
+                "limit": 5,
+            },
         },
     )
     rows = payload["rows"]
@@ -469,7 +475,7 @@ async def step_annotations(session: ClientSession) -> str:
     )
     assert highlight.get("event_published") is True, highlight
     assert highlight.get("type") == "chart.highlight", highlight
-    return f"wrote+listed id={annotation_id[:8]}…, highlight published"
+    return f"wrote+listed id={annotation_id[:8]}..., highlight published"
 
 
 def step_sse_liveness(reader: SseReader) -> str:
@@ -571,7 +577,7 @@ async def _amain() -> int:
             reader.start()
             reader.wait_connected(timeout=5.0)
             try:
-                await results.run_async("3. show_chart → viewer", step_show_chart(session))
+                await results.run_async("3. show_chart -> viewer", step_show_chart(session))
                 await results.run_async(
                     "4. run_backtest + determinism", step_backtest(session, conn)
                 )
@@ -594,6 +600,11 @@ async def _amain() -> int:
 
 
 def main() -> int:
+    # Windows consoles default to cp1252; force UTF-8 (replace on failure) so the
+    # report can never die on a stray non-ASCII byte in an upstream error string.
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError):
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
     return asyncio.run(_amain())
 
 
