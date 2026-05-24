@@ -18,7 +18,7 @@ liveness without holding either secret.
 from __future__ import annotations
 
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -64,6 +64,7 @@ def create_app(
     engine: Engine | None = None,
     dev_origin: str | None = None,
     event_bus: EventBus | None = None,
+    on_shutdown: Sequence[Callable[[], None]] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
 
@@ -124,12 +125,21 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        if mcp_components is None:
-            yield
-            return
-        session_manager, _asgi_app = mcp_components
-        async with session_manager.run():
-            yield
+        # `on_shutdown` callbacks run in a `finally` so process-level cleanup
+        # (e.g. lockfile removal from __main__) fires during uvicorn's graceful
+        # shutdown — which happens *before* uvicorn re-raises a captured SIGTERM
+        # and kills the process. A post-`serve()` `finally` would be unreachable
+        # on SIGTERM; this seam is the fix (ADR-0022).
+        try:
+            if mcp_components is None:
+                yield
+            else:
+                session_manager, _asgi_app = mcp_components
+                async with session_manager.run():
+                    yield
+        finally:
+            for shutdown_callback in on_shutdown or ():
+                shutdown_callback()
 
     app = FastAPI(title="market-analyser", version=__version__, lifespan=lifespan)
     app.state.provider = effective_provider

@@ -395,11 +395,13 @@ def test_renderer_secret_rotates_per_sidecar_boot(tmp_path: Path) -> None:
         secret1 = LockfileRecord.model_validate_json(lockfile.read_bytes()).renderer_secret
     finally:
         rc = _kill_and_wait(proc1)
-        # On POSIX we expect a clean SIGTERM-driven exit; on Windows
+        # On POSIX we expect a graceful SIGTERM-driven shutdown; on Windows
         # TerminateProcess returns 1 and the finally block doesn't run.
         if sys.platform != "win32":
-            assert rc == 0
-            # Lockfile was cleaned up by the SIGTERM finally block.
+            # uvicorn re-raises SIGTERM after graceful shutdown, so the process
+            # reports signal-termination (-15), not a clean 0 (ADR-0022).
+            assert rc in (0, -signal.SIGTERM)
+            # Lockfile was cleaned up by the lifespan shutdown hook (ADR-0022).
             assert not lockfile.exists()
         else:
             # Windows: clear the lockfile ourselves so the second sidecar

@@ -164,6 +164,7 @@ async def _serve(
     secret: str,
     config_path: Path | None,
     dev_origin: str | None,
+    lockfile_path: Path,
 ) -> None:
     config = load_config(config_path)
     engine = make_engine(config.db_path)
@@ -178,6 +179,10 @@ async def _serve(
         engine=engine,
         runs_dir=runs_dir,
         dev_origin=dev_origin,
+        # Remove the lockfile during the app's lifespan shutdown so cleanup runs
+        # before uvicorn re-raises a captured SIGTERM (ADR-0022). The `_run_serve`
+        # `finally` below is an idempotent backstop for non-serve exit paths.
+        on_shutdown=[lambda: remove_lockfile(lockfile_path)],
     )
     uvicorn_config = uvicorn.Config(app, log_level="info", access_log=False)
     server = uvicorn.Server(uvicorn_config)
@@ -191,7 +196,12 @@ def _run_serve(
     dev_origin: str | None,
     lockfile_path: Path,
 ) -> None:
-    """Serve until the OS signals shutdown; remove the lockfile in a `finally`."""
+    """Serve until the OS signals shutdown.
+
+    The lockfile is removed by the app's lifespan shutdown hook (ADR-0022),
+    which runs before uvicorn re-raises a captured SIGTERM. The `finally` here
+    is an idempotent backstop for exit paths that never enter `serve()`.
+    """
     _probe_and_prepare_lockfile(lockfile_path)
     secret = _resolve_secret()
     sock = _bind_socket(port)
@@ -206,7 +216,7 @@ def _run_serve(
     # the PORT line and immediately reads the lockfile will see a valid record.
     print(f"PORT={actual_port}", flush=True)
     try:
-        asyncio.run(_serve(sock, secret, config_path, dev_origin))
+        asyncio.run(_serve(sock, secret, config_path, dev_origin, lockfile_path))
     finally:
         sock.close()
         remove_lockfile(lockfile_path)
@@ -273,9 +283,12 @@ def main(argv: list[str] | None = None) -> None:
 
 
 # Async loop signal-handler hookup: uvicorn installs its own SIGTERM/SIGINT
-# handlers when running; the `finally` block in `_run_serve` runs after uvicorn
-# returns control. The atomic-replace `write_lockfile` + `finally`-removal pair
-# keeps the file lifecycle bounded by the process's serving window.
+# handlers and, after a graceful shutdown, restores the original handler and
+# RE-RAISES the captured signal (uvicorn 0.46 `capture_signals`). For SIGTERM
+# that default disposition kills the process *inside* `server.serve()`, so the
+# `_run_serve` `finally` never runs on SIGTERM. Lockfile removal therefore lives
+# in the app's lifespan shutdown (runs before the re-raise) — see ADR-0022. The
+# `finally` remains an idempotent backstop for non-serve exit paths.
 
 if __name__ == "__main__":
     main()
