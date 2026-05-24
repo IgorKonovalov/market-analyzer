@@ -14,13 +14,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
-from typing import Any
+from typing import Any, Literal
 
+from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.types import (
     Bar,
+    MarketSentimentSample,
     NewsItem,
     Quote,
     ScreenerRow,
@@ -52,11 +54,13 @@ class DefaultMarketDataProvider:
         yahoo: YahooAdapter | None = None,
         screener: TradingViewScreenerAdapter | None = None,
         news: RssNewsAdapter | None = None,
+        crypto_fng: CryptoFearGreedAdapter | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
         self._screener = screener if screener is not None else TradingViewScreenerAdapter()
         self._news = news if news is not None else RssNewsAdapter()
+        self._crypto_fng = crypto_fng if crypto_fng is not None else CryptoFearGreedAdapter()
         self._repo = bar_repository
 
     def get_ohlcv(
@@ -190,6 +194,25 @@ class DefaultMarketDataProvider:
         return self._news.fetch(
             symbol=symbol, window=window, limit=limit, with_sentiment=with_sentiment
         )
+
+    def get_market_sentiment(
+        self,
+        market: Literal["crypto"],
+        window: str = "current",
+        as_of: datetime | None = None,
+    ) -> MarketSentimentSample:
+        # F&G is wall-clock-current: there is no replayable historical source to
+        # honour `as_of` against, so reject it at the boundary (Plan 0011).
+        if as_of is not None:
+            raise ValueError(
+                "as_of is not supported for market sentiment — the Fear & Greed "
+                "index is wall-clock-sensitive (Plan 0011 / ADR-0019)",
+            )
+        if market != "crypto":
+            raise NotImplementedError(
+                f"market {market!r} F&G not implemented; see Plan 0011 followups",
+            )
+        return self._crypto_fng.fetch_current()
 
 
 def _coverage_gaps(

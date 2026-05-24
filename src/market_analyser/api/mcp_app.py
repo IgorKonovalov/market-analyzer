@@ -54,6 +54,7 @@ from market_analyser.api.events import (
     Marker,
     OverlaySpec,
 )
+from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
@@ -312,6 +313,7 @@ def create_mcp_components(
     register_screener_query(server, provider=provider)
     register_news_for(server, provider=provider)
     register_sentiment_for_news(server, provider=provider)
+    register_crypto_fear_greed(server, provider=provider)
 
     if backtest_runs_repository is not None and runs_dir is not None:
         register_run_backtest(

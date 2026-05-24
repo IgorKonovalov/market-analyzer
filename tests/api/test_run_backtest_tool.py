@@ -42,6 +42,7 @@ from market_analyser.api.events import Envelope, EventBus
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.types import (
     Bar,
+    MarketSentimentSample,
     NewsItem,
     Quote,
     ScreenerRow,
@@ -126,6 +127,11 @@ class _BarsProvider:
     def get_sentiment(
         self, symbol: str, window: str, as_of: datetime | None = None
     ) -> SentimentSample:
+        raise NotImplementedError
+
+    def get_market_sentiment(
+        self, market: str, window: str = "current", as_of: datetime | None = None
+    ) -> MarketSentimentSample:
         raise NotImplementedError
 
     def get_news(

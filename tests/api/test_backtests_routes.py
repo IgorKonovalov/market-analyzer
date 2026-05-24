@@ -28,6 +28,7 @@ from market_analyser.backtest.result import (
 from market_analyser.backtest.types import Trade
 from market_analyser.data.types import (
     Bar,
+    MarketSentimentSample,
     NewsItem,
     Quote,
     ScreenerRow,
@@ -80,6 +81,11 @@ class _UnusedProvider:
     def get_sentiment(
         self, symbol: str, window: str, as_of: datetime | None = None
     ) -> SentimentSample:
+        raise NotImplementedError
+
+    def get_market_sentiment(
+        self, market: str, window: str = "current", as_of: datetime | None = None
+    ) -> MarketSentimentSample:
         raise NotImplementedError
 
     def get_news(

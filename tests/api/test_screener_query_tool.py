@@ -23,6 +23,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.data.types import (
     Bar,
+    MarketSentimentSample,
     NewsItem,
     Quote,
     ScreenerRow,
@@ -76,6 +77,11 @@ class _FakeProvider:
         window: str,
         as_of: datetime | None = None,
     ) -> SentimentSample:
+        raise NotImplementedError
+
+    def get_market_sentiment(
+        self, market: str, window: str = "current", as_of: datetime | None = None
+    ) -> MarketSentimentSample:
         raise NotImplementedError
 
     def get_news(

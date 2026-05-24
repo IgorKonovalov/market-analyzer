@@ -12,16 +12,18 @@ Method-by-method readiness for Plan 0001:
     get_screener       implemented in Plan 0009 (TradingView screener adapter).
     get_sentiment      implemented in Plan 0010 (news-derived VADER sentiment).
     get_news           implemented in Plan 0010 (RSS news adapter).
+    get_market_sentiment  implemented in Plan 0011 (crypto Fear & Greed).
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from market_analyser.data.types import (
     Bar,
+    MarketSentimentSample,
     NewsItem,
     Quote,
     ScreenerRow,
@@ -79,3 +81,10 @@ class MarketDataProvider(Protocol):
         with_sentiment: bool = False,
         as_of: datetime | None = None,
     ) -> Sequence[NewsItem]: ...
+
+    def get_market_sentiment(
+        self,
+        market: Literal["crypto"],
+        window: str = "current",
+        as_of: datetime | None = None,
+    ) -> MarketSentimentSample: ...

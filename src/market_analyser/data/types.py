@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -130,8 +131,28 @@ class NewsItem(BaseModel):
     compound_sentiment: float | None = None
 
 
+class MarketSentimentSample(BaseModel):
+    """Market-wide sentiment (e.g. crypto Fear & Greed) — distinct from the
+    per-symbol `SentimentSample` (Plan 0011).
+
+    F&G is market-wide, not per-symbol; pretending it were a special "symbol"
+    would be a category error, so it gets its own model and Protocol method
+    rather than overloading `get_sentiment(symbol, ...)`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    market: Literal["crypto"]  # extends to "equity" when CNN equity F&G lands (additive)
+    value: int = Field(ge=0, le=100)
+    classification: Literal["Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed"]
+    published_at: datetime  # from the upstream timestamp, normalised to UTC
+    source: str = Field(min_length=1)  # "alternative.me-fng"
+    window: str = "current"  # always "current" in v1
+
+
 __all__ = [
     "Bar",
+    "MarketSentimentSample",
     "NewsItem",
     "Quote",
     "ScreenerRow",

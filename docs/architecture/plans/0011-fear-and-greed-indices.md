@@ -1,6 +1,6 @@
 # 0011 — Crypto Fear & Greed index (Alternative.me)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
 > **Owner skill(s):** `dev` (single phase)

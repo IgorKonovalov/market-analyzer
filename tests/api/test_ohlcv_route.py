@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from market_analyser.api.app import create_app
 from market_analyser.data.types import (
     Bar,
+    MarketSentimentSample,
     NewsItem,
     Quote,
     ScreenerRow,
@@ -62,6 +63,11 @@ class FakeMarketDataProvider:
     def get_sentiment(
         self, symbol: str, window: str, as_of: datetime | None = None
     ) -> SentimentSample:
+        raise NotImplementedError
+
+    def get_market_sentiment(
+        self, market: str, window: str = "current", as_of: datetime | None = None
+    ) -> MarketSentimentSample:
         raise NotImplementedError
 
     def get_news(
