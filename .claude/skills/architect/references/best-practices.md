@@ -90,9 +90,9 @@ If state is truly needed, make it explicit: a `class Cache` you instantiate, or 
 
 ## Async / threading discipline
 
-- The Python sidecar will likely become async (FastAPI + uvicorn). Mixing sync data-layer code into an async handler is fine if the data-layer call is fast and CPU-bound; it's a problem if it blocks on network.
-- For external HTTP calls in the data layer, prefer `httpx` (sync + async) over `requests` (sync only). This lets us migrate the data layer to async without rewriting call sites.
-- Never call `asyncio.run()` from inside a request handler — it'll deadlock.
+- The sidecar **is** async (FastAPI + uvicorn); the data layer is deliberately **synchronous** — the `MarketDataProvider` Protocol is sync per ADR-0007, reaffirmed by ADR-0019. A fast, CPU-bound sync call inside an async handler is fine; a sync call that blocks on network must be offloaded with `asyncio.to_thread(...)` at the handler / MCP-tool layer so it never stalls the event loop (see the `screener_query` tool's "event loop not blocked" done-when in Plan 0009).
+- External HTTP in the data layer goes through the in-house `ResilientHttpClient` (`src/market_analyser/data/_http.py`), built on stdlib `urllib.request` — **not** `httpx`, **not** `requests` (ADR-0019: zero new transport dependency; the verbosity is hidden inside the client). The classifier + cache + retry layer is transport-agnostic, so a swap to `httpx` for HTTP/2 or streaming would be one-module-internal if a future plan ever needs it.
+- Never call `asyncio.run()` from inside a request handler — it'll deadlock. Bridge sync→async with `asyncio.to_thread`, never a nested event loop.
 
 ## Documentation as a first-class deliverable
 

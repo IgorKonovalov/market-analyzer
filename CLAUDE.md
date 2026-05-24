@@ -59,7 +59,7 @@ Don't guess. Read the skill descriptions in `.claude/skills/*/SKILL.md` frontmat
 These apply to **every** skill that writes code or analysis in this repo.
 
 - **No lookahead bias.** A decision at bar `i` only sees data from `bars[0..=i]`. Backtests, strategies, analyses — same rule. Indicators must be trailing, not centered.
-- **Determinism.** Same inputs → same outputs, byte-identical. No `set` iteration, no wall-clock reads, no unseeded randomness. Backtests should re-run from `spec.json` and produce identical `result.json`.
+- **Determinism.** Same inputs → same outputs in the financially-meaningful path: no `set` iteration, no wall-clock reads, no unseeded randomness in strategy / metric / equity-curve computation. A backtest re-run from `spec.json` produces a `result.json` that is byte-identical **modulo run provenance** — `run_id`, `started_at`, and `finished_at` are the documented exceptions ([ADR-0018](docs/architecture/adrs/0018-backtest-result-schema.md); the engine's golden test pins `model_dump(exclude={"run_id", "started_at", "finished_at"})` equality cross-process).
 - **No secrets in code or logs.** Bearer tokens, API keys, the IPC per-launch secret — never persisted, never logged. `secrets.json` (when it exists) lives outside the repo.
 - **Security defaults are not optional.** Electron renderer: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, double-CSP. Renderer never imports Node, never reaches the network except via the typed sidecar fetch client (which injects the bearer).
 - **Validate at boundaries.** Pydantic for sidecar inputs, Zod for IPC payloads, typed responses for sidecar HTTP. Don't validate again inside trusted code paths.
