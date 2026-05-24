@@ -78,6 +78,38 @@ The live upstream is TradingView's public scanner (reverse-engineered; it may ch
 uv run pytest -m network tests/integration/test_screener_end_to_end.py
 ```
 
+## Smoke check
+
+`pnpm smoke` ([Plan 0016](../architecture/plans/0016-golden-path-smoke.md)) is the one-command "is the shipped product still standing" check. It attaches to a running `pnpm dev:all` sidecar and drives a single end-to-end golden path through every shipped layer — `/healthz` identity → `get_ohlcv` (live Yahoo) → `show_chart` → `run_backtest` (with a determinism re-run) → `screener_query` (live TradingView) → annotation roundtrip + `highlight_pattern` → `/events` SSE liveness → the `strategies list` CLI — then deletes the annotations it wrote so a re-run starts clean.
+
+It is **hybrid**: the script asserts the wire-level responses, and because the `show_*` / `run_backtest` tools publish to the SSE bus, the live viewer updates while it runs so you can eyeball the visual half.
+
+Run it in two terminals from the repo root:
+
+```
+pnpm dev:all     # terminal 1 — boots sidecar + viewer (leave running)
+pnpm smoke       # terminal 2 — drives the golden path against the live stack
+```
+
+With no sidecar running, `pnpm smoke` exits non-zero and prints a *"run `pnpm dev:all` first"* message — the visual half needs the viewer up.
+
+It hits **live** Yahoo and TradingView, so it is **local-only and never a CI gate** — an upstream outage must not fail a push or tag. Each step prints one result line:
+
+| Line            | Meaning                                                              | Exit impact            |
+|-----------------|---------------------------------------------------------------------|------------------------|
+| `PASS`          | The step's wire assertion held.                                     | —                      |
+| `FAIL`          | *Our* integration broke (an assertion mismatch).                    | Process exits `1`.     |
+| `UPSTREAM-DOWN` | Yahoo/TradingView was unavailable (typed `ResilientHttpError`/5xx). | Non-fatal; exit stays `0`, re-run later. |
+
+So a clean run is "all `PASS`, exit 0"; an `UPSTREAM-DOWN` line means "their problem, try again", and any `FAIL` means "our problem, look here".
+
+After the automated report, the driver prints a manual visual checklist — confirm each against the live viewer:
+
+1. **AAPL daily candles** render in the viewer after the `show_chart` step.
+2. A **bullish marker** lands on the AAPL chart after the `highlight_pattern` step.
+3. **BacktestView** shows a non-empty equity curve + metrics after the `run_backtest` step.
+4. The **screener reply** surfaces an "as of HH:MM" wall-clock (the `queried_at` timestamp).
+
 ## Troubleshooting
 
 ### Claude Code shows the MCP server as `disconnected` or returns 401

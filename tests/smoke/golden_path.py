@@ -74,6 +74,16 @@ REST_TIMEOUT_S = 30.0
 MCP_TIMEOUT_S = 60.0
 SSE_LIVENESS_TIMEOUT_S = 20.0
 
+# The visual half — the script drives the SSE-publishing tools so these land in
+# the live viewer, but only a human can confirm they rendered. Kept in sync with
+# the "Smoke check" section of docs/onboarding/claude-code-setup.md.
+MANUAL_CHECKLIST = """\
+Manual visual checklist — watch the live viewer (the script cannot assert these):
+  [ ] 1. AAPL daily candles render in the viewer after step 3 (show_chart).
+  [ ] 2. A bullish marker lands on the AAPL chart after step 6 (highlight_pattern).
+  [ ] 3. BacktestView shows a non-empty equity curve + metrics after step 4.
+  [ ] 4. The screener reply surfaces an "as of HH:MM" wall-clock (queried_at, step 5)."""
+
 
 # --------------------------------------------------------------------------- #
 # Pure, network-free helpers (unit-tested in test_golden_path_helpers.py)
@@ -579,6 +589,7 @@ async def _amain() -> int:
     results.run_sync("9. cleanup", lambda: step_cleanup(conn))
 
     print(format_report(results.items))
+    print("\n" + MANUAL_CHECKLIST)
     return exit_code(results.items)
 
 

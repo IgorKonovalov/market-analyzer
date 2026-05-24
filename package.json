@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter desktop dev",
     "dev:all": "node scripts/dev/dev-all.mjs",
+    "smoke": "uv run python tests/smoke/golden_path.py",
     "build": "pnpm --filter desktop build",
     "test": "pnpm --filter desktop test:all",
     "test:dev-scripts": "node --test scripts/dev/__tests__/write-mcp-config.test.mjs scripts/dev/__tests__/spawn-sidecar.test.mjs",
