@@ -12,6 +12,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from market_analyser.data._http import ResilientHttpError
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
 
@@ -29,5 +30,10 @@ def get_ohlcv(
     provider: MarketDataProvider = request.app.state.provider
     try:
         return provider.get_ohlcv(symbol=symbol, timeframe=timeframe, start=start, end=end)
+    except ResilientHttpError as exc:
+        # Upstream (Yahoo) failed or exhausted retries — surface a clean 502 so
+        # the caller sees an honest "upstream unavailable" instead of a 500 with a
+        # stack trace. The richer typed-error taxonomy is Plan 0013's scope.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

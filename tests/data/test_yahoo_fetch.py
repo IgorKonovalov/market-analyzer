@@ -55,6 +55,21 @@ def test_fetch_goes_through_client_and_builds_url(monkeypatch: pytest.MonkeyPatc
     ]
 
 
+def test_fetch_url_encodes_symbol_path_segment() -> None:
+    # A symbol with a space (e.g. a mistyped crypto pair "BTC USD") must be
+    # percent-encoded into the path segment — an un-encoded space raises
+    # http.client.InvalidURL before the request leaves the process. Regression
+    # for the 2026-05-24 smoke crash.
+    payload = (_FIXTURE_DIR / "aapl_1d.json").read_bytes()
+    captured: dict[str, Any] = {}
+    client = _client_returning(payload, captured)
+
+    _fetch_yahoo_ohlcv("BTC USD", "1mo", "1d", client=client)
+
+    assert captured["url"] == f"{_YF_BASE}/BTC%20USD?interval=1d&range=1mo"
+    assert " " not in captured["url"]
+
+
 def test_parse_skips_none_rows() -> None:
     payload = json.loads((_FIXTURE_DIR / "aapl_1d.json").read_text(encoding="utf-8"))
 

@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from market_analyser.api.app import create_app
+from market_analyser.data._http import ResilientHttpError
 from market_analyser.data.types import (
     Bar,
     MarketSentimentSample,
@@ -169,3 +170,36 @@ def test_ohlcv_value_error_returns_422(client: TestClient) -> None:
     )
     assert response.status_code == 422
     assert "simulated" in response.json()["detail"]
+
+
+def test_ohlcv_upstream_error_returns_502(client: TestClient) -> None:
+    class UpstreamDownProvider(FakeMarketDataProvider):
+        def get_ohlcv(
+            self,
+            symbol: str,
+            timeframe: str,
+            start: datetime,
+            end: datetime,
+            as_of: datetime | None = None,
+        ) -> Sequence[Bar]:
+            raise ResilientHttpError(
+                source_name="yahoo",
+                last_response=None,
+                last_exception=ValueError("boom"),
+                attempts=1,
+            )
+
+    failing = UpstreamDownProvider(bars=[])
+    client = TestClient(create_app(secret=SECRET, provider=failing))
+    response = client.get(
+        "/ohlcv",
+        params={
+            "symbol": "AAPL",
+            "timeframe": "1d",
+            "start": "2026-04-01T00:00:00+00:00",
+            "end": "2026-05-01T00:00:00+00:00",
+        },
+        headers=_auth(),
+    )
+    assert response.status_code == 502
+    assert "yahoo" in response.json()["detail"]

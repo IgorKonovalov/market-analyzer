@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 from market_analyser.data._http import ResilientHttpClient
 
@@ -37,7 +38,11 @@ def _fetch_yahoo_ohlcv(
     bars and ``%Y-%m-%d %H:%M`` for intraday. Rows with any of open/high/low/close
     missing are skipped.
     """
-    url = f"{_YF_BASE}/{symbol}?interval={interval}&range={period}"
+    # Percent-encode the symbol into its path segment: an un-encoded space (e.g.
+    # a mistyped "BTC USD") otherwise raises http.client.InvalidURL before the
+    # request leaves the process. Unreserved chars (incl. '-' in "BTC-USD") are
+    # left untouched by quote(), so existing symbols are unchanged.
+    url = f"{_YF_BASE}/{quote(symbol, safe='')}?interval={interval}&range={period}"
     response = client.get(url, expect_json=True)
     return _parse_chart_payload(response.json(), interval)
 
