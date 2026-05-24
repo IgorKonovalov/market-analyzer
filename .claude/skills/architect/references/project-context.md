@@ -80,31 +80,7 @@ If the user asks for a mid-plan checkpoint review (rare — they explicitly ask 
 
 ## ADRs
 
-Live in `docs/architecture/adrs/`. Next free ADR number is **0022**.
-
-| #     | Title                                                       | Status                          |
-|-------|-------------------------------------------------------------|---------------------------------|
-| 0001  | Tauri vs Electron                                           | superseded by ADR-0005          |
-| 0002  | IPC over localhost HTTP with bearer auth                    | accepted (secret transport refined by ADR-0011) |
-| 0003  | Vendoring strategy (mirror upstream)                        | superseded by ADR-0009          |
-| 0004  | Strategy interface (Params + generate_signals + META)       | accepted                        |
-| 0005  | Desktop shell — Electron + React + TypeScript               | accepted (supersedes ADR-0001)  |
-| 0006  | Persistence layout — SQLite + config.json                   | accepted                        |
-| 0007  | MarketDataProvider Protocol                                 | accepted                        |
-| 0008  | Electron shell conventions                                  | accepted (TS config partly superseded by ADR-0010) |
-| 0009  | Rewrite data layer in-house (supersedes ADR-0003)           | accepted                        |
-| 0010  | tsconfig solution layout                                    | accepted                        |
-| 0011  | Bearer secret transport — env-var, not argv                 | accepted (refined by ADR-0016)  |
-| 0012  | Dependency cooldown (14 days)                               | accepted                        |
-| 0013  | Pin every direct dependency exactly                         | accepted                        |
-| 0014  | MCP as a second sidecar protocol (Streamable HTTP at /mcp)  | accepted (refined by ADR-0015)  |
-| 0015  | Claude Code (MCP) as primary control surface                | accepted                        |
-| 0016  | Standalone sidecar mode + idempotent attach                 | accepted                        |
-| 0017  | Live UI updates via SSE event stream                        | accepted                        |
-| 0018  | Backtest result schema                                      | accepted (Plan 0008 close)      |
-| 0019  | External HTTP adapter resilience (`ResilientHttpClient`)    | proposed (accepts at Plan 0009 close) |
-| 0020  | Shared data-dir contract (Python ↔ Electron)                | accepted (Plan 0007 close)      |
-| 0021  | Renderer → agent feedback (UI events via MCP resource)      | proposed (accepts at Plan 0014 close) |
+Live in `docs/architecture/adrs/`. The committed index at [`docs/architecture/adrs/README.md`](../../../../docs/architecture/adrs/README.md) is the source of truth for the roster, per-ADR status, supersede/refine lineage, and the next free number — read it (or `Glob docs/architecture/adrs/*.md`) rather than trusting a snapshot table here. As of 2026-05-24: 24 ADRs (0001–0024), next free is **0025**. Two superseded (0001→0005, 0003→0009); three `proposed` (0021, 0023, 0024); the rest accepted.
 
 ## Open ADR backlog
 
