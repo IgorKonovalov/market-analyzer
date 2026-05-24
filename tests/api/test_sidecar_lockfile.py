@@ -31,6 +31,7 @@ import stat
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -254,6 +255,52 @@ def test_sigterm_removes_lockfile_before_exit(tmp_path: Path) -> None:
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=SIGTERM_WAIT_S)
         assert not lockfile.exists(), "lockfile should be removed by the SIGTERM finally block"
+    finally:
+        _force_kill(proc)
+
+
+# ----------------------------------------------------------------------------- #
+# Windows graceful shutdown via POST /settings/stop removes the lockfile        #
+# ----------------------------------------------------------------------------- #
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Windows companion to test_sigterm_removes_lockfile_before_exit "
+    "(POSIX path covered by the SIGTERM test)",
+)
+def test_settings_stop_removes_lockfile_on_windows(tmp_path: Path) -> None:
+    """Graceful shutdown removes the lockfile on Windows.
+
+    Windows `terminate()` maps to TerminateProcess and skips the `finally`
+    block, so the SIGTERM test cannot cover this here. The path Windows actually
+    uses is `POST /settings/stop`, which raises SIGINT in-process
+    (`settings_stop.py`) so uvicorn shuts down gracefully and `_run_serve`'s
+    `finally` removes the lockfile — the same mechanism the `stop` subcommand
+    drives via `_run_stop`.
+    """
+    lockfile = tmp_path / "sidecar.lock"
+    proc = _spawn_sidecar(lockfile=lockfile, data_dir=tmp_path)
+    try:
+        _wait_for_port_line(proc, PORT_LINE_TIMEOUT_S)
+        _wait_for_lockfile(lockfile)
+        record = LockfileRecord.model_validate_json(lockfile.read_bytes())
+
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{record.port}/settings/stop",
+            method="POST",
+            headers={"Authorization": f"Bearer {record.renderer_secret}"},
+        )
+        with urllib.request.urlopen(request, timeout=SIGTERM_WAIT_S) as response:
+            status = response.status
+            body = json.loads(response.read().decode("utf-8"))
+        assert status == 200, f"expected 200 from /settings/stop, got {status}"
+        assert body == {"stopping": True}, f"unexpected stop ack: {body!r}"
+
+        proc.wait(timeout=SIGTERM_WAIT_S)
+        assert not lockfile.exists(), (
+            "lockfile should be removed by the graceful-shutdown finally block"
+        )
     finally:
         _force_kill(proc)
 
