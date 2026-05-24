@@ -3,7 +3,8 @@
 These are subprocess-level integration tests — they spawn the actual sidecar
 via `python -m market_analyser.api --port=0 --lockfile=<tmp>`, observe the
 lockfile contents and the process behavior, then send signals to confirm the
-shutdown contract (the `finally` block removes the lockfile).
+shutdown contract (graceful shutdown removes the lockfile via the app lifespan
+hook — ADR-0022; the `__main__` `finally` is an idempotent backstop).
 
 The sidecar's user data directory is redirected via `MARKET_ANALYSER_DATA_DIR`
 so the test never touches the actual user's `mcp-secret.json` / `sidecar.lock`.
@@ -43,6 +44,11 @@ from market_analyser.api.lockfile import LockfileRecord, write_lockfile
 
 PORT_LINE_TIMEOUT_S = 15.0
 SIGTERM_WAIT_S = 5.0
+# A graceful shutdown (uvicorn lifespan teardown + signal re-raise) is heavier
+# than a hard kill and is load-sensitive; it can tail past SIGTERM_WAIT_S when
+# the whole suite runs under pre-push/CI contention. Wait longer for the
+# graceful path so it isn't a timeout flake.
+GRACEFUL_SHUTDOWN_WAIT_S = 15.0
 SECOND_STARTUP_TIMEOUT_S = 5.0
 
 
@@ -282,8 +288,10 @@ def test_sigterm_removes_lockfile_before_exit(tmp_path: Path) -> None:
         _wait_for_lockfile(lockfile)
         _wait_until_serving(port)
         proc.send_signal(signal.SIGTERM)
-        proc.wait(timeout=SIGTERM_WAIT_S)
-        assert not lockfile.exists(), "lockfile should be removed by the SIGTERM finally block"
+        proc.wait(timeout=GRACEFUL_SHUTDOWN_WAIT_S)
+        assert not lockfile.exists(), (
+            "lockfile should be removed by the lifespan shutdown hook (ADR-0022)"
+        )
     finally:
         _force_kill(proc)
 
@@ -327,9 +335,9 @@ def test_settings_stop_removes_lockfile_on_windows(tmp_path: Path) -> None:
         assert status == 200, f"expected 200 from /settings/stop, got {status}"
         assert body == {"stopping": True}, f"unexpected stop ack: {body!r}"
 
-        proc.wait(timeout=SIGTERM_WAIT_S)
+        proc.wait(timeout=GRACEFUL_SHUTDOWN_WAIT_S)
         assert not lockfile.exists(), (
-            "lockfile should be removed by the graceful-shutdown finally block"
+            "lockfile should be removed by the lifespan shutdown hook (ADR-0022)"
         )
     finally:
         _force_kill(proc)
@@ -394,7 +402,7 @@ def test_renderer_secret_rotates_per_sidecar_boot(tmp_path: Path) -> None:
         _wait_until_serving(port1)
         secret1 = LockfileRecord.model_validate_json(lockfile.read_bytes()).renderer_secret
     finally:
-        rc = _kill_and_wait(proc1)
+        rc = _kill_and_wait(proc1, GRACEFUL_SHUTDOWN_WAIT_S)
         # On POSIX we expect a graceful SIGTERM-driven shutdown; on Windows
         # TerminateProcess returns 1 and the finally block doesn't run.
         if sys.platform != "win32":
