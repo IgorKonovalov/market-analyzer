@@ -10,7 +10,8 @@ Method-by-method readiness for Plan 0001:
     get_quote          stubbed — earned by a later plan.
     search_symbols     stubbed — earned by a later plan.
     get_screener       implemented in Plan 0009 (TradingView screener adapter).
-    get_sentiment      implemented in Plan 0010 (news-derived VADER sentiment).
+    get_sentiment      implemented in Plan 0010 (news-derived VADER sentiment);
+                       Plan 0012 adds a `source` selector (rss-vader | stocktwits).
     get_news           implemented in Plan 0010 (RSS news adapter).
     get_market_sentiment  implemented in Plan 0011 (crypto Fear & Greed).
 """
@@ -70,6 +71,7 @@ class MarketDataProvider(Protocol):
         self,
         symbol: str,
         window: str,
+        source: Literal["rss-vader", "stocktwits"] = "rss-vader",
         as_of: datetime | None = None,
     ) -> SentimentSample: ...
 

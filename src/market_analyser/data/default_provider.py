@@ -18,6 +18,7 @@ from typing import Any, Literal
 
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
+from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.types import (
@@ -55,12 +56,14 @@ class DefaultMarketDataProvider:
         screener: TradingViewScreenerAdapter | None = None,
         news: RssNewsAdapter | None = None,
         crypto_fng: CryptoFearGreedAdapter | None = None,
+        stocktwits: StockTwitsAdapter | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
         self._screener = screener if screener is not None else TradingViewScreenerAdapter()
         self._news = news if news is not None else RssNewsAdapter()
         self._crypto_fng = crypto_fng if crypto_fng is not None else CryptoFearGreedAdapter()
+        self._stocktwits = stocktwits if stocktwits is not None else StockTwitsAdapter()
         self._repo = bar_repository
 
     def get_ohlcv(
@@ -147,15 +150,25 @@ class DefaultMarketDataProvider:
         self,
         symbol: str,
         window: str,
+        source: Literal["rss-vader", "stocktwits"] = "rss-vader",
         as_of: datetime | None = None,
     ) -> SentimentSample:
-        # News-derived sentiment is wall-clock-sensitive like the news itself
-        # (Plan 0010 / ADR-0019); reject as_of at the boundary.
+        # Sentiment is wall-clock-sensitive like the news/posts it derives from
+        # (Plan 0010 / ADR-0019); reject as_of at the boundary for every source.
         if as_of is not None:
             raise ValueError(
                 "as_of is not supported for sentiment queries — results are "
                 "wall-clock-sensitive (Plan 0010 / ADR-0019)",
             )
+        if source == "rss-vader":
+            return self._news_vader_sentiment(symbol, window)
+        if source == "stocktwits":
+            return self._stocktwits.fetch_sentiment(symbol=symbol, window=window)
+        # Defensive: the Literal guards callers at type-check time; this catches a
+        # runtime caller that bypassed the type (Plan 0012 phase 2 done-when).
+        raise ValueError(f"unknown sentiment source {source!r}")
+
+    def _news_vader_sentiment(self, symbol: str, window: str) -> SentimentSample:
         items = self._news.fetch(symbol=symbol, window=window, with_sentiment=True)
         scores = [item.compound_sentiment for item in items if item.compound_sentiment is not None]
         # No news = zero (neutral) sentiment, not unknown sentiment.
@@ -166,7 +179,7 @@ class DefaultMarketDataProvider:
             symbol=symbol,
             score=mean,
             window=window,
-            as_of=datetime.now(tz=UTC),
+            as_of=_now(),
             source=_RSS_VADER_SOURCE,
             breakdown={
                 "positive": positive,
@@ -213,6 +226,12 @@ class DefaultMarketDataProvider:
                 f"market {market!r} F&G not implemented; see Plan 0011 followups",
             )
         return self._crypto_fng.fetch_current()
+
+
+def _now() -> datetime:
+    """Wall-clock seam for the sentiment `as_of`, monkeypatched by tests to freeze
+    time (cf. the adapters' own `_now`)."""
+    return datetime.now(tz=UTC)
 
 
 def _coverage_gaps(
