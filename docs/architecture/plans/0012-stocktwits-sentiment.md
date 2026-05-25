@@ -3,6 +3,7 @@
 > **Status:** approved
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
+> **Amended:** 2026-05-25 (architect — pre-implementation readiness tightening: pinned the crypto endpoint + added a crypto fixture/test to phase 1; made `SymbolNotCoveredError`'s base and the 404 surfacing mechanism explicit; reconciled phase 3's symbol char-validation with the input model. No phases added or removed.)
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (resilience module — inherited), [ADR-0007](../adrs/0007-market-data-provider.md) (Provider Protocol — `get_sentiment` already implemented by news-VADER in Plan 0010; this plan adds source discrimination), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house data layer)
 > **Depends on:** [Plan 0009](0009-resilience-and-tradingview-screener.md) phase 1 (`ResilientHttpClient`). [Plan 0010](0010-news-and-vader-sentiment.md) (`get_sentiment` already returns rss-vader source by default; this plan generalizes the dispatch).
@@ -15,7 +16,7 @@ Add StockTwits as a second per-symbol sentiment source. The signal is cleaner th
 
 After Plan 0010 lands, the agent has one per-symbol sentiment source: news-VADER. It is editorial framing — useful but biased toward what journalists publish, not toward what traders feel. StockTwits is finance-native and ships explicit user-applied sentiment labels (`Bullish` / `Bearish` / `None`) on each post. The data shape is purpose-built for what we want; no NLP model, no lexicon tuning, no FinBERT.
 
-StockTwits also covers both stocks and crypto with the same endpoint shape (`/streams/symbol/{ticker}.json` for stocks; `/streams/symbol/{ticker}.X` convention or similar for crypto — adapter pins the exact format at phase 1). Free tier is rate-limited; the resilience module handles that.
+StockTwits covers both stocks and crypto through one path, `/api/2/streams/symbol/{ticker}.json`. Crypto names carry a `.X` suffix on the base ticker (`BTC.X`, `ETH.X`), so the crypto request is `/api/2/streams/symbol/BTC.X.json`. Phase 1 captures a real crypto response into a fixture and asserts against it (rather than against this assumed format) so the exact shape is pinned to upstream reality, not to a guess. This matters because the app is crypto-leaning (Plan 0011's BTC Fear & Greed; BTC-USD is the common read), so the crypto path is not an afterthought. Free tier is rate-limited; the resilience module handles that.
 
 The Provider Protocol's `get_sentiment(symbol, window, as_of)` was implemented by Plan 0010 as news-VADER-only. This plan adds a `source: Literal["rss-vader", "stocktwits"] = "rss-vader"` parameter (additive — default preserved for existing callers) so callers can pick. That's a small Protocol change that earns its keep when the second source lands.
 
@@ -61,17 +62,19 @@ flowchart LR
 - **Owner skill:** `dev`
 - **What:** Implement the adapter against StockTwits' free API. The endpoint shape is `GET https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json` returning a `messages: [{id, body, created_at, entities: {sentiment: {basic: "Bullish" | "Bearish" | null}}, ...}]` array. The adapter fetches recent messages, filters to the requested window, counts `Bullish` / `Bearish` / `None` labels, returns a `SentimentSample` whose `score` is `(bullish_count - bearish_count) / max(1, total_labeled_count)` — a value in `[-1, 1]`. Labeled-post-count is exposed in the `breakdown` field (the additive field Plan 0010 added).
 - **Files touched:**
-  - New `src/market_analyser/data/adapters/stocktwits.py` (~100 lines).
+  - New `src/market_analyser/data/adapters/stocktwits.py` (~120 lines — the `+20` over the original estimate is the `ResilientHttpClient` subclass; see the classify note below).
   - New `tests/data/test_stocktwits_adapter.py`.
-  - New `tests/data/fixtures/stocktwits_AAPL_response.json` (captured offline fixture, scrubbed of user IDs and PII).
+  - New `tests/data/fixtures/stocktwits_AAPL_response.json` (captured offline stock fixture, scrubbed of user IDs and PII).
+  - New `tests/data/fixtures/stocktwits_BTCX_response.json` (captured offline crypto fixture for `BTC.X`, same scrubbing — pins the crypto path's real shape).
 - **Done when:**
-  - **Adapter offline correctness:** Given the fixture with N messages of which K1 are `Bullish`, K2 are `Bearish`, K3 are unlabeled, the adapter's `fetch_sentiment(symbol="AAPL", window="24h")` returns a `SentimentSample` with `source == "stocktwits"`, `window == "24h"`, `score == (K1 - K2) / max(1, K1 + K2)`, `breakdown == {"positive": K1, "negative": K2, "neutral": K3}`. Asserted field-by-field.
+  - **Adapter offline correctness (stock):** Given the AAPL fixture with N messages of which K1 are `Bullish`, K2 are `Bearish`, K3 are unlabeled, the adapter's `fetch_sentiment(symbol="AAPL", window="24h")` returns a `SentimentSample` with `symbol == "AAPL"`, `source == "stocktwits"`, `window == "24h"`, `score == (K1 - K2) / max(1, K1 + K2)`, `breakdown == {"positive": K1, "negative": K2, "neutral": K3}`, and `as_of` a timezone-aware UTC `datetime` (the adapter sets `datetime.now(tz=UTC)`, matching the news-VADER provider path — `SentimentSample.as_of` is required). Asserted field-by-field.
+  - **Crypto path (`BTC.X`):** `fetch_sentiment(symbol="BTC", window="24h")` resolves to the `BTC.X` ticker and the `/streams/symbol/BTC.X.json` path, parses the captured crypto fixture, and returns a `SentimentSample` with `symbol == "BTC"` (the caller's input form, not the `.X` wire form), `source == "stocktwits"`, and a `breakdown` matching the fixture's label counts. The crypto-suffix mapping (`BTC` → `BTC.X`) is asserted at the URL level (mock captures the requested path). This pins the crypto promise in the TL;DR to a tested path, not a docstring caveat.
   - **Window filtering:** With fixture posts at 10 min, 90 min, 5 h, 3 d old and `window="1h"`, only the 10-min post is included in counts. Frozen-time fixture as in Plan 0010 phase 1.
   - **Symbol normalization:** StockTwits uses uppercase tickers; the adapter accepts lowercase (`adapter.fetch_sentiment(symbol="aapl", ...)`) and normalizes internally. Asserted: lowercase and uppercase input produce identical results.
   - **No-labels case:** A symbol with 50 posts all unlabeled returns `score == 0.0`, `breakdown == {"positive": 0, "negative": 0, "neutral": 50}`. Does NOT raise. (Documented in docstring: "no labels = neutral, not unknown".)
   - **Zero-posts case:** A symbol with no posts at all (StockTwits returns an empty `messages` array) returns `score == 0.0`, `breakdown == {"positive": 0, "negative": 0, "neutral": 0}`. Documented: "no data = neutral, not unknown".
-  - **Symbol not in StockTwits:** A 404 from upstream (the symbol isn't tracked at all) raises `SymbolNotCoveredError` (a named exception extending the project's existing data-layer errors). NOT a `ResilientHttpError` (404 is permanent, not retriable). Asserted.
-  - **Rate limit handling — classifier extension:** StockTwits' free tier responds with HTTP 403 (not 429) when over the rate limit. The adapter overrides `ResilientHttpClient.classify` to map 403 with a specific response body shape (`{"error": "...rate limit..."}`) to `ErrorKind.RATELIMIT`. Asserted: a mocked 403-with-rate-limit body retries with the rate-limit backoff; a 403 without the rate-limit body raises immediately (permanent).
+  - **Symbol not in StockTwits:** A 404 from upstream (the symbol isn't tracked at all) raises `SymbolNotCoveredError`. **Base + location:** there is no shared data-layer error hierarchy today — the only precedents are `ResilientHttpError(Exception)` in `_http.py` and `CryptoFearGreedError(ValueError)` (adapter-local). Follow the `CryptoFearGreedError` precedent: define `SymbolNotCoveredError(ValueError)` in `stocktwits.py` and export it in the module's `__all__`. **Mechanism:** a 404 surfaces from `ResilientHttpClient` as a `ResilientHttpError` (the default `classify` maps 4xx → `PERMANENT`), so the adapter catches `ResilientHttpError`, inspects `err.last_response.status_code == 404` (the field exists — `_http.py:143`), and re-raises as `SymbolNotCoveredError`. All other `ResilientHttpError`s propagate unchanged. Asserted: a mocked 404 raises `SymbolNotCoveredError` (not `ResilientHttpError`); a mocked 500 still raises `ResilientHttpError`. **Naming note for the implementer:** Plan 0013 (not yet landed) introduces `UnknownSymbolError` in a typed adapter-error taxonomy that overlaps this concept. Pick one name — prefer the Plan 0013 name if 0013 is close, otherwise ship `SymbolNotCoveredError` and leave a one-line comment so 0013 reconciles rather than adding a second synonym.
+  - **Rate limit handling — classifier extension:** StockTwits' free tier responds with HTTP 403 (not 429) when over the rate limit. The adapter **subclasses** `ResilientHttpClient` (it is the first adapter to do so — every existing adapter composes by instantiating it; the base's `classify` docstring at `_http.py:253` explicitly anticipates "StockTwits' 403-as-rate-limit") and overrides `classify` to map 403 with a specific response body shape (`{"error": "...rate limit..."}`) to `ErrorKind.RATELIMIT`. Asserted: a mocked 403-with-rate-limit body retries with the rate-limit backoff; a 403 without the rate-limit body raises immediately (permanent).
   - **Cache:** Same as other adapters — TTL 5 minutes default (sentiment is wall-clock-current but doesn't move every second). Two adapter calls within TTL produce one upstream request.
   - **Live smoke (`@pytest.mark.network`, local-only):** A single live call against `AAPL` returns a `SentimentSample` with `score` in `[-1, 1]` and `breakdown` summing to a non-negative integer.
   - `uv run pytest tests/data/test_stocktwits_adapter.py` passes with no skips other than `@pytest.mark.network`. mypy strict passes.
@@ -102,7 +105,7 @@ flowchart LR
   - New `tests/api/test_stocktwits_sentiment_tool.py`.
 - **Done when:**
   - **Happy path:** Calling `stocktwits_sentiment(symbol="AAPL", window="24h")` via the MCP test fixture returns `{symbol, score, window, source: "stocktwits", breakdown, queried_at}`. Shape asserted key-by-key.
-  - **Symbol validation:** `symbol=""` rejected; `symbol="AAPL$"` (invalid characters) rejected. A valid lowercase symbol normalized internally and returned in uppercase form (echo'd in response). Asserted.
+  - **Symbol validation:** `symbol=""` rejected (fails `min_length`); `symbol="AAPL$"` rejected (fails the char-class `pattern` — note `max_length`/`min_length` alone do **not** reject `AAPL$`, so the model carries an explicit `pattern`, see Data shapes). A valid lowercase symbol is upper-cased by a `field_validator("symbol")` on the frozen input model (validators run at construction) and the upper-cased form is echoed in the response under the `symbol` key. Asserted: `symbol="aapl"` → response `symbol == "AAPL"`; `symbol="AAPL$"` → validation error. (Note: this tool's response includes a `symbol` key; the Plan 0010 `sentiment_for_news` sibling does not — the divergence is intentional.)
   - **`window` validation:** Same allowed set as Plan 0010 (`"1h"`, `"4h"`, `"24h"`, `"7d"`).
   - **Symbol not covered:** `symbol="MADE_UP_TICKER"` (returning 404 upstream, mocked) returns an MCP-level error with a clear message ("symbol not tracked by StockTwits"). NOT a 500.
   - **Plan 0010 regression:** `sentiment_for_news` and `news_for` still pass.
@@ -127,9 +130,15 @@ class MarketDataProvider(Protocol):
 # MCP tool input:
 
 class StockTwitsSentimentInput(BaseModel):
-    symbol: str = Field(min_length=1, max_length=10)
+    # pattern rejects punctuation like "AAPL$"; allows letters, "." (BRK.B) and "-".
+    symbol: str = Field(min_length=1, max_length=10, pattern=r"^[A-Za-z.\-]+$")
     window: Literal["1h", "4h", "24h", "7d"] = "24h"
     model_config = {"frozen": True, "extra": "forbid"}
+
+    @field_validator("symbol")
+    @classmethod
+    def _upper(cls, v: str) -> str:        # echoed upper-cased in the response
+        return v.upper()
 ```
 
 ## Risks & open questions
