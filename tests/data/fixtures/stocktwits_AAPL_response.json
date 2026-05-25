@@ -1,0 +1,302 @@
+{
+  "symbol": {
+    "symbol": "AAPL"
+  },
+  "messages": [
+    {
+      "id": 1,
+      "created_at": "2026-05-25T19:24:48Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 2,
+      "created_at": "2026-05-25T18:28:03Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 3,
+      "created_at": "2026-05-25T18:27:09Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 4,
+      "created_at": "2026-05-25T17:47:08Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 5,
+      "created_at": "2026-05-25T17:20:31Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 6,
+      "created_at": "2026-05-25T17:18:08Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 7,
+      "created_at": "2026-05-25T17:09:25Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 8,
+      "created_at": "2026-05-25T16:45:20Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 9,
+      "created_at": "2026-05-25T16:40:54Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 10,
+      "created_at": "2026-05-25T15:58:25Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 11,
+      "created_at": "2026-05-25T15:31:56Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 12,
+      "created_at": "2026-05-25T15:07:15Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 13,
+      "created_at": "2026-05-25T13:47:05Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 14,
+      "created_at": "2026-05-25T13:38:13Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 15,
+      "created_at": "2026-05-25T13:08:03Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 16,
+      "created_at": "2026-05-25T11:47:35Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 17,
+      "created_at": "2026-05-25T11:46:43Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 18,
+      "created_at": "2026-05-25T11:29:08Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 19,
+      "created_at": "2026-05-25T09:23:42Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 20,
+      "created_at": "2026-05-25T06:22:30Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 21,
+      "created_at": "2026-05-25T06:05:55Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 22,
+      "created_at": "2026-05-25T05:55:52Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 23,
+      "created_at": "2026-05-25T05:48:26Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 24,
+      "created_at": "2026-05-25T03:26:42Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 25,
+      "created_at": "2026-05-25T02:38:06Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 26,
+      "created_at": "2026-05-25T02:14:06Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 27,
+      "created_at": "2026-05-25T01:40:19Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 28,
+      "created_at": "2026-05-25T01:03:23Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 29,
+      "created_at": "2026-05-25T00:49:11Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 30,
+      "created_at": "2026-05-25T00:15:46Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    }
+  ],
+  "response": {
+    "status": 200
+  }
+}

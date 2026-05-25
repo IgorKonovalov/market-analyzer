@@ -1,0 +1,320 @@
+{
+  "symbol": {
+    "symbol": "BTC.X"
+  },
+  "messages": [
+    {
+      "id": 1,
+      "created_at": "2026-05-25T19:35:01Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 2,
+      "created_at": "2026-05-25T19:34:34Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 3,
+      "created_at": "2026-05-25T19:32:40Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 4,
+      "created_at": "2026-05-25T19:32:18Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 5,
+      "created_at": "2026-05-25T19:32:12Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 6,
+      "created_at": "2026-05-25T19:29:07Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 7,
+      "created_at": "2026-05-25T19:29:01Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 8,
+      "created_at": "2026-05-25T19:27:27Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 9,
+      "created_at": "2026-05-25T19:24:48Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 10,
+      "created_at": "2026-05-25T19:22:50Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 11,
+      "created_at": "2026-05-25T19:22:44Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 12,
+      "created_at": "2026-05-25T19:20:33Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 13,
+      "created_at": "2026-05-25T19:19:39Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 14,
+      "created_at": "2026-05-25T19:18:18Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 15,
+      "created_at": "2026-05-25T19:16:02Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 16,
+      "created_at": "2026-05-25T19:14:41Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 17,
+      "created_at": "2026-05-25T19:13:46Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 18,
+      "created_at": "2026-05-25T19:11:47Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 19,
+      "created_at": "2026-05-25T19:07:55Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 20,
+      "created_at": "2026-05-25T19:04:31Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 21,
+      "created_at": "2026-05-25T19:03:54Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 22,
+      "created_at": "2026-05-25T19:01:42Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 23,
+      "created_at": "2026-05-25T18:57:42Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 24,
+      "created_at": "2026-05-25T18:53:09Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bearish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 25,
+      "created_at": "2026-05-25T18:51:58Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 26,
+      "created_at": "2026-05-25T18:46:44Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 27,
+      "created_at": "2026-05-25T18:42:00Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    },
+    {
+      "id": 28,
+      "created_at": "2026-05-25T18:38:26Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 29,
+      "created_at": "2026-05-25T18:36:32Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": null,
+        "media": []
+      }
+    },
+    {
+      "id": 30,
+      "created_at": "2026-05-25T18:35:01Z",
+      "body": "[scrubbed]",
+      "entities": {
+        "sentiment": {
+          "basic": "Bullish"
+        },
+        "media": []
+      }
+    }
+  ],
+  "response": {
+    "status": 200
+  }
+}
