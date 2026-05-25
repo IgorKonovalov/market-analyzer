@@ -62,8 +62,11 @@ sidecar.lock.tmp
 # The template is at .claude/skills/defi-analyst/assets/positions.example.yaml.
 positions/
 
-# DeFi run artifacts (may reference wallet addresses or position ids)
-runs/defi/
+# Run artifacts — backtest, analysis, and DeFi outputs are all local-only
+# (CLAUDE.md "Where things live": runs/ is gitignored). DeFi runs additionally
+# may reference wallet addresses or position ids, so this must never relax to a
+# per-subdir allowlist.
+runs/
 
 # Desktop (Electron) — will be populated in phase 4
 desktop/node_modules/
