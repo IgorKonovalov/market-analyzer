@@ -32,8 +32,9 @@ This index is the one-minute entrypoint: what exists, each one's status, and how
 | [0022](0022-sidecar-shutdown-cleanup-in-lifespan.md) | Sidecar shutdown cleanup in app lifespan | accepted | refines 0016 (shutdown contract) | none (bug fix) |
 | [0023](0023-technical-analysis-surface.md) | Technical-analysis surface in `analysis/` | proposed — accepts at Plan 0018 close | — | 0018 |
 | [0024](0024-extended-backtest-metrics.md) | Extended backtest metrics (definitions + degenerate convention) | proposed — accepts at Plan 0020 close | extends 0018 | 0020 |
+| [0025](0025-trade-execution-feasibility.md) | Trade-execution feasibility (posture + venue comparison) | proposed (exploratory — no plan, no close ceremony) | relates 0006/0007/0011 | none |
 
-**Standalone (no supersede/refine lineage):** 0012/0013 (a peer pair), 0017, 0019, 0021, 0023. Everything else sits in one of the chains below.
+**Standalone (no supersede/refine lineage):** 0012/0013 (a peer pair), 0017, 0019, 0021, 0023, 0025. Everything else sits in one of the chains below.
 
 ## Lineage
 
@@ -64,7 +65,7 @@ flowchart LR
 
 ## Conventions
 
-- **Numbering** is sequential, zero-padded to four digits, never reused. Next free ADR number is **0025** (0024 drafted 2026-05-24). The architect runs `Glob docs/architecture/adrs/*.md` before drafting to pick the next number, never trusting memory. ADR numbers and plan numbers are independent sequences.
+- **Numbering** is sequential, zero-padded to four digits, never reused. Next free ADR number is **0026** (0025 drafted 2026-05-25 — exploratory trade-execution feasibility, no paired plan; 0024 drafted 2026-05-24). The architect runs `Glob docs/architecture/adrs/*.md` before drafting to pick the next number, never trusting memory. ADR numbers and plan numbers are independent sequences.
 - **Append-only after `accepted`.** Don't edit an accepted ADR's decision. Supersede it with a new ADR and mark the old one `superseded by NNNN`. The one sanctioned exception to date: the 2026-05-24 owner-authorized genericization of the upstream-project name across ADR bodies (a privacy edit that changed no decision).
 - **Status vocabulary:** `proposed` → `accepted` → optionally `superseded by NNNN`. A `proposed` ADR paired with a plan flips to `accepted` at that plan's close ceremony (e.g. 0023 at Plan 0018 close, 0024 at Plan 0020 close).
 - **Paired with a plan?** Most ADRs are written alongside the plan that forces the decision. The Plan(s) column links them; the plans index lives at [`../plans/README.md`](../plans/README.md).
