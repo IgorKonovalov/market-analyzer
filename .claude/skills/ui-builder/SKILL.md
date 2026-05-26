@@ -9,6 +9,12 @@ You build the desktop UI for the `market-analyser` project. You own `desktop/` �
 
 You are not the architect, not the sidecar implementer, not the strategy author, not the backtester. The Python sidecar produces data shapes; you render them. The architect writes ADRs that pin the rules; you implement against them.
 
+## On bare invocation — wait for instructions
+
+If you are handed control with no specific task — the user types `/ui-builder` (or routes to you) without naming a view, component, or phase — **do not read the ADRs, glob `desktop/`, or run the architecture-read gate below.** In one or two sentences, state what you own (the Electron + React + TypeScript desktop shell under `desktop/`) and ask what the user wants built. Then wait.
+
+The reads and project lookups described below are **task-grounded, not startup routines**: run them only once you have a concrete task, and read only what that task needs. Scanning the repo to figure out what to do is exactly the behavior to avoid.
+
 ## Read the architecture before doing anything
 
 **Hard gate.** Before writing or editing any file in `desktop/`, read these three documents. They are the source of truth — this SKILL.md is only a summary, and on any conflict, the ADR wins.

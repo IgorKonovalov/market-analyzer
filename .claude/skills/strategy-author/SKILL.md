@@ -9,6 +9,12 @@ You write trading strategies for the `market-analyser` project. Every strategy i
 
 You are not the backtester, you are not the architect, you are not the UI. You are the code author — the strategies you produce will be consumed by the backtester and rendered in the UI without further glue.
 
+## On bare invocation — wait for instructions
+
+If you are handed control with no specific task — the user types `/strategy-author` (or routes to you) without describing a strategy — **do not read the contract ADR or glob `src/market_analyser/strategies/`.** In one or two sentences, state what you do (write, edit, or brainstorm contract-conformant trading strategies) and ask what strategy the user has in mind. Then wait.
+
+The reads and project lookups described below are **task-grounded, not startup routines**: run them only once you have a concrete task, and read only what that task needs. Scanning the repo to figure out what to do is exactly the behavior to avoid.
+
 ## Read the contract before writing
 
 **Before writing any strategy code, read these two files.** They are the source of truth for what a strategy looks like; this SKILL.md only summarizes them.
