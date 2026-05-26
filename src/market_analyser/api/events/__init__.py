@@ -112,12 +112,65 @@ class ChartUpdateDroppedPayloadV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class GapWindow(BaseModel):
+    """A single `[start, end]` coverage gap the backfill is (or was) filling.
+    Shared by the `ohlcv.backfill_started` event and the `backfill_ohlcv` tool
+    response (Plan 0013)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    start: datetime
+    end: datetime
+
+
+class OhlcvBackfillStartedPayloadV1(BaseModel):
+    """`ohlcv.backfill_started v1`: a backfill fetch began for symbol+timeframe.
+    Emitted before the upstream call so the renderer can show its spinner."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    gaps: list[GapWindow]
+
+
+class OhlcvBackfilledPayloadV1(BaseModel):
+    """`ohlcv.backfilled v1`: a backfill completed; the cache is now hot for the
+    `[range_start, range_end]` span. The renderer refetches `/ohlcv` on this."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    range_start: datetime
+    range_end: datetime
+    bars_added: int
+
+
+class OhlcvBackfillFailedPayloadV1(BaseModel):
+    """`ohlcv.backfill_failed v1`: a backfill failed with a typed reason. The
+    literal set is closed so the renderer can branch on it exhaustively."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    reason: Literal["rate_limited", "upstream_unavailable", "unknown_symbol"]
+    message: str
+
+
 TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.show": ChartShowPayloadV1,
     "chart.update": ChartUpdatePayloadV1,
     "chart.highlight": ChartHighlightPayloadV1,
     "run.completed": RunCompletedPayloadV1,
     "chart.update_dropped": ChartUpdateDroppedPayloadV1,
+    "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
+    "ohlcv.backfilled": OhlcvBackfilledPayloadV1,
+    "ohlcv.backfill_failed": OhlcvBackfillFailedPayloadV1,
 }
 
 
