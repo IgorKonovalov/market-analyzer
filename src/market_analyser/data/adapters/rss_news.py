@@ -58,7 +58,7 @@ class Feed:
 # client always sends a User-Agent; `needs_ua` makes it explicit per-call for the
 # feeds that reject UA-less requests (the others rely on the client default).
 _FEED_CATALOG: dict[str, Feed] = {
-    "coindesk": Feed(url="https://feeds.coindesk.com/feed", category="crypto"),
+    "coindesk": Feed(url="https://www.coindesk.com/arc/outboundfeeds/rss/", category="crypto"),
     "cointelegraph": Feed(url="https://cointelegraph.com/rss", category="crypto"),
     "yahoo_finance": Feed(
         url="https://finance.yahoo.com/news/rssindex", category="equity", needs_ua=True
