@@ -12,6 +12,7 @@ time so downstream code (strategies, backtests, the chart) can trust the values.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -150,8 +151,20 @@ class MarketSentimentSample(BaseModel):
     window: str = "current"  # always "current" in v1
 
 
+@dataclass(frozen=True)
+class Coverage:
+    """Cache-only read result for backfill scheduling (Plan 0013): the bars
+    already cached for a window, plus the gaps still needed to cover it. Computed
+    WITHOUT any upstream fetch — a plain carrier, not a boundary-validated model
+    (the bars it holds were already validated when they entered the cache)."""
+
+    cached: list[Bar]
+    gaps: list[tuple[datetime, datetime]]
+
+
 __all__ = [
     "Bar",
+    "Coverage",
     "MarketSentimentSample",
     "NewsItem",
     "Quote",

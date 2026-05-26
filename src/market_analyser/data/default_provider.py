@@ -23,6 +23,7 @@ from market_analyser.data.adapters.tradingview_screener import TradingViewScreen
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.types import (
     Bar,
+    Coverage,
     MarketSentimentSample,
     NewsItem,
     Quote,
@@ -107,6 +108,24 @@ class DefaultMarketDataProvider:
                 if start <= bar.event_ts <= end:
                     merged[bar.event_ts] = bar
         return sorted(merged.values(), key=lambda b: b.event_ts)
+
+    def coverage(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> Coverage:
+        """Cache-only read: the bars currently cached for ``[start, end]`` plus the
+        gaps still needed to cover it — WITHOUT any upstream fetch. Backfill
+        scheduling (Plan 0013) calls this to decide whether a fetch is needed and
+        which windows to fetch; it reuses the same `_coverage_gaps` math as
+        `get_ohlcv` but never reaches the adapter. With no cache wired, the whole
+        window is one gap (and nothing is cached)."""
+        if self._repo is None:
+            return Coverage(cached=[], gaps=[(start, end)] if start < end else [])
+        cached = list(self._repo.get_bars(symbol, timeframe, start, end))
+        return Coverage(cached=cached, gaps=_coverage_gaps(cached, start, end))
 
     def get_quote(
         self,

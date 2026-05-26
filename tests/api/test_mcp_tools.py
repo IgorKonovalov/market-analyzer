@@ -220,8 +220,9 @@ async def _mcp_session(url: str, bearer: str) -> AsyncIterator[ClientSession]:
         yield session
 
 
-def test_get_ohlcv_returns_at_least_one_bar(live_server: str, mcp_secret: str) -> None:
-    """An MCP client with the MCP bearer can call get_ohlcv and receive bars."""
+def test_get_ohlcv_returns_structured_response_with_bars(live_server: str, mcp_secret: str) -> None:
+    """get_ohlcv returns the Plan 0013 `{bars, partial_reason, message}` shape
+    (no longer a bare list); bars match the cached set, partial_reason is null."""
 
     async def _run() -> dict[str, object]:
         async with _mcp_session(live_server, mcp_secret) as session:
@@ -239,8 +240,9 @@ def test_get_ohlcv_returns_at_least_one_bar(live_server: str, mcp_secret: str) -
             return dict(result.structuredContent)
 
     payload = asyncio.run(_run())
-    # FastMCP wraps list returns in `{"result": [...]}`.
-    bars = payload.get("result", payload)
+    assert payload["partial_reason"] is None
+    assert payload["message"] is None
+    bars = payload["bars"]
     assert isinstance(bars, list)
     assert len(bars) >= 1
     first = bars[0]
@@ -248,6 +250,24 @@ def test_get_ohlcv_returns_at_least_one_bar(live_server: str, mcp_secret: str) -
     assert first["symbol"] == "AAPL"
     assert first["timeframe"] == "1d"
     assert first["source"] == "yahoo"
+
+
+def test_get_ohlcv_description_advertises_fetch_on_miss(live_server: str, mcp_secret: str) -> None:
+    """The agent reads the tool description to decide whether get_ohlcv can
+    populate the cache (ADR-0015). Plan 0013 done-when: it must NOT say "from the
+    local cache" (the wording that made the agent treat it as cache-only) and
+    MUST mention fetching + a cache miss."""
+
+    async def _run() -> str:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            tools = await session.list_tools()
+            tool = next(t for t in tools.tools if t.name == "get_ohlcv")
+            return tool.description or ""
+
+    description = asyncio.run(_run())
+    assert "from the local cache" not in description
+    assert "fetch" in description
+    assert "miss" in description
 
 
 def test_write_annotation_persists_and_lists_back(live_server: str, mcp_secret: str) -> None:

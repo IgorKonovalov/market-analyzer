@@ -33,6 +33,7 @@ buffered JSON response.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -46,11 +47,13 @@ from market_analyser.annotations.types import (
     Annotation,
     AnnotationKind,
 )
+from market_analyser.api.backfill_response import BackfillOhlcvResponse, GetOhlcvResponse
 from market_analyser.api.events import (
     ChartHighlightPayloadV1,
     ChartShowPayloadV1,
     ChartUpdatePayloadV1,
     EventBus,
+    GapWindow,
     Marker,
     OverlaySpec,
 )
@@ -60,8 +63,8 @@ from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
+from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.provider import MarketDataProvider
-from market_analyser.data.types import Bar
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
@@ -93,6 +96,102 @@ def _parse_overlays(raw: list[dict[str, Any]] | None) -> list[OverlaySpec] | Non
     return [OverlaySpec.model_validate(item) for item in raw]
 
 
+# The tool docstrings are agent UX (ADR-0015): the agent reads these to decide
+# whether get_ohlcv can populate the cache. Plan 0013 fixes the old "from the
+# local cache" wording that made the agent treat get_ohlcv as cache-only.
+GET_OHLCV_DESCRIPTION = (
+    "Read OHLCV bars for one symbol over a [start, end] window. Reads the local "
+    "cache and fetches any missing bars from the upstream (Yahoo) on a cache "
+    "miss before returning, so this tool populates the cache itself — no separate "
+    "step is needed. Returns {bars, partial_reason, message}: partial_reason is "
+    "null on full success, or a typed reason (rate_limited | upstream_unavailable "
+    "| unknown_symbol) when only some gaps could be filled. Set backfill_async="
+    "true to return whatever is already cached immediately and run the fetch in "
+    "the background (partial_reason='backfill_async_pending'); progress then "
+    "arrives on the event stream as ohlcv.backfilled / ohlcv.backfill_failed. "
+    "Live-mode only; supported timeframes: 1d, 1h."
+)
+
+BACKFILL_OHLCV_DESCRIPTION = (
+    "Pre-warm the local cache for a symbol/timeframe over [start, end] by "
+    "fetching any missing bars from the upstream in the background. Returns "
+    "immediately with {started, gaps, message}: started=true plus the gap "
+    "windows when a background fetch was scheduled, or started=false and an "
+    "empty gaps list when the cache already covers the window. Watch the event "
+    "stream — ohlcv.backfill_started fires first, then ohlcv.backfilled on "
+    "success or ohlcv.backfill_failed (reason: rate_limited | upstream_unavailable "
+    "| unknown_symbol) on failure."
+)
+
+
+async def _get_ohlcv_response(
+    *,
+    provider: MarketDataProvider,
+    coordinator: BackfillCoordinator | None,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    backfill_async: bool,
+) -> GetOhlcvResponse:
+    """Body of the `get_ohlcv` tool, factored out so the backfill paths are unit-
+    testable on a single event loop (no live MCP server needed for the event
+    assertions). Sync mode preserves today's fetch-on-miss behaviour."""
+    if backfill_async:
+        if coordinator is None:
+            raise ValueError("backfill_async=true requires a cache-coverage-capable provider")
+        cov = coordinator.coverage(symbol, timeframe, start, end)
+        if not cov.gaps:
+            # Cache already complete — return it, schedule nothing, publish nothing.
+            return GetOhlcvResponse(bars=list(cov.cached), partial_reason=None, message=None)
+        coordinator.schedule(symbol, timeframe, start, end)
+        return GetOhlcvResponse(
+            bars=list(cov.cached),
+            partial_reason="backfill_async_pending",
+            message=(
+                "returned cached bars; a background backfill was scheduled — watch "
+                "ohlcv.backfilled / ohlcv.backfill_failed on the event stream"
+            ),
+        )
+    # Sync mode (default): fetch-on-miss, offloaded so it never blocks the loop.
+    bars = await asyncio.to_thread(provider.get_ohlcv, symbol, timeframe, start, end)
+    return GetOhlcvResponse(bars=list(bars), partial_reason=None, message=None)
+
+
+async def _backfill_ohlcv_response(
+    *,
+    coordinator: BackfillCoordinator | None,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+) -> BackfillOhlcvResponse:
+    """Body of the `backfill_ohlcv` tool, factored out for single-loop unit tests.
+    Validates input at the boundary, then schedules a background fetch only when
+    the cache actually has gaps."""
+    _require_non_empty_symbol(symbol)
+    _require_supported_timeframe(timeframe)
+    _require_ordered_range(start, end)
+    if coordinator is None:
+        raise ValueError("backfill_ohlcv requires a cache-coverage-capable provider")
+    cov = coordinator.coverage(symbol, timeframe, start, end)
+    if not cov.gaps:
+        return BackfillOhlcvResponse(
+            started=False,
+            gaps=[],
+            message="cache already covers the requested window; nothing to fetch",
+        )
+    coordinator.schedule(symbol, timeframe, start, end)
+    return BackfillOhlcvResponse(
+        started=True,
+        gaps=[GapWindow(start=gap_start, end=gap_end) for gap_start, gap_end in cov.gaps],
+        message=(
+            "backfill scheduled in the background — watch ohlcv.backfilled / "
+            "ohlcv.backfill_failed on the event stream"
+        ),
+    )
+
+
 def create_mcp_components(
     *,
     provider: MarketDataProvider,
@@ -121,22 +220,49 @@ def create_mcp_components(
         json_response=True,
     )
 
-    @server.tool(
-        description=(
-            "Read OHLCV bars from the local cache for a single symbol over a "
-            "[start, end] window. Reads are live-mode only (no historical "
-            "replay); supported timeframes match the data layer (currently "
-            "'1d', '1h')."
-        ),
+    # The backfill coordinator needs the narrow `SupportsBackfill` capability
+    # (get_ohlcv + cache-only coverage). The production DefaultMarketDataProvider
+    # satisfies it; a coverage-less stub (legacy tests) yields None and the
+    # backfill paths refuse with a clear error. Phase 3 hoists construction to
+    # create_app/app.state and swaps in the dedup-aware coordinator.
+    backfill_coordinator: BackfillCoordinator | None = (
+        BackfillCoordinator(provider=provider, event_bus=event_bus)
+        if isinstance(provider, SupportsBackfill)
+        else None
     )
-    def get_ohlcv(
+
+    @server.tool(description=GET_OHLCV_DESCRIPTION)
+    async def get_ohlcv(
         symbol: str,
         timeframe: str,
         start: datetime,
         end: datetime,
-    ) -> list[Bar]:
-        bars = provider.get_ohlcv(symbol=symbol, timeframe=timeframe, start=start, end=end)
-        return list(bars)
+        backfill_async: bool = False,
+    ) -> GetOhlcvResponse:
+        return await _get_ohlcv_response(
+            provider=provider,
+            coordinator=backfill_coordinator,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+            backfill_async=backfill_async,
+        )
+
+    @server.tool(description=BACKFILL_OHLCV_DESCRIPTION)
+    async def backfill_ohlcv(
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> BackfillOhlcvResponse:
+        return await _backfill_ohlcv_response(
+            coordinator=backfill_coordinator,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+        )
 
     @server.tool(
         description=(
