@@ -89,7 +89,7 @@ def test_aapl_fixture_counts_labels_field_by_field(monkeypatch: pytest.MonkeyPat
 
     sample = adapter.fetch_sentiment(symbol="AAPL", window="24h")
 
-    k1, k2, k3 = _AAPL_COUNTS["positive"], _AAPL_COUNTS["negative"], _AAPL_COUNTS["neutral"]
+    k1, k2 = _AAPL_COUNTS["positive"], _AAPL_COUNTS["negative"]
     assert sample.symbol == "AAPL"
     assert sample.source == "stocktwits"
     assert sample.window == "24h"
@@ -207,7 +207,10 @@ def test_classify_maps_only_ratelimit_403() -> None:
         elapsed_seconds=0.0,
     )
     plain = HttpResponse(
-        status_code=403, headers={}, body=b'{"errors":[{"message":"Forbidden"}]}', elapsed_seconds=0.0
+        status_code=403,
+        headers={},
+        body=b'{"errors":[{"message":"Forbidden"}]}',
+        elapsed_seconds=0.0,
     )
 
     assert client.classify(None, ratelimit) == ErrorKind.RATELIMIT

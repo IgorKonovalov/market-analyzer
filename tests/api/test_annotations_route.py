@@ -67,7 +67,7 @@ class _UnusedProvider:
         raise NotImplementedError
 
     def get_sentiment(
-        self, symbol: str, window: str, as_of: datetime | None = None
+        self, symbol: str, window: str, source: str = "rss-vader", as_of: datetime | None = None
     ) -> SentimentSample:
         raise NotImplementedError
 

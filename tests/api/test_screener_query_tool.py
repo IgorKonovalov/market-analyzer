@@ -75,6 +75,7 @@ class _FakeProvider:
         self,
         symbol: str,
         window: str,
+        source: str = "rss-vader",
         as_of: datetime | None = None,
     ) -> SentimentSample:
         raise NotImplementedError
