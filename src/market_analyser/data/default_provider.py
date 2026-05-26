@@ -196,9 +196,18 @@ class DefaultMarketDataProvider:
         query: str,
         as_of: datetime | None = None,
     ) -> Sequence[SymbolInfo]:
-        raise NotImplementedError(
-            "search_symbols is not implemented in Plan 0001 — see plan 0001 followups",
-        )
+        # Symbol search is a live, wall-clock lookup against Yahoo's search
+        # endpoint — there is no replayable historical source to honour `as_of`
+        # against, so reject it at the boundary (Plan 0024 / ADR-0026; mirrors
+        # the screener/quote/sentiment as_of rejections in this file). Results
+        # are in Yahoo's native namespace, so every hit is fetchable by
+        # get_ohlcv (the chartable-suggestion invariant of ADR-0026).
+        if as_of is not None:
+            raise ValueError(
+                "as_of is not supported for symbol search — search is a live "
+                "lookup (Plan 0024 / ADR-0026)",
+            )
+        return self._yahoo.search(query)
 
     def get_screener(
         self,

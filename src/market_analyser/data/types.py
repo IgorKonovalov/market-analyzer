@@ -82,13 +82,16 @@ class Quote(BaseModel):
 
 
 class SymbolInfo(BaseModel):
-    """Symbol-search result. Reserved for phase that implements search_symbols."""
+    """Symbol-search result (Plan 0024). `symbol` is in Yahoo's native namespace
+    and is therefore directly fetchable by `get_ohlcv` — the suggestion and fetch
+    namespaces are the same set by construction (ADR-0026)."""
 
     model_config = ConfigDict(frozen=True)
 
-    symbol: str = Field(min_length=1)
-    name: str
-    exchange: str = ""
+    symbol: str = Field(min_length=1)  # Yahoo-native, fetchable by get_ohlcv — e.g. "BTC-USD"
+    name: str  # Yahoo longname / shortname / symbol fallback
+    exchange: str = ""  # Yahoo exchDisp / exchange display string — e.g. "CCC", "NASDAQ", "CME"
+    quote_type: str = ""  # Yahoo typeDisp / quoteType — e.g. "Cryptocurrency", "Equity", "ETF"
 
 
 class ScreenerRow(BaseModel):

@@ -19,13 +19,14 @@ from typing import Any, Protocol
 
 from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
 from market_analyser.data.adapters._yahoo_fetch import _fetch_yahoo_ohlcv
+from market_analyser.data.adapters._yahoo_search import _fetch_yahoo_search
 from market_analyser.data.errors import (
     RateLimitedError,
     UnknownSymbolError,
     UpstreamDataError,
     UpstreamUnavailableError,
 )
-from market_analyser.data.types import Bar
+from market_analyser.data.types import Bar, SymbolInfo
 
 _logger = logging.getLogger(__name__)
 
@@ -52,6 +53,12 @@ _PERIOD_DAYS: tuple[tuple[str, int], ...] = (
 _MAX_PERIOD_DAYS = _PERIOD_DAYS[-1][1]
 
 _VALID_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h"})
+
+# Result cap for symbol search. Yahoo honours `quotesCount`, so this also bounds
+# the upstream payload. Kept adapter-internal (not a Protocol/route parameter):
+# the dropdown only ever shows a handful of suggestions and the plan's `limit`
+# was an explicitly-tunable open question, not a contract (Plan 0024).
+_DEFAULT_QUOTES_COUNT = 10
 
 
 class YahooAdapter:
@@ -158,6 +165,78 @@ class YahooAdapter:
                 ),
             )
         return bars
+
+    def search(self, query: str) -> list[SymbolInfo]:
+        """Resolve a free-text ``query`` to Yahoo-native symbols via the
+        ``/v1/finance/search`` endpoint, returning validated `SymbolInfo`
+        results in Yahoo's upstream relevance order (ADR-0026).
+
+        An empty/whitespace query short-circuits to ``[]`` with no network call.
+        A zero-match search also returns ``[]`` — that is not an error and is
+        deliberately distinct from `UnknownSymbolError` (which the OHLCV fetch
+        raises). Quotes without a usable ``symbol`` are skipped; a quote missing
+        its name falls back to the symbol.
+        """
+        query = query.strip()
+        if not query:
+            return []
+        try:
+            raw = _fetch_yahoo_search(
+                query,
+                client=self._client,
+                quotes_count=_DEFAULT_QUOTES_COUNT,
+            )
+        except ResilientHttpError as err:
+            raise _classify_search_error(err) from err
+        results: list[SymbolInfo] = []
+        for quote in raw:
+            info = _quote_to_symbol_info(quote)
+            if info is not None:
+                results.append(info)
+        return results
+
+
+def _classify_search_error(err: ResilientHttpError) -> UpstreamDataError:
+    """Translate an exhausted/permanent symbol-search `ResilientHttpError` into
+    the typed taxonomy, mirroring `_classify_http_error` for the chart endpoint.
+    Search has no unknown-symbol path (a zero-match query returns `[]` upstream
+    of any error), so only rate-limit vs upstream-unavailable apply."""
+    resp = err.last_response
+    if resp is not None and resp.status_code == 429:
+        return RateLimitedError(
+            "yahoo: rate limited (HTTP 429) on symbol search",
+            retry_after_seconds=_parse_retry_after(_header(resp.headers, "Retry-After")),
+        )
+    if resp is not None:
+        detail = f"HTTP {resp.status_code}"
+    else:
+        detail = type(err.last_exception).__name__ if err.last_exception is not None else "unknown"
+    return UpstreamUnavailableError(f"yahoo: upstream unavailable ({detail}) on symbol search")
+
+
+def _quote_to_symbol_info(quote: dict[str, Any]) -> SymbolInfo | None:
+    """Map one Yahoo search quote onto `SymbolInfo`, or `None` if it carries no
+    usable symbol. Field precedence matches the Plan 0024 done-when:
+    name←longname/shortname/symbol, exchange←exchDisp/exchange, quote_type←
+    typeDisp/quoteType (first present in each group)."""
+    symbol = str(quote.get("symbol") or "").strip()
+    if not symbol:
+        return None  # SymbolInfo requires a non-empty symbol; skip the unidentifiable
+    return SymbolInfo(
+        symbol=symbol,
+        name=_first_present(quote, ("longname", "shortname")) or symbol,
+        exchange=_first_present(quote, ("exchDisp", "exchange")),
+        quote_type=_first_present(quote, ("typeDisp", "quoteType")),
+    )
+
+
+def _first_present(quote: dict[str, Any], keys: tuple[str, ...]) -> str:
+    """First truthy value among ``keys`` in ``quote``, stringified, else ``""``."""
+    for key in keys:
+        value = quote.get(key)
+        if value:
+            return str(value)
+    return ""
 
 
 def _classify_http_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:

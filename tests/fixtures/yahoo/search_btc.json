@@ -1,0 +1,75 @@
+{
+  "explains": [],
+  "count": 5,
+  "quotes": [
+    {
+      "exchange": "CCC",
+      "shortname": "Bitcoin USD",
+      "quoteType": "CRYPTOCURRENCY",
+      "symbol": "BTC-USD",
+      "index": "quotes",
+      "score": 1010447.0,
+      "typeDisp": "Cryptocurrency",
+      "longname": "Bitcoin USD",
+      "exchDisp": "CCC",
+      "isYahooFinance": true
+    },
+    {
+      "exchange": "CME",
+      "shortname": "Bitcoin Futures,Mar-2026",
+      "quoteType": "FUTURE",
+      "symbol": "BTC=F",
+      "index": "quotes",
+      "score": 20131.0,
+      "typeDisp": "Futures",
+      "exchDisp": "CME",
+      "isYahooFinance": true
+    },
+    {
+      "exchange": "NGM",
+      "shortname": "Grayscale Bitcoin Trust ETF",
+      "quoteType": "ETF",
+      "symbol": "GBTC",
+      "index": "quotes",
+      "score": 20106.0,
+      "typeDisp": "ETF",
+      "longname": "Grayscale Bitcoin Trust ETF (BTC)",
+      "exchDisp": "NASDAQ",
+      "isYahooFinance": true
+    },
+    {
+      "exchange": "PCX",
+      "shortname": "iShares Bitcoin Trust ETF",
+      "quoteType": "ETF",
+      "symbol": "IBIT",
+      "index": "quotes",
+      "score": 19890.0,
+      "typeDisp": "ETF",
+      "longname": "iShares Bitcoin Trust ETF",
+      "exchDisp": "NYSEArca",
+      "isYahooFinance": true
+    },
+    {
+      "exchange": "CCC",
+      "quoteType": "CRYPTOCURRENCY",
+      "symbol": "BTCB-USD",
+      "index": "quotes",
+      "score": 1100.0,
+      "typeDisp": "Cryptocurrency",
+      "exchDisp": "CCC",
+      "isYahooFinance": true
+    }
+  ],
+  "news": [
+    {
+      "uuid": "ignored-by-the-parser",
+      "title": "Bitcoin rallies — this node is ignored",
+      "publisher": "Example Wire"
+    }
+  ],
+  "nav": [],
+  "lists": [],
+  "researchReports": [],
+  "totalTime": 41,
+  "timeTakenForQuotes": 437
+}

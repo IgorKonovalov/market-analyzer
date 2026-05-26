@@ -6,7 +6,9 @@ ones raise `NotImplementedError` with a message identifying Plan 0001 as the
 home plan. `get_screener` graduated out of this list in Plan 0009 (positive
 coverage lives in `test_tradingview_screener_adapter.py`); `get_news` and
 `get_sentiment` graduated in Plan 0010 (positive coverage lives in
-`test_rss_news_adapter.py` and `test_sentiment_news_aggregation.py`).
+`test_rss_news_adapter.py` and `test_sentiment_news_aggregation.py`);
+`search_symbols` graduated in Plan 0024 (positive coverage lives in
+`test_yahoo_search_adapter.py`). `get_quote` is the last remaining stub.
 """
 
 from __future__ import annotations
@@ -60,7 +62,6 @@ def test_get_ohlcv_is_implemented() -> None:
     "method_name,args",
     [
         ("get_quote", ("AAPL",)),
-        ("search_symbols", ("apple",)),
     ],
 )
 def test_unimplemented_methods_are_reachable_and_raise(
