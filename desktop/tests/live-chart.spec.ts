@@ -34,6 +34,7 @@ const REPO_ROOT = resolve(__dirname, '..', '..')
 interface ToolResult {
   isError: boolean
   content: string[]
+  structured: Record<string, unknown> | null
 }
 
 interface ChartStateSnapshot {
@@ -71,7 +72,7 @@ function callMcpTool(tool: string, args: Record<string, unknown>): ToolResult {
     '            async with ClientSession(read_stream, write_stream) as session:',
     '                await session.initialize()',
     '                r = await session.call_tool(tool, args)',
-    '                return {"isError": r.isError, "content": [str(c) for c in r.content]}',
+    '                return {"isError": r.isError, "content": [str(c) for c in r.content], "structured": r.structuredContent}',
     'print(json.dumps(asyncio.run(run())))',
   ].join('\n')
 
@@ -377,6 +378,68 @@ test('highlight_pattern populates liveHighlights and dedups with the polled row'
     (m) => m.event_ts.startsWith('2026-05-15') && m.kind === 'bullish_marker',
   )
   expect(sameKey.length).toBe(1)
+
+  await app.close()
+})
+
+test('backfill_ohlcv shows the header spinner while filling, then clears with bars drawn', async () => {
+  // Best-effort live test (Plan 0013 phase 4): drives the REAL backfill_ohlcv
+  // tool against REAL Yahoo, like the other specs in this file. We branch on the
+  // tool's `started` flag so the spinner assertion only runs when a backfill was
+  // actually scheduled (a cold cache); on a warm cache (re-run on the same
+  // machine) the tool is a no-op and we assert only that bars are drawn. The
+  // deterministic spinner/refetch/toast logic is covered by the Jest
+  // useBackfillState spec; this case proves the wiring lights up end-to-end.
+  const app = await launchApp()
+  const window = await app.firstWindow()
+  await window.waitForLoadState('domcontentloaded')
+
+  await expect
+    .poll(
+      () =>
+        window.evaluate(
+          () =>
+            (globalThis as { __test_chart_state__?: { symbol?: string } }).__test_chart_state__
+              ?.symbol,
+        ),
+      { timeout: 15_000, intervals: [200] },
+    )
+    .toBeDefined()
+
+  // A symbol+range the other specs don't touch, to maximise the chance the
+  // cache is cold on a fresh machine.
+  const symbol = 'IBM'
+  const range_start = '2026-01-05T00:00:00+00:00'
+  const range_end = '2026-03-06T00:00:00+00:00'
+
+  callMcpTool('show_chart', { symbol, timeframe: '1d', range_start, range_end })
+  await expect
+    .poll(async () => (await readChartState(window)).symbol, { timeout: 2_000, intervals: [50] })
+    .toBe(symbol)
+
+  const ack = callMcpTool('backfill_ohlcv', {
+    symbol,
+    timeframe: '1d',
+    start: range_start,
+    end: range_end,
+  })
+  expect(ack.isError).toBe(false)
+
+  const spinner = window.locator('[data-testid="ohlcv-backfill-spinner"]')
+  if (ack.structured?.started === true) {
+    // Backfill scheduled: spinner appears within the SSE round-trip budget,
+    // then clears once Yahoo resolves.
+    await expect.poll(() => spinner.count(), { timeout: 3_000, intervals: [50] }).toBeGreaterThan(0)
+    await expect.poll(() => spinner.count(), { timeout: 12_000, intervals: [100] }).toBe(0)
+  }
+
+  // Either path ends with bars drawn — the loop the user reported broken.
+  await expect
+    .poll(async () => (await readChartRender(window)).seriesCount, {
+      timeout: 12_000,
+      intervals: [100],
+    })
+    .toBeGreaterThanOrEqual(1)
 
   await app.close()
 })

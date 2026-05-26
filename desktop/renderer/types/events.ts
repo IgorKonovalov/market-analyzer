@@ -58,12 +58,45 @@ export interface RunCompletedPayloadV1 {
   artifact_path: string
 }
 
+/** A single [start, end] coverage gap a backfill is/was filling (Plan 0013). */
+export interface GapWindow {
+  start: string
+  end: string
+}
+
+export interface OhlcvBackfillStartedPayloadV1 {
+  symbol: string
+  timeframe: string
+  gaps: GapWindow[]
+}
+
+export interface OhlcvBackfilledPayloadV1 {
+  symbol: string
+  timeframe: string
+  range_start: string
+  range_end: string
+  bars_added: number
+}
+
+/** Closed set — mirror of the pydantic `Literal` on `OhlcvBackfillFailedPayloadV1.reason`. */
+export type BackfillFailureReason = 'rate_limited' | 'upstream_unavailable' | 'unknown_symbol'
+
+export interface OhlcvBackfillFailedPayloadV1 {
+  symbol: string
+  timeframe: string
+  reason: BackfillFailureReason
+  message: string
+}
+
 export type EnvelopeType =
   | 'chart.show'
   | 'chart.update'
   | 'chart.highlight'
   | 'run.completed'
   | 'chart.update_dropped'
+  | 'ohlcv.backfill_started'
+  | 'ohlcv.backfilled'
+  | 'ohlcv.backfill_failed'
 
 export interface Envelope<T = unknown> {
   type: string
@@ -83,5 +116,17 @@ export type ChartHighlightEnvelope = Envelope<ChartHighlightPayloadV1> & {
 }
 export type RunCompletedEnvelope = Envelope<RunCompletedPayloadV1> & {
   type: 'run.completed'
+  version: 1
+}
+export type OhlcvBackfillStartedEnvelope = Envelope<OhlcvBackfillStartedPayloadV1> & {
+  type: 'ohlcv.backfill_started'
+  version: 1
+}
+export type OhlcvBackfilledEnvelope = Envelope<OhlcvBackfilledPayloadV1> & {
+  type: 'ohlcv.backfilled'
+  version: 1
+}
+export type OhlcvBackfillFailedEnvelope = Envelope<OhlcvBackfillFailedPayloadV1> & {
+  type: 'ohlcv.backfill_failed'
   version: 1
 }

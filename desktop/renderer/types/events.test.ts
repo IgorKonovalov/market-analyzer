@@ -36,6 +36,10 @@ interface DumpedSchemas {
   ChartUpdatePayloadV1: JsonSchema
   ChartHighlightPayloadV1: JsonSchema
   RunCompletedPayloadV1: JsonSchema
+  GapWindow: JsonSchema
+  OhlcvBackfillStartedPayloadV1: JsonSchema
+  OhlcvBackfilledPayloadV1: JsonSchema
+  OhlcvBackfillFailedPayloadV1: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -47,6 +51,8 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    OverlaySpec, Marker,',
     '    ChartShowPayloadV1, ChartUpdatePayloadV1,',
     '    ChartHighlightPayloadV1, RunCompletedPayloadV1,',
+    '    GapWindow, OhlcvBackfillStartedPayloadV1,',
+    '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
     ')',
     'print(json.dumps({',
     '    "OverlaySpec": OverlaySpec.model_json_schema(),',
@@ -55,6 +61,10 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "ChartUpdatePayloadV1": ChartUpdatePayloadV1.model_json_schema(),',
     '    "ChartHighlightPayloadV1": ChartHighlightPayloadV1.model_json_schema(),',
     '    "RunCompletedPayloadV1": RunCompletedPayloadV1.model_json_schema(),',
+    '    "GapWindow": GapWindow.model_json_schema(),',
+    '    "OhlcvBackfillStartedPayloadV1": OhlcvBackfillStartedPayloadV1.model_json_schema(),',
+    '    "OhlcvBackfilledPayloadV1": OhlcvBackfilledPayloadV1.model_json_schema(),',
+    '    "OhlcvBackfillFailedPayloadV1": OhlcvBackfillFailedPayloadV1.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -172,6 +182,59 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     expect(requiredNames(dumped.RunCompletedPayloadV1)).toEqual(['artifact_path', 'kind', 'run_id'])
     expect(literalValues(dumped.RunCompletedPayloadV1, 'kind')).toEqual(
       ['analysis', 'backtest', 'defi'].sort(),
+    )
+  })
+
+  it('GapWindow fields match', () => {
+    expect(propertyNames(dumped.GapWindow)).toEqual(['end', 'start'])
+    expect(requiredNames(dumped.GapWindow)).toEqual(['end', 'start'])
+  })
+
+  it('OhlcvBackfillStartedPayloadV1 fields match', () => {
+    expect(propertyNames(dumped.OhlcvBackfillStartedPayloadV1)).toEqual([
+      'gaps',
+      'symbol',
+      'timeframe',
+    ])
+    expect(requiredNames(dumped.OhlcvBackfillStartedPayloadV1)).toEqual([
+      'gaps',
+      'symbol',
+      'timeframe',
+    ])
+  })
+
+  it('OhlcvBackfilledPayloadV1 fields match', () => {
+    expect(propertyNames(dumped.OhlcvBackfilledPayloadV1)).toEqual([
+      'bars_added',
+      'range_end',
+      'range_start',
+      'symbol',
+      'timeframe',
+    ])
+    expect(requiredNames(dumped.OhlcvBackfilledPayloadV1)).toEqual([
+      'bars_added',
+      'range_end',
+      'range_start',
+      'symbol',
+      'timeframe',
+    ])
+  })
+
+  it('OhlcvBackfillFailedPayloadV1 fields match (reason is a closed literal set)', () => {
+    expect(propertyNames(dumped.OhlcvBackfillFailedPayloadV1)).toEqual([
+      'message',
+      'reason',
+      'symbol',
+      'timeframe',
+    ])
+    expect(requiredNames(dumped.OhlcvBackfillFailedPayloadV1)).toEqual([
+      'message',
+      'reason',
+      'symbol',
+      'timeframe',
+    ])
+    expect(literalValues(dumped.OhlcvBackfillFailedPayloadV1, 'reason')).toEqual(
+      ['rate_limited', 'unknown_symbol', 'upstream_unavailable'].sort(),
     )
   })
 })

@@ -39,6 +39,9 @@ import type {
   ChartShowPayloadV1,
   ChartUpdatePayloadV1,
   Envelope,
+  OhlcvBackfilledPayloadV1,
+  OhlcvBackfillFailedPayloadV1,
+  OhlcvBackfillStartedPayloadV1,
   RunCompletedPayloadV1,
 } from '../types/events'
 
@@ -49,6 +52,9 @@ export interface EventStreamHandlers {
   onChartUpdate?: (payload: ChartUpdatePayloadV1) => void
   onChartHighlight?: (payload: ChartHighlightPayloadV1) => void
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
+  onOhlcvBackfillStarted?: (payload: OhlcvBackfillStartedPayloadV1) => void
+  onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
+  onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
   onUpdateDropped?: () => void
 }
 
@@ -65,6 +71,9 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'chart.highlight': 1,
   'run.completed': 1,
   'chart.update_dropped': 1,
+  'ohlcv.backfill_started': 1,
+  'ohlcv.backfilled': 1,
+  'ohlcv.backfill_failed': 1,
 }
 
 // Phase 4.4 failure-driven recovery thresholds. 3 errors within a 10-second
@@ -214,6 +223,15 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
       return
     case 'run.completed':
       handlers.onRunCompleted?.(envelope.payload as RunCompletedPayloadV1)
+      return
+    case 'ohlcv.backfill_started':
+      handlers.onOhlcvBackfillStarted?.(envelope.payload as OhlcvBackfillStartedPayloadV1)
+      return
+    case 'ohlcv.backfilled':
+      handlers.onOhlcvBackfilled?.(envelope.payload as OhlcvBackfilledPayloadV1)
+      return
+    case 'ohlcv.backfill_failed':
+      handlers.onOhlcvBackfillFailed?.(envelope.payload as OhlcvBackfillFailedPayloadV1)
       return
     case 'chart.update_dropped':
       handlers.onUpdateDropped?.()

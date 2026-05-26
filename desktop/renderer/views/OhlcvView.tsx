@@ -11,12 +11,14 @@
  * `(event_ts, kind)` so a live `chart.highlight` event followed by the
  * polled annotation row ~1 s later does not produce a duplicate marker.
  */
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { CandlestickChart } from '../components/CandlestickChart'
 import { SymbolPicker } from '../components/SymbolPicker'
 import type { Timeframe } from '../components/SymbolPicker'
+import { Toast } from '../components/Toast'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
+import { useBackfillState } from '../hooks/useBackfillState'
 import { useOhlcv } from '../hooks/useOhlcv'
 import type { Marker, OverlaySpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
@@ -55,6 +57,14 @@ export function OhlcvView({
 
   const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end })
   const { annotations } = useAnnotationsPoll({ symbol, timeframe, start, end })
+  const { isBackfilling, error: backfillError } = useBackfillState({ symbol, timeframe, refetch })
+
+  // A fresh backfill failure re-shows the toast even if a prior one was dismissed.
+  const [toastDismissed, setToastDismissed] = useState(false)
+  useEffect(() => {
+    if (backfillError) setToastDismissed(false)
+  }, [backfillError])
+  const showToast = backfillError !== null && !toastDismissed
 
   const mergedAnnotations = useMemo(
     () => mergePolledAndLive(annotations, liveHighlights, symbol, timeframe),
@@ -74,6 +84,17 @@ export function OhlcvView({
         <button type="button" className={styles.refresh} onClick={onRefresh} disabled={isLoading}>
           Refresh
         </button>
+        {isBackfilling && (
+          <span
+            className={styles.backfillSpinner}
+            role="status"
+            data-testid="ohlcv-backfill-spinner"
+            aria-label={`Backfilling ${symbol} ${timeframe}`}
+          >
+            <span className={styles.spinnerDot} aria-hidden="true" />
+            Backfilling…
+          </span>
+        )}
       </header>
 
       <div className={styles.body}>
@@ -106,6 +127,14 @@ export function OhlcvView({
           />
         )}
       </div>
+
+      {showToast && backfillError && (
+        <Toast
+          tone="error"
+          message={`Backfill failed (${backfillError.reason}): ${backfillError.message}`}
+          onDismiss={() => setToastDismissed(true)}
+        />
+      )}
     </section>
   )
 }

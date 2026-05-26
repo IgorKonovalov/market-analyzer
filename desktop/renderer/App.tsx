@@ -19,6 +19,7 @@
  */
 import { useEffect, useReducer, useState } from 'react'
 
+import { notifyBackfill } from './handlers/backfillBus'
 import { chartReducer, initialChartState, DEFAULT_LOOKBACK_DAYS } from './handlers/chartHandlers'
 import { notifyRunCompleted } from './handlers/runCompletedBus'
 import { useBacktestResult } from './hooks/useBacktestResult'
@@ -97,6 +98,9 @@ export function App(): JSX.Element {
     onChartUpdate: (payload) => dispatch({ kind: 'event/chart.update', payload }),
     onChartHighlight: (payload) => dispatch({ kind: 'event/chart.highlight', payload }),
     onRunCompleted: handleRunCompleted,
+    onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
+    onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
+    onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
     onUpdateDropped: () => {
       console.warn('[App] chart.update_dropped — sidecar queue was full')
     },
