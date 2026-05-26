@@ -1,8 +1,9 @@
 # 0013 — Auto-backfill on cache miss: contract honesty, `backfill_ohlcv` tool, async + events
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-22
 > **Approved:** 2026-05-22
+> **Amended:** 2026-05-26 (architect — pre-implementation reconciliation surfaced at the `/dev` restatement: the typed-error base is renamed `BackfillError` → `UpstreamDataError` so it reads correctly across adapters, not just the OHLCV backfill path; `UnknownSymbolError` becomes the single canonical "symbol unknown/not tracked" error and Plan 0012's `SymbolNotCoveredError` collapses into it. Phase 1 "Files touched"/"Done when" extended for the StockTwits migration. No phases added or removed. Renderer-side TS type names in phase 4 are unaffected — the renderer only ever sees `ohlcv.backfill_*` envelopes, never the Python exception types.)
 > **Owner skill(s):** `dev`, `ui-builder`
 > **Related ADRs:** [ADR-0007](../adrs/0007-market-data-provider.md) (MarketDataProvider Protocol — `as_of` anti-lookahead seam), [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (MCP tool surface), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE event vocabulary), [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (Claude Code is the primary control surface; tool docstrings are agent UX)
 
@@ -39,7 +40,7 @@ The user-visible bug is the agent's behaviour ("ask the human to run a `/dev` co
 
 Five-piece plan, four phases, two skills:
 
-1. **Backfill-aware events + typed adapter errors** (phase 1, `dev`). Three new SSE event types (`ohlcv.backfill_started v1`, `ohlcv.backfilled v1`, `ohlcv.backfill_failed v1`) registered with the existing `EventBus` (`src/market_analyser/api/events/__init__.py`). New error hierarchy in `src/market_analyser/data/errors.py`: `BackfillError(Exception)` → `RateLimitedError`, `UpstreamUnavailableError`, `UnknownSymbolError`. The Yahoo adapter classifies its failures into these (HTTP 429 → rate-limited, connection-refused/5xx → upstream-unavailable, empty response on a known-good interval/period combination → unknown-symbol). Existing `ValueError`s for invalid input (bad timeframe, non-UTC datetime, etc.) are preserved as-is.
+1. **Backfill-aware events + typed adapter errors** (phase 1, `dev`). Three new SSE event types (`ohlcv.backfill_started v1`, `ohlcv.backfilled v1`, `ohlcv.backfill_failed v1`) registered with the existing `EventBus` (`src/market_analyser/api/events/__init__.py`). New error hierarchy in `src/market_analyser/data/errors.py`: `UpstreamDataError(Exception)` → `RateLimitedError`, `UpstreamUnavailableError`, `UnknownSymbolError`. The base is named for *upstream/adapter* failure (not "backfill") because it is the shared taxonomy every external-data adapter draws from — the Yahoo OHLCV path and the StockTwits sentiment path both raise from it. The Yahoo adapter classifies its failures into these (HTTP 429 → rate-limited, connection-refused/5xx → upstream-unavailable, empty response on a known-good interval/period combination → unknown-symbol). `UnknownSymbolError` is the single canonical "symbol unknown / not tracked" error: Plan 0012's `SymbolNotCoveredError` (raised on a StockTwits 404) **collapses into it** rather than persisting as a second synonym — see phase 1. Existing `ValueError`s for invalid input (bad timeframe, non-UTC datetime, etc.) are preserved as-is.
 2. **`get_ohlcv` contract honesty + `backfill_ohlcv` MCP tool** (phase 2, `dev`). Rewrite the `get_ohlcv` MCP tool docstring so it accurately describes "reads cache; fetches on miss; set `backfill_async=true` to return cached bars immediately and have the renderer pick up the rest via SSE". Change the response shape from bare `list[Bar]` to `{bars: list[Bar], partial_reason: str | None, message: str | None}` so partial failures are surfaceable without raising. Add a new `backfill_ohlcv(symbol, timeframe, start, end)` MCP tool that's always async (returns `{started: bool, gaps: list[GapWindow], message: str}` immediately and runs the fetch in the background), so an agent that wants to pre-warm the cache without showing anything has a verb-named option.
 3. **`BackfillCoordinator` + concurrent dedup** (phase 3, `dev`). New `src/market_analyser/data/backfill.py` module: a coordinator holding an in-flight `asyncio.Task` registry keyed by `(symbol, timeframe)`. Calls schedule a background task that runs `provider.get_ohlcv(...)` inside `asyncio.to_thread(...)` (the existing fetch path is sync); concurrent calls for the same `(symbol, timeframe)` coalesce onto the running task and receive the same result. The coordinator publishes `started` before the task begins and `backfilled` (or `backfill_failed`) when it ends. Both `get_ohlcv(..., backfill_async=true)` and `backfill_ohlcv(...)` route through the coordinator.
 4. **Renderer: loader, auto-refetch, failure toast** (phase 4, `ui-builder`). `useOhlcv` (or a new sibling hook) subscribes to `ohlcv.backfilled` and `ohlcv.backfill_failed` envelopes via the existing `useEventStream`. When `started` matches the loaded `(symbol, timeframe)`, the chart container shows a small unobtrusive spinner pinned to a chart-header slot (e.g. top-right, next to the symbol label). When `backfilled` matches, the hook calls its existing `refetch()` and clears the spinner. When `backfill_failed` matches, the spinner clears and a toast surfaces with the reason+message; the toast component reused from Plan 0007 phase 4.
@@ -104,8 +105,8 @@ Each phase is one commit, conventional-commit style. Cross-skill handoff at the 
 ### Phase 1 — Backfill event types + typed adapter errors
 
 - **Owner skill:** `dev`
-- **What:** Register three new SSE event types in `src/market_analyser/api/events/__init__.py` and add a typed error hierarchy in a new `src/market_analyser/data/errors.py`. The `YahooAdapter` is updated to raise the typed errors on the relevant failure modes (the existing input-validation `ValueError`s in `yahoo.py:57-67` are unchanged). No tool surface changes yet — this phase is foundation only. The renderer is unaware of the new types until phase 4 wires it.
-- **Files touched:** `src/market_analyser/api/events/__init__.py` (three new payload models + `TYPE_REGISTRY` entries); new `src/market_analyser/data/errors.py`; `src/market_analyser/data/adapters/yahoo.py` (classify upstream failures); possibly `src/market_analyser/data/adapters/_yahoo_fetch.py` if the lower-level fetcher needs to expose the HTTP status code to the adapter; `src/market_analyser/data/__init__.py` (re-export the error types); new `tests/api/test_events_backfill.py`; new `tests/data/test_yahoo_typed_errors.py`.
+- **What:** Register three new SSE event types in `src/market_analyser/api/events/__init__.py` and add a typed error hierarchy in a new `src/market_analyser/data/errors.py` (`UpstreamDataError` base). The `YahooAdapter` is updated to raise the typed errors on the relevant failure modes (the existing input-validation `ValueError`s in `yahoo.py:57-67` are unchanged). **Collapse Plan 0012's `SymbolNotCoveredError` into `UnknownSymbolError`:** the StockTwits adapter currently defines its own `SymbolNotCoveredError(ValueError)` (`stocktwits.py:56`, raised on a definitive upstream 404) whose docstring already anticipates this — delete that class and raise `UnknownSymbolError` (imported from the shared `data.errors`, re-exported via `market_analyser.data`) at the 404 site instead, preserving the existing "not tracked" message. Migrate the one consumer (`mcp_tools/stocktwits_sentiment.py`) to catch `UnknownSymbolError` imported from the **public** `market_analyser.data` surface — this also retires the api→`data.adapters` layering reach that Plan 0012's close flagged as a nit. The 404→symbol-unknown mapping is the **only** StockTwits failure mode that moves to the typed taxonomy; its existing 5xx→`ResilientHttpError` behaviour (`test_stocktwits_adapter.py:188`) is deliberately untouched — generalising every adapter's transport-error handling to the typed taxonomy is a future plan, not this one. The base class change (`ValueError` → `UpstreamDataError`/`Exception`) is safe: the sole catcher catches by name and re-raises a clean `ValueError` at the MCP boundary, and nothing in the dispatch path does `except ValueError` over the 404. No MCP tool *surface* changes yet — this phase is foundation only. The renderer is unaware of the new types until phase 4 wires it.
+- **Files touched:** `src/market_analyser/api/events/__init__.py` (three new payload models + `TYPE_REGISTRY` entries); new `src/market_analyser/data/errors.py`; `src/market_analyser/data/adapters/yahoo.py` (classify upstream failures); `src/market_analyser/data/__init__.py` (re-export the error types); `src/market_analyser/data/adapters/stocktwits.py` (delete `SymbolNotCoveredError`, raise `UnknownSymbolError` at the 404 site, drop it from `__all__`); `src/market_analyser/api/mcp_tools/stocktwits_sentiment.py` (import + catch `UnknownSymbolError` from `market_analyser.data`); `tests/data/test_stocktwits_adapter.py` (update the 404 spec to the new error type/import); new `tests/api/test_events_backfill.py`; new `tests/data/test_yahoo_typed_errors.py`. The HTTP-status seam needs no `_yahoo_fetch.py` change: `ResilientHttpError` (`data/_http.py`) already carries `last_response.status_code` + `last_exception`, so `YahooAdapter` classifies by catching it (429→rate-limited, 5xx/transport→upstream-unavailable) the same way `stocktwits.py:109-114` already inspects `last_response.status_code` for its 404.
 - **Done when:**
   - `tests/api/test_events_backfill.py` asserts:
     - `EventBus.publish("ohlcv.backfill_started", payload)` with a valid `OhlcvBackfillStartedPayloadV1` (fields `symbol`, `timeframe`, `gaps: list[GapWindow]` where `GapWindow = {start: datetime, end: datetime}`) returns an envelope with `version == 1`, `type == "ohlcv.backfill_started"`. A subscribed `EventBus.subscribe()` receives exactly this envelope.
@@ -114,12 +115,16 @@ Each phase is one commit, conventional-commit style. Cross-skill handoff at the 
     - `publish("ohlcv.backfill_failed", payload)` with `reason="something_else"` raises `pydantic.ValidationError` (the literal set is closed).
     - Every published envelope has `payload` JSON-serialisable with `datetime` fields rendered as ISO-8601 strings (`json.dumps(envelope.payload)` succeeds; the captured string contains the expected ISO timestamp).
   - `tests/data/test_yahoo_typed_errors.py` asserts:
-    - With a `fetcher` test-double that raises HTTP 429 (the lower-level fetcher surfaces the status code somehow — implementer chooses the seam; could be a custom exception in `_yahoo_fetch.py` that the adapter translates), `YahooAdapter.fetch_ohlcv(...)` raises `RateLimitedError` (a subclass of `BackfillError`) carrying the HTTP status and the upstream's `Retry-After` header value if present.
+    - With a `fetcher`/HTTP-client test-double that surfaces an HTTP 429 (caught as `ResilientHttpError` with `last_response.status_code == 429`, mirroring the seam `stocktwits.py:109-114` already uses), `YahooAdapter.fetch_ohlcv(...)` raises `RateLimitedError` (a subclass of `UpstreamDataError`) carrying the HTTP status and the upstream's `Retry-After` header value if present.
     - With a `fetcher` test-double that raises a connection-refused / 5xx / timeout, `fetch_ohlcv` raises `UpstreamUnavailableError` carrying a short reason string.
     - With a `fetcher` test-double that returns an empty list AND the symbol is structurally valid (non-empty, matches the existing input checks) AND the requested period is one Yahoo would normally return data for (e.g. `1mo` on a 1d timeframe), `fetch_ohlcv` raises `UnknownSymbolError` carrying the symbol. The existing legitimate-empty case (e.g. weekend gap with no bars) is distinguished from unknown-symbol by the period: a multi-day period returning zero bars on a known-good interval is treated as unknown-symbol; the existing per-gap empty handling in `default_provider.py:83` (`if not fetched: continue`) is preserved for the gap-too-small case.
     - The existing input-validation `ValueError`s in `yahoo.py:57-67` (empty symbol, invalid timeframe, non-UTC tz, start>=end, span too large) still raise `ValueError` — not the new typed errors. These are caller bugs, not upstream failures.
-    - The errors are exported from `market_analyser.data` so downstream modules `from market_analyser.data import BackfillError, RateLimitedError, ...` works.
-  - `tests/data/test_default_provider.py` (extending the existing spec) asserts the existing happy-path tests continue to pass — phase 1 must not change runtime behaviour for valid input. Specifically: a cache miss with a working fake-fetcher returns the expected bars exactly as before.
+    - The errors are exported from `market_analyser.data` so downstream modules `from market_analyser.data import UpstreamDataError, RateLimitedError, UpstreamUnavailableError, UnknownSymbolError` works.
+  - `tests/data/test_stocktwits_adapter.py` (updating the existing 404 spec) asserts:
+    - The 404 case (`test_upstream_404_raises_symbol_not_covered`, currently `:180-185`) raises `UnknownSymbolError` (imported from `market_analyser.data`), still `match="not tracked"`, and carries the offending `symbol`. `SymbolNotCoveredError` no longer exists as a name (the import and the `pytest.raises(SymbolNotCoveredError, ...)` are gone; `from market_analyser.data.adapters.stocktwits import SymbolNotCoveredError` raises `ImportError`).
+    - The 500 case (`test_upstream_500_propagates_as_resilient_error`, `:188-195`) is unchanged — a 5xx still propagates as `ResilientHttpError`, NOT `UnknownSymbolError`/`UpstreamUnavailableError`. (StockTwits transport errors stay as-is this plan; only the 404→symbol-unknown mapping moves.)
+    - `mcp_tools/stocktwits_sentiment.py` still surfaces a clean "not tracked by StockTwits" error to the agent for an untracked symbol (the consumer now catches `UnknownSymbolError` from the public `market_analyser.data` surface). The existing `test_stocktwits_sentiment_tool.py` coverage for the not-tracked path continues to pass.
+  - `tests/data/test_default_provider_cache.py` (extending the existing spec) asserts the existing happy-path tests continue to pass — phase 1 must not change runtime behaviour for valid input. Specifically: a cache miss with a working fake-fetcher returns the expected bars exactly as before. (No existing cache spec exercises the empty-fetch `continue` path, so the new empty→`UnknownSymbolError` classification does not regress them.)
 
 ### Phase 2 — `get_ohlcv` contract honesty + new `backfill_ohlcv` MCP tool
 
@@ -145,7 +150,7 @@ Each phase is one commit, conventional-commit style. Cross-skill handoff at the 
 ### Phase 3 — `BackfillCoordinator` + (symbol, timeframe) dedup + partial-failure surfacing
 
 - **Owner skill:** `dev`
-- **What:** Replace phase 2's placeholder coordinator with the real `BackfillCoordinator` in `src/market_analyser/data/backfill.py`. The coordinator owns an `asyncio.Task` registry keyed by `(symbol, timeframe)`. `schedule(symbol, timeframe, start, end) -> asyncio.Task[BackfillResult]` returns the existing task if one is in-flight for the same `(symbol, timeframe)`, otherwise creates one. The task runs `provider.get_ohlcv(symbol=..., timeframe=..., start=..., end=...)` inside `asyncio.to_thread(...)` (the existing provider call is sync), catches `BackfillError` subclasses, and publishes the appropriate event. Cleanup: when a task finishes (success or failure), the registry entry is removed; concurrent callers that joined the in-flight task receive the same result. Partial-failure surfacing: when the sync path of `get_ohlcv` fails on a SUBSET of gaps (some gaps fetched bars, one or more raised `BackfillError`), the tool returns `{bars: <merged so far>, partial_reason: <one of rate_limited|upstream_unavailable|unknown_symbol>, message: <upstream message>}` rather than raising. When ALL gaps fail, the tool raises the typed error (which the MCP boundary surfaces as an error to the agent). The `_coverage_gaps` algorithm is unchanged; the provider's gap-loop is extended to collect per-gap failures and synthesise the partial result.
+- **What:** Replace phase 2's placeholder coordinator with the real `BackfillCoordinator` in `src/market_analyser/data/backfill.py`. The coordinator owns an `asyncio.Task` registry keyed by `(symbol, timeframe)`. `schedule(symbol, timeframe, start, end) -> asyncio.Task[BackfillResult]` returns the existing task if one is in-flight for the same `(symbol, timeframe)`, otherwise creates one. The task runs `provider.get_ohlcv(symbol=..., timeframe=..., start=..., end=...)` inside `asyncio.to_thread(...)` (the existing provider call is sync), catches `UpstreamDataError` subclasses, and publishes the appropriate event. Cleanup: when a task finishes (success or failure), the registry entry is removed; concurrent callers that joined the in-flight task receive the same result. Partial-failure surfacing: when the sync path of `get_ohlcv` fails on a SUBSET of gaps (some gaps fetched bars, one or more raised `UpstreamDataError`), the tool returns `{bars: <merged so far>, partial_reason: <one of rate_limited|upstream_unavailable|unknown_symbol>, message: <upstream message>}` rather than raising. When ALL gaps fail, the tool raises the typed error (which the MCP boundary surfaces as an error to the agent). The `_coverage_gaps` algorithm is unchanged; the provider's gap-loop is extended to collect per-gap failures and synthesise the partial result.
 - **Files touched:** new `src/market_analyser/data/backfill.py` (the coordinator); `src/market_analyser/data/default_provider.py` (extend the gap loop to collect per-gap failures and return a structured result; the existing `get_ohlcv(...) -> Sequence[Bar]` signature is preserved for non-MCP callers — the partial-reason data is exposed via a sibling method or a `BackfillResult` dataclass returned by a new method, implementer picks); `src/market_analyser/api/mcp_app.py` (route both `get_ohlcv(backfill_async=true)` and `backfill_ohlcv(...)` through the real coordinator; replace the phase-2 placeholder); `src/market_analyser/api/app.py` (instantiate the coordinator at `create_app` time, bind it to `app.state.backfill_coordinator`, pass into `create_mcp_components`); new `tests/data/test_backfill_coordinator.py`; `tests/api/test_mcp_tools.py` extended for partial-failure cases; `tests/data/test_default_provider.py` extended for partial-failure cases.
 - **Done when:**
   - `tests/data/test_backfill_coordinator.py` asserts:
@@ -230,12 +235,14 @@ TYPE_REGISTRY["ohlcv.backfill_failed"] = OhlcvBackfillFailedPayloadV1
 ```python
 # Phase 1 — new in src/market_analyser/data/errors.py
 
-class BackfillError(Exception):
-    """Base for upstream-driven failures during a backfill. Caller bugs
-    (bad timeframe, malformed datetime) keep raising ValueError."""
+class UpstreamDataError(Exception):
+    """Base for upstream/adapter-driven failures across the data layer
+    (OHLCV, sentiment, news, screener — not just the backfill path).
+    Caller bugs (bad timeframe, malformed datetime) keep raising
+    ValueError."""
 
 
-class RateLimitedError(BackfillError):
+class RateLimitedError(UpstreamDataError):
     """Upstream returned HTTP 429 or equivalent throttle signal."""
 
     def __init__(self, message: str, *, retry_after_seconds: int | None = None) -> None:
@@ -243,15 +250,21 @@ class RateLimitedError(BackfillError):
         self.retry_after_seconds = retry_after_seconds
 
 
-class UpstreamUnavailableError(BackfillError):
+class UpstreamUnavailableError(UpstreamDataError):
     """Upstream connection refused, timed out, or returned 5xx."""
 
 
-class UnknownSymbolError(BackfillError):
-    """Upstream accepted the request but returned no rows for a span
-    where rows would normally be expected (structurally valid symbol,
-    multi-day period). Distinguished from the legitimate-empty case
-    (e.g. weekend gap on a 1d timeframe) by the period size."""
+class UnknownSymbolError(UpstreamDataError):
+    """The upstream does not have the requested symbol. Two detection
+    paths converge on this one type:
+      - StockTwits returns a definitive 404 ("not tracked"); and
+      - Yahoo accepts the request but returns no rows for a span where
+        rows would normally be expected (structurally valid symbol,
+        multi-day period) — distinguished from the legitimate-empty case
+        (e.g. weekend gap on a 1d timeframe) by the period size.
+    The caller treats both identically ("symbol unusable"); `message`
+    conveys which upstream and why. Supersedes Plan 0012's
+    `SymbolNotCoveredError`."""
 
     def __init__(self, message: str, *, symbol: str) -> None:
         super().__init__(message)
