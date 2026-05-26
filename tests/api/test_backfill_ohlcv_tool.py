@@ -36,6 +36,7 @@ from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.errors import RateLimitedError
 from market_analyser.data.types import (
+    BackfillResult,
     Bar,
     Coverage,
     MarketSentimentSample,
@@ -83,11 +84,13 @@ class _CoverageProvider:
         gaps: Sequence[tuple[datetime, datetime]],
         fetched: Sequence[Bar] | Exception,
         gate: threading.Event | None = None,
+        status_result: BackfillResult | None = None,
     ) -> None:
         self._cached = list(cached)
         self._gaps = list(gaps)
         self._fetched = fetched
         self._gate = gate
+        self._status_result = status_result
         self.fetch_calls = 0
 
     def coverage(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> Coverage:
@@ -107,6 +110,14 @@ class _CoverageProvider:
         if isinstance(self._fetched, Exception):
             raise self._fetched
         return list(self._fetched)
+
+    def get_ohlcv_with_status(
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
+    ) -> BackfillResult:
+        if self._status_result is not None:
+            return self._status_result
+        bars = self.get_ohlcv(symbol, timeframe, start, end)
+        return BackfillResult(bars=list(bars), partial_reason=None, message=None)
 
     def get_quote(self, symbol: str, as_of: datetime | None = None) -> Quote:
         raise NotImplementedError
@@ -145,56 +156,8 @@ class _CoverageProvider:
         raise NotImplementedError
 
 
-# --------------------------------------------------------------------------- #
-# Coordinator-level: the event sequence around a scheduled backfill            #
-# --------------------------------------------------------------------------- #
-
-
-def test_schedule_publishes_started_then_backfilled() -> None:
-    """A successful backfill publishes started (before the fetch) then backfilled
-    (after), in that order, with bars_added counting the new bars."""
-
-    async def run() -> list[Envelope]:
-        bus = EventBus()
-        sub = bus.subscribe()
-        provider = _CoverageProvider(cached=[], gaps=[(_T0, _T1)], fetched=[_sample_bar()])
-        coord = BackfillCoordinator(provider=provider, event_bus=bus)
-        await coord.schedule("AAPL", "1d", _T0, _T1)
-        first = await asyncio.wait_for(sub.next(), timeout=2)
-        second = await asyncio.wait_for(sub.next(), timeout=2)
-        sub.close()
-        return [first, second]
-
-    started, backfilled = asyncio.run(run())
-    assert started.type == "ohlcv.backfill_started"
-    assert backfilled.type == "ohlcv.backfilled"
-    assert backfilled.payload["bars_added"] == 1
-
-
-def test_schedule_failure_publishes_backfill_failed_with_reason() -> None:
-    """A typed upstream error during the fetch publishes backfill_failed with the
-    mapped reason and the exception message."""
-
-    async def run() -> list[Envelope]:
-        bus = EventBus()
-        sub = bus.subscribe()
-        provider = _CoverageProvider(
-            cached=[],
-            gaps=[(_T0, _T1)],
-            fetched=RateLimitedError("yahoo: rate limited (HTTP 429)", retry_after_seconds=60),
-        )
-        coord = BackfillCoordinator(provider=provider, event_bus=bus)
-        await coord.schedule("AAPL", "1d", _T0, _T1)
-        first = await asyncio.wait_for(sub.next(), timeout=2)
-        second = await asyncio.wait_for(sub.next(), timeout=2)
-        sub.close()
-        return [first, second]
-
-    started, failed = asyncio.run(run())
-    assert started.type == "ohlcv.backfill_started"
-    assert failed.type == "ohlcv.backfill_failed"
-    assert failed.payload["reason"] == "rate_limited"
-    assert "rate limited" in failed.payload["message"]
+# Coordinator-level event sequencing (started→backfilled, failure, dedup,
+# cleanup) is covered comprehensively in test_backfill_coordinator.py.
 
 
 # --------------------------------------------------------------------------- #
@@ -384,6 +347,72 @@ def test_get_ohlcv_sync_path_preserved() -> None:
     assert len(resp.bars) == 1
     assert resp.partial_reason is None
     assert resp.message is None
+
+
+def test_get_ohlcv_sync_partial_failure_surfaces_reason() -> None:
+    """backfill_async=False with a partial failure (some gaps fetched, one gap
+    failed) surfaces {bars, partial_reason, message} synchronously instead of
+    raising — via the provider's get_ohlcv_with_status."""
+
+    async def run() -> GetOhlcvResponse:
+        bar = _sample_bar()
+        partial = BackfillResult(
+            bars=[bar],
+            partial_reason="rate_limited",
+            message="yahoo: rate limited (HTTP 429)",
+        )
+        provider = _CoverageProvider(
+            cached=[], gaps=[(_T0, _T1)], fetched=[bar], status_result=partial
+        )
+        coord = BackfillCoordinator(provider=provider, event_bus=EventBus())
+        return await _get_ohlcv_response(
+            provider=provider,
+            coordinator=coord,
+            symbol="AAPL",
+            timeframe="1d",
+            start=_T0,
+            end=_T1,
+            backfill_async=False,
+        )
+
+    resp = asyncio.run(run())
+    assert len(resp.bars) == 1
+    assert resp.partial_reason == "rate_limited"
+    assert resp.message is not None
+    assert "rate limited" in resp.message
+
+
+def test_get_ohlcv_backfill_async_failure_publishes_backfill_failed() -> None:
+    """backfill_async=True when the background fetch fails: the immediate response
+    is still pending; the eventual event is backfill_failed with the typed reason
+    (the async path is fail-loud — partial surfacing is the sync path's job)."""
+
+    async def run() -> tuple[GetOhlcvResponse, list[str], str]:
+        bus = EventBus()
+        sub = bus.subscribe()
+        provider = _CoverageProvider(
+            cached=[],
+            gaps=[(_T0, _T1)],
+            fetched=RateLimitedError("yahoo: rate limited (HTTP 429)", retry_after_seconds=60),
+        )
+        coord = BackfillCoordinator(provider=provider, event_bus=bus)
+        resp = await _get_ohlcv_response(
+            provider=provider,
+            coordinator=coord,
+            symbol="AAPL",
+            timeframe="1d",
+            start=_T0,
+            end=_T1,
+            backfill_async=True,
+        )
+        events = [await asyncio.wait_for(sub.next(), timeout=2) for _ in range(2)]
+        sub.close()
+        return resp, [e.type for e in events], str(events[1].payload["reason"])
+
+    resp, types, reason = asyncio.run(run())
+    assert resp.partial_reason == "backfill_async_pending"
+    assert types == ["ohlcv.backfill_started", "ohlcv.backfill_failed"]
+    assert reason == "rate_limited"
 
 
 # --------------------------------------------------------------------------- #

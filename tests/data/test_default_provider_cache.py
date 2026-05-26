@@ -19,8 +19,11 @@ from typing import Any
 
 import pytest
 
+from market_analyser.data._http import HttpResponse, ResilientHttpError
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.default_provider import DefaultMarketDataProvider
+from market_analyser.data.errors import RateLimitedError
+from market_analyser.data.types import Bar
 from market_analyser.persistence.engine import (
     apply_migrations,
     make_engine,
@@ -284,3 +287,130 @@ def test_no_repo_with_as_of_raises() -> None:
             datetime(2026, 5, 1, tzinfo=UTC),
             as_of=datetime(2026, 5, 1, tzinfo=UTC),
         )
+
+
+# -- Plan 0013 phase 3: partial-failure surfacing via get_ohlcv_with_status ---
+
+
+def _scripted_yahoo(outcomes: list[list[dict[str, Any]] | Exception]) -> YahooAdapter:
+    """A YahooAdapter whose fetcher returns rows or raises by call order — one
+    outcome per gap the provider fetches (gaps are fetched in sorted order)."""
+    state = {"i": 0}
+
+    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        outcome = outcomes[state["i"]]
+        state["i"] += 1
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    return YahooAdapter(fetcher=fetcher)
+
+
+def _rate_limit_error() -> ResilientHttpError:
+    """A transport-level 429 the YahooAdapter classifies into RateLimitedError."""
+    return ResilientHttpError(
+        source_name="yahoo",
+        last_response=HttpResponse(status_code=429, headers={}, body=b"", elapsed_seconds=0.0),
+        last_exception=None,
+        attempts=4,
+    )
+
+
+def _seed_bar(ts: datetime) -> Bar:
+    return Bar(
+        symbol="AAPL",
+        timeframe="1d",
+        event_ts=ts,
+        open=100.0,
+        high=102.0,
+        low=99.0,
+        close=101.0,
+        volume=1_000_000.0,
+        source="yahoo",
+    )
+
+
+def _seed_three_gap_cache(repo: BarRepository) -> tuple[datetime, datetime]:
+    """Seed two dense blocks of cached bars so [start, end] has exactly three
+    NON-adjacent gaps (head / between-blocks / tail), each wider than the 10-day
+    fetch threshold. Single-point cached bars would leave adjacent gaps that
+    `_coverage_gaps` merges into one (they share the bar's timestamp as a
+    boundary); separating the cache into blocks keeps the three gaps distinct."""
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 1, tzinfo=UTC)
+    block_a = [_seed_bar(datetime(2026, 1, 20, tzinfo=UTC) + timedelta(days=i)) for i in range(12)]
+    block_b = [_seed_bar(datetime(2026, 3, 1, tzinfo=UTC) + timedelta(days=i)) for i in range(12)]
+    repo.upsert_bars(block_a + block_b)
+    return start, end
+
+
+def test_get_ohlcv_with_status_partial_failure_surfaces_reason(repo: BarRepository) -> None:
+    start, end = _seed_three_gap_cache(repo)
+    yahoo = _scripted_yahoo(
+        [
+            [_row("2026-01-15")],  # gap 1 (head) succeeds
+            _rate_limit_error(),  # gap 2 (middle) rate-limited
+            [_row("2026-03-20")],  # gap 3 (tail) succeeds
+        ],
+    )
+    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
+
+    result = provider.get_ohlcv_with_status("AAPL", "1d", start, end)
+
+    assert result.partial_reason == "rate_limited"
+    assert result.message  # carries the upstream detail
+    timestamps = [bar.event_ts for bar in result.bars]
+    # cached (two 12-bar blocks = 24) + gap1 bar + gap3 bar; the failed middle
+    # gap contributed nothing.
+    assert datetime(2026, 1, 15, tzinfo=UTC) in timestamps
+    assert datetime(2026, 3, 20, tzinfo=UTC) in timestamps
+    assert len(result.bars) == 26
+
+
+def test_get_ohlcv_raises_loud_on_partial_failure(repo: BarRepository) -> None:
+    """The plain get_ohlcv stays fail-loud on any gap failure — the HTTP route +
+    backtests want a loud error, not a silent partial."""
+    start, end = _seed_three_gap_cache(repo)
+    yahoo = _scripted_yahoo(
+        [[_row("2026-01-15")], _rate_limit_error(), [_row("2026-03-20")]],
+    )
+    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
+
+    with pytest.raises(RateLimitedError):
+        provider.get_ohlcv("AAPL", "1d", start, end)
+
+
+def test_get_ohlcv_with_status_all_gaps_fail_raises(repo: BarRepository) -> None:
+    start, end = _seed_three_gap_cache(repo)
+    yahoo = _scripted_yahoo([_rate_limit_error(), _rate_limit_error(), _rate_limit_error()])
+    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
+
+    with pytest.raises(RateLimitedError):
+        provider.get_ohlcv_with_status("AAPL", "1d", start, end)
+
+
+def test_get_ohlcv_with_status_full_cache_hit_is_clean(repo: BarRepository) -> None:
+    warming_rows = _daily_rows(datetime(2026, 4, 1, tzinfo=UTC), 30)
+    yahoo_warmer, _warm = _yahoo_with_call_log(warming_rows)
+    DefaultMarketDataProvider(yahoo=yahoo_warmer, bar_repository=repo).get_ohlcv(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
+    )
+
+    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        raise AssertionError("full cache hit must not fetch")
+
+    provider = DefaultMarketDataProvider(yahoo=YahooAdapter(fetcher=explode), bar_repository=repo)
+    result = provider.get_ohlcv_with_status(
+        "AAPL",
+        "1d",
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 4, 30, tzinfo=UTC),
+    )
+
+    assert result.partial_reason is None
+    assert result.message is None
+    assert len(result.bars) == 30

@@ -18,6 +18,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from market_analyser.data.errors import FailureReason
+
 
 class Bar(BaseModel):
     """A single OHLCV bar. Boundary-validated; downstream code may trust the fields."""
@@ -162,7 +164,20 @@ class Coverage:
     gaps: list[tuple[datetime, datetime]]
 
 
+@dataclass(frozen=True)
+class BackfillResult:
+    """Result of a fetch-on-miss that surfaces partial failures instead of raising
+    (Plan 0013). `bars` is the merged cache+fetched set so far; `partial_reason`
+    is `None` on full success, or the typed reason when some (but not all) gaps
+    failed; `message` carries the upstream detail for the agent."""
+
+    bars: list[Bar]
+    partial_reason: FailureReason | None
+    message: str | None
+
+
 __all__ = [
+    "BackfillResult",
     "Bar",
     "Coverage",
     "MarketSentimentSample",

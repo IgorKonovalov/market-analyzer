@@ -21,7 +21,9 @@ from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
+from market_analyser.data.errors import UpstreamDataError, failure_reason
 from market_analyser.data.types import (
+    BackfillResult,
     Bar,
     Coverage,
     MarketSentimentSample,
@@ -126,6 +128,59 @@ class DefaultMarketDataProvider:
             return Coverage(cached=[], gaps=[(start, end)] if start < end else [])
         cached = list(self._repo.get_bars(symbol, timeframe, start, end))
         return Coverage(cached=cached, gaps=_coverage_gaps(cached, start, end))
+
+    def get_ohlcv_with_status(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> BackfillResult:
+        """Like `get_ohlcv` but surfaces partial failures instead of failing loud.
+
+        Same gap math and per-gap fetch+upsert as `get_ohlcv`, except a typed
+        `UpstreamDataError` on a SUBSET of gaps is collected rather than raised:
+        the merged bars fetched so far are returned with `partial_reason` set. If
+        EVERY gap fails the typed error is re-raised (total failure stays loud).
+        Live-mode only — backfill never runs under `as_of` (ADR-0007), so this
+        method has no `as_of` parameter. The plain `get_ohlcv` keeps raising on
+        any gap failure for the HTTP route + backtests that want loud failure."""
+        if self._repo is None:
+            bars = self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
+            return BackfillResult(bars=list(bars), partial_reason=None, message=None)
+
+        cached = self._repo.get_bars(symbol, timeframe, start, end)
+        gaps = _coverage_gaps(cached, start, end)
+        if not gaps:
+            return BackfillResult(bars=list(cached), partial_reason=None, message=None)
+
+        merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
+        failures: list[UpstreamDataError] = []
+        for gap_start, gap_end in gaps:
+            try:
+                fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end)
+            except UpstreamDataError as err:
+                failures.append(err)
+                continue
+            if not fetched:
+                continue
+            self._repo.upsert_bars(fetched)
+            for bar in fetched:
+                if start <= bar.event_ts <= end:
+                    merged[bar.event_ts] = bar
+
+        result_bars = sorted(merged.values(), key=lambda b: b.event_ts)
+        if failures and len(failures) == len(gaps):
+            # Every gap failed — nothing was fetched. Stay loud.
+            raise failures[0]
+        if failures:
+            first = failures[0]
+            return BackfillResult(
+                bars=result_bars,
+                partial_reason=failure_reason(first),
+                message=str(first),
+            )
+        return BackfillResult(bars=result_bars, partial_reason=None, message=None)
 
     def get_quote(
         self,

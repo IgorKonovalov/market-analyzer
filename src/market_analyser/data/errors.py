@@ -14,6 +14,10 @@ failures — those keep raising `ValueError` at the adapter's input boundary.
 
 from __future__ import annotations
 
+from typing import Literal
+
+FailureReason = Literal["rate_limited", "upstream_unavailable", "unknown_symbol"]
+
 
 class UpstreamDataError(Exception):
     """Base for upstream/adapter-driven failures across the data layer
@@ -57,9 +61,23 @@ class UnknownSymbolError(UpstreamDataError):
         self.symbol = symbol
 
 
+def failure_reason(err: UpstreamDataError) -> FailureReason:
+    """Map a typed upstream error onto the closed `ohlcv.backfill_failed` /
+    `partial_reason` vocabulary. Lives here (alongside the error classes) so both
+    the data layer and the backfill coordinator share one mapping without either
+    reaching into the other."""
+    if isinstance(err, RateLimitedError):
+        return "rate_limited"
+    if isinstance(err, UnknownSymbolError):
+        return "unknown_symbol"
+    return "upstream_unavailable"
+
+
 __all__ = [
+    "FailureReason",
     "RateLimitedError",
     "UnknownSymbolError",
     "UpstreamDataError",
     "UpstreamUnavailableError",
+    "failure_reason",
 ]

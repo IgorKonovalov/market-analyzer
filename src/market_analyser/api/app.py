@@ -38,6 +38,7 @@ from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
@@ -111,11 +112,21 @@ def create_app(
         )
     effective_provider = provider if provider is not None else DefaultMarketDataProvider()
     effective_event_bus = event_bus if event_bus is not None else EventBus()
+    # The backfill coordinator (Plan 0013) needs the narrow SupportsBackfill
+    # capability (get_ohlcv + coverage + get_ohlcv_with_status). The production
+    # DefaultMarketDataProvider satisfies it; a coverage-less stub yields None and
+    # the MCP backfill paths refuse with a clear error.
+    backfill_coordinator = (
+        BackfillCoordinator(provider=effective_provider, event_bus=effective_event_bus)
+        if isinstance(effective_provider, SupportsBackfill)
+        else None
+    )
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
             annotations_repository=annotations_repository,
             event_bus=effective_event_bus,
+            backfill_coordinator=backfill_coordinator,
             backtest_runs_repository=backtest_runs_repository,
             runs_dir=runs_dir,
         )
@@ -155,6 +166,10 @@ def create_app(
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
     app.state.event_bus = effective_event_bus
+    # The backfill coordinator (Plan 0013) is exposed on app.state so a future
+    # phase / route can introspect in-flight backfills; the MCP tools receive it
+    # directly via create_mcp_components.
+    app.state.backfill_coordinator = backfill_coordinator
 
     @app.middleware("http")
     async def bearer_auth(

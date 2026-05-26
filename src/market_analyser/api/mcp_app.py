@@ -63,7 +63,7 @@ from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
-from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
+from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.repositories.backtest_runs import (
@@ -154,6 +154,18 @@ async def _get_ohlcv_response(
             ),
         )
     # Sync mode (default): fetch-on-miss, offloaded so it never blocks the loop.
+    # With a coverage-capable provider, surface partial failures (some gaps
+    # fetched, some failed) instead of failing loud; else fall back to the plain
+    # fetch (legacy / coverage-less stub providers).
+    if coordinator is not None:
+        result = await asyncio.to_thread(
+            coordinator.get_ohlcv_with_status, symbol, timeframe, start, end
+        )
+        return GetOhlcvResponse(
+            bars=list(result.bars),
+            partial_reason=result.partial_reason,
+            message=result.message,
+        )
     bars = await asyncio.to_thread(provider.get_ohlcv, symbol, timeframe, start, end)
     return GetOhlcvResponse(bars=list(bars), partial_reason=None, message=None)
 
@@ -197,6 +209,7 @@ def create_mcp_components(
     provider: MarketDataProvider,
     annotations_repository: AnnotationsRepository,
     event_bus: EventBus,
+    backfill_coordinator: BackfillCoordinator | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
     runs_dir: Path | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
@@ -220,16 +233,11 @@ def create_mcp_components(
         json_response=True,
     )
 
-    # The backfill coordinator needs the narrow `SupportsBackfill` capability
-    # (get_ohlcv + cache-only coverage). The production DefaultMarketDataProvider
-    # satisfies it; a coverage-less stub (legacy tests) yields None and the
-    # backfill paths refuse with a clear error. Phase 3 hoists construction to
-    # create_app/app.state and swaps in the dedup-aware coordinator.
-    backfill_coordinator: BackfillCoordinator | None = (
-        BackfillCoordinator(provider=provider, event_bus=event_bus)
-        if isinstance(provider, SupportsBackfill)
-        else None
-    )
+    # `backfill_coordinator` is constructed by create_app (bound to
+    # app.state.backfill_coordinator) when the provider is coverage-capable;
+    # None for coverage-less stub providers, in which case the backfill paths
+    # refuse with a clear error and the sync get_ohlcv falls back to the plain
+    # fetch.
 
     @server.tool(description=GET_OHLCV_DESCRIPTION)
     async def get_ohlcv(
