@@ -31,6 +31,7 @@ from tests.smoke.golden_path import (
     format_report,
     read_connection,
     strip_run_provenance,
+    unwrap_ohlcv_bars,
 )
 
 
@@ -119,6 +120,38 @@ def test_classify_error_upstream_vs_assertion() -> None:
     http_4xx = urllib.error.HTTPError("http://x", 404, "Not Found", hdrs=None, fp=None)  # type: ignore[arg-type]
     assert classify_error(http_4xx) is Status.FAIL
     assert classify_error(ValueError("unexpected")) is Status.FAIL
+
+
+def test_unwrap_ohlcv_bars_clean_response_returns_bars() -> None:
+    bars = [{"open": 1.0}, {"open": 2.0}]
+    assert unwrap_ohlcv_bars({"bars": bars, "partial_reason": None, "message": None}) is bars
+    # an empty-but-clean response is still a clean unwrap (the zero-bars FAIL is
+    # step_ohlcv's call, not this helper's).
+    assert unwrap_ohlcv_bars({"bars": [], "partial_reason": None, "message": None}) == []
+
+
+@pytest.mark.parametrize("reason", ["rate_limited", "upstream_unavailable", "unknown_symbol"])
+def test_unwrap_ohlcv_bars_upstream_reason_is_upstream_down(reason: str) -> None:
+    # An upstream partial_reason arrives as data, not an exception; the helper
+    # re-raises it as UpstreamUnavailable so classify_error buckets it UPSTREAM-DOWN.
+    with pytest.raises(UpstreamUnavailable) as excinfo:
+        unwrap_ohlcv_bars({"bars": [], "partial_reason": reason, "message": "yahoo 429"})
+    assert reason in str(excinfo.value)
+    assert classify_error(excinfo.value) is Status.UPSTREAM_DOWN
+
+
+def test_unwrap_ohlcv_bars_async_pending_is_fail() -> None:
+    # backfill_async_pending only appears when backfill_async=true; the smoke
+    # driver never requests that, so seeing it here is our bug -> FAIL.
+    with pytest.raises(AssertionError):
+        unwrap_ohlcv_bars({"bars": [], "partial_reason": "backfill_async_pending", "message": "x"})
+
+
+def test_unwrap_ohlcv_bars_malformed_shape_is_fail() -> None:
+    with pytest.raises(AssertionError):
+        unwrap_ohlcv_bars({"partial_reason": None})  # missing 'bars'
+    with pytest.raises(AssertionError):
+        unwrap_ohlcv_bars({"bars": [], "partial_reason": "wat"})  # unknown reason
 
 
 def test_strip_run_provenance_drops_only_provenance_fields() -> None:

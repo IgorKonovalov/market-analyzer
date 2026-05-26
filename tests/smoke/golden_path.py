@@ -198,6 +198,40 @@ def strip_run_provenance(result: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in result.items() if k not in {"run_id", "started_at", "finished_at"}}
 
 
+# The upstream-failure `partial_reason` values get reported by get_ohlcv as data
+# (Plan 0013), not as a raised exception, so a live Yahoo hiccup during the smoke
+# run must be mapped back to the UPSTREAM-DOWN bucket explicitly.
+_OHLCV_UPSTREAM_REASONS = frozenset({"rate_limited", "upstream_unavailable", "unknown_symbol"})
+
+
+def unwrap_ohlcv_bars(payload: dict[str, Any]) -> list[Any]:
+    """Unwrap a `get_ohlcv` MCP response (`GetOhlcvResponse`, Plan 0013 phase 2)
+    into its `bars` list, translating a partial result into the right step outcome.
+
+    The tool returns `{bars, partial_reason, message}` (no longer a bare list).
+    `partial_reason` is `None` on a clean read; one of `rate_limited`/
+    `upstream_unavailable`/`unknown_symbol` when only some gaps could be filled —
+    an upstream failure surfaced as data rather than an exception; or
+    `backfill_async_pending` only when `backfill_async=true` was requested. The
+    smoke driver calls get_ohlcv synchronously (`backfill_async=false`), so:
+
+    - a clean response (`partial_reason is None`) yields the bars;
+    - an upstream `partial_reason` raises `UpstreamUnavailable`, so the classifier
+      reports the step `UPSTREAM-DOWN` (their problem) rather than `FAIL`;
+    - any other shape (missing `bars`, `backfill_async_pending`, an unknown
+      reason) is our integration breaking -> `AssertionError` (`FAIL`).
+    """
+    bars = payload.get("bars")
+    assert isinstance(bars, list), f"get_ohlcv response has no 'bars' list: {sorted(payload)}"
+    reason = payload.get("partial_reason")
+    if reason in _OHLCV_UPSTREAM_REASONS:
+        raise UpstreamUnavailable(f"get_ohlcv partial ({reason}): {payload.get('message')}")
+    assert reason is None, (
+        f"unexpected get_ohlcv partial_reason {reason!r}: {payload.get('message')}"
+    )
+    return bars
+
+
 # --------------------------------------------------------------------------- #
 # Network plumbing (only ever called from main())
 # --------------------------------------------------------------------------- #
@@ -345,7 +379,7 @@ async def step_ohlcv(session: ClientSession) -> str:
             "end": WINDOW_END.isoformat(),
         },
     )
-    bars = _unwrap_list(payload)
+    bars = unwrap_ohlcv_bars(payload)
     assert len(bars) >= 1, "get_ohlcv returned zero bars"
     for bar in bars:
         for key in ("open", "high", "low", "close"):
