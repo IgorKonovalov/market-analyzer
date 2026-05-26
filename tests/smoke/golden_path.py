@@ -494,6 +494,30 @@ async def step_fear_greed(session: ClientSession) -> str:
     return f"value={value} ({payload['classification']})"
 
 
+async def step_stocktwits(session: ClientSession) -> str:
+    # stocktwits_sentiment takes a single Pydantic-model param, so its MCP
+    # arguments nest under `params` (like news_for / crypto_fear_greed). AAPL is a
+    # high-coverage large-cap, but the tool is defined even with zero matching
+    # posts (score 0.0, all-zero breakdown), so a quiet window does not FAIL the
+    # step — only the response shape + invariants are asserted. A rate-limit (403)
+    # that exhausts retries surfaces as ResilientHttpError -> UPSTREAM-DOWN.
+    payload = await _call_tool(
+        session,
+        "stocktwits_sentiment",
+        {"params": {"symbol": "AAPL", "window": "24h"}},
+    )
+    assert payload.get("symbol") == "AAPL", payload
+    assert payload.get("source") == "stocktwits", payload
+    assert payload.get("window") == "24h", payload
+    score = payload["score"]
+    assert -1.0 <= score <= 1.0, f"stocktwits score out of range: {score}"
+    breakdown = payload["breakdown"]
+    assert set(breakdown) == {"positive", "negative", "neutral"}, breakdown
+    assert all(isinstance(v, int) and v >= 0 for v in breakdown.values()), breakdown
+    assert payload.get("queried_at"), "stocktwits reply missing queried_at"
+    return f"AAPL score={score:.3f} {breakdown}"
+
+
 async def step_annotations(session: ClientSession) -> str:
     written = await _call_tool(
         session,
@@ -650,17 +674,18 @@ async def _amain() -> int:
                 await results.run_async(
                     "7. crypto F&G (live Alternative.me)", step_fear_greed(session)
                 )
+                await results.run_async("8. stocktwits sentiment (live)", step_stocktwits(session))
                 await results.run_async(
-                    "8. annotation roundtrip + highlight", step_annotations(session)
+                    "9. annotation roundtrip + highlight", step_annotations(session)
                 )
-                results.run_sync("9. SSE liveness", lambda: step_sse_liveness(reader))
+                results.run_sync("10. SSE liveness", lambda: step_sse_liveness(reader))
             finally:
                 reader.stop()
     except Exception as exc:  # a connect/teardown failure is one FAIL, not a crash
         results.items.append(StepResult("MCP session", classify_error(exc), _describe(exc)))
 
-    results.run_sync("10. strategies list CLI", step_cli)
-    results.run_sync("11. cleanup", lambda: step_cleanup(conn))
+    results.run_sync("11. strategies list CLI", step_cli)
+    results.run_sync("12. cleanup", lambda: step_cleanup(conn))
 
     print(format_report(results.items))
     print("\n" + MANUAL_CHECKLIST)

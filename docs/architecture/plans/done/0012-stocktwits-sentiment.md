@@ -1,8 +1,9 @@
 # 0012 — StockTwits per-symbol sentiment
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-20
 > **Approved:** 2026-05-20
+> **Closed:** 2026-05-25
 > **Amended:** 2026-05-25 (architect — pre-implementation readiness tightening: pinned the crypto endpoint + added a crypto fixture/test to phase 1; made `SymbolNotCoveredError`'s base and the 404 surfacing mechanism explicit; reconciled phase 3's symbol char-validation with the input model. No phases added or removed.)
 > **Amended again:** 2026-05-25 (during implementation, after a live-API check) — switched the symbol contract to **pass-through**: the caller supplies the exact StockTwits ticker (`AAPL` for the stock, `BTC.X` for crypto Bitcoin). The original `BTC` → `BTC.X` auto-mapping was dropped because bare `BTC` is a *different real instrument* on StockTwits (the Grayscale Bitcoin Mini Trust ETF, `instrument_class: ExchangeTradedCommodity`) that returns 200 — auto-suffixing would silently serve ETF chatter to someone asking about crypto Bitcoin, and a try-bare-then-`.X` fallback never fires because bare `BTC` doesn't 404. Phase-1 crypto done-when updated to test `BTC.X` pass-through; the MCP tool docstring documents the `.X` crypto convention. No phases added or removed.
 > **Owner skill(s):** `dev` (all phases)
@@ -172,4 +173,11 @@ class StockTwitsSentimentInput(BaseModel):
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes during the close ceremony.
+Close review (2026-05-25, fresh architect session): **no blockers, no majors.** All three phases shipped; every done-when is met by a non-tautological spec (assertion bodies read, not trusted to "CI green"). Offline suite green — `tests/data` + `tests/api` = 270 passed / 4 known Windows skips / 3 `@pytest.mark.network` deselected; `mypy --strict` clean on the four touched source files. Both fixtures carry exactly the asserted label counts (AAPL 7/4/19, BTC.X 13/7/10, 30 messages each) and are fully PII-scrubbed (zero `user` sub-keys survive). The phase-2 `_now()` seam on the rss-vader path is behaviour-preserving (diff is a clean `datetime.now(tz=UTC)` → `_now()` swap, nothing else).
+
+Carried items:
+
+- **(minor — record, not fixed) Phase-1 code has no per-phase `feat` commit.** The adapter, its test, and both fixtures (1,127 insertions) landed inside `91ac637 docs(readme): refresh root README + flip Plan 0012 to in-progress` — a parallel session's broad `git add` swept the four staged-but-not-yet-committed phase-1 files into its docs commit. Phases 2–3 used pathspec commits (`3a1b160`, `7afab5e`) to prevent recurrence. The code is verified intact (it is what the green suite runs against). A history rewrite is **not** safe: that commit also carries ADR-0025 follow-on and the root-README refresh, which are the parallel session's live work. Provenance gap recorded here; no action.
+- **(minor → open follow-up) Window-vocabulary duplication.** `_WINDOW_TO_DELTA` now lives in both `data/adapters/rss_news.py` and `data/adapters/stocktwits.py`, and the `Literal["1h","4h","24h","7d"]` set repeats across the `sentiment_for_news` and `stocktwits_sentiment` input models. Correctly left out of this plan per no-scope-creep; flagged inline at `stocktwits.py:46`. Candidate for a shared `data/_windows.py`. Tracked in the plans-index open-follow-up table (owner `dev`).
+- **(nit — handled by design) MCP tool imports the adapter exception directly.** `mcp_tools/stocktwits_sentiment.py` imports `SymbolNotCoveredError` from `data.adapters.stocktwits` (api→data.adapters reach). This is the layering reach the plan already anticipated; the adapter carries the reconciliation comment (`stocktwits.py:59-62`) so Plan 0013's `UnknownSymbolError` taxonomy collapses the two names rather than adding a synonym. No standalone action.
+- **(close-ceremony task, done) Golden-path smoke step.** Per the Plan 0016 recurring follow-up, this — the last Tier-2 plan shipping an agent-facing MCP tool — added `step_stocktwits` to `tests/smoke/golden_path.py` (step 8; annotations/SSE/CLI/cleanup renumbered 9–12). Offline-verified; live run pending, matching the 0010/0011 close precedent. The Tier-2 golden-path follow-up row is now retired.
