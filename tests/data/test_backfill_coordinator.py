@@ -194,6 +194,41 @@ def test_failure_publishes_one_backfill_failed_and_task_raises() -> None:
     assert in_flight == 0  # registry entry removed regardless of success/failure
 
 
+def test_non_typed_failure_publishes_backfill_failed_as_upstream_unavailable() -> None:
+    """A NON-UpstreamDataError from the fetch still publishes backfill_failed so
+    the renderer spinner clears (Plan 0013 close-review m2): reason is
+    upstream_unavailable, the task re-raises, and the registry entry is removed."""
+
+    async def run() -> tuple[bool, list[str], str, int]:
+        bus = EventBus()
+        sub = bus.subscribe()
+        provider = _FakeBackfillProvider(gaps=[(_T1, _T2)], fetched=ValueError("boom"))
+        coord = BackfillCoordinator(provider=provider, event_bus=bus)
+        task = coord.schedule("AAPL", "1d", _T1, _T2)
+        raised = False
+        try:
+            await task
+        except ValueError:
+            raised = True
+        first = await asyncio.wait_for(sub.next(), timeout=2)
+        second = await asyncio.wait_for(sub.next(), timeout=2)
+        only_two = sub.queue.empty()
+        sub.close()
+        assert only_two
+        return (
+            raised,
+            [first.type, second.type],
+            str(second.payload["reason"]),
+            len(coord._in_flight),
+        )
+
+    raised, types, reason, in_flight = asyncio.run(run())
+    assert raised is True
+    assert types == ["ohlcv.backfill_started", "ohlcv.backfill_failed"]
+    assert reason == "upstream_unavailable"
+    assert in_flight == 0
+
+
 def test_two_coordinators_do_not_share_a_registry() -> None:
     """DI / no module-level singletons: independent coordinators are independent."""
     bus = EventBus()

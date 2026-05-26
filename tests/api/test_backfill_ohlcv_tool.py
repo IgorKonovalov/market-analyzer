@@ -266,6 +266,39 @@ def test_backfill_ohlcv_rejects_invalid_input(
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.parametrize(
+    ("symbol", "timeframe", "start", "end"),
+    [
+        ("AAPL", "5m", _T0, _T1),  # unsupported timeframe
+        ("", "1d", _T0, _T1),  # empty symbol
+        ("AAPL", "1d", _T1, _T0),  # end < start
+    ],
+)
+def test_get_ohlcv_rejects_invalid_input_at_boundary(
+    symbol: str, timeframe: str, start: datetime, end: datetime
+) -> None:
+    """get_ohlcv validates at the MCP boundary like backfill_ohlcv (Plan 0013
+    close-review m2): bad input raises ValueError and NEVER schedules a backfill,
+    so backfill_async can't emit a `started` event with no matching `failed`."""
+
+    async def run() -> int:
+        provider = _CoverageProvider(cached=[], gaps=[(_T0, _T1)], fetched=[_sample_bar()])
+        coord = BackfillCoordinator(provider=provider, event_bus=EventBus())
+        with pytest.raises(ValueError):
+            await _get_ohlcv_response(
+                provider=provider,
+                coordinator=coord,
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+                backfill_async=True,
+            )
+        return len(coord._in_flight)
+
+    assert asyncio.run(run()) == 0  # validation short-circuited before scheduling
+
+
 def test_get_ohlcv_backfill_async_miss_returns_pending_and_schedules() -> None:
     """Cache miss + backfill_async=True → returns the (empty) cached bars
     immediately with partial_reason='backfill_async_pending', and the backfill

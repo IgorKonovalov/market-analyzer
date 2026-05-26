@@ -137,6 +137,12 @@ async def _get_ohlcv_response(
     """Body of the `get_ohlcv` tool, factored out so the backfill paths are unit-
     testable on a single event loop (no live MCP server needed for the event
     assertions). Sync mode preserves today's fetch-on-miss behaviour."""
+    # Validate at the MCP boundary like backfill_ohlcv does — bad input must
+    # raise here, not slip into the async path where it would publish a
+    # `started` event and then die without a `failed` (leaving the spinner stuck).
+    _require_non_empty_symbol(symbol)
+    _require_supported_timeframe(timeframe)
+    _require_ordered_range(start, end)
     if backfill_async:
         if coordinator is None:
             raise ValueError("backfill_async=true requires a cache-coverage-capable provider")

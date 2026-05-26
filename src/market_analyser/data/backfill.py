@@ -36,7 +36,7 @@ from market_analyser.api.events import (
     OhlcvBackfillFailedPayloadV1,
     OhlcvBackfillStartedPayloadV1,
 )
-from market_analyser.data.errors import UpstreamDataError, failure_reason
+from market_analyser.data.errors import FailureReason, UpstreamDataError, failure_reason
 from market_analyser.data.types import BackfillResult, Bar, Coverage
 
 _logger = logging.getLogger(__name__)
@@ -179,13 +179,24 @@ class BackfillCoordinator:
                 bars = await asyncio.to_thread(
                     self._provider.get_ohlcv, symbol, timeframe, start, end
                 )
-            except UpstreamDataError as err:
+            except Exception as err:
+                # Any fetch failure publishes backfill_failed so the renderer's
+                # spinner always clears — not just the typed UpstreamDataError
+                # subset. Typed errors carry their specific reason; anything else
+                # (a ValueError that slipped past the boundary, an unexpected
+                # provider bug) surfaces as upstream_unavailable. We re-raise
+                # below so callers that await the task still see the exception.
+                reason: FailureReason = (
+                    failure_reason(err)
+                    if isinstance(err, UpstreamDataError)
+                    else "upstream_unavailable"
+                )
                 self._event_bus.publish(
                     "ohlcv.backfill_failed",
                     OhlcvBackfillFailedPayloadV1(
                         symbol=symbol,
                         timeframe=timeframe,
-                        reason=failure_reason(err),
+                        reason=reason,
                         message=str(err),
                     ),
                 )
