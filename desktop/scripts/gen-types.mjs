@@ -48,6 +48,7 @@ const EMIT = new Set([
   'BacktestMetrics',
   'BacktestResult',
   'BacktestRunSummary',
+  'SymbolInfo',
 ])
 
 const HEADER = [

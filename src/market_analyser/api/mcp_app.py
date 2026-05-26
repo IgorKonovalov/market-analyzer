@@ -61,6 +61,7 @@ from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
+from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
 from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
 from market_analyser.data.backfill import BackfillCoordinator
@@ -452,6 +453,7 @@ def create_mcp_components(
     # Always registered (no extra deps) — these dispatch through the provider
     # Protocol; the adapters stay package-internal (ADR-0007).
     register_screener_query(server, provider=provider)
+    register_search_symbols(server, provider=provider)
     register_news_for(server, provider=provider)
     register_sentiment_for_news(server, provider=provider)
     register_crypto_fear_greed(server, provider=provider)

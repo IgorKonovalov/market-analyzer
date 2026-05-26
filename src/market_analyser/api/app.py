@@ -35,6 +35,7 @@ from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.backtests import router as backtests_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
+from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.config import default_app_data_dir
@@ -235,6 +236,9 @@ def create_app(
         return body
 
     app.include_router(ohlcv_router)
+    # `/search` needs only the provider (always present); renderer-bearer-gated
+    # by the central middleware like /ohlcv (Plan 0024).
+    app.include_router(search_router)
 
     if annotations_repository is not None:
         app.include_router(annotations_router)
