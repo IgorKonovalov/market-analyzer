@@ -18,12 +18,12 @@ from typing import Any
 
 import pytest
 
+from market_analyser.data import UnknownSymbolError
 from market_analyser.data._http import ErrorKind, HttpResponse, ResilientHttpError
 from market_analyser.data.adapters import stocktwits
 from market_analyser.data.adapters.stocktwits import (
     StockTwitsAdapter,
     StockTwitsHttpClient,
-    SymbolNotCoveredError,
 )
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -177,12 +177,16 @@ def test_zero_posts_is_neutral_not_unknown(monkeypatch: pytest.MonkeyPatch) -> N
 # -- error mapping ----------------------------------------------------------
 
 
-def test_upstream_404_raises_symbol_not_covered(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upstream_404_raises_unknown_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Plan 0013: the StockTwits 404 now raises the canonical UnknownSymbolError
+    # (from the public market_analyser.data surface), carrying the ticker.
+    # Plan 0012's SymbolNotCoveredError no longer exists as a name.
     body = b'{"errors":[{"message":"Symbol not found"}],"response":{"status":404}}'
     adapter, _, _ = _adapter(monkeypatch, body=body, status=404)
 
-    with pytest.raises(SymbolNotCoveredError, match="not tracked"):
+    with pytest.raises(UnknownSymbolError, match="not tracked") as excinfo:
         adapter.fetch_sentiment(symbol="MADEUP", window="24h")
+    assert excinfo.value.symbol == "MADEUP"
 
 
 def test_upstream_500_propagates_as_resilient_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,7 +194,8 @@ def test_upstream_500_propagates_as_resilient_error(monkeypatch: pytest.MonkeyPa
     adapter, _, _ = _adapter(monkeypatch, body=b"boom", status=500)
 
     # A 500 is a transport failure, not a coverage gap — must NOT become
-    # SymbolNotCoveredError.
+    # UnknownSymbolError (only the 404→symbol-unknown mapping moved to the typed
+    # taxonomy in Plan 0013; StockTwits transport errors stay ResilientHttpError).
     with pytest.raises(ResilientHttpError):
         adapter.fetch_sentiment(symbol="AAPL", window="24h")
 

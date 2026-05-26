@@ -23,7 +23,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from market_analyser.data.adapters.stocktwits import SymbolNotCoveredError
+from market_analyser.data import UnknownSymbolError
 from market_analyser.data.provider import MarketDataProvider
 
 
@@ -68,7 +68,7 @@ def register_stocktwits_sentiment(server: FastMCP, *, provider: MarketDataProvid
                 window=params.window,
                 source="stocktwits",
             )
-        except SymbolNotCoveredError as err:
+        except UnknownSymbolError as err:
             raise ValueError(
                 f"symbol {params.symbol!r} is not tracked by StockTwits",
             ) from err

@@ -33,6 +33,7 @@ from market_analyser.data._http import (
     ResilientHttpClient,
     ResilientHttpError,
 )
+from market_analyser.data.errors import UnknownSymbolError
 from market_analyser.data.types import SentimentSample
 
 _BASE_URL = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
@@ -51,16 +52,6 @@ _WINDOW_TO_DELTA: dict[str, timedelta] = {
     "24h": timedelta(hours=24),
     "7d": timedelta(days=7),
 }
-
-
-class SymbolNotCoveredError(ValueError):
-    """The symbol isn't tracked by StockTwits (upstream 404) — distinct from a
-    transient/permanent transport failure, raised at the adapter boundary.
-
-    Naming note: Plan 0013 (not yet landed) introduces `UnknownSymbolError` in a
-    typed adapter-error taxonomy that overlaps this concept. If 0013 lands,
-    reconcile to one name rather than keeping two synonyms.
-    """
 
 
 class StockTwitsHttpClient(ResilientHttpClient):
@@ -97,7 +88,7 @@ class StockTwitsAdapter:
 
         `symbol` is the exact StockTwits ticker (pass-through, case-normalised):
         `AAPL` for the stock, `BTC.X` for crypto Bitcoin. Raises
-        `SymbolNotCoveredError` when StockTwits doesn't track the ticker (404),
+        `UnknownSymbolError` when StockTwits doesn't track the ticker (404),
         `ResilientHttpError` on any other upstream failure, and `ValueError` for
         an unsupported `window`.
         """
@@ -108,8 +99,9 @@ class StockTwitsAdapter:
             response = self._http.get(url, expect_json=True)
         except ResilientHttpError as err:
             if err.last_response is not None and err.last_response.status_code == 404:
-                raise SymbolNotCoveredError(
+                raise UnknownSymbolError(
                     f"stocktwits: symbol {ticker!r} is not tracked",
+                    symbol=ticker,
                 ) from err
             raise
         positive = negative = neutral = 0
@@ -188,5 +180,4 @@ def _is_rate_limited(response: HttpResponse) -> bool:
 __all__ = [
     "StockTwitsAdapter",
     "StockTwitsHttpClient",
-    "SymbolNotCoveredError",
 ]

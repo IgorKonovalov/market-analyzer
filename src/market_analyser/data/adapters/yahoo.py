@@ -17,8 +17,14 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from market_analyser.data._http import ResilientHttpClient
+from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
 from market_analyser.data.adapters._yahoo_fetch import _fetch_yahoo_ohlcv
+from market_analyser.data.errors import (
+    RateLimitedError,
+    UnknownSymbolError,
+    UpstreamDataError,
+    UpstreamUnavailableError,
+)
 from market_analyser.data.types import Bar
 
 _logger = logging.getLogger(__name__)
@@ -112,7 +118,26 @@ class YahooAdapter:
                 period_days,
                 period_days / max(span_days, 1),
             )
-        raw = self._fetch(symbol, period, timeframe)
+        try:
+            raw = self._fetch(symbol, period, timeframe)
+        except ResilientHttpError as err:
+            raise _classify_http_error(err, symbol) from err
+
+        if not raw:
+            # An empty response on a >= 1mo period for a structurally-valid
+            # symbol is treated as unknown-symbol: a multi-day window of zero
+            # bars on a known-good interval is implausible for a live, listed
+            # name (Plan 0013 phase 1). `_smallest_period_for` floors the period
+            # at "1mo" (31d), so the period_days >= 30 heuristic always holds
+            # here. A non-empty response whose rows all fall outside the exact
+            # requested window still returns `[]` below (the gap-too-small case
+            # the caller's `if not fetched` path handles) — only a genuinely
+            # empty upstream response lands here.
+            raise UnknownSymbolError(
+                f"yahoo: no rows for {symbol.upper()!r} over period {period!r} "
+                f"({timeframe}) — symbol is likely unknown or unlisted",
+                symbol=symbol.upper(),
+            )
 
         bars: list[Bar] = []
         for row in raw:
@@ -133,6 +158,43 @@ class YahooAdapter:
                 ),
             )
         return bars
+
+
+def _classify_http_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:
+    """Translate an exhausted/permanent `ResilientHttpError` into the typed
+    taxonomy (Plan 0013 phase 1), mirroring the seam StockTwits uses for its
+    404. HTTP 429 → rate-limited (carrying the upstream `Retry-After`); any
+    other non-429 status or transport-level failure → upstream-unavailable."""
+    resp = err.last_response
+    if resp is not None and resp.status_code == 429:
+        return RateLimitedError(
+            f"yahoo: rate limited (HTTP 429) fetching {symbol.upper()!r}",
+            retry_after_seconds=_parse_retry_after(_header(resp.headers, "Retry-After")),
+        )
+    if resp is not None:
+        detail = f"HTTP {resp.status_code}"
+    else:
+        detail = type(err.last_exception).__name__ if err.last_exception is not None else "unknown"
+    return UpstreamUnavailableError(
+        f"yahoo: upstream unavailable ({detail}) fetching {symbol.upper()!r}",
+    )
+
+
+def _header(headers: dict[str, str], name: str) -> str | None:
+    """Case-insensitive header lookup (urllib preserves the upstream's casing)."""
+    lowered = name.lower()
+    return next((v for k, v in headers.items() if k.lower() == lowered), None)
+
+
+def _parse_retry_after(value: str | None) -> int | None:
+    """Parse a `Retry-After` header as whole seconds. The HTTP-date form is not
+    supported (returns None) — the agent gets the rate-limit signal either way."""
+    if value is None:
+        return None
+    try:
+        return int(value.strip())
+    except ValueError:
+        return None
 
 
 def _smallest_period_for(span_days: int) -> str:

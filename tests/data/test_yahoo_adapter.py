@@ -178,7 +178,10 @@ def test_fetch_ohlcv_picks_smallest_sufficient_period() -> None:
 
     def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
         captured["period"] = period
-        return []
+        # Return one in-window row so the adapter doesn't classify this as an
+        # empty (unknown-symbol) response (Plan 0013) — the claim under test is
+        # period *selection*, not the empty-response path.
+        return [_good_row("2026-04-28")]
 
     adapter = YahooAdapter(fetcher=fetcher)
     adapter.fetch_ohlcv(
