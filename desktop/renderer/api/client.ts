@@ -27,6 +27,7 @@ import type { SidecarPort } from '../../shared/schemas/sidecar'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
+import type { SymbolInfo } from '../types/sidecar/symbol-info'
 
 let cached: SidecarPort | null = null
 const configChangeSubscribers = new Set<() => void>()
@@ -192,6 +193,16 @@ export const api = {
       end: end.toISOString(),
     })
     return callJson<Annotation[]>(`/annotations?${params.toString()}`)
+  },
+  /**
+   * Symbol search for the autocomplete dropdown (Plan 0024). Hits the
+   * renderer-bearer-gated `GET /search?q=`; every returned `symbol` is in the
+   * Yahoo OHLCV namespace, so a picked row is directly fetchable by `getOhlcv`
+   * (ADR-0026). An empty/whitespace query returns `[]` from the sidecar.
+   */
+  searchSymbols(query: string): Promise<SymbolInfo[]> {
+    const params = new URLSearchParams({ q: query })
+    return callJson<SymbolInfo[]>(`/search?${params.toString()}`)
   },
   getMcpSecret(): Promise<McpSecretRecord> {
     return callJson<McpSecretRecord>('/settings/mcp-secret')

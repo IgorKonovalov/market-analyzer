@@ -24,6 +24,12 @@ jest.mock('../hooks/useOhlcv', () => ({
 jest.mock('../hooks/useAnnotationsPoll', () => ({
   useAnnotationsPoll: jest.fn(() => ({ annotations: [], error: null })),
 }))
+// SymbolPicker (rendered by the toolbar) now runs useSymbolSearch, which would
+// otherwise fire a debounced `/search` fetch on mount. This view test has no
+// window.api/fetch wired, so keep the search hook inert and deterministic.
+jest.mock('../hooks/useSymbolSearch', () => ({
+  useSymbolSearch: jest.fn(() => ({ results: [], isSearching: false, error: null })),
+}))
 
 const SYMBOL = 'AAPL'
 const TF: Timeframe = '1d'
