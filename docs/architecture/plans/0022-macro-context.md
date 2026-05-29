@@ -4,7 +4,7 @@
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
-> **Related ADRs:** [ADR-0007](../adrs/0007-market-data-provider.md) (new Provider method `get_macro_context`), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (CoinGecko on the resilience client), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house)
+> **Related ADRs:** [ADR-0027](../adrs/0027-crypto-macro-regime-classification.md) (**paired** — the `regime` structural-classification taxonomy; `proposed`, accepts at this plan's close), [ADR-0007](../adrs/0007-market-data-provider.md) (new Provider method `get_macro_context`), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (CoinGecko on the resilience client), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house)
 > **Depends on:** [Plan 0019](0019-live-quote.md) (`get_quote` — the `market_snapshot` fan-out composes it). [Plan 0009](0009-resilience-and-tradingview-screener.md) phase 1 (`ResilientHttpClient`).
 
 ## TL;DR
@@ -49,7 +49,7 @@ flowchart LR
 ### Phase 1 — CoinGecko adapter + `MacroContext` + `get_macro_context`
 
 - **Owner skill:** `dev`
-- **What:** A CoinGecko adapter (global endpoint) on `ResilientHttpClient` (e.g. 60s TTL), a `MacroContext` model, and `get_macro_context(market="crypto", as_of=None)` in the Provider. Compute a neutral regime descriptor from dominance + total-cap trend (a labelled condition, never advice). `as_of` raises `ValueError` (wall-clock-sensitive).
+- **What:** A CoinGecko adapter (global endpoint) on `ResilientHttpClient` (e.g. 60s TTL), a `MacroContext` model, and `get_macro_context(market="crypto", as_of=None)` in the Provider. Compute a neutral regime descriptor from dominance + total-cap trend per the classification rule in [ADR-0027](../adrs/0027-crypto-macro-regime-classification.md) (a labelled condition, never advice; the implementer pins the exact thresholds and the close ceremony confirms them against the ADR). `as_of` raises `ValueError` (wall-clock-sensitive).
 - **Files touched:**
   - New `src/market_analyser/data/adapters/coingecko.py` (~90–120 lines).
   - `src/market_analyser/data/types.py`: new `MacroContext` model.
@@ -59,6 +59,7 @@ flowchart LR
 - **Done when:**
   - **Offline fixture parse:** with the client mocked to the captured fixture, `get_macro_context()` returns a `MacroContext` with `btc_price`, `btc_change_24h`, `btc_dominance_pct`, `total_market_cap_usd`, `total_market_cap_change_24h`, and a `regime` descriptor populated. Asserted field-by-field.
   - **Regime descriptor is a condition, not advice:** `regime` takes values from a fixed neutral vocabulary describing structure (e.g. `btc_led`, `alt_structure`, `risk_off_structure`, `neutral`) — a test asserts the vocabulary contains no action/recommendation token (`buy`, `sell`, `favorable`, `opportunity`). Guards the non-negotiable at the type level.
+  - **Regime is deterministic:** the same `MacroContext` measurement inputs (dominance + total-cap trend) yield the same `regime` label across repeated computation — asserted on fixed fixtures spanning each label (no wall-clock read, no ordering dependence in the classification). Pins the determinism non-negotiable for the one computed field and locks the ADR-0027 mapping.
   - **`as_of` rejection:** `get_macro_context(as_of=<datetime>)` raises `ValueError`. Asserted.
   - **Resilience inheritance:** a mocked transient failure is retried per `ResilientHttpClient`; a hard failure surfaces a typed upstream error, not a raw exception. Asserted.
   - `uv run pytest tests/data/test_coingecko_adapter.py` passes; mypy strict clean.

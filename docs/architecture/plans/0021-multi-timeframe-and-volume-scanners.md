@@ -6,6 +6,7 @@
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0023](../adrs/0023-technical-analysis-surface.md) (the analysis surface this builds on), [ADR-0007](../adrs/0007-market-data-provider.md) (bars via Provider), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house)
 > **Depends on:** [Plan 0018](0018-technical-analysis-surface.md) (the `analysis/` surface — indicators, snapshot). Hard dependency: these are consumers of that layer.
+> **Blocked on:** [Plan 0025](0025-timeframe-expansion.md) (timeframe expansion — data-layer support for `4h` / `15m` / `weekly` bars, with in-house 4h resampling). The data layer today supports only `{1d, 1h}`, so this plan's default multi-timeframe ladder cannot run until 0025 lands — see the Blocker note under "Risks". (Decision 2026-05-29: expand the data layer in its own plan rather than narrowing 0021's ladder to `{1d, 1h}`.)
 
 ## TL;DR
 
@@ -53,7 +54,7 @@ flowchart LR
 ### Phase 1 — Multi-timeframe alignment + `multi_timeframe_analysis` tool
 
 - **Owner skill:** `dev`
-- **What:** `analysis/multi_timeframe.py` runs `condition_snapshot` (Plan 0018) for one symbol across a configurable timeframe ladder (default weekly/daily/4h/1h/15m), then computes an alignment summary: per-timeframe trend, an agreement score, and the dominant trend. The `multi_timeframe_analysis(symbol, timeframes=…, as_of=None)` MCP tool fetches bars per timeframe via the Provider and returns the summary.
+- **What:** `analysis/multi_timeframe.py` runs `condition_snapshot` (Plan 0018) for one symbol across a configurable timeframe ladder (default weekly/daily/4h/1h/15m — **gated on the timeframe-expansion plan; see Blocked-on in the header**. Until that lands, the only runnable ladder is `{1d, 1h}`), then computes an alignment summary: per-timeframe trend, an agreement score, and the dominant trend. The `multi_timeframe_analysis(symbol, timeframes=…, as_of=None)` MCP tool fetches bars per timeframe via the Provider and returns the summary.
 - **Files touched:**
   - New `src/market_analyser/analysis/multi_timeframe.py` (~100–140 lines).
   - New `src/market_analyser/api/mcp_tools/multi_timeframe_analysis.py`.
@@ -121,7 +122,7 @@ class MultiTimeframeAlignment(BaseModel):          # frozen, extra="forbid"
 ## Risks & open questions
 
 - **Risk: bar fan-out latency** on multi-symbol scans (one `get_ohlcv` per symbol). Mitigation: explicit list cap (e.g. ≤ 25 symbols), cached-bar reads (no live fetch in the scan path), `asyncio.to_thread`. A scan over uncached symbols returns partial results with a documented `partial_reason`, not a slow live backfill.
-- **Risk: timeframe availability** — 4h/15m bars may not be cached even when daily is. Mitigation: per-timeframe `null` in the alignment summary rather than failing the whole call; the agent sees which timeframes were available.
+- **Blocker (not merely a risk): timeframe support.** The default ladder names weekly / 4h / 1h / daily / 15m, but the data layer supports only `{1d, 1h}` — `SUPPORTED_TIMEFRAMES` (`annotations/types.py`), the Yahoo adapter's `_VALID_TIMEFRAMES` (`adapters/yahoo.py`), and the MCP boundary validator all reject anything else. So 4h / 15m / weekly cannot be *fetched at all*, not merely left uncached — `get_ohlcv` rejects them upstream of any cache. Resolved by the separate **timeframe-expansion plan** (see Blocked-on in the header), which must land before phase 1 can deliver its stated default. Once timeframes are supported, the original cache-layer mitigation still applies: a per-timeframe `null` in the alignment summary when bars for a *supported* timeframe aren't cached, rather than failing the whole call.
 - **Open question: universe-from-screener composition.** Feeding `screener_query` output into a volume scanner is the obvious next step but is deliberately out of scope (keeps this plan's fan-out bounded). Recorded as a likely follow-up.
 - **Open question: should multi-timeframe resample from a single base timeframe** (e.g. derive 4h from 1h) rather than fetch each? v1 fetches each timeframe independently via the Provider (simpler, no resampling correctness risk). Resampling is a future optimization.
 

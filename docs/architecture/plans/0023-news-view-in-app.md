@@ -56,6 +56,8 @@ flowchart LR
 
 ## Implementation phases
 
+The phase 1 → phase 2 boundary is a `dev` → `ui-builder` cross-skill handoff (per the [cross-skill handoff protocol](../../../.claude/skills/architect/references/templates/cross-skill-handoff.md)): `dev` commits phase 1 (route + emitted types) and emits the structured handoff prompt; `ui-builder` detects the handoff header and picks up phase 2 (view + client + nav).
+
 ### Phase 1 — `GET /news` REST route + generated types
 
 - **Owner skill:** `dev`

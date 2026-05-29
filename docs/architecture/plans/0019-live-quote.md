@@ -13,7 +13,7 @@ Implement the stubbed `get_quote` Protocol method with a Yahoo quote adapter and
 
 ## Context & problem
 
-`get_quote` is one of two Protocol methods still raising as a stub ([ADR-0007](../adrs/0007-market-data-provider.md), `data/provider.py`). A live price quote is a cheap, high-use capability we lack: we can fetch historical OHLCV bars but cannot answer "what's the price right now." The Yahoo adapter (`adapters/yahoo.py` + `_yahoo_fetch.py`) and the resilience client already exist, so this is mostly wiring plus a `Quote` type that currently holds only `price`.
+`get_quote` is the last Protocol method still raising as a stub ([ADR-0007](../adrs/0007-market-data-provider.md), `data/provider.py`; `search_symbols` graduated in [Plan 0024](done/0024-symbol-search-and-autocomplete.md), closed 2026-05-29). A live price quote is a cheap, high-use capability we lack: we can fetch historical OHLCV bars but cannot answer "what's the price right now." The Yahoo adapter (`adapters/yahoo.py` + `_yahoo_fetch.py`) and the resilience client already exist, so this is mostly wiring plus a `Quote` type that currently holds only `price`.
 
 ## Decision
 
@@ -55,7 +55,7 @@ flowchart LR
   - **Crypto & after-hours shapes:** The crypto fixture (`BTC-USD`) and after-hours fixture parse without error and set `market_state` correctly (`REGULAR` / `POST` / `CLOSED`). Asserted.
   - **`as_of` rejection:** `provider.get_quote("AAPL", as_of=<datetime>)` raises `ValueError`. Asserted.
   - **Provider parity:** `DefaultMarketDataProvider().get_quote("AAPL")` returns the same `Quote` as the direct adapter call (mocked client). Asserted.
-  - **Bad input:** an empty/whitespace symbol raises before any fetch; an unknown symbol (Yahoo returns empty result set) surfaces a typed `UnknownSymbolError` (reuse the Plan 0013 adapter-error vocabulary if landed, else a local error documented for later unification). Asserted.
+  - **Bad input:** an empty/whitespace symbol raises before any fetch; an unknown symbol (Yahoo returns empty result set) surfaces a typed `UnknownSymbolError` (reuse the Plan 0013 adapter-error vocabulary — `UnknownSymbolError` in `data/errors.py`, now landed). Asserted.
   - `uv run pytest tests/data/test_yahoo_quote_adapter.py` passes; mypy strict clean.
 
 ### Phase 2 — `quote_for` MCP tool
@@ -105,7 +105,7 @@ class Quote(BaseModel):                  # frozen
 
 - **Multi-symbol snapshot** (`market_snapshot`) — Plan 0022 phase 3.
 - **Extended-hours session breakdown** (separate pre/regular/post prices) — cut as niche; `market_state` is surfaced but not a three-session decomposition.
-- **`search_symbols`** — the other stubbed Protocol method; out of scope for this plan.
+- **`search_symbols`** — already implemented by [Plan 0024](done/0024-symbol-search-and-autocomplete.md) (closed 2026-05-29); not this plan's concern.
 - **Quote history / persistence** — wall-clock-only, no SQLite table.
 
 ## Followups (after this lands)
