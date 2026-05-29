@@ -4,13 +4,14 @@ A runnable module — *not* pytest-collected (no `test_` prefix) — that attach
 to a live `pnpm dev:all` sidecar and drives one end-to-end golden path through
 every shipped layer against **live** upstreams (Yahoo, TradingView):
 
-    1. attach + /healthz identity      7. crypto_fear_greed (live Alternative.me)
-    2. get_ohlcv (live Yahoo)          8. annotation roundtrip + highlight
-    3. show_chart -> viewer            9. SSE liveness (chart.show/run.completed/
-    4. run_backtest + determinism         chart.highlight observed end-to-end)
-    5. screener_query (live TV)       10. strategies list CLI
-    6. news_for + sentiment_for_news  11. cleanup (delete the rows it wrote)
-       (live RSS)
+     1. attach + /healthz identity      8. stocktwits_sentiment (live)
+     2. get_ohlcv (live Yahoo)          9. search_symbols (live Yahoo)
+     3. show_chart -> viewer           10. annotation roundtrip + highlight
+     4. run_backtest + determinism     11. SSE liveness (chart.show/run.completed/
+     5. screener_query (live TV)           chart.highlight observed end-to-end)
+     6. news_for + sentiment_for_news  12. strategies list CLI
+        (live RSS)                     13. cleanup (delete the rows it wrote)
+     7. crypto_fear_greed (live Alternative.me)
 
 It prints one `PASS`/`FAIL`/`UPSTREAM-DOWN` line per step and exits non-zero iff
 any step is `FAIL`. A step that fails only because the upstream is unavailable
@@ -552,6 +553,30 @@ async def step_stocktwits(session: ClientSession) -> str:
     return f"AAPL score={score:.3f} {breakdown}"
 
 
+async def step_search(session: ClientSession) -> str:
+    # search_symbols resolves a loose, free-text name to fetchable Yahoo-native
+    # symbols (Plan 0024 / ADR-0026) — the agent's recovery path for get_ohlcv's
+    # unknown_symbol. Query a loose name ("bitcoin", not a ticker) and assert it
+    # resolves to at least one BTC* symbol; every returned `symbol` is in the
+    # OHLCV namespace by construction, so the response shape + a BTC hit are the
+    # stable asserts (the exact result set drifts with Yahoo's relevance order). A
+    # single Pydantic-model param, so the arguments nest under `params`.
+    payload = await _call_tool(session, "search_symbols", {"params": {"query": "bitcoin"}})
+    results = payload["results"]
+    assert isinstance(results, list), f"results is not a list: {type(results).__name__}"
+    assert results, "search_symbols('bitcoin') returned zero matches"
+    for row in results:
+        assert row.get("symbol"), f"search result missing symbol: {row}"
+        assert {"name", "exchange", "quote_type"} <= set(row), (
+            f"search result missing a SymbolInfo field: {sorted(row)}"
+        )
+    assert any("BTC" in row["symbol"].upper() for row in results), (
+        f"no BTC* symbol in search results: {[r['symbol'] for r in results]}"
+    )
+    assert payload.get("queried_at"), "search_symbols reply missing queried_at"
+    return f"{len(results)} matches; symbols={[r['symbol'] for r in results][:3]}"
+
+
 async def step_annotations(session: ClientSession) -> str:
     written = await _call_tool(
         session,
@@ -709,17 +734,18 @@ async def _amain() -> int:
                     "7. crypto F&G (live Alternative.me)", step_fear_greed(session)
                 )
                 await results.run_async("8. stocktwits sentiment (live)", step_stocktwits(session))
+                await results.run_async("9. search_symbols (live Yahoo)", step_search(session))
                 await results.run_async(
-                    "9. annotation roundtrip + highlight", step_annotations(session)
+                    "10. annotation roundtrip + highlight", step_annotations(session)
                 )
-                results.run_sync("10. SSE liveness", lambda: step_sse_liveness(reader))
+                results.run_sync("11. SSE liveness", lambda: step_sse_liveness(reader))
             finally:
                 reader.stop()
     except Exception as exc:  # a connect/teardown failure is one FAIL, not a crash
         results.items.append(StepResult("MCP session", classify_error(exc), _describe(exc)))
 
-    results.run_sync("11. strategies list CLI", step_cli)
-    results.run_sync("12. cleanup", lambda: step_cleanup(conn))
+    results.run_sync("12. strategies list CLI", step_cli)
+    results.run_sync("13. cleanup", lambda: step_cleanup(conn))
 
     print(format_report(results.items))
     print("\n" + MANUAL_CHECKLIST)

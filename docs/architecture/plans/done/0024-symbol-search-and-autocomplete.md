@@ -1,7 +1,8 @@
 # 0024 — Symbol search and autocomplete
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-26
+> **Closed:** 2026-05-29 (architect close ceremony — no blockers)
 > **Owner skill(s):** dev, ui-builder
 > **Related ADRs:** [0026-symbol-search-bound-to-ohlcv-provider](../adrs/0026-symbol-search-bound-to-ohlcv-provider.md), [0007-market-data-provider](../adrs/0007-market-data-provider.md), [0013/UpstreamDataError taxonomy](0013-auto-backfill-on-cache-miss.md)
 

@@ -33,7 +33,7 @@ This index is the one-minute entrypoint: what exists, each one's status, and how
 | [0023](0023-technical-analysis-surface.md) | Technical-analysis surface in `analysis/` | proposed — accepts at Plan 0018 close | — | 0018 |
 | [0024](0024-extended-backtest-metrics.md) | Extended backtest metrics (definitions + degenerate convention) | proposed — accepts at Plan 0020 close | extends 0018 | 0020 |
 | [0025](0025-trade-execution-feasibility.md) | Trade-execution feasibility (posture + venue comparison) | proposed (exploratory — no plan, no close ceremony) | relates 0006/0007/0011 | none |
-| [0026](0026-symbol-search-bound-to-ohlcv-provider.md) | Symbol search bound to the OHLCV provider | proposed — accepts at Plan 0024 close | relates 0007 | 0024 |
+| [0026](0026-symbol-search-bound-to-ohlcv-provider.md) | Symbol search bound to the OHLCV provider | accepted (Plan 0024 close 2026-05-29) | relates 0007 | 0024 |
 
 **Standalone (no supersede/refine lineage):** 0012/0013 (a peer pair), 0017, 0019, 0021, 0023, 0025, 0026. Everything else sits in one of the chains below.
 

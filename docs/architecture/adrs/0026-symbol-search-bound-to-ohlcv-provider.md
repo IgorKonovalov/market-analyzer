@@ -1,6 +1,6 @@
 # ADR-0026 — Symbol search is bound to the OHLCV provider
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0024 close, 2026-05-29)
 > **Date:** 2026-05-26
 > **Related plan(s):** [0024-symbol-search-and-autocomplete](../plans/0024-symbol-search-and-autocomplete.md)
 
