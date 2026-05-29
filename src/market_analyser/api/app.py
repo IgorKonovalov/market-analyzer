@@ -36,8 +36,12 @@ from market_analyser.api.routes.backtests import router as backtests_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.search import router as search_router
+from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
+from market_analyser.api.routes.ui_events import router as ui_events_router
+from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
+from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
@@ -66,6 +70,7 @@ def create_app(
     engine: Engine | None = None,
     dev_origin: str | None = None,
     event_bus: EventBus | None = None,
+    agent_mode_path: Path | None = None,
     on_shutdown: Sequence[Callable[[], None]] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
@@ -113,6 +118,18 @@ def create_app(
         )
     effective_provider = provider if provider is not None else DefaultMarketDataProvider()
     effective_event_bus = event_bus if event_bus is not None else EventBus()
+    # The UI-event buffer + agent-mode store (Plan 0014) back the renderer→agent
+    # feedback loop. Always constructed: the `/agent_mode` and `/ui_events`
+    # routes are renderer-side and have no MCP-secret dependency. The buffer is
+    # in-memory (ephemeral by design, ADR-0021); the store persists the toggle
+    # to `<data-dir>/agent_mode.json` — tests pass a tmp path, production wires
+    # the canonical data dir from __main__.
+    ui_event_buffer = UIEventBuffer()
+    agent_mode_store = AgentModeStore(
+        agent_mode_path
+        if agent_mode_path is not None
+        else default_app_data_dir() / AGENT_MODE_FILENAME,
+    )
     # The backfill coordinator (Plan 0013) needs the narrow SupportsBackfill
     # capability (get_ohlcv + coverage + get_ohlcv_with_status). The production
     # DefaultMarketDataProvider satisfies it; a coverage-less stub yields None and
@@ -167,6 +184,10 @@ def create_app(
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
     app.state.event_bus = effective_event_bus
+    # Plan 0014: the buffer is the renderer→agent seam (POST /ui_events appends;
+    # the phase-2 MCP tool/resource read it); the store gates the whole flow.
+    app.state.ui_event_buffer = ui_event_buffer
+    app.state.agent_mode_store = agent_mode_store
     # The backfill coordinator (Plan 0013) is exposed on app.state so a future
     # phase / route can introspect in-flight backfills; the MCP tools receive it
     # directly via create_mcp_components.
@@ -259,6 +280,13 @@ def create_app(
     # `GET /events` SSE stream. Renderer-bearer-gated; query-string ?token=
     # accepted only on this route for EventSource compatibility (ADR-0017).
     app.include_router(events_router)
+
+    # Plan 0014: agent-mode toggle (GET/PUT /agent_mode) + UI-event ingress
+    # (POST /ui_events). Renderer-bearer-gated by the central middleware; no
+    # MCP-secret dependency, so always registered. The MCP-side read surface
+    # lands in phase 2.
+    app.include_router(agent_mode_router)
+    app.include_router(ui_events_router)
 
     if mcp_components is not None:
         _, asgi_app = mcp_components

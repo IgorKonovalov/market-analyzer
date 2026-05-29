@@ -1,6 +1,6 @@
 # 0014 — Interactive chart + agent-mode toggle: bidirectional MCP via resources + notifications
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-22
 > **Approved:** 2026-05-22
 > **Owner skill(s):** `dev`, `ui-builder`, `human`

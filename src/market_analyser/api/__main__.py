@@ -50,6 +50,7 @@ from market_analyser.api.lockfile import (
     write_lockfile,
 )
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
+from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME
 from market_analyser.config import default_app_data_dir, load_config
 from market_analyser.persistence.engine import make_engine
 
@@ -172,6 +173,7 @@ async def _serve(
     mcp_secret = load_or_generate_mcp_secret(mcp_secret_path)
     runs_dir = default_app_data_dir() / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
+    agent_mode_path = default_app_data_dir() / AGENT_MODE_FILENAME
     app = create_app(
         secret=secret,
         mcp_secret=mcp_secret,
@@ -179,6 +181,7 @@ async def _serve(
         engine=engine,
         runs_dir=runs_dir,
         dev_origin=dev_origin,
+        agent_mode_path=agent_mode_path,
         # Remove the lockfile during the app's lifespan shutdown so cleanup runs
         # before uvicorn re-raises a captured SIGTERM (ADR-0022). The `_run_serve`
         # `finally` below is an idempotent backstop for non-serve exit paths.
