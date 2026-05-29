@@ -41,6 +41,9 @@ interface FakeChart {
   removeSeries: jest.Mock<void, [unknown]>
   remove: jest.Mock<void, []>
   timeScale: () => { fitContent: jest.Mock }
+  // Plan 0014: the component subscribes to clicks for the bar-click gesture.
+  subscribeClick: jest.Mock<void, [unknown]>
+  unsubscribeClick: jest.Mock<void, [unknown]>
 }
 
 let createdLineSeries: FakeLineSeries[] = []
@@ -72,6 +75,8 @@ function buildFakeChart(): FakeChart {
     }),
     remove: jest.fn(),
     timeScale: () => ({ fitContent: jest.fn() }),
+    subscribeClick: jest.fn(),
+    unsubscribeClick: jest.fn(),
   }
 }
 

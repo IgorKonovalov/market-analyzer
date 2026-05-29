@@ -28,6 +28,7 @@ import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
+import type { AgentModeState } from '../types/ui-events'
 
 let cached: SidecarPort | null = null
 const configChangeSubscribers = new Set<() => void>()
@@ -203,6 +204,18 @@ export const api = {
   searchSymbols(query: string): Promise<SymbolInfo[]> {
     const params = new URLSearchParams({ q: query })
     return callJson<SymbolInfo[]>(`/search?${params.toString()}`)
+  },
+  /** Read the persisted agent-mode toggle (Plan 0014). Renderer-bearer-gated. */
+  getAgentMode(): Promise<AgentModeState> {
+    return callJson<AgentModeState>('/agent_mode')
+  },
+  /** Persist the agent-mode toggle. Returns the new state. */
+  setAgentMode(enabled: boolean): Promise<AgentModeState> {
+    return callJson<AgentModeState>('/agent_mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
   },
   getMcpSecret(): Promise<McpSecretRecord> {
     return callJson<McpSecretRecord>('/settings/mcp-secret')

@@ -443,3 +443,136 @@ test('backfill_ohlcv shows the header spinner while filling, then clears with ba
 
   await app.close()
 })
+
+// --------------------------------------------------------------------------- //
+// Plan 0014 — agent-mode toggle + range-select gesture → get_pending_ui_events  //
+// --------------------------------------------------------------------------- //
+
+interface UiEventEnvelope {
+  type: string
+  version: number
+  ts: string
+  event_id: string
+  payload: Record<string, unknown>
+}
+
+/** Drain the UI-event buffer via the MCP tool; returns the buffered envelopes. */
+function drainUiEvents(): UiEventEnvelope[] {
+  const result = callMcpTool('get_pending_ui_events', {})
+  expect(result.isError).toBe(false)
+  const list = (result.structured?.result ?? []) as UiEventEnvelope[]
+  return list
+}
+
+async function setAgentMode(window: import('@playwright/test').Page, on: boolean): Promise<void> {
+  const toggle = window.locator('[data-testid="agent-mode-toggle"]')
+  await expect.poll(() => toggle.count(), { timeout: 10_000, intervals: [100] }).toBeGreaterThan(0)
+  const checked = (await toggle.getAttribute('aria-checked')) === 'true'
+  if (checked !== on) {
+    await toggle.click()
+    await expect
+      .poll(async () => (await toggle.getAttribute('aria-checked')) === 'true', {
+        timeout: 3_000,
+        intervals: [50],
+      })
+      .toBe(on)
+  }
+}
+
+async function dragAcrossChart(window: import('@playwright/test').Page): Promise<void> {
+  const chart = window.locator('[data-testid="candlestick-chart"]')
+  const box = await chart.boundingBox()
+  if (!box) throw new Error('chart has no bounding box')
+  const y = box.y + box.height / 2
+  await window.mouse.move(box.x + box.width * 0.3, y)
+  await window.mouse.down()
+  await window.mouse.move(box.x + box.width * 0.65, y, { steps: 8 })
+  await window.mouse.up()
+}
+
+/** Boot the renderer, then drive a `show_chart` so the candlestick series is
+ * actually rendered (the default load renders nothing until a symbol is shown).
+ * Mirrors the proven flow of the `chart.show via MCP` test above. */
+async function showAaplAndWaitForBars(window: import('@playwright/test').Page): Promise<void> {
+  await window.waitForLoadState('domcontentloaded')
+  await expect
+    .poll(
+      () =>
+        window.evaluate(
+          () =>
+            (globalThis as { __test_chart_state__?: { symbol?: string } }).__test_chart_state__
+              ?.symbol,
+        ),
+      { timeout: 15_000, intervals: [200] },
+    )
+    .toBeDefined()
+
+  callMcpTool('show_chart', {
+    symbol: 'AAPL',
+    timeframe: '1d',
+    range_start: '2026-04-20T00:00:00+00:00',
+    range_end: '2026-05-20T00:00:00+00:00',
+  })
+
+  await expect
+    .poll(async () => (await readChartRender(window)).seriesCount, {
+      timeout: 15_000,
+      intervals: [200],
+    })
+    .toBeGreaterThanOrEqual(1)
+}
+
+test('agent mode ON: a range-select drag surfaces one ui.range_selected to get_pending_ui_events', async () => {
+  const app = await launchApp()
+  const window = await app.firstWindow()
+  await showAaplAndWaitForBars(window)
+
+  await setAgentMode(window, true)
+  // Drain the toggle event the PUT synthesised so only the gesture remains.
+  drainUiEvents()
+
+  // Enter select-range cursor mode (only rendered while agent mode is ON).
+  await window.locator('[data-testid="select-range-toggle"]').click()
+  await dragAcrossChart(window)
+
+  // The POST is a fast HTTP round-trip into the buffer; poll briefly.
+  let rangeEvents: UiEventEnvelope[] = []
+  await expect
+    .poll(
+      () => {
+        rangeEvents = drainUiEvents().filter((e) => e.type === 'ui.range_selected')
+        return rangeEvents.length
+      },
+      { timeout: 5_000, intervals: [200] },
+    )
+    .toBe(1)
+
+  const payload = rangeEvents[0].payload as { range_start: string; range_end: string }
+  // Bar-precise mapping is owned by the deterministic unit gesture test; here we
+  // assert the live wiring: a well-formed, ordered range reached the agent.
+  expect(rangeEvents[0].version).toBe(1)
+  expect(new Date(payload.range_start).getTime()).toBeLessThanOrEqual(
+    new Date(payload.range_end).getTime(),
+  )
+
+  await app.close()
+})
+
+test('agent mode OFF: the same drag buffers no UI events', async () => {
+  const app = await launchApp()
+  const window = await app.firstWindow()
+  await showAaplAndWaitForBars(window)
+
+  await setAgentMode(window, false)
+  // Drain anything (incl. the toggle-OFF event) so the buffer starts empty.
+  drainUiEvents()
+
+  // With agent mode OFF there is no select-range control; a drag just pans.
+  await dragAcrossChart(window)
+
+  // Give any (incorrect) POST time to land, then confirm nothing was buffered.
+  await window.waitForTimeout(750)
+  expect(drainUiEvents()).toEqual([])
+
+  await app.close()
+})

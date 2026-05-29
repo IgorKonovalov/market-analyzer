@@ -1,0 +1,198 @@
+/**
+ * Plan 0014 phase 3 done-when: CandlestickChart UI gestures (range-select +
+ * bar-click), gated on agent mode.
+ *
+ * Defends the POST/no-POST matrix:
+ *   - agent OFF: neither a drag nor a click POSTs.
+ *   - agent ON, select-range INACTIVE (default): a drag does NOT POST (pan/zoom),
+ *     but a bar click POSTs ui.bar_clicked.
+ *   - agent ON, select-range ACTIVE: a drag POSTs ui.range_selected with the
+ *     dragged bars' times; Escape mid-drag cancels (no POST).
+ *
+ * jsdom has no canvas; we mock `lightweight-charts`. The mock captures the
+ * subscribeClick handler and exposes a controllable `coordinateToTime` so the
+ * drag → bar-time mapping is deterministic. `../api/uiEvents` is mocked so the
+ * assertions are on the POST helpers, not the fetch transport.
+ */
+import { fireEvent, render, screen } from '@testing-library/react'
+
+import { CandlestickChart } from './CandlestickChart'
+import { postBarClicked, postRangeSelected } from '../api/uiEvents'
+import type { Bar } from '../types/sidecar/bar'
+
+jest.mock('../api/uiEvents', () => ({
+  postRangeSelected: jest.fn().mockResolvedValue(undefined),
+  postBarClicked: jest.fn().mockResolvedValue(undefined),
+}))
+
+const mockPostRange = postRangeSelected as jest.Mock
+const mockPostBar = postBarClicked as jest.Mock
+
+// ---------- lightweight-charts mock --------------------------------------- //
+
+interface FakeCandleSeries {
+  setData: jest.Mock
+  setMarkers: jest.Mock
+}
+
+let candleSeries: FakeCandleSeries
+let clickHandler: ((param: unknown) => void) | null = null
+// Maps an x-coordinate to a UTCTimestamp (seconds). Default: identity-ish.
+let coordinateToTime: (x: number) => number | null = (x) => 1_714_000_000 + x
+
+jest.mock('lightweight-charts', () => ({
+  ColorType: { Solid: 'solid' },
+  createChart: jest.fn(() => ({
+    addCandlestickSeries: jest.fn(() => candleSeries),
+    addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+    removeSeries: jest.fn(),
+    remove: jest.fn(),
+    timeScale: () => ({
+      fitContent: jest.fn(),
+      coordinateToTime: (x: number) => coordinateToTime(x),
+    }),
+    subscribeClick: jest.fn((handler: (param: unknown) => void) => {
+      clickHandler = handler
+    }),
+    unsubscribeClick: jest.fn(() => {
+      clickHandler = null
+    }),
+  })),
+}))
+
+beforeEach(() => {
+  jest.clearAllMocks()
+  candleSeries = { setData: jest.fn(), setMarkers: jest.fn() }
+  clickHandler = null
+  coordinateToTime = (x) => 1_714_000_000 + x
+})
+
+// ---------- fixtures ----------------------------------------------------- //
+
+function bar(eventTs: string, close: number): Bar {
+  return {
+    symbol: 'AAPL',
+    timeframe: '1d',
+    event_ts: eventTs,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: 1000,
+    source: 'test',
+  }
+}
+
+const FIXTURE_BARS: Bar[] = Array.from({ length: 10 }, (_, i) => {
+  const d = new Date('2026-04-01T00:00:00+00:00')
+  d.setUTCDate(d.getUTCDate() + i)
+  return bar(d.toISOString(), 100 + i)
+})
+
+function renderChart(props: { agentModeEnabled?: boolean }): void {
+  render(
+    <CandlestickChart
+      bars={FIXTURE_BARS}
+      symbol="AAPL"
+      timeframe="1d"
+      agentModeEnabled={props.agentModeEnabled ?? false}
+    />,
+  )
+}
+
+function dragChart(fromX: number, toX: number): void {
+  const container = screen.getByTestId('candlestick-chart')
+  fireEvent.mouseDown(container, { clientX: fromX })
+  fireEvent.mouseUp(container, { clientX: toX })
+}
+
+function clickBar(timeSeconds: number, ohlc: { o: number; h: number; l: number; c: number }): void {
+  // Simulate lightweight-charts delivering a click on a candle.
+  clickHandler!({
+    time: timeSeconds,
+    point: { x: 10, y: 10 },
+    seriesData: new Map([
+      [candleSeries, { open: ohlc.o, high: ohlc.h, low: ohlc.l, close: ohlc.c }],
+    ]),
+  })
+}
+
+// ---------- specs --------------------------------------------------------- //
+
+describe('CandlestickChart gestures (Plan 0014)', () => {
+  it('agent OFF: a drag does not POST', () => {
+    renderChart({ agentModeEnabled: false })
+    dragChart(40, 120)
+    expect(mockPostRange).not.toHaveBeenCalled()
+  })
+
+  it('agent OFF: a bar click does not POST', () => {
+    renderChart({ agentModeEnabled: false })
+    clickBar(1_714_000_500, { o: 1, h: 2, l: 0, c: 1.5 })
+    expect(mockPostBar).not.toHaveBeenCalled()
+  })
+
+  it('agent ON, select-range INACTIVE: a drag does not POST (pan/zoom preserved)', () => {
+    renderChart({ agentModeEnabled: true })
+    // Default mode is pan/zoom — no select-range button pressed.
+    dragChart(40, 120)
+    expect(mockPostRange).not.toHaveBeenCalled()
+  })
+
+  it('agent ON, select-range ACTIVE: a drag POSTs ui.range_selected with the dragged bar times', () => {
+    renderChart({ agentModeEnabled: true })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+
+    dragChart(40, 120)
+
+    expect(mockPostRange).toHaveBeenCalledTimes(1)
+    expect(mockPostRange).toHaveBeenCalledWith({
+      symbol: 'AAPL',
+      timeframe: '1d',
+      range_start: new Date((1_714_000_000 + 40) * 1000).toISOString(),
+      range_end: new Date((1_714_000_000 + 120) * 1000).toISOString(),
+    })
+  })
+
+  it('range-select normalises a right-to-left drag (start <= end)', () => {
+    renderChart({ agentModeEnabled: true })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+
+    dragChart(120, 40) // dragged leftwards
+
+    expect(mockPostRange).toHaveBeenCalledWith({
+      symbol: 'AAPL',
+      timeframe: '1d',
+      range_start: new Date((1_714_000_000 + 40) * 1000).toISOString(),
+      range_end: new Date((1_714_000_000 + 120) * 1000).toISOString(),
+    })
+  })
+
+  it('agent ON: a bar click POSTs ui.bar_clicked with the bar OHLC', () => {
+    renderChart({ agentModeEnabled: true })
+    clickBar(1_714_000_500, { o: 10, h: 12, l: 9, c: 11 })
+
+    expect(mockPostBar).toHaveBeenCalledTimes(1)
+    expect(mockPostBar).toHaveBeenCalledWith({
+      symbol: 'AAPL',
+      timeframe: '1d',
+      event_ts: new Date(1_714_000_500 * 1000).toISOString(),
+      open: 10,
+      high: 12,
+      low: 9,
+      close: 11,
+    })
+  })
+
+  it('Escape during a range-select cancels the in-progress selection (no POST)', () => {
+    renderChart({ agentModeEnabled: true })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+
+    const container = screen.getByTestId('candlestick-chart')
+    fireEvent.mouseDown(container, { clientX: 40 })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.mouseUp(container, { clientX: 120 })
+
+    expect(mockPostRange).not.toHaveBeenCalled()
+  })
+})

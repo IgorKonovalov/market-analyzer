@@ -30,6 +30,11 @@ jest.mock('../hooks/useAnnotationsPoll', () => ({
 jest.mock('../hooks/useSymbolSearch', () => ({
   useSymbolSearch: jest.fn(() => ({ results: [], isSearching: false, error: null })),
 }))
+// The chart-header AgentModeToggle mounts useAgentMode, which would otherwise
+// fire a GET /agent_mode on mount. Keep it inert + deterministic (Plan 0014).
+jest.mock('../hooks/useAgentMode', () => ({
+  useAgentMode: jest.fn(() => ({ enabled: false, setEnabled: jest.fn(), error: null })),
+}))
 
 const SYMBOL = 'AAPL'
 const TF: Timeframe = '1d'

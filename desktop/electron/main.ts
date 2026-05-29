@@ -16,6 +16,7 @@ import { app, BrowserWindow } from 'electron'
 import { createWindow, getRendererPaths, installCsp, showFatalWindow } from './window'
 import { registerIpcHandlers, cleanupServices } from './ipc'
 import { SidecarSupervisor } from './sidecar'
+import { enforceSingleInstance } from './single-instance'
 import { resolveSharedDataDir } from '../shared/data-dir'
 
 // ADR-0020: anchor `app.getName()` to the contract name so OS-level surfaces
@@ -35,6 +36,14 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('io.marketanalyser.desktop')
 }
 
+// Track the main window so `second-instance` can focus it (Plan 0014).
+let mainWindow: BrowserWindow | null = null
+
+// Single-instance: agent mode is sidecar-resident state, so only one viewer
+// may own it. A second launch focuses the existing window and quits. Must run
+// before `whenReady` so we never spawn/attach for a duplicate instance.
+const isPrimaryInstance = enforceSingleInstance(app, () => mainWindow)
+
 const supervisor = new SidecarSupervisor(resolveSharedDataDir())
 
 if (isE2E) {
@@ -45,33 +54,37 @@ if (isE2E) {
   ;(globalThis as { __sidecarSupervisor?: SidecarSupervisor }).__sidecarSupervisor = supervisor
 }
 
-app.whenReady().then(async () => {
-  try {
-    const info = await supervisor.start()
-    // CSP install MUST follow supervisor.start so connect-src can be pinned to
-    // the actual sidecar port rather than the broader http://127.0.0.1:*.
-    installCsp(isDev, info.port)
-    const paths = getRendererPaths()
-    registerIpcHandlers({ supervisor, info })
-    const window = createWindow({
-      preloadPath: paths.preloadPath,
-      rendererUrl,
-      rendererFile: paths.rendererFile,
-    })
+// A second instance has already quit via enforceSingleInstance; do not boot.
+if (isPrimaryInstance) {
+  app.whenReady().then(async () => {
+    try {
+      const info = await supervisor.start()
+      // CSP install MUST follow supervisor.start so connect-src can be pinned to
+      // the actual sidecar port rather than the broader http://127.0.0.1:*.
+      installCsp(isDev, info.port)
+      const paths = getRendererPaths()
+      registerIpcHandlers({ supervisor, info })
+      const window = createWindow({
+        preloadPath: paths.preloadPath,
+        rendererUrl,
+        rendererFile: paths.rendererFile,
+      })
+      mainWindow = window
 
-    // The supervisor only emits `starting` / `ready` under ADR-0016. The
-    // `crashed`/`restarted`/`fatal` kinds no longer fire (no crash supervision
-    // in standalone mode); the IPC channel stays so the renderer's existing
-    // readiness hook keeps working.
-    supervisor.onStatus((status) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send('sidecar:status', status)
-      }
-    })
-  } catch (err) {
-    showFatalWindow(`startup failed: ${(err as Error).message}`)
-  }
-})
+      // The supervisor only emits `starting` / `ready` under ADR-0016. The
+      // `crashed`/`restarted`/`fatal` kinds no longer fire (no crash supervision
+      // in standalone mode); the IPC channel stays so the renderer's existing
+      // readiness hook keeps working.
+      supervisor.onStatus((status) => {
+        if (!window.isDestroyed()) {
+          window.webContents.send('sidecar:status', status)
+        }
+      })
+    } catch (err) {
+      showFatalWindow(`startup failed: ${(err as Error).message}`)
+    }
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
@@ -81,7 +94,7 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     void app.whenReady().then(() => {
       const paths = getRendererPaths()
-      createWindow({
+      mainWindow = createWindow({
         preloadPath: paths.preloadPath,
         rendererUrl,
         rendererFile: paths.rendererFile,

@@ -13,10 +13,12 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 
+import { AgentModeToggle } from '../components/AgentModeToggle'
 import { CandlestickChart } from '../components/CandlestickChart'
 import { SymbolPicker } from '../components/SymbolPicker'
 import type { Timeframe } from '../components/SymbolPicker'
 import { Toast } from '../components/Toast'
+import { useAgentMode } from '../hooks/useAgentMode'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useBackfillState } from '../hooks/useBackfillState'
 import { useOhlcv } from '../hooks/useOhlcv'
@@ -58,6 +60,7 @@ export function OhlcvView({
   const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end })
   const { annotations } = useAnnotationsPoll({ symbol, timeframe, start, end })
   const { isBackfilling, error: backfillError } = useBackfillState({ symbol, timeframe, refetch })
+  const { enabled: agentModeEnabled, setEnabled: setAgentMode } = useAgentMode()
 
   // A fresh backfill failure re-shows the toast even if a prior one was dismissed.
   const [toastDismissed, setToastDismissed] = useState(false)
@@ -95,6 +98,11 @@ export function OhlcvView({
             Backfilling…
           </span>
         )}
+        <AgentModeToggle
+          enabled={agentModeEnabled}
+          setEnabled={setAgentMode}
+          disabled={isLoading}
+        />
       </header>
 
       <div className={styles.body}>
@@ -123,6 +131,9 @@ export function OhlcvView({
             bars={bars}
             annotations={mergedAnnotations}
             overlays={overlays}
+            agentModeEnabled={agentModeEnabled}
+            symbol={symbol}
+            timeframe={timeframe}
             ariaLabel={`Candlestick chart for ${symbol} ${timeframe}, ${bars.length} bars`}
           />
         )}
