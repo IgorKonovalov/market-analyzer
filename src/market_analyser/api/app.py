@@ -144,6 +144,7 @@ def create_app(
             provider=effective_provider,
             annotations_repository=annotations_repository,
             event_bus=effective_event_bus,
+            ui_event_buffer=ui_event_buffer,
             backfill_coordinator=backfill_coordinator,
             backtest_runs_repository=backtest_runs_repository,
             runs_dir=runs_dir,
