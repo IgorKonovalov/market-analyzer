@@ -1,6 +1,6 @@
 # 0014 — Interactive chart + agent-mode toggle: bidirectional MCP via resources + notifications
 
-> **Status:** in-progress
+> **Status:** done (closed 2026-05-30)
 > **Created:** 2026-05-22
 > **Approved:** 2026-05-22
 > **Owner skill(s):** `dev`, `ui-builder`, `human`
@@ -298,4 +298,14 @@ The MCP-tool wire types mirror the buffer envelope. The MCP-resource wire type i
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect appends close-ceremony findings here once the plan ships.
+Close-ceremony review (fresh architect session, 2026-05-30). Owners: `dev × 2`, `ui-builder × 1`, `human × 1` (phases 1–2 `b5cc6d2`/`7845ecd`; phase 3 `3ad05e1` + fixes `39bd87b`/`8c00395`/`2ece049`/`6922da4`; phase 4 human smoke run by the user). **No blockers, no majors.** Every done-when met by non-tautological specs (assertion bodies read): 56 Python pass / 1 Windows skip (`test_ui_event_buffer`, `test_agent_mode_persistence`, `test_ui_events_routes`, `test_ui_events_mcp` driving a live uvicorn + real MCP client, `test_dev_origin_cors`), 22 renderer Jest + 6 main-process single-instance pass. `POST /ui_events` 403-when-OFF + cross-tenant 401 + server-stamped `event_id`/`ts` all defended; gesture POST/no-POST matrix genuinely gated on agent mode; toggle mounted in `OhlcvView` header and `enforceSingleInstance` gates boot in `main.ts`.
+
+Two in-flight deviations, both judged sound at review:
+- **Bar-click made select-range-mode-independent** (`6922da4`) — still gated on agent mode; adds a visual clicked-bar marker. Consistent with the phase-3 done-when; an enhancement, not a regression.
+- **CORS `PUT` fix** (`39bd87b`) — the dev-origin `allow_methods` omitted `PUT`, so the toggle's preflight 401'd in dev mode. Real bug, well-tested (`test_dev_origin_cors::test_options_agent_mode_put_preflight_succeeds_with_dev_origin`), prod parity preserved (no CORS headers leaked when `dev_origin=None`).
+
+Carried items (no plan needed; rolled into the open-followups table):
+- **n1 (nit).** Commit `6922da4` bundled unrelated **Plan 0024** test edits (`test_search_route.py`, `test_search_symbols_tool.py`) — pure formatter reflows, zero behavioral change. Recorded, not rewritten (no-history-rewrite rule).
+- **f1 (informational).** The resource-update **notification-surfacing** observation (does Claude Code auto-surface `notifications/resources/updated`?) was not separately captured at the human smoke. The polling tool is the contract regardless; re-measure before any future plan leans on the push path. Noted in [ADR-0021](../adrs/0021-renderer-to-agent-feedback.md)'s Notes.
+
+Unblocks [Plan 0017](0017-consolidate-mcp-tool-registration.md) — the `get_pending_ui_events` tool + `ui-events://recent` resource it sweeps into the `register_*` pattern now exist and are stable; 0017's sequencing gate is cleared.

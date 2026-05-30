@@ -110,6 +110,30 @@ After the automated report, the driver prints a manual visual checklist — conf
 3. **BacktestView** shows a non-empty equity curve + metrics after the `run_backtest` step.
 4. The **screener reply** surfaces an "as of HH:MM" wall-clock (the `queried_at` timestamp).
 
+## Agent mode and UI gestures
+
+By default the viewer is a one-way surface: the agent pushes chart commands to it, but your clicks and drags stay local ([ADR-0021](../architecture/adrs/0021-renderer-to-agent-feedback.md)). **Agent mode** opens the reverse channel — when it's ON, three gestures send typed events to the sidecar that the agent can read. It is OFF by default: you decide when your gestures are visible to the agent.
+
+The **Agent mode** toggle lives in the chart header, top-right (beside the Refresh button and the backfill spinner). Flipping it persists to `<data-dir>/agent_mode.json` and survives a sidecar restart. With it ON:
+
+| Gesture            | How                                                                 | Event the agent sees      |
+|--------------------|---------------------------------------------------------------------|---------------------------|
+| **Range select**   | Click **Select range** (appears only in agent mode), then drag across the chart. The selection stays highlighted with its date range; `Esc` cancels/exits. | `ui.range_selected v1`    |
+| **Bar click**      | Click a single candle. The clicked bar gets a marker.               | `ui.bar_clicked v1`       |
+| **Toggle**         | Flipping agent mode itself.                                         | `ui.agent_mode_toggled v1`|
+
+The agent reads these by calling the **`get_pending_ui_events`** MCP tool (the reliable path — it drains the buffer), or by reading the **`ui-events://recent`** resource (non-draining). Events are buffered only while agent mode is ON; flip it OFF and the agent sees nothing (the `POST /ui_events` route 403s server-side). The buffer is in-memory and clears on sidecar restart.
+
+To test the loop: flip agent mode ON, drag-select ~2 weeks on the AAPL daily, then paste to Claude Code:
+
+> *what happened in the range I just selected?*
+
+Claude calls `get_pending_ui_events`, sees the `ui.range_selected` envelope, and summarises the cached bars for that window — you never type the dates. Same loop for a bar click (*"anything notable about this bar?"*).
+
+> **Note on push latency.** The sidecar fires `notifications/resources/updated` on every gesture, but whether your MCP client surfaces that to the model is client-defined. The reliable contract is the **polling tool** — if the agent should react to gestures, it calls `get_pending_ui_events` when it's ready. Don't rely on an automatic push.
+
+> **One viewer per machine.** Agent mode is a single sidecar-resident state, so the viewer is now single-instance — launching a second `pnpm dev:all` focuses the existing window instead of opening a new one.
+
 ## Troubleshooting
 
 ### Claude Code shows the MCP server as `disconnected` or returns 401
