@@ -75,7 +75,9 @@ interface Props {
  * UI-event payloads. Non-numeric `Time` (business-day) never occurs for our
  * data — guarded so a stray value can't produce `Invalid Date`. */
 function timeToIso(time: Time): string | null {
-  return typeof time === 'number' ? new Date(time * 1000).toISOString() : null
+  return typeof time === 'number' && Number.isFinite(time)
+    ? new Date(time * 1000).toISOString()
+    : null
 }
 
 interface OverlayEntry {
@@ -110,6 +112,9 @@ export function CandlestickChart({
   // `select-range` cursor mode: when active (and agent mode is ON), a drag
   // selects a date range to POST instead of panning the chart.
   const [selectRangeMode, setSelectRangeMode] = useState(false)
+  // The in-progress selection rectangle, in px relative to the chart container.
+  // Non-null only while dragging; drives the visual overlay.
+  const [selection, setSelection] = useState<{ startX: number; endX: number } | null>(null)
 
   // The gesture handlers are wired once on mount but must read the *current*
   // props/state — refs keep them live without re-registering listeners.
@@ -194,25 +199,38 @@ export function CandlestickChart({
     }
     chart.subscribeClick(handleClick)
 
-    // Range-select: in range mode, mousedown→mouseup over the chart maps the
-    // two x-coordinates to bar times and POSTs the [start, end] window. Listen
-    // in the capture phase + stopPropagation so lightweight-charts doesn't also
-    // pan while we're selecting. Escape cancels the in-progress drag and exits
-    // the mode.
+    // Range-select: in range mode, a pointer drag over the chart maps the start
+    // and end x-coordinates to bar times and POSTs the [start, end] window.
+    // lightweight-charts drives pan/zoom via POINTER events and preventDefaults
+    // pointerdown (which also suppresses the compat mouse events) — so the
+    // selection MUST use pointer events, and the chart's pan is disabled in
+    // range mode (the `handleScroll`/`handleScale` effect below) so the drag is
+    // free to define a selection rather than scroll. Escape cancels + exits.
     let dragStartX: number | null = null
     const xInContainer = (clientX: number): number =>
       clientX - container.getBoundingClientRect().left
-    const onMouseDown = (e: MouseEvent): void => {
+    const onPointerDown = (e: PointerEvent): void => {
       if (!agentModeRef.current || !selectRangeRef.current) return
       dragStartX = xInContainer(e.clientX)
-      e.stopPropagation()
+      setSelection({ startX: dragStartX, endX: dragStartX })
+      try {
+        container.setPointerCapture(e.pointerId)
+      } catch {
+        // jsdom / unsupported environments — capture is a nicety (keeps the
+        // drag alive if the pointer leaves the chart), not required for the POST.
+      }
     }
-    const onMouseUp = (e: MouseEvent): void => {
-      if (!agentModeRef.current || !selectRangeRef.current || dragStartX === null) return
-      const endX = xInContainer(e.clientX)
+    const onPointerMove = (e: PointerEvent): void => {
+      if (dragStartX === null) return
+      setSelection({ startX: dragStartX, endX: xInContainer(e.clientX) })
+    }
+    const onPointerUp = (e: PointerEvent): void => {
+      if (dragStartX === null) return
       const startX = dragStartX
+      const endX = xInContainer(e.clientX)
       dragStartX = null
-      e.stopPropagation()
+      setSelection(null)
+      if (!agentModeRef.current || !selectRangeRef.current) return
       const timeScale = chartRef.current?.timeScale()
       if (!timeScale || !symbolRef.current || !timeframeRef.current) return
       const t1 = timeScale.coordinateToTime(Math.min(startX, endX))
@@ -231,16 +249,19 @@ export function CandlestickChart({
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       dragStartX = null // cancel any in-progress selection
+      setSelection(null)
       setSelectRangeMode(false) // Escape exits the mode
     }
-    container.addEventListener('mousedown', onMouseDown, true)
-    container.addEventListener('mouseup', onMouseUp, true)
+    container.addEventListener('pointerdown', onPointerDown)
+    container.addEventListener('pointermove', onPointerMove)
+    container.addEventListener('pointerup', onPointerUp)
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
       chart.unsubscribeClick(handleClick)
-      container.removeEventListener('mousedown', onMouseDown, true)
-      container.removeEventListener('mouseup', onMouseUp, true)
+      container.removeEventListener('pointerdown', onPointerDown)
+      container.removeEventListener('pointermove', onPointerMove)
+      container.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('keydown', onKeyDown)
       chart.remove()
       chartRef.current = null
@@ -249,6 +270,16 @@ export function CandlestickChart({
       syncTestRenderHook()
     }
   }, [])
+
+  // Disable the chart's built-in pan/zoom while range-selecting so a drag
+  // defines a selection instead of scrolling the chart; restore it otherwise.
+  // Without this, lightweight-charts' pointer-driven pan eats the drag.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const interactive = !(agentModeEnabled && selectRangeMode)
+    chart.applyOptions({ handleScroll: interactive, handleScale: interactive })
+  }, [agentModeEnabled, selectRangeMode])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -317,13 +348,26 @@ export function CandlestickChart({
           {selectRangeMode ? 'Selecting range… (Esc to cancel)' : 'Select range'}
         </button>
       )}
-      <div
-        ref={containerRef}
-        className={`${styles.chartContainer} ${selectRangeMode ? styles.selectRangeActive : ''}`.trim()}
-        data-testid="candlestick-chart"
-        role="img"
-        aria-label={ariaLabel ?? `Candlestick chart, ${bars.length} bars`}
-      />
+      <div className={styles.chartArea}>
+        <div
+          ref={containerRef}
+          className={`${styles.chartContainer} ${selectRangeMode ? styles.selectRangeActive : ''}`.trim()}
+          data-testid="candlestick-chart"
+          role="img"
+          aria-label={ariaLabel ?? `Candlestick chart, ${bars.length} bars`}
+        />
+        {selection && (
+          <div
+            className={styles.selectionOverlay}
+            data-testid="range-selection-overlay"
+            aria-hidden="true"
+            style={{
+              left: Math.min(selection.startX, selection.endX),
+              width: Math.abs(selection.endX - selection.startX),
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }

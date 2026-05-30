@@ -14,7 +14,9 @@
  * drag → bar-time mapping is deterministic. `../api/uiEvents` is mocked so the
  * assertions are on the POST helpers, not the fetch transport.
  */
-import { fireEvent, render, screen } from '@testing-library/react'
+import '@testing-library/jest-dom'
+
+import { createEvent, fireEvent, render, screen } from '@testing-library/react'
 
 import { CandlestickChart } from './CandlestickChart'
 import { postBarClicked, postRangeSelected } from '../api/uiEvents'
@@ -47,6 +49,7 @@ jest.mock('lightweight-charts', () => ({
     addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
     removeSeries: jest.fn(),
     remove: jest.fn(),
+    applyOptions: jest.fn(),
     timeScale: () => ({
       fitContent: jest.fn(),
       coordinateToTime: (x: number) => coordinateToTime(x),
@@ -100,10 +103,21 @@ function renderChart(props: { agentModeEnabled?: boolean }): void {
   )
 }
 
-function dragChart(fromX: number, toX: number): void {
+// Pointer events, not mouse — lightweight-charts drives pan via pointer events
+// and preventDefaults pointerdown (suppressing compat mouse events), so the real
+// gesture is pointer-based. jsdom's PointerEvent drops clientX from the init
+// dict (unlike MouseEvent), so force it onto the instance before dispatching.
+function firePointer(type: 'pointerDown' | 'pointerMove' | 'pointerUp', clientX: number): void {
   const container = screen.getByTestId('candlestick-chart')
-  fireEvent.mouseDown(container, { clientX: fromX })
-  fireEvent.mouseUp(container, { clientX: toX })
+  const event = createEvent[type](container, { pointerId: 1 })
+  Object.defineProperty(event, 'clientX', { value: clientX })
+  fireEvent(container, event)
+}
+
+function dragChart(fromX: number, toX: number): void {
+  firePointer('pointerDown', fromX)
+  firePointer('pointerMove', toX)
+  firePointer('pointerUp', toX)
 }
 
 function clickBar(timeSeconds: number, ohlc: { o: number; h: number; l: number; c: number }): void {
@@ -188,11 +202,22 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
     renderChart({ agentModeEnabled: true })
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
-    const container = screen.getByTestId('candlestick-chart')
-    fireEvent.mouseDown(container, { clientX: 40 })
+    firePointer('pointerDown', 40)
     fireEvent.keyDown(window, { key: 'Escape' })
-    fireEvent.mouseUp(container, { clientX: 120 })
+    firePointer('pointerUp', 120)
 
     expect(mockPostRange).not.toHaveBeenCalled()
+  })
+
+  it('shows a selection overlay while dragging and clears it on release', () => {
+    renderChart({ agentModeEnabled: true })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+
+    firePointer('pointerDown', 40)
+    firePointer('pointerMove', 120)
+    expect(screen.queryByTestId('range-selection-overlay')).toBeInTheDocument()
+
+    firePointer('pointerUp', 120)
+    expect(screen.queryByTestId('range-selection-overlay')).not.toBeInTheDocument()
   })
 })
