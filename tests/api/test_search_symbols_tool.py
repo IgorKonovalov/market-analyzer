@@ -90,9 +90,7 @@ class _FakeProvider:
         raise NotImplementedError
 
 
-_BTC = SymbolInfo(
-    symbol="BTC-USD", name="Bitcoin USD", exchange="CCC", quote_type="Cryptocurrency"
-)
+_BTC = SymbolInfo(symbol="BTC-USD", name="Bitcoin USD", exchange="CCC", quote_type="Cryptocurrency")
 
 
 def _server(provider: _FakeProvider) -> FastMCP:

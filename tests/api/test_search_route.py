@@ -133,9 +133,7 @@ def test_search_returns_401_without_auth() -> None:
 
 def test_search_upstream_error_returns_502() -> None:
     class UpstreamDownProvider(_SearchProvider):
-        def search_symbols(
-            self, query: str, as_of: datetime | None = None
-        ) -> Sequence[SymbolInfo]:
+        def search_symbols(self, query: str, as_of: datetime | None = None) -> Sequence[SymbolInfo]:
             raise UpstreamUnavailableError("yahoo: upstream unavailable on symbol search")
 
     response = _client(UpstreamDownProvider([])).get(
@@ -147,11 +145,12 @@ def test_search_upstream_error_returns_502() -> None:
 
 def test_search_resilient_http_error_returns_502() -> None:
     class RawHttpProvider(_SearchProvider):
-        def search_symbols(
-            self, query: str, as_of: datetime | None = None
-        ) -> Sequence[SymbolInfo]:
+        def search_symbols(self, query: str, as_of: datetime | None = None) -> Sequence[SymbolInfo]:
             raise ResilientHttpError(
-                source_name="yahoo", last_response=None, last_exception=ValueError("boom"), attempts=1
+                source_name="yahoo",
+                last_response=None,
+                last_exception=ValueError("boom"),
+                attempts=1,
             )
 
     response = _client(RawHttpProvider([])).get(
@@ -162,9 +161,7 @@ def test_search_resilient_http_error_returns_502() -> None:
 
 def test_search_value_error_returns_422() -> None:
     class BadInputProvider(_SearchProvider):
-        def search_symbols(
-            self, query: str, as_of: datetime | None = None
-        ) -> Sequence[SymbolInfo]:
+        def search_symbols(self, query: str, as_of: datetime | None = None) -> Sequence[SymbolInfo]:
             raise ValueError("simulated bad input")
 
     response = _client(BadInputProvider([])).get(

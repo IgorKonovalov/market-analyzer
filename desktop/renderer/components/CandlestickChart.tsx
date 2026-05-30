@@ -95,6 +95,24 @@ function formatRangeLabel(startIso: string, endIso: string): string {
 // A drag shorter than this many px is treated as a click, not a range select.
 const MIN_RANGE_SELECT_PX = 3
 
+/** Resolve the clicked bar's OHLC: prefer the click's `seriesData` (exact data
+ * point), else fall back to matching `param.time` against the `bars` prop — so a
+ * click that lands near but not precisely on a data point still resolves. */
+function resolveOhlc(
+  param: MouseEventParams,
+  series: ISeriesApi<'Candlestick'>,
+  bars: Bar[],
+): { open: number; high: number; low: number; close: number } | null {
+  const cd = param.seriesData.get(series) as CandlestickData | undefined
+  if (cd && typeof cd.open === 'number') {
+    return { open: cd.open, high: cd.high, low: cd.low, close: cd.close }
+  }
+  if (typeof param.time !== 'number') return null
+  const time = param.time
+  const bar = bars.find((b) => Math.floor(new Date(b.event_ts).getTime() / 1000) === time)
+  return bar ? { open: bar.open, high: bar.high, low: bar.low, close: bar.close } : null
+}
+
 interface OverlayEntry {
   spec: OverlaySpec
   series: ISeriesApi<'Line'>
@@ -134,6 +152,10 @@ export function CandlestickChart({
   // The selected window's time range (ISO), for the detail label. Tracks the
   // drag live and persists with the rectangle after release.
   const [rangeLabel, setRangeLabel] = useState<{ start: string; end: string } | null>(null)
+  // The event_ts (ISO) of the last clicked bar, marked on the chart so the user
+  // sees which bar they picked. Time-anchored (a series marker), so it tracks
+  // pan/zoom rather than drifting like a pixel overlay would.
+  const [clickedBarTs, setClickedBarTs] = useState<string | null>(null)
 
   // The gesture handlers are wired once on mount but must read the *current*
   // props/state — refs keep them live without re-registering listeners.
@@ -145,6 +167,12 @@ export function CandlestickChart({
   symbolRef.current = symbol
   const timeframeRef = useRef(timeframe)
   timeframeRef.current = timeframe
+  const barsRef = useRef(bars)
+  barsRef.current = bars
+  // Set true when a range drag completes, so the click lightweight-charts may
+  // fire on that same pointerup doesn't also register as a bar-click. Reset on
+  // the next pointerdown and after it's consumed once.
+  const suppressClickRef = useRef(false)
 
   function syncTestRenderHook(): void {
     const kinds: Array<{ kind: string; period?: number | null }> = []
@@ -196,24 +224,27 @@ export function CandlestickChart({
 
     // --- Plan 0014 UI gestures (gated on agent mode via refs) --------------- //
 
-    // Bar-click: only when agent mode is ON and we're NOT in range-select mode
-    // (in range mode the drag owns the pointer). Resolves to the candlestick
-    // series' bar regardless of which overlay was hovered.
+    // Bar-click: fires whenever agent mode is ON (independent of select-range
+    // mode — a click is not a drag). The OHLC comes from the click's seriesData
+    // when available, falling back to a lookup in the bars prop by timestamp so
+    // a click that doesn't resolve exactly onto a data point still works.
     const handleClick = (param: MouseEventParams): void => {
-      if (!agentModeRef.current || selectRangeRef.current) return
-      if (param.time === undefined || !symbolRef.current || !timeframeRef.current) return
-      const candleData = param.seriesData.get(series) as CandlestickData | undefined
-      if (!candleData) return
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false // consume the click that trailed a drag
+        return
+      }
+      if (!agentModeRef.current || !symbolRef.current || !timeframeRef.current) return
+      if (param.time === undefined) return
       const eventTs = timeToIso(param.time)
       if (eventTs === null) return
+      const ohlc = resolveOhlc(param, series, barsRef.current)
+      if (ohlc === null) return
+      setClickedBarTs(eventTs) // mark the bar on the chart
       void postBarClicked({
         symbol: symbolRef.current,
         timeframe: timeframeRef.current,
         event_ts: eventTs,
-        open: candleData.open,
-        high: candleData.high,
-        low: candleData.low,
-        close: candleData.close,
+        ...ohlc,
       })
     }
     chart.subscribeClick(handleClick)
@@ -240,11 +271,15 @@ export function CandlestickChart({
       return { start, end }
     }
     const onPointerDown = (e: PointerEvent): void => {
+      // Every fresh interaction clears a stale drag-suppression flag, so a
+      // never-consumed suppression can't swallow a later genuine bar-click.
+      suppressClickRef.current = false
       if (!agentModeRef.current || !selectRangeRef.current) return
       dragStartX = xInContainer(e.clientX)
-      // Starting a new selection clears any previous one.
+      // Starting a new selection clears any previous one (and the click marker).
       setSelection({ startX: dragStartX, endX: dragStartX })
       setRangeLabel(null)
+      setClickedBarTs(null)
       try {
         container.setPointerCapture(e.pointerId)
       } catch {
@@ -263,12 +298,16 @@ export function CandlestickChart({
       const startX = dragStartX
       const endX = xInContainer(e.clientX)
       dragStartX = null
-      // A click-sized drag is not a range — discard it (no marker, no POST).
+      // A click-sized drag is not a range — discard it (no marker, no POST) and
+      // let it fall through to the bar-click handler.
       if (Math.abs(endX - startX) < MIN_RANGE_SELECT_PX) {
         setSelection(null)
         setRangeLabel(null)
         return
       }
+      // A real range drag: suppress the click lightweight-charts may fire on
+      // this same release so it doesn't double as a bar-click.
+      suppressClickRef.current = true
       // Keep the rectangle + label after release so the user sees the selection.
       setSelection({ startX, endX })
       if (!agentModeRef.current || !selectRangeRef.current) return
@@ -287,6 +326,7 @@ export function CandlestickChart({
       dragStartX = null // cancel any in-progress selection
       setSelection(null)
       setRangeLabel(null)
+      setClickedBarTs(null) // clear the bar-click marker too
       setSelectRangeMode(false) // Escape exits the mode + clears the marker
     }
     container.addEventListener('pointerdown', onPointerDown)
@@ -370,7 +410,25 @@ export function CandlestickChart({
     syncTestRenderHook()
   }, [bars, overlays])
 
-  const markers = useMemo(() => annotationsToMarkers(annotations ?? []), [annotations])
+  // Agent mode off → the click marker's affordance is gone; clear it.
+  useEffect(() => {
+    if (!agentModeEnabled) setClickedBarTs(null)
+  }, [agentModeEnabled])
+
+  const markers = useMemo(() => {
+    const base = annotationsToMarkers(annotations ?? [])
+    if (clickedBarTs === null) return base
+    const time = Math.floor(new Date(clickedBarTs).getTime() / 1000) as UTCTimestamp
+    const clicked: SeriesMarker<UTCTimestamp> = {
+      time,
+      position: 'aboveBar',
+      shape: 'circle',
+      color: OVERLAY_COLOR_EMA,
+      text: clickedBarTs.slice(0, 10),
+    }
+    // setMarkers requires ascending time order.
+    return [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
+  }, [annotations, clickedBarTs])
 
   useEffect(() => {
     const series = seriesRef.current

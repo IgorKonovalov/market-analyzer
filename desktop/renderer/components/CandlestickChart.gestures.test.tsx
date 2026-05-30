@@ -131,6 +131,15 @@ function clickBar(timeSeconds: number, ohlc: { o: number; h: number; l: number; 
   })
 }
 
+/** A click whose seriesData is empty — exercises the bars-prop OHLC fallback. */
+function clickEmptyAt(timeSeconds: number): void {
+  clickHandler!({ time: timeSeconds, point: { x: 10, y: 10 }, seriesData: new Map() })
+}
+
+function barTime(bar: Bar): number {
+  return Math.floor(new Date(bar.event_ts).getTime() / 1000)
+}
+
 // ---------- specs --------------------------------------------------------- //
 
 describe('CandlestickChart gestures (Plan 0014)', () => {
@@ -195,6 +204,46 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
       high: 12,
       low: 9,
       close: 11,
+    })
+  })
+
+  it('bar click works while select-range mode is ACTIVE (a click is not a drag)', () => {
+    renderChart({ agentModeEnabled: true })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+
+    clickBar(1_714_000_500, { o: 10, h: 12, l: 9, c: 11 })
+
+    expect(mockPostBar).toHaveBeenCalledTimes(1)
+  })
+
+  it('a real range drag does not also fire a bar-click', () => {
+    renderChart({ agentModeEnabled: true })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+
+    dragChart(40, 120) // the pointerup sets the suppress flag
+    // lightweight-charts may fire a click on that same release — it must be
+    // swallowed, not registered as a bar-click.
+    clickBar(1_714_000_080, { o: 1, h: 2, l: 0, c: 1.5 })
+
+    expect(mockPostRange).toHaveBeenCalledTimes(1)
+    expect(mockPostBar).not.toHaveBeenCalled()
+  })
+
+  it('resolves bar OHLC from the bars prop when seriesData is empty', () => {
+    renderChart({ agentModeEnabled: true })
+    const bar = FIXTURE_BARS[3]
+
+    clickEmptyAt(barTime(bar))
+
+    expect(mockPostBar).toHaveBeenCalledTimes(1)
+    expect(mockPostBar).toHaveBeenCalledWith({
+      symbol: 'AAPL',
+      timeframe: '1d',
+      event_ts: new Date(barTime(bar) * 1000).toISOString(),
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
     })
   })
 
