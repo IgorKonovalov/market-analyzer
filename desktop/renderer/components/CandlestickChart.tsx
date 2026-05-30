@@ -80,6 +80,21 @@ function timeToIso(time: Time): string | null {
     : null
 }
 
+/** Human-readable label for a selected [start, end] window. UTC (matching the
+ * bar timestamps); the time is shown only when it isn't midnight, so a daily
+ * range reads as plain dates. */
+function formatRangeLabel(startIso: string, endIso: string): string {
+  const fmt = (iso: string): string => {
+    const date = iso.slice(0, 10)
+    const time = iso.slice(11, 16)
+    return time === '00:00' ? date : `${date} ${time}`
+  }
+  return `${fmt(startIso)} → ${fmt(endIso)}`
+}
+
+// A drag shorter than this many px is treated as a click, not a range select.
+const MIN_RANGE_SELECT_PX = 3
+
 interface OverlayEntry {
   spec: OverlaySpec
   series: ISeriesApi<'Line'>
@@ -112,9 +127,13 @@ export function CandlestickChart({
   // `select-range` cursor mode: when active (and agent mode is ON), a drag
   // selects a date range to POST instead of panning the chart.
   const [selectRangeMode, setSelectRangeMode] = useState(false)
-  // The in-progress selection rectangle, in px relative to the chart container.
-  // Non-null only while dragging; drives the visual overlay.
+  // The selection rectangle, in px relative to the chart container. Set on
+  // pointerdown, updated through the drag, and KEPT after release so the user
+  // sees what's selected; cleared on the next drag, Escape, or leaving the mode.
   const [selection, setSelection] = useState<{ startX: number; endX: number } | null>(null)
+  // The selected window's time range (ISO), for the detail label. Tracks the
+  // drag live and persists with the rectangle after release.
+  const [rangeLabel, setRangeLabel] = useState<{ start: string; end: string } | null>(null)
 
   // The gesture handlers are wired once on mount but must read the *current*
   // props/state — refs keep them live without re-registering listeners.
@@ -209,10 +228,23 @@ export function CandlestickChart({
     let dragStartX: number | null = null
     const xInContainer = (clientX: number): number =>
       clientX - container.getBoundingClientRect().left
+    const rangeFromX = (aX: number, bX: number): { start: string; end: string } | null => {
+      const timeScale = chartRef.current?.timeScale()
+      if (!timeScale) return null
+      const t1 = timeScale.coordinateToTime(Math.min(aX, bX))
+      const t2 = timeScale.coordinateToTime(Math.max(aX, bX))
+      if (t1 === null || t2 === null) return null
+      const start = timeToIso(t1)
+      const end = timeToIso(t2)
+      if (start === null || end === null) return null
+      return { start, end }
+    }
     const onPointerDown = (e: PointerEvent): void => {
       if (!agentModeRef.current || !selectRangeRef.current) return
       dragStartX = xInContainer(e.clientX)
+      // Starting a new selection clears any previous one.
       setSelection({ startX: dragStartX, endX: dragStartX })
+      setRangeLabel(null)
       try {
         container.setPointerCapture(e.pointerId)
       } catch {
@@ -222,35 +254,40 @@ export function CandlestickChart({
     }
     const onPointerMove = (e: PointerEvent): void => {
       if (dragStartX === null) return
-      setSelection({ startX: dragStartX, endX: xInContainer(e.clientX) })
+      const endX = xInContainer(e.clientX)
+      setSelection({ startX: dragStartX, endX })
+      setRangeLabel(rangeFromX(dragStartX, endX))
     }
     const onPointerUp = (e: PointerEvent): void => {
       if (dragStartX === null) return
       const startX = dragStartX
       const endX = xInContainer(e.clientX)
       dragStartX = null
-      setSelection(null)
+      // A click-sized drag is not a range — discard it (no marker, no POST).
+      if (Math.abs(endX - startX) < MIN_RANGE_SELECT_PX) {
+        setSelection(null)
+        setRangeLabel(null)
+        return
+      }
+      // Keep the rectangle + label after release so the user sees the selection.
+      setSelection({ startX, endX })
       if (!agentModeRef.current || !selectRangeRef.current) return
-      const timeScale = chartRef.current?.timeScale()
-      if (!timeScale || !symbolRef.current || !timeframeRef.current) return
-      const t1 = timeScale.coordinateToTime(Math.min(startX, endX))
-      const t2 = timeScale.coordinateToTime(Math.max(startX, endX))
-      if (t1 === null || t2 === null) return
-      const rangeStart = timeToIso(t1)
-      const rangeEnd = timeToIso(t2)
-      if (rangeStart === null || rangeEnd === null) return
+      const range = rangeFromX(startX, endX)
+      if (range === null || !symbolRef.current || !timeframeRef.current) return
+      setRangeLabel(range)
       void postRangeSelected({
         symbol: symbolRef.current,
         timeframe: timeframeRef.current,
-        range_start: rangeStart,
-        range_end: rangeEnd,
+        range_start: range.start,
+        range_end: range.end,
       })
     }
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       dragStartX = null // cancel any in-progress selection
       setSelection(null)
-      setSelectRangeMode(false) // Escape exits the mode
+      setRangeLabel(null)
+      setSelectRangeMode(false) // Escape exits the mode + clears the marker
     }
     container.addEventListener('pointerdown', onPointerDown)
     container.addEventListener('pointermove', onPointerMove)
@@ -279,6 +316,12 @@ export function CandlestickChart({
     if (!chart) return
     const interactive = !(agentModeEnabled && selectRangeMode)
     chart.applyOptions({ handleScroll: interactive, handleScale: interactive })
+    if (interactive) {
+      // Left select-range mode: drop the marker — once panning is re-enabled the
+      // pixel-positioned rectangle would no longer line up with its bars.
+      setSelection(null)
+      setRangeLabel(null)
+    }
   }, [agentModeEnabled, selectRangeMode])
 
   useEffect(() => {
@@ -366,6 +409,15 @@ export function CandlestickChart({
               width: Math.abs(selection.endX - selection.startX),
             }}
           />
+        )}
+        {selection && rangeLabel && (
+          <div
+            className={styles.selectionLabel}
+            data-testid="range-selection-label"
+            style={{ left: Math.min(selection.startX, selection.endX) }}
+          >
+            {formatRangeLabel(rangeLabel.start, rangeLabel.end)}
+          </div>
         )}
       </div>
     </div>

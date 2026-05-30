@@ -209,7 +209,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
     expect(mockPostRange).not.toHaveBeenCalled()
   })
 
-  it('shows a selection overlay while dragging and clears it on release', () => {
+  it('keeps the selection overlay + a range label after release; Escape clears both', () => {
     renderChart({ agentModeEnabled: true })
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
@@ -218,6 +218,25 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
     expect(screen.queryByTestId('range-selection-overlay')).toBeInTheDocument()
 
     firePointer('pointerUp', 120)
+    // Persists after release so the user sees what's selected.
+    expect(screen.queryByTestId('range-selection-overlay')).toBeInTheDocument()
+    const label = screen.getByTestId('range-selection-label')
+    expect(label).toHaveTextContent('→')
+
+    // Escape clears the persisted marker + label.
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId('range-selection-overlay')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('range-selection-label')).not.toBeInTheDocument()
+  })
+
+  it('discards a click-sized drag (no range marker, no POST)', () => {
+    renderChart({ agentModeEnabled: true })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+
+    firePointer('pointerDown', 50)
+    firePointer('pointerUp', 51) // 1px — below the range threshold
+
+    expect(mockPostRange).not.toHaveBeenCalled()
     expect(screen.queryByTestId('range-selection-overlay')).not.toBeInTheDocument()
   })
 })
