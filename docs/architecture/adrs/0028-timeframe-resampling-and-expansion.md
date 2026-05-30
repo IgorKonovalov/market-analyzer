@@ -1,6 +1,6 @@
 # ADR-0028 — Canonical timeframe registry, in-house 4h resampling, and per-timeframe history caps
 
-> **Status:** proposed | accepts at [Plan 0025](../plans/0025-timeframe-expansion.md) close
+> **Status:** accepted (2026-05-30, at [Plan 0025](../plans/done/0025-timeframe-expansion.md) close)
 > **Date:** 2026-05-29
 > **Related:** [ADR-0007](0007-market-data-provider.md) (bars flow through the Provider), [ADR-0009](0009-rewrite-data-layer-in-house.md) (we own and evolve the data layer, including resampling), [ADR-0019](0019-external-http-adapter-resilience.md) (the Yahoo fetch stays on the resilience client), [Plan 0025](../plans/0025-timeframe-expansion.md) (the implementing plan), [Plan 0021](../plans/0021-multi-timeframe-and-volume-scanners.md) (the consumer that forced the question)
 
