@@ -1,6 +1,6 @@
 # 0019 — Live quote: implement `get_quote` + `quote_for` MCP tool
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
