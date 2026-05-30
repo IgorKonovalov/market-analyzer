@@ -1,0 +1,35 @@
+[
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-01T00:00:00+00:00",
+    "open": 100,
+    "high": 104.2,
+    "low": 99.8,
+    "close": 104,
+    "volume": 1000.0,
+    "source": "fixture"
+  },
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-02T00:00:00+00:00",
+    "open": 102,
+    "high": 106.2,
+    "low": 101.8,
+    "close": 106,
+    "volume": 1000.0,
+    "source": "fixture"
+  },
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-03T00:00:00+00:00",
+    "open": 104,
+    "high": 108.2,
+    "low": 103.8,
+    "close": 108,
+    "volume": 1000.0,
+    "source": "fixture"
+  }
+]

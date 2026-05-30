@@ -1,0 +1,57 @@
+[
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-01T00:00:00+00:00",
+    "open": 114,
+    "high": 114.5,
+    "low": 111.5,
+    "close": 112,
+    "volume": 1000.0,
+    "source": "fixture"
+  },
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-02T00:00:00+00:00",
+    "open": 112,
+    "high": 112.5,
+    "low": 109.5,
+    "close": 110,
+    "volume": 1000.0,
+    "source": "fixture"
+  },
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-03T00:00:00+00:00",
+    "open": 110,
+    "high": 110.5,
+    "low": 107.5,
+    "close": 108,
+    "volume": 1000.0,
+    "source": "fixture"
+  },
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-04T00:00:00+00:00",
+    "open": 108,
+    "high": 108.5,
+    "low": 105.5,
+    "close": 106,
+    "volume": 1000.0,
+    "source": "fixture"
+  },
+  {
+    "symbol": "TEST",
+    "timeframe": "1d",
+    "event_ts": "2025-01-05T00:00:00+00:00",
+    "open": 106,
+    "high": 106.5,
+    "low": 103,
+    "close": 106.3,
+    "volume": 1000.0,
+    "source": "fixture"
+  }
+]
