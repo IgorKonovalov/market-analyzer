@@ -39,40 +39,26 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from pydantic import AnyUrl
 
-from market_analyser.annotations.types import (
-    Annotation,
-    AnnotationKind,
-)
-from market_analyser.api.events import (
-    ChartHighlightPayloadV1,
-    ChartShowPayloadV1,
-    ChartUpdatePayloadV1,
-    EventBus,
-    Marker,
-)
-from market_analyser.api.mcp_tools._validation import (
-    _parse_overlays,
-    _require_non_empty_symbol,
-    _require_ordered_range,
-    _require_supported_timeframe,
-)
+from market_analyser.api.events import EventBus
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
+from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
 from market_analyser.api.mcp_tools.list_annotations import register_list_annotations
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
 from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
+from market_analyser.api.mcp_tools.show_chart import register_show_chart
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
+from market_analyser.api.mcp_tools.update_chart import register_update_chart
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
 from market_analyser.api.ui_events import UIEventEnvelope
 from market_analyser.api.ui_events.buffer import UIEventBuffer
@@ -194,124 +180,11 @@ def create_mcp_components(
     register_write_annotation(server, annotations_repository=annotations_repository)
     register_list_annotations(server, annotations_repository=annotations_repository)
 
-    @server.tool(
-        description=(
-            "Render a chart in the Electron viewer. Publishes a `chart.show v1` "
-            "event to the SSE stream. The renderer mounts/switches to the "
-            "requested symbol+timeframe and renders the requested window with "
-            "the supplied overlays. Returns immediately whether or not a viewer "
-            "is connected — events are ephemeral; reopening Electron after a "
-            "call to this tool will not replay it."
-        ),
+    register_show_chart(server, event_bus=event_bus)
+    register_update_chart(server, event_bus=event_bus)
+    register_highlight_pattern(
+        server, annotations_repository=annotations_repository, event_bus=event_bus
     )
-    def show_chart(
-        symbol: str,
-        timeframe: str,
-        range_start: datetime,
-        range_end: datetime,
-        overlays: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        _require_non_empty_symbol(symbol)
-        _require_supported_timeframe(timeframe)
-        _require_ordered_range(range_start, range_end)
-        payload = ChartShowPayloadV1(
-            symbol=symbol,
-            timeframe=timeframe,
-            range_start=range_start,
-            range_end=range_end,
-            overlays=_parse_overlays(overlays),
-        )
-        event_bus.publish("chart.show", payload)
-        return {
-            "event_published": True,
-            "type": "chart.show",
-            "version": ChartShowPayloadV1.VERSION,
-        }
-
-    @server.tool(
-        description=(
-            "Apply a delta to the currently-rendered chart. Publishes a "
-            "`chart.update v1` event. Any subset of {overlays, range_start, "
-            "range_end, focus_bar} may be supplied; unset fields are not "
-            "carried on the wire (the renderer merges the delta into its "
-            "current state). If no chart for `symbol`+`timeframe` is currently "
-            "open in the viewer, the renderer treats this as a `chart.show`."
-        ),
-    )
-    def update_chart(
-        symbol: str,
-        timeframe: str,
-        overlays: list[dict[str, Any]] | None = None,
-        range_start: datetime | None = None,
-        range_end: datetime | None = None,
-        focus_bar: datetime | None = None,
-    ) -> dict[str, Any]:
-        _require_non_empty_symbol(symbol)
-        _require_supported_timeframe(timeframe)
-        _require_ordered_range(range_start, range_end)
-        payload = ChartUpdatePayloadV1(
-            symbol=symbol,
-            timeframe=timeframe,
-            overlays=_parse_overlays(overlays),
-            range_start=range_start,
-            range_end=range_end,
-            focus_bar=focus_bar,
-        )
-        event_bus.publish("chart.update", payload)
-        return {
-            "event_published": True,
-            "type": "chart.update",
-            "version": ChartUpdatePayloadV1.VERSION,
-        }
-
-    @server.tool(
-        description=(
-            "Highlight a pattern on a chart. Publishes a `chart.highlight v1` "
-            "event AND persists each marker as an annotation row (so the "
-            "highlight survives a viewer reload). Use this for patterns you "
-            "detected NOW; use `write_annotation` for the lower-level "
-            "persist-only primitive."
-        ),
-    )
-    def highlight_pattern(
-        symbol: str,
-        timeframe: str,
-        event_ts: datetime,
-        kind: AnnotationKind,
-        label: str | None = None,
-        agent_id: str = "unknown",
-    ) -> dict[str, Any]:
-        _require_non_empty_symbol(symbol)
-        _require_supported_timeframe(timeframe)
-        # `AnnotationKind` is a `StrEnum`; its value is one of the literal
-        # strings `Marker.kind` accepts. Pydantic accepts the enum at runtime,
-        # but mypy can't widen the StrEnum to the Literal — coerce to plain
-        # str so the type-checker sees the narrowed value.
-        marker = Marker(event_ts=event_ts, kind=str(kind), label=label)  # type: ignore[arg-type]
-        payload = ChartHighlightPayloadV1(
-            symbol=symbol,
-            timeframe=timeframe,
-            markers=[marker],
-        )
-        # Persist first (so re-opening Electron sees the marker via the
-        # annotations table), then publish (so the live viewer renders it
-        # immediately). Failure to persist surfaces as an MCP error before
-        # the live event lands.
-        annotation = Annotation(
-            symbol=symbol,
-            timeframe=timeframe,
-            event_ts=event_ts,
-            kind=kind,
-            label=label,
-            agent_id=agent_id,
-        )
-        annotations_repository.insert(annotation)
-        event_bus.publish("chart.highlight", payload)
-        return {
-            "event_published": True,
-            "type": "chart.highlight",
-            "version": ChartHighlightPayloadV1.VERSION,
-        }
 
     @server.tool(description=GET_PENDING_UI_EVENTS_DESCRIPTION)
     def get_pending_ui_events(
