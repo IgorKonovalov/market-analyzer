@@ -22,7 +22,8 @@ from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.errors import UpstreamDataError, failure_reason
-from market_analyser.data.timeframes import bar_duration
+from market_analyser.data.resample import resample_ohlcv
+from market_analyser.data.timeframes import bar_duration, resampled_from
 from market_analyser.data.types import (
     BackfillResult,
     Bar,
@@ -89,6 +90,16 @@ class DefaultMarketDataProvider:
         end: datetime,
         as_of: datetime | None = None,
     ) -> Sequence[Bar]:
+        # Derived timeframe (e.g. 4h): fetch the native base (1h) over the same
+        # window through the normal cache/gap/as_of path, then resample on read.
+        # 4h is never cached or fetched directly (ADR-0028 derive-on-read); the
+        # base call inherits the anti-lookahead `as_of` guard, and the resample is
+        # trailing, so historical replay stays leak-free.
+        base = resampled_from(timeframe)
+        if base is not None:
+            base_bars = self.get_ohlcv(symbol, base, start, end, as_of)
+            return resample_ohlcv(list(base_bars), target=timeframe)
+
         # No cache wired: live-only (phase-2 fallback for tests that don't need persistence).
         if self._repo is None:
             if as_of is not None:
@@ -135,7 +146,14 @@ class DefaultMarketDataProvider:
         scheduling (Plan 0013) calls this to decide whether a fetch is needed and
         which windows to fetch; it reuses the same `_coverage_gaps` math as
         `get_ohlcv` but never reaches the adapter. With no cache wired, the whole
-        window is one gap (and nothing is cached)."""
+        window is one gap (and nothing is cached).
+
+        For a derived timeframe (4h) coverage is reported against its native base
+        (1h): 4h is never cached, so its cache state IS the base's. Scheduling a
+        4h backfill therefore fills the 1h base, which the 4h read resamples."""
+        base = resampled_from(timeframe)
+        if base is not None:
+            return self.coverage(symbol, base, start, end)
         if self._repo is None:
             return Coverage(cached=[], gaps=[(start, end)] if start < end else [])
         cached = list(self._repo.get_bars(symbol, timeframe, start, end))
@@ -160,6 +178,17 @@ class DefaultMarketDataProvider:
         Live-mode only — backfill never runs under `as_of` (ADR-0007), so this
         method has no `as_of` parameter. The plain `get_ohlcv` keeps raising on
         any gap failure for the HTTP route + backtests that want loud failure."""
+        # Derived timeframe (4h): run the partial-surfacing fetch against the
+        # native base (1h), then resample the result — carrying the base's
+        # partial_reason/message through so the agent still sees gap failures.
+        base = resampled_from(timeframe)
+        if base is not None:
+            base_result = self.get_ohlcv_with_status(symbol, base, start, end)
+            return BackfillResult(
+                bars=resample_ohlcv(list(base_result.bars), target=timeframe),
+                partial_reason=base_result.partial_reason,
+                message=base_result.message,
+            )
         if self._repo is None:
             bars = self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
             return BackfillResult(bars=list(bars), partial_reason=None, message=None)

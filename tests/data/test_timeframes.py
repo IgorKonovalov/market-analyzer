@@ -1,4 +1,4 @@
-"""Plan 0025 phase 1: the canonical timeframe registry (`data/timeframes.py`).
+"""Plan 0025 phases 1-2: the canonical timeframe registry (`data/timeframes.py`).
 
 The load-bearing test is `test_registry_keys_equal_supported_timeframes` — it is
 the enforced invariant ADR-0028 relies on so the two views of the supported set
@@ -22,9 +22,19 @@ def test_registry_keys_equal_supported_timeframes() -> None:
     assert tf.registry_timeframes() == SUPPORTED_TIMEFRAMES
 
 
-def test_native_timeframes_are_those_with_a_yahoo_interval() -> None:
-    # Phase 1 has no resampled timeframe yet, so native == every registered tf.
-    assert tf.native_timeframes() == tf.registry_timeframes()
+def test_native_timeframes_exclude_resampled() -> None:
+    # 4h is derived (resampled from 1h), so it is NOT natively fetchable; every
+    # other registered timeframe is.
+    assert tf.native_timeframes() == tf.registry_timeframes() - {"4h"}
+    assert "4h" not in tf.native_timeframes()
+
+
+def test_4h_is_resampled_from_1h_and_has_no_yahoo_interval() -> None:
+    assert tf.resampled_from("4h") == "1h"
+    assert tf.yahoo_interval("4h") is None
+    # require_native_interval rejects a derived timeframe (defensive guard).
+    with pytest.raises(ValueError, match="derived"):
+        tf.require_native_interval("4h")
 
 
 @pytest.mark.parametrize(
@@ -42,6 +52,7 @@ def test_yahoo_interval_maps_canonical_to_upstream(timeframe: str, expected_inte
     [
         ("15m", timedelta(minutes=15)),
         ("1h", timedelta(hours=1)),
+        ("4h", timedelta(hours=4)),
         ("1d", timedelta(days=1)),
         ("1w", timedelta(days=7)),
     ],
@@ -53,13 +64,15 @@ def test_bar_duration_matches_cadence(timeframe: str, expected: timedelta) -> No
 def test_max_history_caps_intraday_and_unbounds_daily_weekly() -> None:
     assert tf.max_history("15m") == timedelta(days=60)
     assert tf.max_history("1h") == timedelta(days=730)
+    # 4h inherits the 1h base's reach.
+    assert tf.max_history("4h") == timedelta(days=730)
     assert tf.max_history("1d") is None
     assert tf.max_history("1w") is None
 
 
 @pytest.mark.parametrize(
     ("timeframe", "intraday"),
-    [("15m", True), ("1h", True), ("1d", False), ("1w", False)],
+    [("15m", True), ("1h", True), ("4h", True), ("1d", False), ("1w", False)],
 )
 def test_uses_intraday_timestamp_splits_sub_daily(timeframe: str, intraday: bool) -> None:
     assert tf.uses_intraday_timestamp(timeframe) is intraday
@@ -84,4 +97,4 @@ def test_unknown_timeframe_raises_value_error() -> None:
 
 def test_supported_label_is_cadence_ordered() -> None:
     # Sorted ascending by bar duration so the agent-facing tool docs read naturally.
-    assert tf.supported_timeframes_label() == "15m, 1h, 1d, 1w"
+    assert tf.supported_timeframes_label() == "15m, 1h, 4h, 1d, 1w"

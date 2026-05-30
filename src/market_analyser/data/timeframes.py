@@ -44,6 +44,10 @@ class TimeframeSpec:
 _REGISTRY: dict[str, TimeframeSpec] = {
     "15m": TimeframeSpec("15m", timedelta(minutes=15), "15m", None, timedelta(days=60)),
     "1h": TimeframeSpec("1h", timedelta(hours=1), "1h", None, timedelta(days=730)),
+    # 4h is derived in-house from native 1h bars (Yahoo has no 4h interval); it
+    # inherits the 1h base's history reach. yahoo_interval is None so it is never
+    # fetched directly — the provider resamples it on read (Plan 0025 ph2 / ADR-0028).
+    "4h": TimeframeSpec("4h", timedelta(hours=4), None, "1h", timedelta(days=730)),
     "1d": TimeframeSpec("1d", _DAY, "1d", None, None),
     "1w": TimeframeSpec("1w", timedelta(days=7), "1wk", None, None),
 }

@@ -469,3 +469,62 @@ def test_coverage_1w_uses_weekly_threshold(repo: BarRepository) -> None:
     cov = provider.coverage("AAPL", "1w", start, end)
 
     assert cov.gaps == [(datetime(2026, 2, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC))]
+
+
+# -- Plan 0025 phase 2: 4h is derived on read from a single 1h fetch ----------
+
+
+def _intraday_row(dt_str: str, *, close: float) -> dict[str, Any]:
+    return {
+        "date": dt_str,
+        "open": 100.0,
+        "high": close + 1.0,
+        "low": 99.0,
+        "close": close,
+        "volume": 1_000.0,
+    }
+
+
+def test_get_ohlcv_4h_resamples_from_one_1h_fetch(repo: BarRepository) -> None:
+    # A 4h request fetches the native 1h base over the window (one fetch, interval
+    # "1h" — never a "4h" upstream call) and returns the resample. The 04:00-08:00
+    # and 08:00-12:00 1h bars collapse into two 4h buckets.
+    intervals: list[str] = []
+
+    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        intervals.append(interval)
+        return [
+            _intraday_row(f"2026-01-05 {hour:02d}:00", close=100.0 + hour) for hour in range(4, 12)
+        ]
+
+    provider = DefaultMarketDataProvider(yahoo=YahooAdapter(fetcher=fetcher), bar_repository=repo)
+
+    bars = provider.get_ohlcv(
+        "AAPL",
+        "4h",
+        datetime(2026, 1, 5, 4, 0, tzinfo=UTC),
+        datetime(2026, 1, 5, 12, 0, tzinfo=UTC),
+    )
+
+    assert intervals == ["1h"], f"expected exactly one 1h fetch, got {intervals}"
+    assert [b.event_ts for b in bars] == [
+        datetime(2026, 1, 5, 4, 0, tzinfo=UTC),
+        datetime(2026, 1, 5, 8, 0, tzinfo=UTC),
+    ]
+    assert all(b.timeframe == "4h" for b in bars)
+    # close of each 4h bar is the last 1h close in the bucket: 07:00 -> 107, 11:00 -> 111.
+    assert bars[0].close == 107.0
+    assert bars[1].close == 111.0
+
+
+def test_get_ohlcv_4h_with_status_carries_base_partial_reason(repo: BarRepository) -> None:
+    # The partial-surfacing path also routes through the 1h base: a 4h request
+    # resamples the base result and carries its partial_reason/message through.
+    start = datetime(2026, 1, 5, 4, 0, tzinfo=UTC)
+    end = datetime(2026, 1, 5, 12, 0, tzinfo=UTC)
+    yahoo = _scripted_yahoo([_rate_limit_error()])
+    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
+
+    with pytest.raises(RateLimitedError):
+        # Total failure on the only (1h base) gap stays loud through the resample.
+        provider.get_ohlcv_with_status("AAPL", "4h", start, end)
