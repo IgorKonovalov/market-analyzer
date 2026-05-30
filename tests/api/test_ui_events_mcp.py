@@ -35,12 +35,12 @@ from pydantic import AnyUrl
 
 from market_analyser.api.app import create_app
 from market_analyser.api.events import EventBus
-from market_analyser.api.mcp_app import (
+from market_analyser.api.mcp_app import create_mcp_components
+from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
+from market_analyser.api.mcp_tools.get_pending_ui_events import (
     UI_EVENTS_RESOURCE_URI,
     _ResourceUpdateNotifier,
-    create_mcp_components,
 )
-from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.api.ui_events import UIEventEnvelope
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.types import (
