@@ -414,3 +414,58 @@ def test_get_ohlcv_with_status_full_cache_hit_is_clean(repo: BarRepository) -> N
     assert result.partial_reason is None
     assert result.message is None
     assert len(result.bars) == 30
+
+
+# -- Plan 0025 phase 1: coverage math uses the registry bar duration ----------
+
+
+def _tf_bar(timeframe: str, ts: datetime) -> Bar:
+    return Bar(
+        symbol="AAPL",
+        timeframe=timeframe,
+        event_ts=ts,
+        open=100.0,
+        high=102.0,
+        low=99.0,
+        close=101.0,
+        volume=1_000_000.0,
+        source="yahoo",
+    )
+
+
+def test_coverage_15m_detects_a_sub_day_hole(repo: BarRepository) -> None:
+    # 15m threshold = 15m * 10 = 2.5h. Bars 2h apart bound the present regions
+    # (2h < 2.5h, not a hole); the 4h interior gap (>= 2.5h) is the one real hole.
+    # Under the OLD flat 10-day threshold a 4h gap would be skipped entirely —
+    # so this exactly-one-gap result proves the threshold now scales with the
+    # registry bar duration.
+    t0 = datetime(2026, 1, 5, 0, 0, tzinfo=UTC)
+    present = [t0, t0 + timedelta(hours=2), t0 + timedelta(hours=4)]
+    present += [t0 + timedelta(hours=8), t0 + timedelta(hours=10), t0 + timedelta(hours=12)]
+    repo.upsert_bars([_tf_bar("15m", ts) for ts in present])
+    provider = DefaultMarketDataProvider(bar_repository=repo)
+
+    cov = provider.coverage("AAPL", "15m", t0, t0 + timedelta(hours=12))
+
+    assert cov.gaps == [(t0 + timedelta(hours=4), t0 + timedelta(hours=8))]
+
+
+def test_coverage_1w_uses_weekly_threshold(repo: BarRepository) -> None:
+    # 1w threshold = 7d * 10 = 70d. Monthly-spaced present bars (~31d < 70d) are
+    # within tolerance; only the ~242-day hole counts. Distinguishes the registry
+    # duration from any timeframe-blind flat threshold.
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 12, 31, tzinfo=UTC)
+    cached_ts = [
+        start,
+        datetime(2026, 2, 1, tzinfo=UTC),
+        datetime(2026, 10, 1, tzinfo=UTC),
+        datetime(2026, 11, 1, tzinfo=UTC),
+        end,
+    ]
+    repo.upsert_bars([_tf_bar("1w", ts) for ts in cached_ts])
+    provider = DefaultMarketDataProvider(bar_repository=repo)
+
+    cov = provider.coverage("AAPL", "1w", start, end)
+
+    assert cov.gaps == [(datetime(2026, 2, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC))]

@@ -26,6 +26,7 @@ from market_analyser.data.errors import (
     UpstreamDataError,
     UpstreamUnavailableError,
 )
+from market_analyser.data.timeframes import require_native_interval, uses_intraday_timestamp
 from market_analyser.data.types import Bar, SymbolInfo
 
 _logger = logging.getLogger(__name__)
@@ -51,8 +52,6 @@ _PERIOD_DAYS: tuple[tuple[str, int], ...] = (
     ("2y", 732),
 )
 _MAX_PERIOD_DAYS = _PERIOD_DAYS[-1][1]
-
-_VALID_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h"})
 
 # Result cap for symbol search. Yahoo honours `quotesCount`, so this also bounds
 # the upstream payload. Kept adapter-internal (not a Protocol/route parameter):
@@ -97,10 +96,10 @@ class YahooAdapter:
         symbol = symbol.strip()
         if not symbol:
             raise ValueError("symbol must be non-empty")
-        if timeframe not in _VALID_TIMEFRAMES:
-            raise ValueError(
-                f"timeframe {timeframe!r} not supported (supported: {sorted(_VALID_TIMEFRAMES)})",
-            )
+        # Validates the timeframe and yields the Yahoo `interval` to request:
+        # canonical "1w" → "1wk", "15m"/"1h"/"1d" unchanged. Derived timeframes
+        # (e.g. resampled 4h) raise here — the provider fetches their base instead.
+        interval = require_native_interval(timeframe)
         if start.tzinfo is None or end.tzinfo is None:
             raise ValueError("start and end must be timezone-aware (UTC)")
         if start >= end:
@@ -126,7 +125,7 @@ class YahooAdapter:
                 period_days / max(span_days, 1),
             )
         try:
-            raw = self._fetch(symbol, period, timeframe)
+            raw = self._fetch(symbol, period, interval)
         except ResilientHttpError as err:
             raise _classify_http_error(err, symbol) from err
 
@@ -284,5 +283,5 @@ def _smallest_period_for(span_days: int) -> str:
 
 
 def _parse_event_ts(date_str: str, timeframe: str) -> datetime:
-    fmt = "%Y-%m-%d %H:%M" if timeframe == "1h" else "%Y-%m-%d"
+    fmt = "%Y-%m-%d %H:%M" if uses_intraday_timestamp(timeframe) else "%Y-%m-%d"
     return datetime.strptime(date_str, fmt).replace(tzinfo=UTC)

@@ -33,7 +33,7 @@ from market_analyser.api.backfill_response import BackfillOhlcvResponse, GetOhlc
 from market_analyser.api.events import Envelope, EventBus
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.api.mcp_tools.backfill_ohlcv import _backfill_ohlcv_response
-from market_analyser.api.mcp_tools.get_ohlcv import _get_ohlcv_response
+from market_analyser.api.mcp_tools.get_ohlcv import GET_OHLCV_DESCRIPTION, _get_ohlcv_response
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.errors import RateLimitedError
 from market_analyser.data.types import (
@@ -260,6 +260,32 @@ def test_backfill_ohlcv_rejects_invalid_input(
                 coordinator=None, symbol=symbol, timeframe=timeframe, start=start, end=end
             )
         )
+
+
+# -- Plan 0025 phase 1: the widened set is accepted at the MCP boundary -------
+
+
+@pytest.mark.parametrize("timeframe", ["15m", "1w"])
+def test_backfill_ohlcv_accepts_new_timeframes(timeframe: str) -> None:
+    """get_ohlcv/backfill_ohlcv accept the new timeframes at the boundary — they
+    are not rejected by `_require_supported_timeframe` (which reads the widened
+    SUPPORTED_TIMEFRAMES). A fresh-cache call schedules and reports started=True."""
+
+    async def run() -> BackfillOhlcvResponse:
+        provider = _CoverageProvider(cached=[], gaps=[(_T0, _T1)], fetched=[_sample_bar()])
+        coord = BackfillCoordinator(provider=provider, event_bus=EventBus())
+        return await _backfill_ohlcv_response(
+            coordinator=coord, symbol="AAPL", timeframe=timeframe, start=_T0, end=_T1
+        )
+
+    assert asyncio.run(run()).started is True
+
+
+def test_get_ohlcv_description_lists_supported_timeframes() -> None:
+    """The agent-facing description derives the supported set from the registry,
+    so it lists the new timeframes (no hand-maintained literal that can drift)."""
+    for timeframe in ("15m", "1h", "1d", "1w"):
+        assert timeframe in GET_OHLCV_DESCRIPTION
 
 
 # --------------------------------------------------------------------------- #

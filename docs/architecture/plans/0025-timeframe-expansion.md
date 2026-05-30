@@ -1,6 +1,6 @@
 # 0025 — Timeframe expansion: 15m + 4h + weekly (with in-house 4h resampling)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-29
 > **Approved:** 2026-05-29
 > **Owner skill(s):** `dev` (all phases)

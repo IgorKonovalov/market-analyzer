@@ -17,9 +17,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Per ADR-0007. Kept in sync with `data/adapters/yahoo.py::_VALID_TIMEFRAMES`;
-# expanding the data-source set means expanding this set in the same change.
-SUPPORTED_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h"})
+# Per ADR-0007/ADR-0028. This is the canonical *set*; the per-timeframe details
+# (bar duration, Yahoo interval, resampled-from, history cap) live in the
+# `data/timeframes.py` registry. The two views are kept honest by a parity test
+# (`tests/data/test_timeframes.py`) rather than a cross-layer import, so this
+# frozenset stays free of any `data` dependency. Widen both together.
+SUPPORTED_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h", "15m", "1w"})
 
 
 class AnnotationKind(StrEnum):

@@ -22,6 +22,7 @@ from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.errors import UpstreamDataError, failure_reason
+from market_analyser.data.timeframes import bar_duration
 from market_analyser.data.types import (
     BackfillResult,
     Bar,
@@ -35,12 +36,23 @@ from market_analyser.data.types import (
 )
 from market_analyser.persistence.repository import BarRepository
 
-# A gap below this width is treated as "not a real hole" (weekends, holidays,
-# overnight sessions) and skipped. Edge gaps below this width are still fetched
-# but widened to at least this span so each fetch justifies a round-trip — Yahoo
-# picks the smallest period that fits the request anyway, so a 1-day window
-# would over-fetch and discard 30 days of bars. Plan 0004 phase 1 baseline.
-_MIN_FETCH_SPAN: timedelta = timedelta(days=10)
+# A between-bars gap counts as a real hole (worth a fetch) only when it spans
+# more than this many bars of the timeframe's own cadence; below it the gap is a
+# legitimate closure (weekend, holiday, overnight) and is skipped. Edge gaps below
+# this width are still fetched but widened to at least this span so each fetch
+# justifies a round-trip — Yahoo picks the smallest period that fits anyway, so a
+# 1-bar window would over-fetch and discard the rest. Scaling by the registry bar
+# duration (Plan 0025) makes the threshold cadence-correct: 10 daily bars = 10
+# days preserves the Plan 0004 baseline for 1d, while 10 fifteen-minute bars =
+# 2.5h lets an intraday hole surface that a flat 10-day floor would have masked.
+_GAP_THRESHOLD_BARS = 10
+
+
+def _min_fetch_span(timeframe: str) -> timedelta:
+    """The fetch/gap-detection threshold for `timeframe`, derived from its registry
+    bar duration (see `_GAP_THRESHOLD_BARS`)."""
+    return bar_duration(timeframe) * _GAP_THRESHOLD_BARS
+
 
 # VADER's conventional compound-score cutoffs for the positive/neutral/negative
 # split used to build the sentiment breakdown.
@@ -87,7 +99,7 @@ class DefaultMarketDataProvider:
 
         if as_of is not None:
             cached = self._repo.get_bars(symbol, timeframe, start, end, as_of=as_of)
-            gaps = _coverage_gaps(cached, start, end)
+            gaps = _coverage_gaps(cached, start, end, _min_fetch_span(timeframe))
             if gaps:
                 raise ValueError(
                     f"as_of={as_of.isoformat()}: cached coverage incomplete for "
@@ -97,7 +109,7 @@ class DefaultMarketDataProvider:
             return cached
 
         cached = self._repo.get_bars(symbol, timeframe, start, end)
-        gaps = _coverage_gaps(cached, start, end)
+        gaps = _coverage_gaps(cached, start, end, _min_fetch_span(timeframe))
         if not gaps:
             return cached
         merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
@@ -127,7 +139,10 @@ class DefaultMarketDataProvider:
         if self._repo is None:
             return Coverage(cached=[], gaps=[(start, end)] if start < end else [])
         cached = list(self._repo.get_bars(symbol, timeframe, start, end))
-        return Coverage(cached=cached, gaps=_coverage_gaps(cached, start, end))
+        return Coverage(
+            cached=cached,
+            gaps=_coverage_gaps(cached, start, end, _min_fetch_span(timeframe)),
+        )
 
     def get_ohlcv_with_status(
         self,
@@ -150,7 +165,7 @@ class DefaultMarketDataProvider:
             return BackfillResult(bars=list(bars), partial_reason=None, message=None)
 
         cached = self._repo.get_bars(symbol, timeframe, start, end)
-        gaps = _coverage_gaps(cached, start, end)
+        gaps = _coverage_gaps(cached, start, end, _min_fetch_span(timeframe))
         if not gaps:
             return BackfillResult(bars=list(cached), partial_reason=None, message=None)
 
@@ -321,15 +336,18 @@ def _coverage_gaps(
     cached: Sequence[Bar],
     start: datetime,
     end: datetime,
+    min_fetch_span: timedelta,
 ) -> list[tuple[datetime, datetime]]:
     """Return the fetch windows needed to combine with `cached` to cover [start, end].
 
     Head and tail gaps (uncached space at the edges of the requested window) are
     always returned. Gaps between consecutive cached bars are returned only when
-    they exceed `_MIN_FETCH_SPAN` — that filters out weekends, overnight breaks,
-    and short holiday closures that the source legitimately has no bars for.
+    they exceed `min_fetch_span` — that filters out weekends, overnight breaks,
+    and short holiday closures that the source legitimately has no bars for. The
+    caller derives `min_fetch_span` from the timeframe's registry bar duration
+    (`_min_fetch_span`), so the threshold is cadence-correct.
 
-    Each returned window is widened to at least `_MIN_FETCH_SPAN` (clamped to
+    Each returned window is widened to at least `min_fetch_span` (clamped to
     `[start, end]`) so the adapter does not generate one-bar round-trips.
     Windows that overlap after widening are merged.
 
@@ -346,7 +364,7 @@ def _coverage_gaps(
         if first_ts > start:
             raw.append((start, first_ts))
         for prev, curr in pairwise(cached):
-            if (curr.event_ts - prev.event_ts) >= _MIN_FETCH_SPAN:
+            if (curr.event_ts - prev.event_ts) >= min_fetch_span:
                 raw.append((prev.event_ts, curr.event_ts))
         last_ts = cached[-1].event_ts
         if end > last_ts:
@@ -355,8 +373,8 @@ def _coverage_gaps(
     widened: list[tuple[datetime, datetime]] = []
     for gap_start, gap_end in raw:
         span = gap_end - gap_start
-        if span < _MIN_FETCH_SPAN:
-            extra = (_MIN_FETCH_SPAN - span) / 2
+        if span < min_fetch_span:
+            extra = (min_fetch_span - span) / 2
             ws = max(start, gap_start - extra)
             we = min(end, gap_end + extra)
             widened.append((ws, we))

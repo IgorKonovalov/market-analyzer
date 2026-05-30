@@ -25,6 +25,7 @@ from market_analyser.api.mcp_tools._validation import (
 )
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.data.timeframes import supported_timeframes_label
 
 # The tool docstrings are agent UX (ADR-0015): the agent reads these to decide
 # whether get_ohlcv can populate the cache. Plan 0013 fixes the old "from the
@@ -39,7 +40,7 @@ GET_OHLCV_DESCRIPTION = (
     "true to return whatever is already cached immediately and run the fetch in "
     "the background (partial_reason='backfill_async_pending'); progress then "
     "arrives on the event stream as ohlcv.backfilled / ohlcv.backfill_failed. "
-    "Live-mode only; supported timeframes: 1d, 1h."
+    f"Live-mode only; supported timeframes: {supported_timeframes_label()}."
 )
 
 

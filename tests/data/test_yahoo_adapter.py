@@ -134,6 +134,99 @@ def test_fetch_ohlcv_rejects_unsupported_timeframe() -> None:
         )
 
 
+# -- Plan 0025 phase 1: native 15m + 1w (canonical -> Yahoo interval) ---------
+
+
+def test_fetch_ohlcv_translates_canonical_timeframe_to_yahoo_interval() -> None:
+    # The adapter requests Yahoo's interval string, not the canonical timeframe:
+    # "1w" -> "1wk", "15m" stays "15m". Proven via the injectable fetcher seam.
+    captured: dict[str, str] = {}
+
+    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        captured["interval"] = interval
+        # Date string must match the cadence the adapter expects to parse: weekly
+        # bars are date-only, 15m bars carry an intraday HH:MM.
+        date = "2026-01-01 00:00" if interval == "15m" else "2026-01-05"
+        return [_good_row(date)]
+
+    YahooAdapter(fetcher=fetcher).fetch_ohlcv(
+        "AAPL", "1w", datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 2, 1, tzinfo=UTC)
+    )
+    assert captured["interval"] == "1wk"
+
+    captured.clear()
+    YahooAdapter(fetcher=fetcher).fetch_ohlcv(
+        "AAPL", "15m", datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC)
+    )
+    assert captured["interval"] == "15m"
+
+
+def test_fetch_ohlcv_15m_parses_intraday_bars_field_by_field() -> None:
+    payload = (_FIXTURE_DIR / "aapl_15m.json").read_bytes()
+    adapter = YahooAdapter(http_client=_client_returning(payload))
+
+    bars = adapter.fetch_ohlcv(
+        "AAPL",
+        "15m",
+        datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        datetime(2026, 1, 2, 0, 0, tzinfo=UTC),
+    )
+
+    assert len(bars) == 4
+    first, last = bars[0], bars[-1]
+    # Intraday timestamps (date + HH:MM), spaced 15 minutes apart.
+    assert first.event_ts == datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    assert last.event_ts == datetime(2026, 1, 1, 0, 45, tzinfo=UTC)
+    assert first.timeframe == "15m"
+    assert (first.open, first.high, first.low, first.close, first.volume) == (
+        100.0,
+        101.0,
+        99.5,
+        100.5,
+        5000.0,
+    )
+    assert (last.open, last.high, last.low, last.close, last.volume) == (
+        101.5,
+        102.5,
+        101.0,
+        102.0,
+        5100.0,
+    )
+
+
+def test_fetch_ohlcv_1w_parses_weekly_bars_field_by_field() -> None:
+    payload = (_FIXTURE_DIR / "aapl_1wk.json").read_bytes()
+    adapter = YahooAdapter(http_client=_client_returning(payload))
+
+    bars = adapter.fetch_ohlcv(
+        "AAPL",
+        "1w",
+        datetime(2026, 1, 1, tzinfo=UTC),
+        datetime(2026, 2, 1, tzinfo=UTC),
+    )
+
+    assert len(bars) == 3
+    first, last = bars[0], bars[-1]
+    # Weekly bars carry a date-only timestamp (midnight UTC), spaced one week apart.
+    assert first.event_ts == datetime(2026, 1, 1, tzinfo=UTC)
+    assert last.event_ts == datetime(2026, 1, 15, tzinfo=UTC)
+    assert first.timeframe == "1w"
+    assert (first.open, first.high, first.low, first.close, first.volume) == (
+        100.0,
+        108.0,
+        98.0,
+        105.0,
+        2000000.0,
+    )
+    assert (last.open, last.high, last.low, last.close, last.volume) == (
+        110.0,
+        118.0,
+        108.0,
+        116.0,
+        2100000.0,
+    )
+
+
 def test_fetch_ohlcv_rejects_empty_symbol() -> None:
     adapter = YahooAdapter(fetcher=_make_fetcher([]))
     with pytest.raises(ValueError, match="symbol"):

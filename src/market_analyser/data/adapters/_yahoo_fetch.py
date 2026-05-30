@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import quote
 
 from market_analyser.data._http import ResilientHttpClient
+from market_analyser.data.timeframes import yahoo_interval_uses_intraday_timestamp
 
 _YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
 
@@ -52,7 +53,8 @@ def _parse_chart_payload(payload: Any, interval: str) -> list[dict[str, Any]]:
     result = payload["chart"]["result"][0]
     timestamps = result["timestamp"]
     quote = result["indicators"]["quote"][0]
-    date_fmt = "%Y-%m-%d %H:%M" if interval == "1h" else "%Y-%m-%d"
+    intraday = yahoo_interval_uses_intraday_timestamp(interval)
+    date_fmt = "%Y-%m-%d %H:%M" if intraday else "%Y-%m-%d"
 
     rows: list[dict[str, Any]] = []
     for i, ts in enumerate(timestamps):

@@ -32,6 +32,7 @@ from market_analyser.api.mcp_tools._validation import (
     _require_supported_timeframe,
 )
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.data.timeframes import supported_timeframes_label
 
 # Lookback units in days. Months/years are nominal fetch-window sizes, not
 # calendar-exact — they only bound how far back to read bars.
@@ -48,7 +49,7 @@ ANALYZE_SYMBOL_DESCRIPTION = (
     "symbol (backfill via get_ohlcv first). `lookback` is like 6mo/1y/30d/2w. Pass "
     "`as_of` (ISO datetime) for historical replay — the read is trailing, so no "
     "future bar leaks in. Conditions only — never buy/sell advice. Supported "
-    "timeframes: 1d, 1h."
+    f"timeframes: {supported_timeframes_label()}."
 )
 
 
