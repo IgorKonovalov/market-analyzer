@@ -32,6 +32,7 @@ from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from market_analyser.api.events import EventBus
+from market_analyser.api.mcp_tools.analyze_symbol import register_analyze_symbol
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
@@ -108,6 +109,7 @@ def create_mcp_components(
     # Always registered (no extra deps) — these dispatch through the provider
     # Protocol; the adapters stay package-internal (ADR-0007).
     register_screener_query(server, provider=provider)
+    register_analyze_symbol(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_news_for(server, provider=provider)
     register_sentiment_for_news(server, provider=provider)
