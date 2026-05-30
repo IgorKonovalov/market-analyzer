@@ -1,6 +1,6 @@
 # 0017 — Consolidate MCP tool registration
 
-> **Status:** in-progress
+> **Status:** done (closed 2026-05-30 — no blockers, no majors; see close-ceremony note below)
 > **Created:** 2026-05-24
 > **Amended:** 2026-05-29 (refreshed to current `mcp_app.py` state; added `backfill_ohlcv` (Plan 0013) and `get_pending_ui_events` (Plan 0014) to scope; corrected tool inventory + baselines)
 > **Owner skill(s):** `dev` (all phases)
@@ -132,4 +132,13 @@ Each phase is one commit and must leave the suite green — behavior is preserve
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings during the close ceremony. (Pre-seed: optional per-tool test modules for the eight extracted tools, mirroring `test_screener_query_tool.py` — low priority, opportunistic.)
+Close-ceremony review (fresh architect session, 2026-05-30) — **no blockers, no majors, no minors.** Three phases shipped across commits `850b2d9` (ph1) / `4c7c971` (ph2) / `aa5fb1b` (ph3). Verification:
+
+- All 8 inline tools extracted to per-module `register_<tool>`; `_validation.py` holds the four shared helpers; `create_mcp_components` is a thin hub with **zero** `@server.tool`/`@server.resource` (15 `register_*` calls, `run_backtest` gating verbatim, transport wiring unchanged). **131 lines, down from 576.** Module docstring refreshed (stale "Three production tools" claim gone).
+- `list_annotations` now uses the shared `_require_supported_timeframe`; old inline check removed — error string is byte-identical (the old form was two adjacent literals concatenating to the same text).
+- The two touched test files (`test_backfill_ohlcv_tool.py`, `test_ui_events_mcp.py`) carry **import-path edits only — zero assertion changes**, the bar the plan set. Assertion bodies of `test_ui_events_mcp.py` read directly: drain/peek/since, resource listed + non-draining, notifier fires once per append, no-session tolerance, toolset pinned — all substantive, not stubs.
+- `tests/api/` + `tests/data/`: 376 passed, 5 skipped (all pre-existing documented Windows POSIX-mode skips — no new skips/xfails). `mypy --strict` clean on `mcp_app.py` + `mcp_tools/`.
+
+Nits (no action required): `test_existing_tools_still_present` uses a subset (`<=`) check that omits `backfill_ohlcv` — pre-existing test, and `backfill_ohlcv` is independently pinned by `test_backfill_ohlcv_tool.py`, so the toolset is fully covered across the suite.
+
+Carried followup (unchanged from draft, low priority, opportunistic): optional per-tool test modules for the eight extracted tools, mirroring `test_screener_query_tool.py` — pick up if a tool later grows logic worth isolating.
