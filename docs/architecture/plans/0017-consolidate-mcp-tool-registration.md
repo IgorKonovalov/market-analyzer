@@ -1,6 +1,6 @@
 # 0017 — Consolidate MCP tool registration
 
-> **Status:** draft
+> **Status:** in-progress
 > **Created:** 2026-05-24
 > **Amended:** 2026-05-29 (refreshed to current `mcp_app.py` state; added `backfill_ohlcv` (Plan 0013) and `get_pending_ui_events` (Plan 0014) to scope; corrected tool inventory + baselines)
 > **Owner skill(s):** `dev` (all phases)
