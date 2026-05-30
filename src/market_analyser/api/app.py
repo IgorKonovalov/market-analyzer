@@ -31,12 +31,12 @@ from starlette.routing import Route
 from market_analyser import __version__
 from market_analyser.api.events import EventBus
 from market_analyser.api.mcp_app import create_mcp_components
+from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.backtests import router as backtests_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.search import router as search_router
-from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.api.routes.ui_events import router as ui_events_router
@@ -237,7 +237,7 @@ def create_app(
         app.add_middleware(
             CORSMiddleware,
             allow_origins=[dev_origin],
-            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type"],
             allow_credentials=False,
             max_age=600,

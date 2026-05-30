@@ -168,6 +168,36 @@ def test_options_ohlcv_preflight_succeeds_with_dev_origin(
     assert "authorization" in allowed_headers
 
 
+def test_options_agent_mode_put_preflight_succeeds_with_dev_origin(
+    mcp_secret: str,
+    mcp_secret_path: Path,
+    annotations_repo: AnnotationsRepository,
+) -> None:
+    """The agent-mode toggle PUTs `/agent_mode` (Plan 0014), which fires a PUT
+    preflight in dev mode. PUT must be in the allowed methods or the browser
+    aborts the toggle — the bug this regression guards. `allow_methods` omitting
+    PUT made Starlette reject the preflight with a non-2xx."""
+    app = _make_app(
+        dev_origin=DEV_ORIGIN,
+        mcp_secret=mcp_secret,
+        mcp_secret_path=mcp_secret_path,
+        annotations_repo=annotations_repo,
+    )
+    with TestClient(app) as client:
+        response = client.options(
+            "/agent_mode",
+            headers={
+                "Origin": DEV_ORIGIN,
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+    assert response.status_code == 200, response.text
+    assert response.headers.get("access-control-allow-origin") == DEV_ORIGIN
+    allowed_methods = response.headers.get("access-control-allow-methods", "").upper()
+    assert "PUT" in allowed_methods
+
+
 def test_options_mcp_preflight_succeeds_with_dev_origin(
     mcp_secret: str,
     mcp_secret_path: Path,
