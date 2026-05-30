@@ -40,6 +40,7 @@ from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pen
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
 from market_analyser.api.mcp_tools.list_annotations import register_list_annotations
 from market_analyser.api.mcp_tools.news_for import register_news_for
+from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
@@ -111,6 +112,7 @@ def create_mcp_components(
     register_screener_query(server, provider=provider)
     register_analyze_symbol(server, provider=provider)
     register_search_symbols(server, provider=provider)
+    register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)
     register_sentiment_for_news(server, provider=provider)
     register_crypto_fear_greed(server, provider=provider)
