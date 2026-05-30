@@ -21,6 +21,7 @@ from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
+from market_analyser.data.adapters.yahoo_quote import YahooQuoteAdapter
 from market_analyser.data.errors import (
     HistoryExceededError,
     UpstreamDataError,
@@ -91,6 +92,7 @@ class DefaultMarketDataProvider:
         self,
         *,
         yahoo: YahooAdapter | None = None,
+        yahoo_quote: YahooQuoteAdapter | None = None,
         screener: TradingViewScreenerAdapter | None = None,
         news: RssNewsAdapter | None = None,
         crypto_fng: CryptoFearGreedAdapter | None = None,
@@ -98,6 +100,7 @@ class DefaultMarketDataProvider:
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
+        self._yahoo_quote = yahoo_quote if yahoo_quote is not None else YahooQuoteAdapter()
         self._screener = screener if screener is not None else TradingViewScreenerAdapter()
         self._news = news if news is not None else RssNewsAdapter()
         self._crypto_fng = crypto_fng if crypto_fng is not None else CryptoFearGreedAdapter()
@@ -272,9 +275,16 @@ class DefaultMarketDataProvider:
         symbol: str,
         as_of: datetime | None = None,
     ) -> Quote:
-        raise NotImplementedError(
-            "get_quote is not implemented in Plan 0001 — see plan 0001 followups",
-        )
+        # A live quote is wall-clock-sensitive with no replayable history to honour
+        # `as_of` against (historical price replay is `get_ohlcv`'s job). Reject it
+        # at the boundary, mirroring the screener/news/sentiment rejections above
+        # (Plan 0019 / ADR-0019).
+        if as_of is not None:
+            raise ValueError(
+                "as_of is not supported for live quotes — a quote is wall-clock-"
+                "sensitive; use get_ohlcv for historical price (Plan 0019)",
+            )
+        return self._yahoo_quote.get_quote(symbol)
 
     def search_symbols(
         self,

@@ -71,7 +71,16 @@ class Bar(BaseModel):
 
 
 class Quote(BaseModel):
-    """A point-in-time quote. Reserved for phase that implements get_quote."""
+    """A point-in-time live quote for one symbol (Plan 0019).
+
+    `as_of` is the quote's own upstream timestamp (Yahoo `regularMarketTime`),
+    not the anti-lookahead replay seam — `get_quote` rejects an `as_of` *argument*
+    because a live quote has no replayable history (the provider raises there).
+
+    The fields below `source` are additive (Plan 0019) and all optional/defaulted,
+    so the bootstrap's price-only constructions still parse. They are derived from
+    Yahoo's `/v8/finance/chart` `meta` block; any the upstream omits stay `None`/"".
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -79,6 +88,16 @@ class Quote(BaseModel):
     price: float
     as_of: datetime
     source: str = Field(min_length=1)
+    # --- Plan 0019: additive live-quote fields (all optional / defaulted) ---
+    change_pct: float | None = None  # derived from previous_close, not Yahoo's field
+    previous_close: float | None = None
+    day_high: float | None = None
+    day_low: float | None = None
+    week52_high: float | None = None
+    week52_low: float | None = None
+    currency: str = ""
+    market_state: str = ""  # REGULAR | PRE | POST | CLOSED
+    volume: float | None = None
 
 
 class SymbolInfo(BaseModel):

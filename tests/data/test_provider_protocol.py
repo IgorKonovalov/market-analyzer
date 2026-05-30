@@ -1,14 +1,14 @@
 """Plan 0001 phase 2 done-when: the MarketDataProvider Protocol surface.
 
 These tests are the "forgotten stub" tripwire from ADR-0007: every Protocol
-method is reachable, `get_ohlcv` works in phase 2, and the still-unimplemented
-ones raise `NotImplementedError` with a message identifying Plan 0001 as the
-home plan. `get_screener` graduated out of this list in Plan 0009 (positive
-coverage lives in `test_tradingview_screener_adapter.py`); `get_news` and
-`get_sentiment` graduated in Plan 0010 (positive coverage lives in
-`test_rss_news_adapter.py` and `test_sentiment_news_aggregation.py`);
-`search_symbols` graduated in Plan 0024 (positive coverage lives in
-`test_yahoo_search_adapter.py`). `get_quote` is the last remaining stub.
+method is reachable and `get_ohlcv` works in phase 2. The tripwire has now fully
+discharged — every method has graduated to its own positive-coverage suite:
+`get_screener` in Plan 0009 (`test_tradingview_screener_adapter.py`), `get_news`
+and `get_sentiment` in Plan 0010 (`test_rss_news_adapter.py`,
+`test_sentiment_news_aggregation.py`), `search_symbols` in Plan 0024
+(`test_yahoo_search_adapter.py`), and `get_quote` in Plan 0019
+(`test_yahoo_quote_adapter.py`). No `NotImplementedError` stub remains, so this
+module now only pins protocol conformance and the `get_ohlcv` happy path.
 """
 
 from __future__ import annotations
@@ -16,8 +16,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
-
-import pytest
 
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.default_provider import DefaultMarketDataProvider
@@ -56,18 +54,3 @@ def test_get_ohlcv_is_implemented() -> None:
     )
     assert len(bars) == 1
     assert bars[0].symbol == "AAPL"
-
-
-@pytest.mark.parametrize(
-    "method_name,args",
-    [
-        ("get_quote", ("AAPL",)),
-    ],
-)
-def test_unimplemented_methods_are_reachable_and_raise(
-    method_name: str, args: tuple[Any, ...]
-) -> None:
-    provider = DefaultMarketDataProvider(yahoo=_fake_yahoo())
-    method = getattr(provider, method_name)
-    with pytest.raises(NotImplementedError, match="plan 0001"):
-        method(*args)

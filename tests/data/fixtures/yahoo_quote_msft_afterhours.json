@@ -1,0 +1,33 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "USD",
+          "symbol": "MSFT",
+          "exchangeName": "NMS",
+          "fullExchangeName": "NasdaqGS",
+          "instrumentType": "EQUITY",
+          "regularMarketTime": 1716580800,
+          "timezone": "EDT",
+          "exchangeTimezoneName": "America/New_York",
+          "regularMarketPrice": 430.16,
+          "fiftyTwoWeekHigh": 433.6,
+          "fiftyTwoWeekLow": 309.45,
+          "regularMarketDayHigh": 432.0,
+          "regularMarketDayLow": 428.5,
+          "regularMarketVolume": 15000000,
+          "longName": "Microsoft Corporation",
+          "shortName": "Microsoft Corporation",
+          "chartPreviousClose": 427.0,
+          "previousClose": 427.0,
+          "postMarketPrice": 431.2,
+          "marketState": "POSTPOST",
+          "dataGranularity": "1d",
+          "range": "1d"
+        }
+      }
+    ],
+    "error": null
+  }
+}
