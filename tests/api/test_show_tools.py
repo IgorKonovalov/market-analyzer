@@ -505,6 +505,34 @@ def test_tool_rejects_invalid_input_with_mcp_error(
 
 
 # --------------------------------------------------------------------------- #
+# Plan 0025 ph3: the widened timeframe set propagates to the chart validators  #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("timeframe", ["15m", "4h", "1w"])
+@pytest.mark.parametrize("tool", ["show_chart", "update_chart"])
+def test_chart_tools_accept_new_timeframes(
+    live_server: str, mcp_secret: str, tool: str, timeframe: str
+) -> None:
+    """show_chart / update_chart validate via the shared `_require_supported_timeframe`,
+    so widening SUPPORTED_TIMEFRAMES must make them accept 15m / 4h / 1w. Pinned
+    here rather than trusting the shared import (Plan 0025 ph3 done-when)."""
+    args: dict[str, object] = {"symbol": "AAPL", "timeframe": timeframe}
+    if tool == "show_chart":
+        args |= {
+            "range_start": "2026-04-20T00:00:00+00:00",
+            "range_end": "2026-05-20T00:00:00+00:00",
+        }
+
+    async def _run() -> bool:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(tool, args)
+            return result.isError
+
+    assert asyncio.run(_run()) is False, f"{tool} should accept timeframe {timeframe}"
+
+
+# --------------------------------------------------------------------------- #
 # Regression: pre-existing Plan-0006 tools still work                         #
 # --------------------------------------------------------------------------- #
 

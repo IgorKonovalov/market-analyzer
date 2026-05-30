@@ -16,7 +16,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-FailureReason = Literal["rate_limited", "upstream_unavailable", "unknown_symbol"]
+FailureReason = Literal[
+    "rate_limited",
+    "upstream_unavailable",
+    "unknown_symbol",
+    "history_exceeded",
+]
 
 
 class UpstreamDataError(Exception):
@@ -61,6 +66,14 @@ class UnknownSymbolError(UpstreamDataError):
         self.symbol = symbol
 
 
+class HistoryExceededError(UpstreamDataError):
+    """The requested window reaches further back than the timeframe's `max_history`
+    cap (Yahoo serves intraday history for a bounded span only — ~60 days for 15m,
+    ~730 for 1h/4h; Plan 0025 / ADR-0028). Distinct from a transient
+    `UpstreamUnavailableError`: narrowing the window or using a coarser timeframe
+    is the fix, not a retry."""
+
+
 def failure_reason(err: UpstreamDataError) -> FailureReason:
     """Map a typed upstream error onto the closed `ohlcv.backfill_failed` /
     `partial_reason` vocabulary. Lives here (alongside the error classes) so both
@@ -70,11 +83,14 @@ def failure_reason(err: UpstreamDataError) -> FailureReason:
         return "rate_limited"
     if isinstance(err, UnknownSymbolError):
         return "unknown_symbol"
+    if isinstance(err, HistoryExceededError):
+        return "history_exceeded"
     return "upstream_unavailable"
 
 
 __all__ = [
     "FailureReason",
+    "HistoryExceededError",
     "RateLimitedError",
     "UnknownSymbolError",
     "UpstreamDataError",

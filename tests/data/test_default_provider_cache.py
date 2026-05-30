@@ -22,7 +22,7 @@ import pytest
 from market_analyser.data._http import HttpResponse, ResilientHttpError
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.default_provider import DefaultMarketDataProvider
-from market_analyser.data.errors import RateLimitedError
+from market_analyser.data.errors import HistoryExceededError, RateLimitedError
 from market_analyser.data.types import Bar
 from market_analyser.persistence.engine import (
     apply_migrations,
@@ -528,3 +528,48 @@ def test_get_ohlcv_4h_with_status_carries_base_partial_reason(repo: BarRepositor
     with pytest.raises(RateLimitedError):
         # Total failure on the only (1h base) gap stays loud through the resample.
         provider.get_ohlcv_with_status("AAPL", "4h", start, end)
+
+
+# -- Plan 0025 phase 3: per-timeframe history caps surface honestly -----------
+
+
+def _no_fetch_provider(repo: BarRepository) -> DefaultMarketDataProvider:
+    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+        raise AssertionError("over-history request must not reach the adapter")
+
+    return DefaultMarketDataProvider(yahoo=YahooAdapter(fetcher=explode), bar_repository=repo)
+
+
+def test_get_ohlcv_with_status_history_cap_surfaces_honest_partial(repo: BarRepository) -> None:
+    # 15m history is ~60 days; a 90-day window exceeds it. The result is the
+    # cache-honest shape — partial_reason set + a human message — not a crash and
+    # not a misleading empty success (partial_reason None). No fetch is attempted.
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 1, tzinfo=UTC)  # ~90 days
+
+    result = _no_fetch_provider(repo).get_ohlcv_with_status("AAPL", "15m", start, end)
+
+    assert result.partial_reason == "history_exceeded"
+    assert result.message is not None and "history" in result.message.lower()
+    assert result.bars == []  # nothing cached, but honestly empty *with* a reason
+
+
+def test_get_ohlcv_history_cap_raises_loud(repo: BarRepository) -> None:
+    # The fail-loud path raises the typed, non-retryable error for the same window.
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 1, tzinfo=UTC)
+
+    with pytest.raises(HistoryExceededError, match="history"):
+        _no_fetch_provider(repo).get_ohlcv("AAPL", "15m", start, end)
+
+
+def test_get_ohlcv_within_history_cap_is_not_flagged(repo: BarRepository) -> None:
+    # A 15m window inside the ~60-day cap proceeds normally (no history_exceeded).
+    start = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 1, 1, 2, 0, tzinfo=UTC)
+    yahoo, _calls = _yahoo_with_call_log([_intraday_row("2026-01-01 00:00", close=100.0)])
+    provider = DefaultMarketDataProvider(yahoo=yahoo, bar_repository=repo)
+
+    result = provider.get_ohlcv_with_status("AAPL", "15m", start, end)
+
+    assert result.partial_reason is None

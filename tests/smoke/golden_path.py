@@ -394,6 +394,32 @@ async def step_ohlcv(session: ClientSession) -> str:
     return f"{len(bars)} bars in window"
 
 
+async def step_ohlcv_4h(session: ClientSession) -> str:
+    # Opportunistic liveness for a Plan 0025 timeframe: 4h is derived in-house by
+    # resampling native 1h bars (ADR-0028). The 1h base reaches ~730 days, so the
+    # same stable past window is valid; assert the bars come back stamped 4h and
+    # aligned to the fixed UTC grid (00/04/08/12/16/20).
+    payload = await _call_tool(
+        session,
+        "get_ohlcv",
+        {
+            "symbol": SYMBOL,
+            "timeframe": "4h",
+            "start": WINDOW_START.isoformat(),
+            "end": WINDOW_END.isoformat(),
+        },
+    )
+    bars = unwrap_ohlcv_bars(payload)
+    assert len(bars) >= 1, "get_ohlcv(4h) returned zero bars"
+    for bar in bars:
+        assert bar["timeframe"] == "4h", f"bar timeframe {bar['timeframe']!r} != 4h"
+        event_ts = datetime.fromisoformat(bar["event_ts"])
+        assert event_ts.hour % 4 == 0 and event_ts.minute == 0, (
+            f"4h bar {event_ts.isoformat()} not on the 00/04/08/12/16/20 UTC grid"
+        )
+    return f"{len(bars)} resampled 4h bars on the UTC grid"
+
+
 async def step_show_chart(session: ClientSession) -> str:
     payload = await _call_tool(
         session,
@@ -720,6 +746,7 @@ async def _amain() -> int:
     try:
         async with mcp_session(conn) as session:
             await results.run_async("2. ohlcv (live Yahoo)", step_ohlcv(session))
+            await results.run_async("2b. ohlcv 4h resample (live Yahoo)", step_ohlcv_4h(session))
             reader = SseReader(conn)
             reader.start()
             reader.wait_connected(timeout=5.0)

@@ -158,7 +158,7 @@ class OhlcvBackfillFailedPayloadV1(BaseModel):
 
     symbol: str
     timeframe: str
-    reason: Literal["rate_limited", "upstream_unavailable", "unknown_symbol"]
+    reason: Literal["rate_limited", "upstream_unavailable", "unknown_symbol", "history_exceeded"]
     message: str
 
 

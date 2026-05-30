@@ -28,7 +28,7 @@ BACKFILL_OHLCV_DESCRIPTION = (
     "empty gaps list when the cache already covers the window. Watch the event "
     "stream — ohlcv.backfill_started fires first, then ohlcv.backfilled on "
     "success or ohlcv.backfill_failed (reason: rate_limited | upstream_unavailable "
-    "| unknown_symbol) on failure."
+    "| unknown_symbol | history_exceeded) on failure."
 )
 
 

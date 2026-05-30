@@ -21,9 +21,13 @@ from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
-from market_analyser.data.errors import UpstreamDataError, failure_reason
+from market_analyser.data.errors import (
+    HistoryExceededError,
+    UpstreamDataError,
+    failure_reason,
+)
 from market_analyser.data.resample import resample_ohlcv
-from market_analyser.data.timeframes import bar_duration, resampled_from
+from market_analyser.data.timeframes import bar_duration, max_history, resampled_from
 from market_analyser.data.types import (
     BackfillResult,
     Bar,
@@ -53,6 +57,24 @@ def _min_fetch_span(timeframe: str) -> timedelta:
     """The fetch/gap-detection threshold for `timeframe`, derived from its registry
     bar duration (see `_GAP_THRESHOLD_BARS`)."""
     return bar_duration(timeframe) * _GAP_THRESHOLD_BARS
+
+
+def _exceeds_history_cap(timeframe: str, start: datetime, end: datetime) -> bool:
+    """Whether `[start, end]` reaches further back than `timeframe`'s registry
+    `max_history` cap. Span-based and deterministic (no wall-clock): timeframes
+    with no cap (1d, 1w) never exceed."""
+    cap = max_history(timeframe)
+    return cap is not None and (end - start) > cap
+
+
+def _history_cap_message(timeframe: str, start: datetime, end: datetime) -> str:
+    cap = max_history(timeframe)
+    cap_days = cap.days if cap is not None else 0
+    return (
+        f"requested {timeframe} window spans {(end - start).days}d but Yahoo serves "
+        f"only ~{cap_days}d of {timeframe} history — narrow the window or use a "
+        "coarser timeframe"
+    )
 
 
 # VADER's conventional compound-score cutoffs for the positive/neutral/negative
@@ -99,6 +121,13 @@ class DefaultMarketDataProvider:
         if base is not None:
             base_bars = self.get_ohlcv(symbol, base, start, end, as_of)
             return resample_ohlcv(list(base_bars), target=timeframe)
+
+        # History cap: a window beyond what Yahoo serves for this timeframe is a
+        # typed, non-retryable failure here (the fail-loud path); get_ohlcv_with_status
+        # surfaces it as a partial_reason instead. Checked before the cache so a
+        # doomed fetch is never attempted (Plan 0025 ph3 / ADR-0028).
+        if _exceeds_history_cap(timeframe, start, end):
+            raise HistoryExceededError(_history_cap_message(timeframe, start, end))
 
         # No cache wired: live-only (phase-2 fallback for tests that don't need persistence).
         if self._repo is None:
@@ -189,6 +218,18 @@ class DefaultMarketDataProvider:
                 partial_reason=base_result.partial_reason,
                 message=base_result.message,
             )
+
+        # History cap: surface the cache-honest shape (cached bars in-window +
+        # the typed reason + a human message) rather than a doomed fetch that
+        # would return a misleading empty success (Plan 0025 ph3 / ADR-0028).
+        if _exceeds_history_cap(timeframe, start, end):
+            cached = list(self._repo.get_bars(symbol, timeframe, start, end)) if self._repo else []
+            return BackfillResult(
+                bars=cached,
+                partial_reason="history_exceeded",
+                message=_history_cap_message(timeframe, start, end),
+            )
+
         if self._repo is None:
             bars = self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
             return BackfillResult(bars=list(bars), partial_reason=None, message=None)

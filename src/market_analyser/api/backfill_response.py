@@ -30,6 +30,7 @@ class GetOhlcvResponse(BaseModel):
             "rate_limited",
             "upstream_unavailable",
             "unknown_symbol",
+            "history_exceeded",
             "backfill_async_pending",
         ]
         | None
