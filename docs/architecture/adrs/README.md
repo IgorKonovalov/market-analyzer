@@ -34,8 +34,12 @@ This index is the one-minute entrypoint: what exists, each one's status, and how
 | [0024](0024-extended-backtest-metrics.md) | Extended backtest metrics (definitions + degenerate convention) | proposed — accepts at Plan 0020 close | extends 0018 | 0020 |
 | [0025](0025-trade-execution-feasibility.md) | Trade-execution feasibility (posture + venue comparison) | proposed (exploratory — no plan, no close ceremony) | relates 0006/0007/0011 | none |
 | [0026](0026-symbol-search-bound-to-ohlcv-provider.md) | Symbol search bound to the OHLCV provider | accepted (Plan 0024 close 2026-05-29) | relates 0007 | 0024 |
+| [0027](0027-crypto-macro-regime-classification.md) | Crypto macro regime as an in-house neutral structural classification | proposed — accepts at Plan 0022 close | relates 0007/0009 | 0022 |
+| [0028](0028-timeframe-resampling-and-expansion.md) | Canonical timeframe registry + in-house 4h resampling + per-timeframe history caps | proposed — accepts at Plan 0025 close | relates 0007/0009/0019 | 0025 |
+| [0029](0029-advisory-recommendation-boundary.md) | Advisory recommendation boundary (the app may recommend, not act) | proposed — accepts at first advisor plan close | carves out of 0015; below 0025 | none yet |
+| [0030](0030-forecasting-subsystem.md) | Forecasting subsystem (causal, validated, direction-as-probability) | proposed — accepts at first forecasting plan close | mirrors 0018; reuses 0024 | none yet (Plan 0020 prereq) |
 
-**Standalone (no supersede/refine lineage):** 0012/0013 (a peer pair), 0017, 0019, 0021, 0023, 0025, 0026. Everything else sits in one of the chains below.
+**Standalone (no supersede/refine lineage):** 0012/0013 (a peer pair), 0017, 0019, 0021, 0023, 0025, 0026, 0027, 0028. Everything else sits in one of the chains below. ADR-0029 and ADR-0030 were decided together (2026-05-30) and compose (the advisor consumes forecasts) but are independent decisions; ADR-0029 carves out of ADR-0015's "conditions are facts" framing and sits one layer below ADR-0025 (execution), and ADR-0030 mirrors ADR-0018's determinism contract and reuses ADR-0024's walk-forward machinery.
 
 ## Lineage
 
@@ -60,13 +64,15 @@ flowchart LR
   a0009 -.->|amends| a0006["0006 · persistence"]
   a0009 -.->|amends| a0007["0007 · MarketDataProvider"]
   a0018["0018 · BacktestResult"] -.->|extended by| a0024["0024 · extended metrics"]
+  a0015["0015 · Claude primary"] -.->|carved out by| a0029["0029 · advisory boundary"]
+  a0018 -.->|determinism mirrored by| a0030["0030 · forecasting"]
 ```
 
 **Reading the edges:** solid = supersede or refine (the later ADR changes which decision is in force); dashed = amend / extend / partial-supersede (the earlier ADR's body still stands, the later one adjusts its interpretation or appends to it — e.g. ADR-0009 didn't rewrite 0004/0006/0007, it reinterpreted "vendored" as "in-house" across them).
 
 ## Conventions
 
-- **Numbering** is sequential, zero-padded to four digits, never reused. Next free ADR number is **0027** (0026 drafted 2026-05-26 — symbol search bound to the OHLCV provider, paired with Plan 0024, accepts at its close; 0025 drafted 2026-05-25 — exploratory trade-execution feasibility, no paired plan). The architect runs `Glob docs/architecture/adrs/*.md` before drafting to pick the next number, never trusting memory. ADR numbers and plan numbers are independent sequences.
+- **Numbering** is sequential, zero-padded to four digits, never reused. Next free ADR number is **0031** (0030 drafted 2026-05-30 — forecasting subsystem, no plan yet, Plan 0020 prereq; 0029 drafted 2026-05-30 — advisory recommendation boundary, no plan yet; 0028 drafted 2026-05-29 — timeframe registry + 4h resampling, paired with Plan 0025; 0027 drafted 2026-05-29 — crypto macro regime, paired with Plan 0022; 0026 drafted 2026-05-26 — symbol search bound to the OHLCV provider, paired with Plan 0024; 0025 drafted 2026-05-25 — exploratory trade-execution feasibility, no paired plan). The architect runs `Glob docs/architecture/adrs/*.md` before drafting to pick the next number, never trusting memory. ADR numbers and plan numbers are independent sequences.
 - **Append-only after `accepted`.** Don't edit an accepted ADR's decision. Supersede it with a new ADR and mark the old one `superseded by NNNN`. The one sanctioned exception to date: the 2026-05-24 owner-authorized genericization of the upstream-project name across ADR bodies (a privacy edit that changed no decision).
 - **Status vocabulary:** `proposed` → `accepted` → optionally `superseded by NNNN`. A `proposed` ADR paired with a plan flips to `accepted` at that plan's close ceremony (e.g. 0023 at Plan 0018 close, 0024 at Plan 0020 close).
 - **Paired with a plan?** Most ADRs are written alongside the plan that forces the decision. The Plan(s) column links them; the plans index lives at [`../plans/README.md`](../plans/README.md).
