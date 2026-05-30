@@ -1,6 +1,6 @@
 # ADR-0023 — Technical-analysis surface lives in `src/market_analyser/analysis/`
 
-> **Status:** proposed | accepts at Plan 0018 close
+> **Status:** accepted (2026-05-30, at Plan 0018 close)
 > **Date:** 2026-05-24
 > **Related plan(s):** [0018-technical-analysis-surface](../plans/0018-technical-analysis-surface.md)
 

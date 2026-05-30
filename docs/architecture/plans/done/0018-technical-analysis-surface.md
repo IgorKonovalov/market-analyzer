@@ -1,6 +1,6 @@
 # 0018 — Technical-analysis surface (`analysis/`): indicators + candlestick patterns + condition snapshot
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
@@ -168,4 +168,9 @@ class ConditionSnapshot(BaseModel):                # frozen, extra="forbid"
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes at close. (Expected: strategy-module reconciliation onto `analysis/indicators.py`; `market-analyst` SKILL.md rewire via skill-creator.)
+Populated at close (2026-05-30). Close-review found **no blockers, no majors, no minors** — all four phases' done-when met by non-tautological specs (assertion bodies read, not pass-lists trusted): 86 analysis+tool tests pass with no skips, full `tests/api/` regression 249 pass / 5 known-Windows skips (no new skips), `mypy --strict` clean. The architect-flagged trailing-percentile gap (2026-05-24 note) was folded into the phase-3 contract as planned (`rsi_pct90` / `atr_pct90`). Carried followups:
+
+| Item | Owner | Note |
+|------|-------|------|
+| Rewire the `market-analyst` SKILL.md to point at `analyze_symbol` / `analysis/` | `skill-creator` | The whole point of this plan was to give the analyst skill a real backend (it had been advertising pattern/indicator analysis against an empty package). This plan explicitly does NOT touch the skill (no owner-skill tag for SKILL.md edits — see "What this plan does NOT do"). It is now unblocked; pick this up as the immediate next step so the analyst stops degrading to price-structure-only reads. |
+| Reconcile the strategy-module inline math onto `analysis/indicators.py` | `dev` (behind ADR-0018 golden tests) | ADR-0023 negative consequence: RSI/MACD/Bollinger/Supertrend math is now duplicated between `strategies/*` and `analysis/indicators.py`. The copies start in agreement (the RSI test pins equality); reconciliation removes the duplication but must not perturb the backtest determinism golden fixture. Tracked, not gating. |
