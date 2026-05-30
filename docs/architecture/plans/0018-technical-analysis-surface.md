@@ -1,6 +1,6 @@
 # 0018 — Technical-analysis surface (`analysis/`): indicators + candlestick patterns + condition snapshot
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
