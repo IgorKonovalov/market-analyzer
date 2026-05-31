@@ -38,4 +38,4 @@ def window_delta(window: str) -> timedelta:
         ) from None
 
 
-__all__ = ["SentimentWindow", "WINDOW_TO_DELTA", "window_delta"]
+__all__ = ["WINDOW_TO_DELTA", "SentimentWindow", "window_delta"]
