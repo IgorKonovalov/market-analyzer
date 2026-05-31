@@ -8,5 +8,5 @@ export interface Trade {
   exit_bar_index: number | null
   entry_price: number
   exit_price: number | null
-  kind: string
+  kind: 'long'
 }

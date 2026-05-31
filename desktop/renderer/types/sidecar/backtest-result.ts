@@ -22,7 +22,7 @@ export interface BacktestResult {
   params: Record<string, unknown>
   costs: Record<string, number>
   initial_capital: number
-  sizing: string
+  sizing: 'fixed_fraction'
   /** ISO 8601 UTC timestamp. */
   started_at: string
   /** ISO 8601 UTC timestamp. */

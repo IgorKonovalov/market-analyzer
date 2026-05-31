@@ -137,6 +137,14 @@ function mapType(schema, schemas = {}, imports = new Set()) {
     // pre-commit prettier --write pass.
     return schema.enum.map((v) => (typeof v === 'string' ? `'${v.replace(/'/g, "\\'")}'` : String(v))).join(' | ')
   }
+  if ('const' in schema) {
+    // Pydantic emits a single-value Literal as `const` (often alongside
+    // `type: "string"`), unlike a multi-value Literal's `enum`. Narrow it to the
+    // literal here so it doesn't fall through to the bare `string`/`number` case
+    // below. Same single-quote convention as the enum branch above.
+    const v = schema.const
+    return typeof v === 'string' ? `'${v.replace(/'/g, "\\'")}'` : String(v)
+  }
   if ('type' in schema) {
     switch (schema.type) {
       case 'string':
