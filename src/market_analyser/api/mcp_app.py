@@ -39,6 +39,9 @@ from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
 from market_analyser.api.mcp_tools.list_annotations import register_list_annotations
+from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
+    register_multi_timeframe_analysis,
+)
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
@@ -111,6 +114,7 @@ def create_mcp_components(
     # Protocol; the adapters stay package-internal (ADR-0007).
     register_screener_query(server, provider=provider)
     register_analyze_symbol(server, provider=provider)
+    register_multi_timeframe_analysis(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)

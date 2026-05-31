@@ -118,11 +118,46 @@ class ConditionSnapshot(BaseModel):
     recent_patterns: list[PatternHit]
 
 
+class TimeframeView(BaseModel):
+    """One timeframe's condition read inside a multi-timeframe alignment (Plan 0021).
+
+    `snapshot` is ``None`` when no bars were available for the timeframe — an
+    honest per-timeframe gap, not a failure of the whole alignment.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    timeframe: str
+    snapshot: ConditionSnapshot | None
+
+
+class MultiTimeframeAlignment(BaseModel):
+    """Whether one symbol's trend agrees across a ladder of timeframes (Plan 0021).
+
+    `timeframes` carries each timeframe's `ConditionSnapshot` (in the order the
+    caller supplied), so a timeframe whose `snapshot.trend` differs from
+    `dominant_trend` is named by the view itself. `dominant_trend` is the trend
+    held by the most timeframes (ties broken deterministically toward up→down→
+    sideways), falling back to `SIDEWAYS` when no timeframe has bars. `agreement`
+    is the fraction of *available* timeframes whose trend equals `dominant_trend`
+    (0..1; `0.0` when none are available). Conditions only — no buy/sell field.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframes: list[TimeframeView]
+    dominant_trend: Trend
+    agreement: float  # 0..1 fraction of available timeframes agreeing
+
+
 __all__ = [
     "ConditionSnapshot",
     "Direction",
     "MomentumStance",
+    "MultiTimeframeAlignment",
     "PatternHit",
+    "TimeframeView",
     "Trend",
     "VolumeStance",
     "VolumeSummary",

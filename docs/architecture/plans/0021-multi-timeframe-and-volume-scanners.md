@@ -1,6 +1,6 @@
 # 0021 — Multi-timeframe alignment + volume scanners
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
