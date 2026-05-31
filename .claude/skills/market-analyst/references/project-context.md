@@ -13,37 +13,30 @@ The market-analyst-specific view of the `market-analyser` project. For architect
 ```
 docs/architecture/
 ├── adrs/0007-market-data-provider.md     # YOU consume — Bar shape, Provider Protocol
-├── adrs/0006-persistence-layout.md       # YOU consume — SQLite cache layout
+├── adrs/0006-persistence-layout.md       # context — SQLite cache layout (provider reads it)
+├── adrs/0023-technical-analysis-surface.md  # YOUR backend's decision record (accepted 2026-05-30)
 └── adrs/0004-strategy-interface.md       # context only — strategy contract, not your job
 
 src/market_analyser/
-├── data/
-│   ├── types.py                          # READ — Bar / Quote / etc. pydantic models
-│   └── default_provider.py               # READ via repository — never call .get_ohlcv directly
-├── persistence/                          # READ via BarRepository — the cache layer
-│   ├── engine.py
-│   ├── models.py
-│   └── repository.py
-└── analysis/                             # READ via import — in-house per ADR-0009
-    ├── indicators.py                     # RSI, MACD, EMA, Bollinger, Supertrend, etc.
-    │                                     # DOES NOT EXIST YET — block honestly if a snapshot
-    │                                     # needs indicators; route to architect.
-    └── patterns.py                       # DOES NOT EXIST YET — block honestly if asked
-                                          # for a pattern scan; route to architect.
+├── data/types.py                         # READ — Bar / Quote / ConditionSnapshot field shapes
+└── analysis/                             # YOUR backend — in-house, pure, trailing (ADR-0023, Plan 0018)
+    ├── indicators.py                     # EMA SMA RSI Bollinger MACD ATR Supertrend Donchian ADX
+    ├── patterns.py                       # detect_patterns — the 14-pattern candlestick vocabulary
+    ├── snapshot.py                       # condition_snapshot — composes the above into one read
+    └── types.py                          # ConditionSnapshot / PatternHit / Trend / MomentumStance
+
+# You normally reach all of the above through ONE MCP tool, not by importing:
+#   analyze_symbol(symbol, timeframe, lookback="6mo", as_of=None)  -> {snapshot, partial_reason, message, analyzed_at}
+#   screener_query(filters, market, exchange, limit)               -> universe screen (Plan 0009)
+#   get_ohlcv / backfill_ohlcv                                     -> read / populate cached bars (Plan 0013)
 
 runs/analysis/                            # YOU write here (gitignored)
-├── scan/<UTC-timestamp>-<symbol>-<timeframe>/
-│   ├── scan.json
-│   └── scan.md
-├── snapshot/<UTC-timestamp>-<symbol>-<timeframe>/
-│   ├── snapshot.json
-│   └── snapshot.md
-└── screens/<UTC-timestamp>-<screen-slug>/
-    ├── screen.json
-    └── screen.md
+├── scan/<UTC-timestamp>-<symbol>-<timeframe>/      { scan.json, scan.md }
+├── snapshot/<UTC-timestamp>-<symbol>-<timeframe>/  { snapshot.json, snapshot.md }
+└── screens/<UTC-timestamp>-<screen-slug>/          { screen.json, screen.md }
 ```
 
-The persistence layer (Plan 0001 phase 3) and the analysis layer (no plan yet) are the two dependencies the skill leans on. Always `Glob` them before proceeding — if either is missing, surface the block and stop.
+Your backend is **live** (Plan 0018 closed 2026-05-30). You don't glob for it to check existence anymore — you call `analyze_symbol`. The only honest block left is an **empty cache** for a symbol (the tool returns `partial_reason: "no_bars"`), which the user resolves by backfilling or opening the chart.
 
 ## Sibling-skill ownership map
 
@@ -59,35 +52,35 @@ The persistence layer (Plan 0001 phase 3) and the analysis layer (no plan yet) a
 
 The TradFi/DeFi split is enforced by the skill descriptions. If the user is asking about a stock or an index, that's you. If they're asking about an LP or a lending position, that's `defi-analyst`. Don't reach across.
 
-## Canonical commands
+## How you run analysis
 
-Python sidecar territory — same commands as `dev`'s context, repeated here for ease.
+**Primary path — the MCP tool.** Almost everything you do is one call to `analyze_symbol` on the `market-analyser` sidecar, then narrating the returned `snapshot` and writing the `runs/analysis/` artifacts. You don't import Python for the common case. The tool dispatches through the provider (which reads the cache) and runs `condition_snapshot` off-thread.
+
+```
+analyze_symbol(symbol="AAPL", timeframe="1d", lookback="6mo")
+# -> { "snapshot": { "trend": "...", "momentum": "...", "indicators": {...},
+#                    "support_resistance": {...}, "recent_patterns": [...] },
+#      "partial_reason": null, "message": null, "analyzed_at": "..." }
+# Empty cache -> { "snapshot": null, "partial_reason": "no_bars", "message": "..." }
+```
+
+**Rare fallback — direct import.** Only when the snapshot tool genuinely can't answer (e.g. a full multi-bar historical pattern sweep, which `recent_patterns` doesn't cover), the in-house modules are importable. Note the real function names — bare verbs, **no `calc_` prefix**:
+
+```python
+# inside `uv run python` — deep-sweep fallback only
+from market_analyser.analysis.indicators import rsi, macd, ema, bollinger, atr, supertrend, adx
+from market_analyser.analysis.patterns import detect_patterns
+from market_analyser.analysis.snapshot import condition_snapshot
+# bars: get them via the provider's get_ohlcv (cache read); each is a data.types.Bar.
+hits = detect_patterns(bars)   # every PatternHit over the whole series, sorted by (bar_index, pattern)
+```
 
 | Task                      | Command                                              |
 |---------------------------|------------------------------------------------------|
 | Install / sync env        | `uv sync`                                            |
-| Run a Python REPL with the package importable | `uv run python`                  |
-| Run a script              | `uv run python -m <module>`                          |
+| Ad-hoc REPL               | `uv run python`                                      |
 | Run tests                 | `uv run pytest`                                      |
-| Lint                      | `uv run ruff check`                                  |
 | Type-check (strict)       | `uv run mypy --strict src tests`                     |
-
-For ad-hoc analysis, the pattern is:
-
-```python
-# inside `uv run python`
-from market_analyser.persistence import BarRepository, get_engine
-from market_analyser.analysis.indicators import (
-    calc_rsi, calc_macd, calc_ema, calc_bollinger,
-)
-
-engine = get_engine()
-repo = BarRepository(engine)
-bars = repo.get_bars(symbol="AAPL", timeframe="1d", start=..., end=...)
-# bars is a list[Bar]; pass to indicator funcs or your pattern detectors
-```
-
-If `BarRepository` doesn't exist yet (phase 3 unshipped), this import errors out — that's your honest block signal.
 
 ## The cache-only data path (why)
 
@@ -97,29 +90,20 @@ The user picked cached-SQLite-only over live-Yahoo per the iteration-1 design de
 - **Side-effect free.** No rate-limit surprises, no Yahoo outages mid-analysis, no "the chart changed under me" mid-session.
 - **Honest blockers.** If a symbol isn't cached, that's a real gap the user should know about, not silently papered over.
 
-Practical consequence: the skill is **paired with the UI**. Bars get into the cache when the user opens a chart for that symbol (Plan 0001 phase 5). The analyst then runs against whatever's there. If the user wants to analyse `XYZ` and the chart's never been opened for `XYZ`, the analyst blocks with a clear message: "no bars cached for XYZ; open the chart for it first, or have `dev` add a CLI to pre-populate."
+Practical consequence: bars get into the cache when the user opens a chart for that symbol, or when something calls `backfill_ohlcv` (Plan 0013). The analyst runs against whatever's cached. If the user wants to analyse `XYZ` and it's never been fetched, `analyze_symbol` returns `partial_reason: "no_bars"` and the analyst surfaces a clear message: "no bars cached for XYZ — want me to backfill it (`backfill_ohlcv`), or open the chart for it first?" Backfilling is a user-authorized step, distinct from the analysis itself, which stays deterministic on cached bars.
 
 This boundary is a feature, not a bug.
 
-## State checkpoints
+## Capability state (as of 2026-05-30)
 
-When you start a session, these tell you what mode the skill is in:
+All four modes are live. The skill is past its "everything blocks honestly" infancy:
 
-| Check                                                      | If present → you can do      |
-|------------------------------------------------------------|-------------------------------|
-| `src/market_analyser/persistence/` exists                  | Mode 2 (snapshot) on cached symbols. |
-| `src/market_analyser/analysis/patterns.py` exists          | Mode 1 (pattern scan) — full version. |
-| `src/market_analyser/analysis/indicators.py` | Mode 2 (snapshot) gets RSI/MACD/etc. |
-| The Provider Protocol's `get_screener` is implemented      | Mode 3 (screener) without a watchlist. |
+- ✅ **Mode 1 (pattern scan)** — `analyze_symbol` returns `recent_patterns` (most-recent-bars window); deep historical sweep via `detect_patterns` fallback.
+- ✅ **Mode 2 (snapshot)** — `analyze_symbol` returns the full trend/momentum/indicators/S-R read in one call.
+- ✅ **Mode 3 (screener)** — `screener_query` (TradingView universe, Plan 0009) for universe screens; `analyze_symbol` per-symbol for watchlist screens.
+- ✅ **Mode 4 (brainstorm)** — conversational; never fetched anything, still doesn't.
 
-Today's expected state (early in the project):
-
-- ✅ persistence layer exists (Plan 0001 phase 3 shipped)
-- ❌ analysis/indicators.py doesn't exist (in-house per ADR-0009; no plan written yet)
-- ❌ analysis/patterns.py doesn't exist (no plan written yet)
-- ❌ get_screener raises NotImplementedError (per ADR-0007)
-
-So at the time this skill was authored, **every mode blocks honestly**. That's correct — it mirrors how `backtester` blocked honestly when the engine didn't exist yet. The skill being correctly in "block" state is part of its value: it surfaces gaps clearly instead of fabricating results.
+The **only** honest block left is data, not code: a symbol with no cached bars makes `analyze_symbol` return `partial_reason: "no_bars"`. That's resolved by populating the cache (`backfill_ohlcv`, or the user opening the chart), not by routing to architect. Routing to `architect` is now reserved for genuinely new capability — a new indicator/pattern the backend doesn't expose, or a new screener filter shape.
 
 ## Plan numbering & status
 
@@ -134,10 +118,10 @@ You don't author plans or ADRs. If a question reveals a missing piece (new patte
 
 | Situation                                                    | Where to go                                                 |
 |--------------------------------------------------------------|-------------------------------------------------------------|
-| Persistence layer missing → can't read cache                 | Route to `/architect` / `/dev` for Plan 0001 phase 3         |
-| `analysis/patterns.py` missing → can't run pattern scans     | Route to `/architect` — needs an ADR + plan; ~150 lines but shared infra |
-| Indicator missing from `analysis/indicators.py`              | Route to `/architect` for an indicator-module expansion plan |
-| User wants live data                                         | Stop. Cache-only is a deliberate boundary. Surface, don't pierce. |
+| `analyze_symbol` returns `partial_reason: "no_bars"`         | Surface the empty-cache gap; offer `backfill_ohlcv` or "open the chart for it". User-authorized, not silent. |
+| User wants an indicator/pattern the backend doesn't expose   | Route to `/architect` — extending the analysis surface is an ADR/plan decision, not skill-private math. |
+| User wants a screener filter `screener_query` doesn't support | Route to `/architect` (provider/adapter change) — don't fake the column. |
+| User wants the analysis silently kept "fresh" / live-streamed | Stop. Analysis runs on cached bars; backfill is an explicit user step, never folded into a snapshot. |
 | User asks for a buy/sell call                                | Restate the conditions. Stop short of the trade call. |
 | User asks for a backtest                                     | Route to `/backtester`                                       |
 | User asks for a strategy                                     | Route to `/strategy-author`                                  |

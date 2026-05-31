@@ -193,36 +193,33 @@ The catalog above is the conservative subset. Excluded deliberately:
 - **Gartley, harmonic patterns, Fibonacci-based patterns** — these are not candlestick patterns; they're geometric patterns over many bars and rely on retracement ratios. They're outside the scope of `market-analyst`'s mode 1.
 - **Elliott waves** — see best-practices.md. Excluded.
 
-## How "strength" is computed in scan output
+## What the detector actually returns, and how you enrich it
 
-The patterns module (when it exists) should expose a `Pattern` record with at least these fields:
+The shipped backend (`analysis/patterns.py`, Plan 0018) detects this **14-pattern vocabulary** and nothing else:
+
+> `doji`, `hammer`, `hanging_man`, `marubozu`, `bullish_engulfing`, `bearish_engulfing`, `dark_cloud_cover`, `piercing_line`, `bullish_harami`, `bearish_harami`, `morning_star`, `evening_star`, `three_white_soldiers`, `three_black_crows`.
+
+Several patterns in this catalog's naming table (dragonfly/gravestone doji, inverted hammer, shooting star, spinning top) are **not** in the detector — they exist here for your interpretive vocabulary, but they will never appear in `recent_patterns`. If the user specifically asks for one, say it's outside the current detector set and offer an `architect` followup to extend `patterns.py` — don't hand-detect it and present it as a backend hit.
+
+Each detected `PatternHit` the backend emits is lean:
 
 ```python
-class FiredPattern(BaseModel):
-    pattern: str                      # canonical name from this catalog
+class PatternHit(BaseModel):     # frozen, extra="forbid"
     bar_index: int
-    event_ts: datetime                # UTC
+    pattern: str                 # canonical name (from the vocabulary above)
     direction: Literal["bullish", "bearish", "neutral"]
-    geometric_score: float            # 0.0-1.0, how cleanly the bar(s) match the definition
-    trend_context: Literal["with_trend", "against_trend", "in_chop"]
-    volume_context: Literal["high", "above_avg", "below_avg", "thin"]
-    level_context: Literal["at_level", "near_level", "open_air"]
-    confirmation_status: Literal["confirmed", "pending", "failed", "no_next_bar"]
-    strength: Literal["weak", "moderate", "strong"]
-    notes: list[str]                  # human-readable observations
+    strength: float              # 0.0-1.0, detector-defined geometric conviction (NOT weak/moderate/strong)
 ```
 
-`strength` is a derived field; the patterns module should compute it as a function of the four contexts. A simple rule that works well:
+The richer contextual fields the analyst's scan report carries — `trend_context`, `volume_context`, `level_context`, `confirmation_status`, a word-grade `strength`, `notes` — are **yours to derive**, not the backend's. You build them from the same `analyze_symbol` snapshot (`trend`, `momentum`, `support_resistance`) plus `get_ohlcv` for bar volume, then write them into `scan.json`. A useful rule for translating the backend's 0–1 `strength` into a word grade:
 
 - Start at `weak`.
-- `geometric_score > 0.8` → +1 step.
-- `trend_context` matches family (reversal against trend, or continuation with trend) → +1 step.
-- `volume_context == "high"` → +1 step.
-- `level_context == "at_level"` → +1 step.
+- Backend `strength > 0.8` (cleanly-formed bar) → +1 step.
+- Trend context matches the pattern's family (reversal against trend, continuation with trend) → +1 step.
+- Volume above average on the pattern bar → +1 step.
+- Pattern fired at a support/resistance level (`at_level`) → +1 step.
 
-Cap at `strong`. So `strong` requires 4+ favorable contexts; `moderate` requires 2-3; `weak` requires 0-1.
-
-The skill's report uses this `strength` value directly. If everything in a scan fires `weak`, the headline says so honestly.
+Cap at `strong` (4+ favorable contexts); `moderate` is 2–3; `weak` is 0–1. If everything in a scan grades `weak`, the headline says so honestly — manufactured conviction is the worst output an analyst can produce.
 
 ## Pattern naming canonicalization
 

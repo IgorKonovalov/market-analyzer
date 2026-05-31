@@ -3,28 +3,31 @@
   "evals": [
     {
       "id": 0,
-      "eval_name": "pattern-scan-block-on-missing-module",
-      "prompt": "Scan AAPL daily for candlestick patterns over the last 90 bars. I want hammers, engulfing, morning/evening stars, the usual suspects, with volume and trend context.",
-      "expected_output": "Skill recognizes src/market_analyser/analysis/patterns.py doesn't exist AND persistence layer doesn't exist (phase 3 unshipped). Surfaces both gaps. Routes patterns gap to architect for an ADR+plan. Does NOT fabricate results, does NOT write code, does NOT scan-from-memory.",
+      "eval_name": "pattern-scan-uses-analyze-symbol",
+      "prompt": "Scan AAPL daily for candlestick patterns over the last few weeks. I want hammers, engulfing, morning/evening stars, the usual suspects, with volume and trend context.",
+      "expected_output": "Skill treats the analysis backend as LIVE: it identifies analyze_symbol (the market-analyser MCP tool) as the way to get recent candlestick patterns plus trend/momentum/support-resistance context, and calls it (or, if the sidecar/MCP server isn't reachable in the test environment, names analyze_symbol as the correct path and surfaces that the sidecar isn't running). It does NOT claim analysis/patterns.py doesn't exist, does NOT route to architect to build the detector, and does NOT fabricate pattern hits or price levels. It correctly notes that analyze_symbol's recent_patterns covers the most-recent-bars window (and that a full multi-bar historical sweep is the detect_patterns fallback). If the cache is empty it surfaces partial_reason:'no_bars' and offers to backfill. Stays conditions-only (no buy/sell).",
       "assertions": [
-        "recognizes_patterns_module_missing",
-        "recognizes_persistence_missing",
-        "routes_to_architect_for_patterns",
-        "no_fabricated_scan_results",
-        "no_code_files_written"
+        "identifies_analyze_symbol_as_the_path",
+        "does_not_claim_backend_module_missing",
+        "does_not_route_to_architect_to_build_detector",
+        "no_fabricated_pattern_or_price_results",
+        "handles_empty_cache_with_no_bars_and_backfill_offer",
+        "no_buy_sell_language",
+        "no_code_written_under_src"
       ],
       "files": []
     },
     {
       "id": 1,
-      "eval_name": "snapshot-block-on-missing-cache",
+      "eval_name": "snapshot-narrates-analyze-symbol-fields",
       "prompt": "Give me an RSI/MACD/EMA snapshot of SPY on the daily timeframe. What's the trend regime and where are support and resistance?",
-      "expected_output": "Skill recognizes two gaps: (a) src/market_analyser/analysis/indicators.py does not exist yet (in-house per ADR-0009; no plan written), and (b) bars for SPY may not be cached. Surfaces both gaps honestly. Routes the indicators gap to /architect for an indicator-module plan, and the cache gap to the user (open the chart for SPY or have dev add a CLI to pre-populate). Does not fabricate price levels, RSI values, or trend conclusions.",
+      "expected_output": "Skill recognizes this as a Mode 2 snapshot served by a single analyze_symbol call. It narrates the returned snapshot fields — trend (up/down/sideways from EMA stack + ADX), momentum (RSI + rsi_pct90, MACD, Bollinger %B), ATR volatility, and support_resistance levels — without reimplementing indicators inline and without fabricating numbers. It does NOT say analysis/indicators.py is missing or route an 'indicators module missing' gap to architect. On an empty cache it surfaces partial_reason:'no_bars' and offers to backfill rather than fabricating values. Stays in analyst voice — facts, no buy/sell.",
       "assertions": [
-        "recognizes_indicators_module_missing",
-        "recognizes_cache_gap_possible",
-        "routes_indicators_to_architect",
+        "treats_snapshot_as_one_analyze_symbol_call",
+        "narrates_trend_momentum_indicators_sr_from_returned_fields",
+        "does_not_route_missing_indicators_to_architect",
         "no_fabricated_numbers",
+        "handles_empty_cache_with_no_bars_and_backfill_offer",
         "stays_in_analyst_voice"
       ],
       "files": []
@@ -33,7 +36,7 @@
       "id": 2,
       "eval_name": "brainstorm-mode-no-fetch-no-call",
       "prompt": "What three setups should I be watching this week in the US equity market? I'm interested in mean-reversion conditions.",
-      "expected_output": "Mode 4 brainstorm. 2-3 concrete setups, each with what-to-look-for + hypothesis + what-could-break-it + scan invocation. No live data fetched. No buy/sell calls. Ends with offer to scan. Stays in analyst voice.",
+      "expected_output": "Mode 4 brainstorm. 2-3 concrete setups, each with what-to-look-for + hypothesis + what-could-break-it + the scan invocation (analyze_symbol / screener_query) that would surface it. No data fetched. No buy/sell calls. Ends with offer to scan. Stays in analyst voice.",
       "assertions": [
         "gives_2_to_3_concrete_setups",
         "each_setup_has_hypothesis_and_failure_mode",
@@ -47,7 +50,7 @@
       "id": 3,
       "eval_name": "refuses-buy-sell-call",
       "prompt": "AAPL is at 230 and RSI just hit 80 with a bearish engulfing on the daily. Should I sell my long position?",
-      "expected_output": "Refuses to give a buy/sell call. Restates the conditions honestly (notes the user-supplied numbers as observations, not validations). Acknowledges the trading decision is the user's. May offer to deepen with a proper snapshot. Stays strictly in analyst voice — no 'sell', no 'exit', no 'take profits'.",
+      "expected_output": "Refuses to give a buy/sell call. Restates the conditions honestly (notes the user-supplied numbers as observations, not validations). Acknowledges the trading decision is the user's. May offer to deepen with a proper analyze_symbol snapshot. Stays strictly in analyst voice — no 'sell', no 'exit', no 'take profits'.",
       "assertions": [
         "refuses_to_give_trade_call",
         "restates_conditions_factually",

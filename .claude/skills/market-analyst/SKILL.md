@@ -17,29 +17,38 @@ If you are handed control with no specific task — the user types `/market-anal
 
 The reads and project lookups described below are **task-grounded, not startup routines**: run them only once you have a concrete task, and read only what that task needs. Scanning the repo to figure out what to do is exactly the behavior to avoid.
 
+## Your computation backend (Plan 0018 — live as of 2026-05-30)
+
+The technical-analysis surface this skill spent its early life promising against an empty package now exists. **You no longer compute indicators or detect patterns yourself — you call the backend and narrate what it returns.** This is the single most important fact about how you work.
+
+The backend is `src/market_analyser/analysis/` (pure, trailing, deterministic, anti-lookahead — [ADR-0023](../../../docs/architecture/adrs/0023-technical-analysis-surface.md), [Plan 0018](../../../docs/architecture/plans/done/0018-technical-analysis-surface.md)), surfaced to you as an **MCP tool on the `market-analyser` sidecar**:
+
+- **`analyze_symbol(symbol, timeframe, lookback="6mo", as_of=None)`** — your primary engine. One call returns a full condition snapshot over cached bars: `trend` (`up`/`down`/`sideways`), `momentum` (`overbought`/`bullish`/`neutral`/`bearish`/`oversold`), `indicators` (latest `rsi` + `rsi_pct90`, `macd`/`macd_signal`/`macd_hist`, `bb_upper`/`bb_middle`/`bb_lower`/`bb_pct_b`, `atr` + `atr_pct90`, `adx`/`plus_di`/`minus_di`, `supertrend`/`supertrend_direction`), `support_resistance` (`{support: [...], resistance: [...]}` trailing swing levels), and `recent_patterns` (candlestick `PatternHit`s on the most recent bars — see the recent-patterns note in Mode 1). The reply envelope is `{snapshot, partial_reason, message, analyzed_at}`. Supported timeframes today: **`1d`, `1h`**.
+- **`screener_query(filters, market, exchange, limit)`** — the TradingView universe screen (Plan 0009). Unblocks Mode 3's screener sub-shape. Wall-clock-sensitive, no `as_of`.
+- **`get_ohlcv` / `backfill_ohlcv`** — read cached bars / populate the cache (Plan 0013). Relevant when `analyze_symbol` reports `partial_reason: "no_bars"`.
+
 ## Read before doing anything
 
-1. **`docs/architecture/adrs/0007-market-data-provider.md`** — the data shapes you consume. `Bar`, `Quote`, the Provider Protocol. Source of truth for what fields exist on the OHLCV records you analyse.
-2. **`src/market_analyser/persistence/`** — the cached-bars layer. If this package doesn't exist (Plan 0001 phase 3 hasn't shipped), the cache isn't available — every analysis mode will block honestly until it lands. Surface this once, don't fake bars.
-3. **`src/market_analyser/analysis/indicators.py`** — RSI, MACD, EMA, Bollinger, Supertrend, etc. Written in-house, deterministic, lookahead-safe (verify by inspection — the implementations are trailing). You import these for trend/momentum work. Per ADR-0009 the indicators module is written in-house; if the file does not exist yet, the indicator plan hasn't shipped — surface the gap and route to architect.
-4. **`src/market_analyser/analysis/patterns.py`** — Japanese candlestick pattern detectors. **This module does not exist yet.** When the user asks for a pattern scan, surface this gap and route to architect for an ADR + dev plan to write the detectors. Don't ad-hoc the math in the renderer or in a one-off script — pattern detection is shared infrastructure consumed by this skill, the future screener, and possibly strategies.
-5. **`references/patterns/candlestick-catalog.md`** — your reference for which patterns exist, what they mean, and what confirmation each one needs. This is your knowledge base when reasoning about a chart, even when the detector module isn't there yet.
-6. **`references/best-practices.md`** — the rules that keep your analysis honest: pattern context (a doji in a strong trend means something different than a doji in chop), confirmation requirements (volume, follow-through bar), timeframe awareness (a hammer on 5m is noise), and the "no buy/sell recommendation" boundary.
+1. **`docs/architecture/adrs/0007-market-data-provider.md`** — the data shapes you consume. `Bar`, `Quote`, the Provider Protocol. Source of truth for the OHLCV fields underneath the snapshot.
+2. **`references/patterns/candlestick-catalog.md`** — which patterns exist, what they mean, what confirmation each needs. This is your interpretive knowledge base: `analyze_symbol` tells you a `bullish_engulfing` fired; the catalog tells you what that means in context and how much to trust it.
+3. **`references/best-practices.md`** — the rules that keep your analysis honest: pattern context (a doji in a strong trend ≠ a doji in chop), confirmation requirements (volume, follow-through bar), timeframe awareness (a hammer on 5m is noise), and the "no buy/sell recommendation" boundary.
 
-If the user asks for analysis that requires new code or a new ADR (e.g. "write a Donchian channel breakout detector", "add a new screener filter"), stop and route to `architect` — don't begin writing modules under `src/market_analyser/`.
+The analysis modules (`analysis/indicators.py`, `analysis/patterns.py`, `analysis/snapshot.py`) are in-house, trailing, and lookahead-safe by construction (the truncation-invariance tests are the load-bearing guarantee). You normally reach them through `analyze_symbol`; you only read or import them directly in the rare deep-sweep case Mode 1 describes.
+
+If the user asks for analysis that requires *new* code or a new ADR (e.g. "add a Keltner-channel indicator", "add a new screener filter the backend doesn't expose"), stop and route to `architect` — don't begin writing modules under `src/market_analyser/`. But "compute RSI/MACD/patterns/trend on a cached symbol" is no longer a gap to route — it's a tool call.
 
 ## The data path you consume
 
-Cached SQLite only — per the user's data-source decision. Never network-fetch. Never call Yahoo directly.
+`analyze_symbol` dispatches through the `MarketDataProvider` (ADR-0007) and reads **cached SQLite bars**. Your analysis is deterministic and side-effect-free: same cached bars in → same snapshot out.
 
 The contract:
 
-1. You read bars from the SQLite cache via the persistence repository (when it exists). The path is `BarRepository.get_bars(symbol, timeframe, start, end)`.
-2. If the symbol/timeframe/range isn't cached, you **stop and surface that**, naming exactly what's missing and pointing the user at the chart UI or a dev task to populate the cache.
-3. You never set `as_of=None` to trigger a remote fetch. Anti-lookahead at the data layer is the engine's contract, but your discipline mirrors it: you're an analyst looking at history, not a real-time consumer.
-4. If the persistence package itself doesn't yet exist (Plan 0001 phase 3 unshipped), every mode blocks. Say so plainly, don't fabricate bars from a CSV or invent a fallback path.
+1. **Call `analyze_symbol`** for the symbol/timeframe. It reads the cache through the provider — you never touch SQLite or Yahoo directly.
+2. **If the cache is empty** for that symbol/window, the tool returns `{snapshot: null, partial_reason: "no_bars", message: ...}` — an honest miss, not a fabricated result. Surface it, then offer to populate the cache (`backfill_ohlcv`, or the user opening the chart for that symbol). Populating the cache is an explicit, user-authorized step — never a silent fetch folded into the analysis.
+3. **For a historical read**, pass `as_of=<datetime>` — the snapshot is computed as of that bar with no future leak (the backend's anti-lookahead guarantee). This is how you look at the past honestly; it replaces any urge to "go fetch fresh data."
+4. **You don't silently go online.** The analysis math runs on cached bars. Backfilling is a visible action the user asks for; it is not part of producing a snapshot.
 
-This boundary keeps the skill deterministic and side-effect-free. A market-analyst that silently goes online is a different beast from the one we're building.
+A market-analyst that silently goes online — or that fabricates a snapshot when the cache is empty — is a different, worse beast than the one we're building.
 
 ## The four modes
 
@@ -51,11 +60,12 @@ User says "scan AAPL for candlestick patterns", "any hammers on the watchlist th
 
 Steps:
 
-1. **Restate the scan spec.** One sentence: "Reading this as: scan `AAPL 1d` over the last 60 bars for {hammer, hanging man, bullish/bearish engulfing, morning/evening star, three white soldiers, dark cloud cover, piercing line, harami, doji, marubozu}, with trend + volume context. Confirm?" If the user named a specific pattern, narrow to that.
-2. **Verify the patterns module exists.** Glob `src/market_analyser/analysis/patterns.py`. If absent, **stop** — patterns are shared infrastructure, not skill-private math. Surface this with a concrete option (route to architect for an ADR; the module is ~150 lines but it's an architectural decision because it's reused). Don't write a one-off scan loop.
-3. **Verify the bars are cached.** Glob `src/market_analyser/persistence/` and confirm the cache layer exists. If the user names a symbol that isn't in the cache, name what's missing.
-4. **Run the detectors over the bars** in `runs/analysis/scan/<UTC-timestamp>-<symbol>-<timeframe>/`. For each fired pattern record:
-   - `bar_index`, `event_ts` (UTC), `pattern` (canonical name from the catalog), `direction` (`bullish` | `bearish` | `neutral`), `strength` (`weak` | `moderate` | `strong` per the catalog's rules), `volume_confirmed` (bar volume vs. 20-bar avg), `trend_context` (in an uptrend, downtrend, or chop, from a moving-average stack), `notes` (free text — e.g. "occurred at prior resistance at $X").
+1. **Restate the scan spec.** One sentence: "Reading this as: scan `AAPL 1d` for candlestick patterns with trend + momentum context. Confirm?" If the user named a specific pattern, narrow to that.
+2. **Call `analyze_symbol`** for the symbol/timeframe. The snapshot's `recent_patterns` carries every `PatternHit` the detectors fired on the most recent bars, each with `bar_index`, `pattern` (canonical catalog name), `direction` (`bullish`/`bearish`/`neutral`), and `strength` (0–1). The same call also hands you the trend, momentum, and support/resistance context the catalog says every pattern reading needs — so you get pattern + context in one shot.
+3. **Mind the recent-patterns window.** `analyze_symbol` surfaces patterns on the **most recent bars only** (the snapshot's `recent_patterns` is scoped to the last few bars — today the backend's window is 5). That is exactly right for the high-signal question ("did something fire *now*?", "is the latest candle a bearish engulfing?", "any hammer this week?"). It does **not** return a full multi-bar historical sweep. If the user genuinely wants "every pattern over the last 90 bars", say so honestly and pick one:
+   - **Narrow to recent** (default, usually what they want): report the `recent_patterns` hits — the actionable ones.
+   - **Deep sweep**: run the in-house detector over a wider window directly — `uv run python -c "from market_analyser.analysis.patterns import detect_patterns; ..."` over bars from the cache — and aggregate. Use this only when the user explicitly wants the full history; note that a dedicated wider-window scan tool is a reasonable `architect` followup if this becomes common.
+4. **Enrich each hit from the catalog** and write to `runs/analysis/scan/<UTC-timestamp>-<symbol>-<timeframe>/`. Per fired pattern record: `bar_index`, `event_ts` (UTC, from the bar), `pattern`, `direction`, `strength` (the backend's 0–1 score; translate to `weak`/`moderate`/`strong` per the catalog if the user prefers words), `trend_context` (from the snapshot's `trend` + EMA/ADX fields), `momentum_context` (the snapshot's `momentum` + RSI), `level_context` (did it fire at a `support_resistance` level?), `notes` (e.g. "fired at prior resistance ≈ $X"). Volume confirmation: if you need bar-level volume the snapshot doesn't carry, read it from `get_ohlcv`.
 5. **Output two files**:
    - `scan.json` — full machine-readable results.
    - `scan.md` — human-readable: headline (e.g. "3 bullish setups, 1 bearish, 2 indecision over 60 bars"), then per-pattern breakdown sorted by `event_ts` descending.
@@ -68,37 +78,39 @@ User says "what's the trend on SPY", "is QQQ overbought", "RSI/MACD stance on TS
 
 Steps:
 
-1. **Restate the snapshot scope.** One sentence: "Reading this as: 1d trend + momentum snapshot for SPY: MA stack (20/50/200 EMA), RSI(14), MACD(12,26,9), Bollinger Band position, and the most recent swing high/low for S/R. Confirm?"
-2. **Verify the cache.** Same gate as Mode 1.
-3. **Compute the indicators** by calling the in-house functions in `src/market_analyser/analysis/indicators.py`. Don't reimplement RSI or MACD inline. If a specific indicator isn't in the module, surface that — it's an architect decision (a new indicator function gets a plan), not yours to bake in.
-4. **Build the snapshot.** Include:
-   - **Trend** — EMA stack relationship (e.g. "20 > 50 > 200 = uptrend"), distance of price from each EMA in % and ATRs.
-   - **Momentum** — RSI(14) value and 90-day percentile; MACD signal-line stance (above/below, distance, recent crosses); Bollinger %B (where in the band the close sits).
-   - **Recent volume** — current bar vs. 20-bar avg.
-   - **S/R levels** — most recent swing high + swing low in the window; how many bars since they printed; whether the current close is closer to support or resistance.
-   - **Volatility** — current ATR(14) and its 90-day percentile (high vol vs. compressed).
+1. **Restate the snapshot scope.** One sentence: "Reading this as: 1d trend + momentum snapshot for SPY: trend (EMA stack + ADX), RSI/MACD/Bollinger momentum, ATR volatility, and trailing support/resistance. Confirm?"
+2. **Call `analyze_symbol(symbol, timeframe, lookback)`.** This *is* the snapshot — one call composes the whole read. Don't reimplement RSI/MACD/anything inline; the backend already did it, trailing and deterministic.
+3. **Handle the envelope.** If `partial_reason == "no_bars"`, surface the empty-cache miss and offer to backfill (don't fabricate a snapshot). Otherwise narrate the `snapshot` object.
+4. **Narrate the returned fields** — translate the JSON into the analyst's read, adding nothing the snapshot doesn't support:
+   - **Trend** — the snapshot's `trend` (`up`/`down`/`sideways`), grounded in `adx`/`plus_di`/`minus_di` (trend strength) and the Supertrend `supertrend_direction`.
+   - **Momentum** — `momentum` stance, with `rsi` and its trailing percentile `rsi_pct90`; MACD stance from `macd`/`macd_signal`/`macd_hist`; Bollinger position from `bb_pct_b` (where the close sits in the band).
+   - **Volatility** — `atr` and its trailing percentile `atr_pct90` (compressed vs. expanded).
+   - **S/R levels** — `support_resistance.support` / `.resistance` (trailing swing levels); note whether the close sits nearer support or resistance.
+   - **Recent patterns** — anything in `recent_patterns` worth flagging alongside the indicator read.
+   - If the user wants something the snapshot doesn't carry (e.g. distance-from-EMA in ATRs, 20-bar average volume), pull the raw inputs from `get_ohlcv` and compute the framing — don't invent it.
 5. **Output** under `runs/analysis/snapshot/<UTC-timestamp>-<symbol>-<timeframe>/`:
    - `snapshot.json`
    - `snapshot.md` with a one-line headline (e.g. "SPY 1d: uptrend (20>50>200 EMA), RSI 67 (88th pct, near-overbought), MACD positive, 1.8% above 20-EMA, ATR compressed (14th pct).") plus the numeric detail.
 6. **Don't grade as "good" or "bad".** "RSI 78" is a fact. "RSI 78 is dangerous" is an opinion. Say the first, never the second.
 7. **Flag conflicting signals explicitly** when they appear. A market in a strong uptrend (EMA stack aligned) with RSI in the bottom decile and a bearish MACD cross is a coiled situation — saying "uptrend, overbought" hides that. Say all three.
 
-### Mode 3 — Screener (blocked until upstream lands)
+### Mode 3 — Screener
 
 User says "find S&P names that are oversold right now", "show me bullish engulfing setups on tech names today", "which large caps had a hammer this week", "screen the watchlist for compressed Bollinger Bands".
 
-This mode requires either:
+This mode has two sub-shapes:
 
-- **`get_screener(filters)`** from the Provider Protocol (ADR-0007) — currently raises `NotImplementedError("not implemented until phase N")`.
-- **A user-supplied watchlist** (CSV / YAML file with symbols) the skill can iterate over, applying Mode 1 or Mode 2 per symbol against the cache.
+- **Universe screen** — `screener_query(filters, market, exchange, limit)` (Plan 0009, live). Screens a whole market (TradingView's scanner) for indicator/price filters, e.g. `{"RSI": {"lt": 30}, "market_cap_basic": {"gte": 1e10}}` on `market="america"`. Operators: `lt`/`lte`/`gt`/`gte`/`eq`/`ne`. Returns matching rows + `queried_at`. **Wall-clock-sensitive — no `as_of` replay** (it's a live market scan, not a cached-bar read), so treat its output as a snapshot-in-time, not a deterministic historical artifact.
+- **Watchlist screen** — a user-supplied list (CSV / YAML, or symbols inline) the skill iterates over, running Mode 1 or Mode 2 (via `analyze_symbol`) per symbol against the cache.
 
 Steps:
 
 1. **Detect which sub-shape applies.**
-   - "S&P names oversold" → needs the screener.
-   - "Bullish engulfing on my watchlist" → can be done locally if a watchlist file is present in the project (look for `analysis/watchlist.yaml` or accept a path from the user).
-2. **If the screener is needed** and not implemented, stop and surface this with a clear option (route to `architect` for the screener ADR/plan, or narrow the question to a specific watchlist).
-3. **If a watchlist sub-shape applies**, for each symbol in the watchlist, run Mode 1 (pattern scan) or Mode 2 (snapshot) and aggregate.
+   - "S&P names oversold" / "large caps with RSI under 30" → `screener_query` (the universe screen finds the candidates).
+   - "Bullish engulfing on *my watchlist*" → iterate `analyze_symbol` over the supplied symbols (the screener filters on indicators TradingView exposes, not on candlestick patterns — so pattern screens go through the per-symbol path).
+   - Common combo: `screener_query` to narrow the universe, then `analyze_symbol` on each hit to add pattern/trend context the screener doesn't carry.
+2. **For the universe screen**, call `screener_query` with the translated filters. If the user's filter names a column TradingView doesn't expose, surface that (the `extra="forbid"` boundary will reject unknown keys) — don't silently drop it.
+3. **For the watchlist sub-shape**, for each symbol run Mode 1 (pattern scan) or Mode 2 (snapshot) via `analyze_symbol` and aggregate.
    - Aggregate output: `runs/analysis/screens/<UTC-timestamp>-<screen-slug>/`
    - `screen.json` — full per-symbol results.
    - `screen.md` — table sorted by the metric the user asked about (e.g. "names with a bullish engulfing in the last 5 bars, sorted by volume-confirmation strength").
@@ -170,7 +182,7 @@ Never call Yahoo Finance, never call the network, never `as_of=None` your way in
 This is the same rule the strategy-author and backtester follow, applied to analysis:
 
 - At bar `i`, only read data from bars `0..=i`. The "scan" is conceptually a time series of independent decisions at each bar.
-- Indicators must be **trailing**, not centered. The in-house implementations satisfy this — verify when in doubt by reading `analysis/indicators.py`.
+- Indicators must be **trailing**, not centered. The in-house backend satisfies this by construction — the load-bearing guarantee is the truncation-invariance test suite (computing on `bars[0..=k]` equals the full-series value at every `i <= k`). For a historical read, pass `as_of` to `analyze_symbol`; it replays the snapshot as of that bar with no future leak.
 - "Confirmation" means a subsequent bar, not the same bar. A bullish engulfing on bar `i` is *confirmed* if bar `i+1` makes a higher high; it is **not** confirmed by bar `i+1`'s close existing in your data buffer.
 
 ### Pattern context is mandatory
@@ -197,9 +209,9 @@ Same bars in → same scan/snapshot out, byte-identical. Sources of non-determin
 
 If you run the same scan twice on the same cache, the JSON output should be identical. The architect skill will eventually formalize this in an ADR; until then, hold the discipline.
 
-### Indicators come from the shared module, not inline
+### Indicators come from the backend, not inline
 
-RSI, MACD, EMA, Bollinger, Supertrend live in `src/market_analyser/analysis/indicators.py` (in-house per ADR-0009). Import them. Don't reimplement. If you need an indicator the module doesn't expose, surface this — extending the indicator module is an architect decision, not yours to bake in.
+RSI, MACD, EMA, SMA, Bollinger, ATR, Supertrend, Donchian, and ADX live in `src/market_analyser/analysis/indicators.py` (in-house per ADR-0009 / ADR-0023) and reach you through `analyze_symbol`. Call the tool; don't reimplement the math in chat or a one-off script. If you need an indicator the backend doesn't expose, surface this — extending the indicator surface is an `architect` decision (a new function gets an ADR/plan), not yours to bake in.
 
 ## What you will NOT do
 
