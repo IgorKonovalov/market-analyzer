@@ -9,11 +9,10 @@ This index is the one-minute view of what's in flight. The plan file (and `git l
 | #    | File | Status | Summary |
 |------|------|--------|---------|
 | 0020 | [0020-backtest-metrics-walk-forward](0020-backtest-metrics-walk-forward.md) | approved | Extended `BacktestMetrics` (Calmar/Sortino/profit factor/expectancy) + rolling walk-forward eval + `compare_strategies`/`walk_forward_backtest` tools. Bumps `ENGINE_VERSION`, regenerates the 0008 golden fixture. Paired [ADR-0024](../adrs/0024-extended-backtest-metrics.md) (accepts at close). 3 phases: `backtester`×2 → `dev`. |
-| 0021 | [0021-multi-timeframe-and-volume-scanners](0021-multi-timeframe-and-volume-scanners.md) | approved (blocked) | Multi-timeframe alignment (W→D→4H→1H→15m) + three volume-scanner tools over a symbol list. **Blocked on [Plan 0027](0027-volume-bars-and-analysis.md)** (owns `analysis/volume.py`; 0021 phase 2 extends it). Timeframe gate cleared (0025 closed). 3 phases, all `dev`. |
+| 0021 | [0021-multi-timeframe-and-volume-scanners](0021-multi-timeframe-and-volume-scanners.md) | approved | Multi-timeframe alignment (W→D→4H→1H→15m) + three volume-scanner tools over a symbol list. Both gates now cleared — timeframe (0025 closed) **and** `analysis/volume.py` ([Plan 0027](done/0027-volume-bars-and-analysis.md) closed; 0021 phase 2 extends its primitives). 3 phases, all `dev`. |
 | 0022 | [0022-macro-context](0022-macro-context.md) | approved | `bitcoin_market_pulse` (CoinGecko global — BTC dominance + total mcap + neutral regime) via a new `get_macro_context` Protocol method, plus `market_snapshot` fanning `get_quote`. Paired [ADR-0027](../adrs/0027-crypto-macro-regime-classification.md) (accepts at close). Unblocked (0019 closed). 3 phases, all `dev`. |
 | 0023 | [0023-news-view-in-app](0023-news-view-in-app.md) | approved | First UI surface for Plan 0010's news/sentiment: a standalone **News** view over `GET /news`. Live-only, sanitized text. Unblocked (0010 closed). Edits `App.tsx`/`client.ts`. 2 phases: `dev` → `ui-builder`. |
 | 0026 | [0026-live-signal-evaluator](0026-live-signal-evaluator.md) | draft | First step of the advisor + forecasting track ([ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)/[ADR-0030](../adrs/0030-forecasting-subsystem.md)). Evaluate a strategy against the **current** bar (vs `run_backtest`'s historical path): pure `backtest/live_signal.py` + an `evaluate_signals` tool + `signal.evaluated v1` SSE + a reactive viewer panel. Stays a condition-reporter (no recommendations). 3 phases: `backtester` → `dev` → `ui-builder`. |
-| 0027 | [0027-volume-bars-and-analysis](0027-volume-bars-and-analysis.md) | approved | Creates `analysis/volume.py` (volume MA, relative volume + percentile, OBV + slope, trailing VWAP, `volume_summary`), folds a volume summary into `condition_snapshot`, and renders volume/VWAP/OBV chart panes (client-side from `bars`). Re-bases 0021's phase 2 onto it. Depends only on Plan 0018 (closed). 3 phases: `dev`×2 → `ui-builder`. |
 
 ## Recently closed
 
@@ -21,6 +20,7 @@ Full close-review notes live in each plan file under `done/`. Most-recent first.
 
 | #    | Closed | Summary |
 |------|--------|---------|
+| 0027 | 2026-05-31 | Volume bars + volume-aware analysis — `analysis/volume.py` (volume MA, relative volume + percentile, OBV + slope, trailing VWAP, `volume_summary`); folds a `volume_stance` + volume measures into `condition_snapshot`; renders volume/VWAP/OBV chart bands client-side from `bars`. No new ADR (within ADR-0023/0008). **Unblocks 0021's phase 2.** |
 | 0019 | 2026-05-31 | Live quote — `get_quote` (`YahooQuoteAdapter` on the chart endpoint) + `quote_for` tool. Discharged the last `MarketDataProvider` stub. **Unblocks 0022.** |
 | 0025 | 2026-05-30 | Timeframe expansion — `15m`/`1w` (native) + `4h` (in-house resample); canonical `data/timeframes.py` registry; `history_exceeded` reason. ADR-0028 accepted. **Unblocks 0021's timeframe half.** |
 | 0018 | 2026-05-30 | Technical-analysis surface — `analysis/` (9 indicators + 14 patterns + `condition_snapshot`) + `analyze_symbol` tool. ADR-0023 accepted. **Unblocks `market-analyst` + 0021.** |
@@ -46,9 +46,9 @@ Small items carried from closed plans — pick up opportunistically; remove the 
 
 ## Recommended execution order
 
-The committed roster (Tier 2 0009–0012, then 0013–0014) is fully closed, as are the capability-expansion gates 0018, 0019, and 0025. **Pickup-ready now, all `approved` and on largely disjoint files (user may re-prioritise): 0020, 0022, 0023, 0027.** Serialize where files overlap:
+The committed roster (Tier 2 0009–0012, then 0013–0014) is fully closed, as are the capability-expansion gates 0018, 0019, 0025, and 0027. **Pickup-ready now, all `approved` and on largely disjoint files (user may re-prioritise): 0020, 0021, 0022, 0023.** Serialize where files overlap:
 
-- **0021 is blocked on 0027** — 0027 owns `analysis/volume.py`, which 0021's phase 2 extends. Pick up 0027 first.
+- **0021 is now unblocked** — 0027 closed and owns `analysis/volume.py`; 0021's phase 2 extends its primitives (relative volume / OBV) rather than re-deriving them. Confirm that import at pickup (carried as a 0027 followup).
 - **0023 edits `App.tsx`/`client.ts`** — its collisions (0013/0014) are landed, so it now inherits rather than conflicts.
 - **0026** (draft) opens the advisor + forecasting track ([ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)/[ADR-0030](../adrs/0030-forecasting-subsystem.md), both proposed); it depends on nothing not already shipped and runs largely parallel to the analysis batch. Downstream (forecasting plan, advisor plan + new `advisor` skill, UI) is undrafted.
 

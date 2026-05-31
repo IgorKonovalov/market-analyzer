@@ -1,8 +1,9 @@
 # 0027 — Volume bars in the chart + volume-aware analysis
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-30
 > **Approved:** 2026-05-30
+> **Closed:** 2026-05-31 (close review — no blockers; three minor/nit items, all carried; see "Close review" below)
 > **Owner skill(s):** `dev` (phases 1–2), `ui-builder` (phase 3)
 > **Related ADRs:** [ADR-0023](../adrs/0023-technical-analysis-surface.md) (the `analysis/` surface this extends — volume is an explicitly-listed downstream consumer), [ADR-0008](../adrs/0008-electron-shell-conventions.md) (renderer/chart conventions), [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (renderer renders; presentation-derived series computed client-side), [ADR-0007](../adrs/0007-market-data-provider.md) (bars via Provider)
 > **Re-bases:** [Plan 0021](0021-multi-timeframe-and-volume-scanners.md) — this plan creates `analysis/volume.py` (the measure layer); 0021's phase 2 changes from "build `volume.py` from scratch" to "add scanner-condition functions on top of it" (see the Plan 0021 amendment note in the README and that plan's header).
@@ -162,3 +163,15 @@ export function computeObv(bars: ReadonlyArray<Bar>): LineData[]
 
 - Re-base check at Plan 0021 pickup: confirm 0021's scanner-condition functions import this plan's `analysis/volume.py` primitives rather than re-deriving relative volume / OBV.
 - Consider a standalone `volume_summary` MCP tool if the agent wants volume without the full snapshot.
+- **m2 (minor, test coverage) — `ui-builder`:** phase 3's empty-bars done-when ("with `bars = []` the chart renders without throwing *and* the derived series are empty") is only half-covered — `volume.test.ts` proves the derived series are empty, but no component-level spec renders `<CandlestickChart bars={[]} />` to prove the component path doesn't throw. The path is trivially safe (`setData` on empty arrays), so this is a coverage gap against the literal done-when, not a bug. Add the component render assertion next time `CandlestickChart` specs are touched.
+
+## Close review (2026-05-31)
+
+Fresh-context architect review of all three phases. **No blockers, no majors.** Assertion bodies were read (not the pass list), and the suites were re-run: `tests/analysis/test_volume.py` + `tests/analysis/test_snapshot.py` + `tests/api/test_analyze_symbol_tool.py` 48 pass; `mypy --strict` clean on `volume.py`/`snapshot.py`; `volume.test.ts` + `CandlestickChart.overlays.test.tsx` 19 pass.
+
+- **Alignment:** every done-when met by a non-tautological spec. Standouts: phase 1 pins VWAP/OBV/MA against independently hand-computed numbers with real truncation-invariance + determinism + divide-by-zero→`None` guards; phase 2's field-set pin asserts the exact set is *prior + `volume_stance` and nothing else* **and** directly forbids any `action/signal/recommendation/buy/sell` field (the analyst non-negotiable, pinned at the type level and the test level); the `as_of` replay asserts the truncated volume read *equals* a direct `volume_summary` **and differs** from the full-series read where the heavy last bar makes them differ (no future leak). Phase 3's overlays spec isolates agent overlays from the always-on volume lines via the `priceScaleId === undefined` discriminator, so the dispose-on-unmount test still targets the right series.
+- **Layering / coupling:** `snapshot.py` consumes `volume_summary` through the `analysis/` surface; the renderer derives its presentation copy client-side from `bars` (documented duplication, accepted per the plan's risk section — same precedent as `lib/indicators.ts`). No cross-skill imports, no hidden state, no god module (`volume.py` 209 lines). The v4.2.x "no panes API → overlay price scale + `scaleMargins`" path is exactly the fallback the plan pre-authorized; the three bands (candles 0.05–0.6, OBV 0.62–0.78, volume 0.82–1.0) don't overlap.
+- **Security / integrity:** degenerate feeds are handled — zero-volume MA → `None` (never `inf`), zero-volume VWAP window skipped (no `NaN`/`Infinity` into lightweight-charts). No secrets. Trailing-only, no lookahead (asserted on both the Python and renderer sides).
+- **ADRs:** no new ADR needed — the analysis side sits inside ADR-0023 (which already names volume as a downstream consumer) and the UI side inside ADR-0008; both still hold.
+- **m1 (minor, commit traceability) — noted, no action:** phase 1's implementation (`analysis/volume.py`, `tests/analysis/test_volume.py`, the `types.py` `VolumeStance`/`VolumeSummary` additions) was not committed as its own phase commit — it rode into `ac63461 "docs: trim and refresh the three README indices"` alongside unrelated README work. Phases 2 (`fe7a216`) and 3 (`62d816c`) follow the one-conventional-commit-per-phase rule; phase 1 does not, so `git blame` on `volume.py` points at a `docs:` commit. The code is correct and tested and this repo never rewrites history, so this is forward-only awareness (tighten phase-boundary commit discipline next time), not a corrective edit.
+- **Carried:** m2 (empty-bars component assertion, `ui-builder`, above); the existing 0021 re-base check and standalone-tool followups stand.
