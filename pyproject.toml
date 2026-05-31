@@ -15,7 +15,6 @@ dependencies = [
     "pydantic==2.13.3",
     "sqlalchemy==2.0.49",
     "tradingview-screener==3.2.0",
-    "tradingview-ta==3.3.0",
     "uvicorn[standard]==0.46.0",
     "vadersentiment==3.3.2",
 ]

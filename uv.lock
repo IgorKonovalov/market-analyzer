@@ -809,7 +809,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "sqlalchemy" },
     { name = "tradingview-screener" },
-    { name = "tradingview-ta" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "vadersentiment" },
 ]
@@ -837,7 +836,6 @@ requires-dist = [
     { name = "pydantic", specifier = "==2.13.3" },
     { name = "sqlalchemy", specifier = "==2.0.49" },
     { name = "tradingview-screener", specifier = "==3.2.0" },
-    { name = "tradingview-ta", specifier = "==3.3.0" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.46.0" },
     { name = "vadersentiment", specifier = "==3.3.2" },
 ]
@@ -1961,18 +1959,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4b/28/6ea0fdf60b3b8f596536f3ba8d3efd66fc0c447e33d12f86a992c7788402/tradingview_screener-3.2.0.tar.gz", hash = "sha256:b670834e31f8c6f438c742d834f2428561559e02892a9e207badf686559196a4", size = 86048, upload-time = "2026-05-07T15:54:25.276Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/94/18/fe2ea176b585cfae49377b475bb12c9f2ce459f862aaf18e59fc2cbcc84e/tradingview_screener-3.2.0-py3-none-any.whl", hash = "sha256:afd50f34c25807de05c2b1b8dd83328883051c21b418e39a1437632897631fbf", size = 22202, upload-time = "2026-05-07T15:56:05.992Z" },
-]
-
-[[package]]
-name = "tradingview-ta"
-version = "3.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/e1/5066e9e1ff3be56615fd5347501aaae92918947d30f76a36a7f707acfe0a/tradingview_ta-3.3.0.tar.gz", hash = "sha256:f1a55351ed28554234106a28772f167e818d57f384d47f85b763bd143955c34a", size = 10898, upload-time = "2022-10-05T12:29:21.748Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/58/db316237a924d0fb9f38a53b8573d6555ada13325caf6a3bb35f77e646fb/tradingview_ta-3.3.0-py3-none-any.whl", hash = "sha256:1250068a44e253caeb2066bc1cd6e588f71796612d41d5d55d25083cf86b5531", size = 10394, upload-time = "2022-10-05T12:29:18.859Z" },
 ]
 
 [[package]]
