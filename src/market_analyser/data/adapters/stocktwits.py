@@ -24,7 +24,7 @@ downstream reaches this through `MarketDataProvider`, never by importing it.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from market_analyser.data._http import (
@@ -33,6 +33,7 @@ from market_analyser.data._http import (
     ResilientHttpClient,
     ResilientHttpError,
 )
+from market_analyser.data._windows import window_delta
 from market_analyser.data.errors import UnknownSymbolError
 from market_analyser.data.types import SentimentSample
 
@@ -43,15 +44,6 @@ _SOURCE = "stocktwits"
 _DEFAULT_TTL_SECONDS = 300.0
 # StockTwits is less generous than TradingView; don't fan out aggressively.
 _DEFAULT_MAX_CONCURRENCY = 2
-
-# Mirrors rss_news._WINDOW_TO_DELTA on purpose: each adapter owns its own window
-# seam (see Plan 0012 followups re: hoisting a shared window vocabulary).
-_WINDOW_TO_DELTA: dict[str, timedelta] = {
-    "1h": timedelta(hours=1),
-    "4h": timedelta(hours=4),
-    "24h": timedelta(hours=24),
-    "7d": timedelta(days=7),
-}
 
 
 class StockTwitsHttpClient(ResilientHttpClient):
@@ -93,7 +85,7 @@ class StockTwitsAdapter:
         an unsupported `window`.
         """
         ticker = symbol.strip().upper()
-        cutoff = _now() - _window_delta(window)
+        cutoff = _now() - window_delta(window)
         url = _BASE_URL.format(ticker=ticker)
         try:
             response = self._http.get(url, expect_json=True)
@@ -130,15 +122,6 @@ class StockTwitsAdapter:
 def _now() -> datetime:
     """Wall-clock seam, monkeypatched by tests to freeze time (cf. rss_news._now)."""
     return datetime.now(tz=UTC)
-
-
-def _window_delta(window: str) -> timedelta:
-    try:
-        return _WINDOW_TO_DELTA[window]
-    except KeyError:
-        raise ValueError(
-            f"unsupported window {window!r}; supported: {sorted(_WINDOW_TO_DELTA)}",
-        ) from None
 
 
 def _messages(payload: Any) -> list[Any]:

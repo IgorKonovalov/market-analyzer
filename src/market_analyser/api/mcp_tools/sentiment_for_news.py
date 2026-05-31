@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
+from market_analyser.data._windows import SentimentWindow
 from market_analyser.data.provider import MarketDataProvider
 
 
@@ -28,7 +29,7 @@ class SentimentForNewsInput(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     symbol: str = Field(min_length=1)
-    window: Literal["1h", "4h", "24h", "7d"] = "24h"
+    window: SentimentWindow = "24h"
 
 
 def register_sentiment_for_news(server: FastMCP, *, provider: MarketDataProvider) -> None:

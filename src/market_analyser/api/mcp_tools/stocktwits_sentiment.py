@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from market_analyser.data import UnknownSymbolError
+from market_analyser.data._windows import SentimentWindow
 from market_analyser.data.provider import MarketDataProvider
 
 
@@ -34,7 +35,7 @@ class StockTwitsSentimentInput(BaseModel):
 
     # pattern rejects punctuation like "AAPL$"; allows letters, "." (BRK.B / BTC.X) and "-".
     symbol: str = Field(min_length=1, max_length=10, pattern=r"^[A-Za-z.\-]+$")
-    window: Literal["1h", "4h", "24h", "7d"] = "24h"
+    window: SentimentWindow = "24h"
 
     @field_validator("symbol")
     @classmethod

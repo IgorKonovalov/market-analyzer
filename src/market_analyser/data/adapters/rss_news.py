@@ -17,7 +17,7 @@ from __future__ import annotations
 import calendar
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import feedparser
@@ -26,6 +26,7 @@ from market_analyser import __version__
 from market_analyser.data import _vader
 from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
 from market_analyser.data._symbol_match import symbol_matches
+from market_analyser.data._windows import window_delta
 from market_analyser.data.types import NewsItem
 
 _logger = logging.getLogger(__name__)
@@ -36,13 +37,6 @@ _USER_AGENT = f"market-analyser/{__version__}"
 _DEFAULT_TTL_SECONDS = 300.0
 # Be a polite client against five feeds — don't fan out all at once.
 _DEFAULT_MAX_CONCURRENCY = 2
-
-_WINDOW_TO_DELTA: dict[str, timedelta] = {
-    "1h": timedelta(hours=1),
-    "4h": timedelta(hours=4),
-    "24h": timedelta(hours=24),
-    "7d": timedelta(days=7),
-}
 
 
 @dataclass(frozen=True)
@@ -103,7 +97,7 @@ class RssNewsAdapter:
         With `with_sentiment=True`, each item carries a VADER `compound_sentiment`
         over its title + summary; otherwise that field stays `None`.
         """
-        cutoff = _now() - _window_delta(window)
+        cutoff = _now() - window_delta(window)
         applied_symbol = symbol if symbol is not None else ""
         items: list[NewsItem] = []
         for name, feed in _FEED_CATALOG.items():
@@ -163,15 +157,6 @@ class RssNewsAdapter:
 def _now() -> datetime:
     """Wall-clock seam, monkeypatched by tests to freeze time."""
     return datetime.now(tz=UTC)
-
-
-def _window_delta(window: str) -> timedelta:
-    try:
-        return _WINDOW_TO_DELTA[window]
-    except KeyError:
-        raise ValueError(
-            f"unsupported window {window!r}; supported: {sorted(_WINDOW_TO_DELTA)}",
-        ) from None
 
 
 def _entry_published(entry: Any) -> datetime | None:
