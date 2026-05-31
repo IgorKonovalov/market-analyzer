@@ -21,9 +21,16 @@ accumulating; never a buy/sell call.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from itertools import pairwise
 
 from market_analyser.analysis import indicators as ind
-from market_analyser.analysis.types import VolumeStance, VolumeSummary
+from market_analyser.analysis.types import (
+    SmartVolumeHit,
+    VolumeBreakout,
+    VolumeConfirmation,
+    VolumeStance,
+    VolumeSummary,
+)
 from market_analyser.data.types import Bar
 
 # --- Tunable measure windows + stance thresholds (named constants) ---------- #
@@ -34,6 +41,16 @@ OBV_SLOPE_LOOKBACK = 10  # trailing window for the signed OBV slope
 VWAP_PERIOD = 20  # rolling trailing VWAP window (NOT session-anchored)
 HEAVY_MULT = 1.5  # latest >= HEAVY_MULT * trailing MA -> HEAVY
 LIGHT_MULT = 0.5  # latest <= LIGHT_MULT * trailing MA -> LIGHT
+
+# --- Scanner-condition tunables (Plan 0021 phase 2) ------------------------- #
+BREAKOUT_VOL_MULTIPLE = 2.0  # relative volume at/above this is a "surge" for a breakout
+BREAKOUT_PRICE_LOOKBACK = 20  # trailing bars (excl. latest) whose range price must clear
+CONFIRMATION_LOOKBACK = 20  # trailing bars over which volume must back the price move
+CONFIRMATION_MIN = 0.6  # confirmation score at/above this -> confirmed
+SMART_VOL_MULTIPLE = 1.5  # relative volume at/above this is a surge for smart_volume
+SMART_RSI_LOW = 40.0  # smart_volume RSI band lower bound (inclusive)
+SMART_RSI_HIGH = 60.0  # smart_volume RSI band upper bound (inclusive)
+RSI_PERIOD = 14  # RSI window for smart_volume (matches the snapshot's RSI)
 
 
 def _last(series: Sequence[float | None]) -> float | None:
@@ -192,17 +209,177 @@ def volume_summary(bars: Sequence[Bar]) -> VolumeSummary:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Scanner-condition functions (Plan 0021 phase 2)                              #
+#                                                                              #
+# All three report a condition about the *latest* bar over `bars[0..=last]`    #
+# (trailing): they read only the trailing window ending at the last bar and    #
+# never index beyond it, so a verdict computed on a truncated series is         #
+# unaffected by bars that would later be appended. They reuse the Plan 0027     #
+# primitives above (relative_volume) rather than re-deriving them.             #
+# --------------------------------------------------------------------------- #
+
+
+def volume_breakout(
+    bars: Sequence[Bar],
+    vol_multiple: float = BREAKOUT_VOL_MULTIPLE,
+    price_lookback: int = BREAKOUT_PRICE_LOOKBACK,
+) -> VolumeBreakout:
+    """Whether the latest bar broke its trailing price range on a volume surge.
+
+    Positive only when relative volume is `>= vol_multiple` AND the latest close
+    clears the trailing `price_lookback`-bar high (bullish) or low (bearish); the
+    cleared extreme is reported as `broken_level`. Returns a negative result (no
+    breakout, `broken_level=None`) on a drift or when there are too few bars.
+    """
+
+    symbol = bars[-1].symbol if bars else ""
+    ratio, _ = relative_volume(bars)
+    if ratio is None or len(bars) < price_lookback + 1:
+        return VolumeBreakout(
+            symbol=symbol,
+            is_breakout=False,
+            direction="neutral",
+            volume_multiple=ratio,
+            broken_level=None,
+        )
+
+    prior = bars[-(price_lookback + 1) : -1]  # the price_lookback bars before the latest
+    prior_high = max(b.high for b in prior)
+    prior_low = min(b.low for b in prior)
+    close = bars[-1].close
+    surge = ratio >= vol_multiple
+    if surge and close > prior_high:
+        return VolumeBreakout(
+            symbol=symbol,
+            is_breakout=True,
+            direction="bullish",
+            volume_multiple=ratio,
+            broken_level=prior_high,
+        )
+    if surge and close < prior_low:
+        return VolumeBreakout(
+            symbol=symbol,
+            is_breakout=True,
+            direction="bearish",
+            volume_multiple=ratio,
+            broken_level=prior_low,
+        )
+    return VolumeBreakout(
+        symbol=symbol,
+        is_breakout=False,
+        direction="neutral",
+        volume_multiple=ratio,
+        broken_level=None,
+    )
+
+
+def volume_confirmation(
+    bars: Sequence[Bar], lookback: int = CONFIRMATION_LOOKBACK
+) -> VolumeConfirmation:
+    """How well volume backs the recent price move, as a 0..1 score.
+
+    Over the trailing `lookback` bars, the net price direction is fixed by
+    `close[-1]` vs `close[-1-lookback]`; `score` is the share of *directional*
+    volume sitting on bars that moved with that direction. High when an up-move is
+    carried by volume on the up-bars; low when volume concentrates on the
+    counter-trend bars (a divergence). Returns a `0.0`/neutral result on a flat
+    move or too few bars.
+    """
+
+    symbol = bars[-1].symbol if bars else ""
+    if len(bars) < lookback + 1:
+        return VolumeConfirmation(
+            symbol=symbol,
+            score=0.0,
+            confirmed=False,
+            direction="neutral",
+            supportive_volume=0.0,
+            opposing_volume=0.0,
+        )
+
+    window = bars[-(lookback + 1) :]  # lookback+1 bars -> lookback close-to-close deltas
+    net = window[-1].close - window[0].close
+    if net == 0.0:
+        return VolumeConfirmation(
+            symbol=symbol,
+            score=0.0,
+            confirmed=False,
+            direction="neutral",
+            supportive_volume=0.0,
+            opposing_volume=0.0,
+        )
+
+    sign = 1.0 if net > 0 else -1.0
+    supportive = 0.0
+    opposing = 0.0
+    for prev, cur in pairwise(window):
+        delta = (cur.close - prev.close) * sign
+        if delta > 0:
+            supportive += cur.volume
+        elif delta < 0:
+            opposing += cur.volume
+        # a flat bar backs neither direction
+    total = supportive + opposing
+    score = supportive / total if total > 0.0 else 0.0
+    return VolumeConfirmation(
+        symbol=symbol,
+        score=score,
+        confirmed=score >= CONFIRMATION_MIN,
+        direction="bullish" if net > 0 else "bearish",
+        supportive_volume=supportive,
+        opposing_volume=opposing,
+    )
+
+
+def smart_volume(
+    bars: Sequence[Bar],
+    rsi_low: float = SMART_RSI_LOW,
+    rsi_high: float = SMART_RSI_HIGH,
+    vol_multiple: float = SMART_VOL_MULTIPLE,
+) -> SmartVolumeHit:
+    """A volume surge with RSI inside `[rsi_low, rsi_high]`.
+
+    `qualifies` is true only when relative volume is `>= vol_multiple` AND the
+    latest trailing RSI lies in the band. The latest figures ride along even when
+    the condition fails (or is undefined over too few bars, where they are `None`).
+    """
+
+    symbol = bars[-1].symbol if bars else ""
+    ratio, _ = relative_volume(bars)
+    rsi_val = _last(ind.rsi([b.close for b in bars], RSI_PERIOD))
+    surge = ratio is not None and ratio >= vol_multiple
+    in_band = rsi_val is not None and rsi_low <= rsi_val <= rsi_high
+    return SmartVolumeHit(
+        symbol=symbol,
+        qualifies=surge and in_band,
+        volume_multiple=ratio,
+        rsi=rsi_val,
+    )
+
+
 __all__ = [
+    "BREAKOUT_PRICE_LOOKBACK",
+    "BREAKOUT_VOL_MULTIPLE",
+    "CONFIRMATION_LOOKBACK",
+    "CONFIRMATION_MIN",
     "HEAVY_MULT",
     "LIGHT_MULT",
     "OBV_SLOPE_LOOKBACK",
     "RELATIVE_VOLUME_PERIOD",
+    "RSI_PERIOD",
+    "SMART_RSI_HIGH",
+    "SMART_RSI_LOW",
+    "SMART_VOL_MULTIPLE",
     "VOLUME_PERCENTILE_WINDOW",
     "VOLUME_SMA_PERIOD",
     "VWAP_PERIOD",
     "obv",
     "obv_slope",
     "relative_volume",
+    "smart_volume",
+    "volume_breakout",
+    "volume_confirmation",
     "volume_sma",
     "volume_summary",
     "vwap",

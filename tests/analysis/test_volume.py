@@ -235,3 +235,156 @@ def test_determinism_two_calls_equal() -> None:
     assert vol.obv_slope(bars) == vol.obv_slope(bars)
     assert vol.vwap(bars) == vol.vwap(bars)
     assert vol.volume_summary(bars) == vol.volume_summary(bars)
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0021 phase 2 — scanner-condition functions                              #
+# --------------------------------------------------------------------------- #
+
+
+def _range_then(*, breakout: bool) -> list[Bar]:
+    """20 tight-range bars (close 100, high 101, low 99, flat volume 100), then a
+    21st bar that is either a clear volume+price breakout or a quiet drift."""
+
+    bars = [_bar(i, c=100.0, v=100.0, h=101.0, low=99.0) for i in range(20)]
+    if breakout:
+        # close 110 clears the trailing high (101) on a ~2.7x volume surge.
+        bars.append(_bar(20, c=110.0, v=300.0, h=111.0, low=109.0))
+    else:
+        # inside the range, no volume surge.
+        bars.append(_bar(20, c=100.5, v=100.0, h=101.0, low=99.0))
+    return bars
+
+
+def test_volume_breakout_positive_reports_level_and_multiple() -> None:
+    res = vol.volume_breakout(_range_then(breakout=True))
+    assert res.is_breakout is True
+    assert res.direction == "bullish"
+    assert res.broken_level == 101.0  # the trailing high it cleared
+    assert res.volume_multiple is not None and res.volume_multiple >= vol.BREAKOUT_VOL_MULTIPLE
+    assert res.symbol == "TEST"
+
+
+def test_volume_breakout_negative_on_drift() -> None:
+    res = vol.volume_breakout(_range_then(breakout=False))
+    assert res.is_breakout is False
+    assert res.direction == "neutral"
+    assert res.broken_level is None
+
+
+def test_volume_breakout_negative_when_surge_without_price_break() -> None:
+    # A volume surge that does not clear the range is not a breakout.
+    bars = [_bar(i, c=100.0, v=100.0, h=101.0, low=99.0) for i in range(20)]
+    bars.append(_bar(20, c=100.5, v=400.0, h=101.0, low=99.0))
+    res = vol.volume_breakout(bars)
+    assert res.is_breakout is False
+    assert res.volume_multiple is not None and res.volume_multiple >= vol.BREAKOUT_VOL_MULTIPLE
+
+
+def test_volume_breakout_too_few_bars_is_negative() -> None:
+    res = vol.volume_breakout([_bar(i, c=100.0, v=100.0) for i in range(5)])
+    assert res.is_breakout is False
+    assert res.volume_multiple is None
+
+
+def _confirmation_series(*, up_volume: float, down_volume: float) -> list[Bar]:
+    """21 bars netting upward (+2 on up bars, -1 on the down bars at i=5/10/15/20).
+    Up bars carry `up_volume`, down bars `down_volume` — so the same price path
+    can have volume backing the move or fighting it, depending on the weights."""
+
+    bars = [_bar(0, c=100.0, v=100.0)]
+    close = 100.0
+    for i in range(1, 21):
+        if i % 5 == 0:
+            close -= 1.0
+            bars.append(_bar(i, c=close, v=down_volume))
+        else:
+            close += 2.0
+            bars.append(_bar(i, c=close, v=up_volume))
+    return bars
+
+
+def test_volume_confirmation_high_when_volume_backs_the_move() -> None:
+    res = vol.volume_confirmation(_confirmation_series(up_volume=300.0, down_volume=50.0))
+    assert res.direction == "bullish"
+    assert res.score > 0.9  # volume concentrated on the trend bars
+    assert res.confirmed is True
+
+
+def test_volume_confirmation_low_on_counter_trend_volume() -> None:
+    res = vol.volume_confirmation(_confirmation_series(up_volume=50.0, down_volume=600.0))
+    assert res.direction == "bullish"  # price still nets up...
+    assert res.score < vol.CONFIRMATION_MIN  # ...but the volume sits on the down bars
+    assert res.confirmed is False
+
+
+def test_volume_confirmation_flat_and_too_few_are_zero() -> None:
+    flat = [_bar(i, c=100.0, v=100.0) for i in range(21)]
+    res = vol.volume_confirmation(flat)
+    assert res.direction == "neutral"
+    assert res.score == 0.0
+    assert res.confirmed is False
+    short = vol.volume_confirmation([_bar(i, c=100.0 + i, v=100.0) for i in range(5)])
+    assert short.score == 0.0
+
+
+def _oscillating(n: int = 30, *, last_volume: float) -> list[Bar]:
+    """Alternating +1/-1 closes → average gain ≈ average loss → RSI ≈ 50 (inside
+    the smart-volume band); flat volume except a surge on the last bar."""
+
+    bars: list[Bar] = []
+    close = 100.0
+    for i in range(n):
+        close += 1.0 if i % 2 == 0 else -1.0
+        bars.append(_bar(i, c=close, v=last_volume if i == n - 1 else 100.0))
+    return bars
+
+
+def _uptrend_surge(n: int = 30, *, last_volume: float) -> list[Bar]:
+    """Monotonic rise → all gains → RSI ≈ 100 (above the band); flat volume except
+    a surge on the last bar — the *same* surge as `_oscillating`, only the RSI
+    differs."""
+
+    return [_bar(i, c=100.0 + i, v=last_volume if i == n - 1 else 100.0) for i in range(n)]
+
+
+def test_smart_volume_qualifies_with_surge_and_rsi_in_band() -> None:
+    res = vol.smart_volume(_oscillating(last_volume=200.0))
+    assert res.volume_multiple is not None and res.volume_multiple >= vol.SMART_VOL_MULTIPLE
+    assert res.rsi is not None and vol.SMART_RSI_LOW <= res.rsi <= vol.SMART_RSI_HIGH
+    assert res.qualifies is True
+
+
+def test_smart_volume_rejects_same_surge_when_rsi_out_of_band() -> None:
+    res = vol.smart_volume(_uptrend_surge(last_volume=200.0))
+    # Same volume surge as the in-band fixture...
+    assert res.volume_multiple is not None and res.volume_multiple >= vol.SMART_VOL_MULTIPLE
+    # ...but RSI is above the band, so it does not qualify.
+    assert res.rsi is not None and res.rsi > vol.SMART_RSI_HIGH
+    assert res.qualifies is False
+
+
+def test_scanner_functions_anti_lookahead_truncation() -> None:
+    # Each scanner reports on the latest bar over a trailing window; a verdict
+    # computed on a series is unaffected by bars appended after it (truncating the
+    # future back off reproduces the verdict exactly — no future leak).
+    future = [_bar(100 + j, c=200.0, v=999.0, h=201.0, low=199.0) for j in range(5)]
+
+    breakout = _range_then(breakout=True)
+    truncated = (breakout + future)[: len(breakout)]
+    assert vol.volume_breakout(truncated) == vol.volume_breakout(breakout)
+
+    conf = _confirmation_series(up_volume=300.0, down_volume=50.0)
+    assert vol.volume_confirmation((conf + future)[: len(conf)]) == vol.volume_confirmation(conf)
+
+    osc = _oscillating(last_volume=200.0)
+    assert vol.smart_volume((osc + future)[: len(osc)]) == vol.smart_volume(osc)
+
+
+def test_scanner_functions_determinism() -> None:
+    breakout = _range_then(breakout=True)
+    assert vol.volume_breakout(breakout) == vol.volume_breakout(breakout)
+    conf = _confirmation_series(up_volume=300.0, down_volume=50.0)
+    assert vol.volume_confirmation(conf) == vol.volume_confirmation(conf)
+    osc = _oscillating(last_volume=200.0)
+    assert vol.smart_volume(osc) == vol.smart_volume(osc)

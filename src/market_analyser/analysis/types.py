@@ -91,6 +91,60 @@ class VolumeSummary(BaseModel):
     stance: VolumeStance
 
 
+class VolumeBreakout(BaseModel):
+    """Whether the latest bar broke its trailing price range on a volume surge
+    (Plan 0021 phase 2). `is_breakout` is true only when both legs fire: volume
+    at least `vol_multiple` times its trailing average AND the close clearing the
+    trailing high (`direction="bullish"`) or low (`direction="bearish"`).
+    `broken_level` is that cleared extreme, or ``None`` when there is no breakout.
+    `volume_multiple` is the latest relative-volume ratio (``None`` when too few
+    bars). Conditions only — never a buy/sell call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    is_breakout: bool
+    direction: Direction
+    volume_multiple: float | None
+    broken_level: float | None
+
+
+class VolumeConfirmation(BaseModel):
+    """How well volume backs the recent price move (Plan 0021 phase 2).
+
+    Over the trailing window, `score` (0..1) is the share of directional volume
+    sitting on bars that move *with* the net price direction — high when the move
+    is carried by trend-aligned volume, low when volume concentrates on the
+    counter-trend bars (a divergence). `confirmed` is `score` at or above the
+    explicit threshold; `direction` is the net price direction over the window.
+    Conditions only — never a buy/sell call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    score: float  # 0..1 share of directional volume aligned with the net move
+    confirmed: bool
+    direction: Direction
+    supportive_volume: float
+    opposing_volume: float
+
+
+class SmartVolumeHit(BaseModel):
+    """A combined volume-surge-with-RSI-in-band condition (Plan 0021 phase 2).
+
+    `qualifies` is true when relative volume is at least `vol_multiple` times its
+    trailing average AND the latest RSI sits inside `[rsi_low, rsi_high]`.
+    `volume_multiple` / `rsi` carry the latest figures (``None`` when undefined
+    over the available bars). Conditions only — never a buy/sell call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    qualifies: bool
+    volume_multiple: float | None
+    rsi: float | None
+
+
 class ConditionSnapshot(BaseModel):
     """A composed, point-in-time technical condition read over cached bars.
 
@@ -157,8 +211,11 @@ __all__ = [
     "MomentumStance",
     "MultiTimeframeAlignment",
     "PatternHit",
+    "SmartVolumeHit",
     "TimeframeView",
     "Trend",
+    "VolumeBreakout",
+    "VolumeConfirmation",
     "VolumeStance",
     "VolumeSummary",
 ]
