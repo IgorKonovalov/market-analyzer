@@ -1,8 +1,9 @@
 # 0019 — Live quote: implement `get_quote` + `quote_for` MCP tool
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
+> **Closed:** 2026-05-31 (close review — no blockers, no majors; see "Close review" below)
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0007](../adrs/0007-market-data-provider.md) (implements the stubbed `get_quote`), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (resilience client — inherited), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house)
 > **Depends on:** [Plan 0009](0009-resilience-and-tradingview-screener.md) phase 1 (`ResilientHttpClient`). Reuses the existing Yahoo adapter plumbing (`_yahoo_fetch.py`).
@@ -34,7 +35,7 @@ flowchart LR
         QAdapter["YahooQuoteAdapter"]
         HTTP["ResilientHttpClient"]
     end
-    Y[("Yahoo Finance<br/>quote endpoint")]
+    Y[("Yahoo Finance<br/>/v8/finance/chart (meta block)")]
     Agent -- MCP --> Tool --> Provider --> QAdapter --> HTTP --> Y
 ```
 
@@ -43,7 +44,8 @@ flowchart LR
 ### Phase 1 — Yahoo quote adapter + `Quote` extension + provider wiring
 
 - **Owner skill:** `dev`
-- **What:** Implement a quote fetch against Yahoo's quote endpoint through `ResilientHttpClient` (short TTL, e.g. 30s — quotes are live). Extend the `Quote` model additively. Implement `get_quote` in `DefaultMarketDataProvider`; raise `ValueError` when `as_of` is provided.
+- **What:** Implement a quote fetch against Yahoo through `ResilientHttpClient` (short TTL, e.g. 30s — quotes are live). Extend the `Quote` model additively. Implement `get_quote` in `DefaultMarketDataProvider`; raise `ValueError` when `as_of` is provided.
+- **As-built (2026-05-31):** the adapter reads the live fields from the `meta` block of Yahoo's `/v8/finance/chart` endpoint (the same keyless endpoint family the OHLCV fetcher uses), **not** the dedicated `/v7/finance/quote` endpoint — that one is crumb/cookie-gated, and reusing the chart endpoint keeps the single-HTTP-path invariant [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) requires. Documented in `adapters/yahoo_quote.py`'s module docstring. The diagram below is updated to match.
 - **Files touched:**
   - New `src/market_analyser/data/adapters/yahoo_quote.py` (~80–120 lines; may share helpers with `_yahoo_fetch.py`).
   - `src/market_analyser/data/types.py`: extend `Quote` additively (see Data shapes).
@@ -110,4 +112,15 @@ class Quote(BaseModel):                  # frozen
 
 ## Followups (after this lands)
 
-Empty at draft time.
+- **m1 (minor, data integrity) — `dev`:** `adapters/yahoo_quote.py::_get_float` rejects `bool`/non-numerics but not non-finite floats. Python's `json.loads` parses `NaN`/`Infinity` literals by default, so a non-standard upstream numeric (`"regularMarketPrice": NaN`) would slip past the unknown-symbol guard (`NaN is not None`) into `Quote.price`, cascading to `change_pct=NaN` — contrary to the CLAUDE.md "defend against None, NaN, infinity" non-negotiable. One-line fix: `return float(value) if math.isfinite(value) else None`, so a non-finite price falls through to `UnknownSymbolError`. Low probability (Yahoo's `meta` is normally clean); not a blocker, hence carried rather than gating the close.
+
+## Close review (2026-05-31)
+
+Fresh-context architect review of both phases (commits `e7c5390` ph1, `8c7f390` ph2). **No blockers, no majors.**
+
+- **Alignment:** every done-when met by a non-tautological spec (assertion bodies read, not the pass list). Standouts: the `change_pct` derivation test plants a bogus `regularMarketChangePercent: 99.0` and proves the adapter derives from `previous_close` instead; the after-hours fixture carries a distinct `postMarketPrice: 431.2` and the test asserts `price == 430.16`, proving it reads the regular price; the blank-symbol test installs a `boom` fetcher that fails if the network is touched. `UnknownSymbolError` correctly subclasses `UpstreamDataError` and `failure_reason()` maps it to `"unknown_symbol"`, so the tool's structured-error path actually fires.
+- **Tripwire discharged honestly:** `test_provider_protocol.py` removed the `get_quote` `NotImplementedError` stub assertion (last stub graduated), not weakened.
+- **Gates:** `tests/data/test_yahoo_quote_adapter.py` + `tests/api/test_quote_for_tool.py` 28 pass; full `tests/api` 266 pass / 5 known-Windows skips (no new); `mypy --strict` clean.
+- **Layering:** the tool imports the `MarketDataProvider` Protocol, never the adapter (ADR-0007 honoured); adapter package-internal; no hidden state beyond the isolated, seam-monkeypatchable wall-clock reads.
+- **One sound as-built deviation** (recorded in phase 1 above + the diagram): reads the `/v8/finance/chart` `meta` block rather than the crumb-gated `/v7/finance/quote` endpoint — keeps ADR-0019's single-HTTP-path invariant. Not a blocker.
+- **Carried:** m1 (NaN guard, above), `dev`.
