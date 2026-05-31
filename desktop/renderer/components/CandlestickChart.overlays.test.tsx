@@ -27,6 +27,12 @@ import type { Bar } from '../types/sidecar/bar'
 interface FakeLineSeries {
   setData: jest.Mock
   applyOptions: jest.Mock
+  _opts: { priceScaleId?: string } & Record<string, unknown>
+}
+
+interface FakeHistogramSeries {
+  setData: jest.Mock
+  applyOptions: jest.Mock
   _opts: unknown
 }
 
@@ -38,6 +44,9 @@ interface FakeCandlestickSeries {
 interface FakeChart {
   addCandlestickSeries: jest.Mock<FakeCandlestickSeries, []>
   addLineSeries: jest.Mock<FakeLineSeries, [unknown]>
+  // Plan 0027: always-on volume histogram + its own price scales.
+  addHistogramSeries: jest.Mock<FakeHistogramSeries, [unknown]>
+  priceScale: jest.Mock<{ applyOptions: jest.Mock }, [string]>
   removeSeries: jest.Mock<void, [unknown]>
   remove: jest.Mock<void, []>
   applyOptions: jest.Mock<void, [unknown]>
@@ -48,8 +57,16 @@ interface FakeChart {
 }
 
 let createdLineSeries: FakeLineSeries[] = []
+let createdHistogramSeries: FakeHistogramSeries[] = []
 let removedLineSeries: FakeLineSeries[] = []
 let fakeChart: FakeChart
+
+// The agent OVERLAY line series are the ones added without a `priceScaleId` (they
+// ride the default price scale). The always-on Plan 0027 volume/VWAP/OBV lines
+// all pin an explicit `priceScaleId`, so this isolates overlays from them.
+function overlayLineSeries(): FakeLineSeries[] {
+  return createdLineSeries.filter((s) => s._opts.priceScaleId === undefined)
+}
 
 jest.mock('lightweight-charts', () => ({
   ColorType: { Solid: 'solid' },
@@ -66,11 +83,17 @@ function buildFakeChart(): FakeChart {
       const s: FakeLineSeries = {
         setData: jest.fn(),
         applyOptions: jest.fn(),
-        _opts: opts,
+        _opts: (opts ?? {}) as FakeLineSeries['_opts'],
       }
       createdLineSeries.push(s)
       return s
     }),
+    addHistogramSeries: jest.fn((opts: unknown) => {
+      const s: FakeHistogramSeries = { setData: jest.fn(), applyOptions: jest.fn(), _opts: opts }
+      createdHistogramSeries.push(s)
+      return s
+    }),
+    priceScale: jest.fn((_id: string) => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn((s: unknown) => {
       removedLineSeries.push(s as FakeLineSeries)
     }),
@@ -82,8 +105,20 @@ function buildFakeChart(): FakeChart {
   }
 }
 
+// The always-on Plan 0027 volume series the chart draws regardless of overlays:
+// candlestick + volume histogram + volume MA + VWAP + OBV.
+const BASE_KINDS: ReadonlyArray<{ kind: string; period?: number | null }> = [
+  { kind: 'candlestick' },
+  { kind: 'volume' },
+  { kind: 'volume_ma' },
+  { kind: 'vwap' },
+  { kind: 'obv' },
+]
+const BASE_COUNT = BASE_KINDS.length
+
 beforeEach(() => {
   createdLineSeries = []
+  createdHistogramSeries = []
   removedLineSeries = []
   fakeChart = buildFakeChart()
   delete (window as { __test_chart_render__?: unknown }).__test_chart_render__
@@ -114,23 +149,26 @@ const FIXTURE_BARS: Bar[] = Array.from({ length: 30 }, (_, i) => {
 // ---------- specs --------------------------------------------------------- //
 
 describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
-  it('renders a candlestick-only chart when no overlays are passed', () => {
+  it('renders the always-on volume block and no overlay line series when no overlays are passed', () => {
     render(<CandlestickChart bars={FIXTURE_BARS} />)
     const hook = window.__test_chart_render__
     expect(hook).toBeDefined()
-    expect(hook!.seriesCount).toBe(1)
-    expect(hook!.seriesKinds).toEqual([{ kind: 'candlestick' }])
-    expect(fakeChart.addLineSeries).not.toHaveBeenCalled()
+    expect(hook!.seriesCount).toBe(BASE_COUNT)
+    expect(hook!.seriesKinds).toEqual(BASE_KINDS)
+    // The volume histogram is drawn; no agent OVERLAY line series exist yet.
+    expect(fakeChart.addHistogramSeries).toHaveBeenCalledTimes(1)
+    expect(overlayLineSeries()).toHaveLength(0)
   })
 
   it('renders one EMA line series per supported overlay with the period reflected in the hook', () => {
     render(<CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: 'ema', period: 20 }]} />)
     const hook = window.__test_chart_render__
     expect(hook).toBeDefined()
-    expect(hook!.seriesCount).toBe(2)
-    expect(hook!.seriesKinds).toEqual([{ kind: 'candlestick' }, { kind: 'ema', period: 20 }])
-    expect(fakeChart.addLineSeries).toHaveBeenCalledTimes(1)
-    expect(createdLineSeries[0].setData).toHaveBeenCalled()
+    expect(hook!.seriesCount).toBe(BASE_COUNT + 1)
+    expect(hook!.seriesKinds).toEqual([...BASE_KINDS, { kind: 'ema', period: 20 }])
+    const overlays = overlayLineSeries()
+    expect(overlays).toHaveLength(1)
+    expect(overlays[0].setData).toHaveBeenCalled()
   })
 
   it('renders two EMA series when the overlays prop contains two different periods', () => {
@@ -146,18 +184,18 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
     const hook = window.__test_chart_render__
     expect(hook).toBeDefined()
     expect(hook!.seriesKinds.filter((s) => s.kind === 'ema')).toHaveLength(2)
-    expect(hook!.seriesCount).toBe(3) // candlestick + ema20 + ema50
+    expect(hook!.seriesCount).toBe(BASE_COUNT + 2) // base + ema20 + ema50
   })
 
-  it('logs a warning and renders no series when the overlay kind is rsi (MVP-unsupported)', () => {
+  it('logs a warning and renders no overlay series when the overlay kind is rsi (MVP-unsupported)', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       render(<CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: 'rsi', period: 14 }]} />)
       const hook = window.__test_chart_render__
       expect(hook).toBeDefined()
-      expect(hook!.seriesCount).toBe(1) // candlestick only
-      expect(hook!.seriesKinds).toEqual([{ kind: 'candlestick' }])
-      expect(fakeChart.addLineSeries).not.toHaveBeenCalled()
+      expect(hook!.seriesCount).toBe(BASE_COUNT) // base volume block only
+      expect(hook!.seriesKinds).toEqual(BASE_KINDS)
+      expect(overlayLineSeries()).toHaveLength(0)
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rsi'))
     } finally {
       warnSpy.mockRestore()
@@ -180,7 +218,7 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
       const hook = window.__test_chart_render__
       expect(hook).toBeDefined()
       expect(hook!.seriesKinds).toEqual([
-        { kind: 'candlestick' },
+        ...BASE_KINDS,
         { kind: 'ema', period: 20 },
         { kind: 'sma', period: 50 },
       ])
@@ -194,11 +232,12 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
     const { rerender } = render(
       <CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: 'ema', period: 20 }]} />,
     )
-    expect(window.__test_chart_render__!.seriesCount).toBe(2)
+    expect(window.__test_chart_render__!.seriesCount).toBe(BASE_COUNT + 1)
+    const overlaySeries = overlayLineSeries()[0]
 
     rerender(<CandlestickChart bars={FIXTURE_BARS} overlays={[]} />)
-    expect(window.__test_chart_render__!.seriesCount).toBe(1)
+    expect(window.__test_chart_render__!.seriesCount).toBe(BASE_COUNT)
     expect(fakeChart.removeSeries).toHaveBeenCalledTimes(1)
-    expect(removedLineSeries[0]).toBe(createdLineSeries[0])
+    expect(removedLineSeries[0]).toBe(overlaySeries)
   })
 })

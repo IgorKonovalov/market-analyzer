@@ -47,6 +47,8 @@ jest.mock('lightweight-charts', () => ({
   createChart: jest.fn(() => ({
     addCandlestickSeries: jest.fn(() => candleSeries),
     addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+    addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+    priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn(),
     remove: jest.fn(),
     applyOptions: jest.fn(),

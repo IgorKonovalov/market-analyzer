@@ -31,6 +31,14 @@ import type {
 import { toLightweightBar } from '../api/client'
 import { postBarClicked, postRangeSelected } from '../api/uiEvents'
 import { computeEma, computeSma } from '../lib/indicators'
+import {
+  VOLUME_MA_PERIOD,
+  VWAP_PERIOD,
+  computeObv,
+  computeVolumeBars,
+  computeVolumeMa,
+  computeVwap,
+} from '../lib/volume'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
@@ -47,6 +55,22 @@ const SUPPORTED_OVERLAY_KINDS: ReadonlySet<OverlaySpec['kind']> = new Set(['ema'
 
 const OVERLAY_COLOR_EMA = '#2563eb'
 const OVERLAY_COLOR_SMA = '#f97316'
+
+// Always-on volume series (Plan 0027 phase 3), each derived client-side from
+// `bars`. The histogram + its MA sit on their own bottom-band price scale; VWAP
+// rides the main price scale; OBV gets its own band. lightweight-charts 4.2.x has
+// no panes API, so "own pane" is an overlay price scale with `scaleMargins` (the
+// plan's documented v4 mechanism / OBV fallback).
+const PRICE_SCALE_ID = 'right' // the default price (candlestick) scale
+const VOLUME_SCALE_ID = 'volume'
+const OBV_SCALE_ID = 'obv'
+const VOLUME_MA_COLOR = '#64748b'
+const VWAP_COLOR = '#9333ea'
+const OBV_COLOR = '#0891b2'
+// Candles occupy the upper band; volume hugs the bottom; OBV gets a strip above it.
+const PRICE_SCALE_MARGINS = { top: 0.05, bottom: 0.4 }
+const VOLUME_SCALE_MARGINS = { top: 0.82, bottom: 0 }
+const OBV_SCALE_MARGINS = { top: 0.62, bottom: 0.22 }
 
 declare global {
   interface Window {
@@ -141,6 +165,11 @@ export function CandlestickChart({
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const overlaySeriesRef = useRef<Map<string, OverlayEntry>>(new Map())
+  // Always-on volume series (Plan 0027 phase 3).
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
 
   // `select-range` cursor mode: when active (and agent mode is ON), a drag
   // selects a date range to POST instead of panning the chart.
@@ -179,6 +208,11 @@ export function CandlestickChart({
     if (seriesRef.current !== null) {
       kinds.push({ kind: 'candlestick' })
     }
+    // Always-on volume series, between the candlestick and the agent overlays.
+    if (volumeSeriesRef.current !== null) kinds.push({ kind: 'volume' })
+    if (volumeMaSeriesRef.current !== null) kinds.push({ kind: 'volume_ma' })
+    if (vwapSeriesRef.current !== null) kinds.push({ kind: 'vwap' })
+    if (obvSeriesRef.current !== null) kinds.push({ kind: 'obv' })
     for (const { spec } of overlaySeriesRef.current.values()) {
       kinds.push({ kind: spec.kind, period: spec.period ?? null })
     }
@@ -214,8 +248,48 @@ export function CandlestickChart({
     })
     const series = chart.addCandlestickSeries()
 
+    // Always-on volume series (Plan 0027 phase 3). Created once at mount; their
+    // data is pushed in the bars effect. Disposed by `chart.remove()` on unmount
+    // alongside the candlestick (the chart owns all its series).
+    const volumeSeries = chart.addHistogramSeries({
+      priceScaleId: VOLUME_SCALE_ID,
+      priceFormat: { type: 'volume' },
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    const volumeMaSeries = chart.addLineSeries({
+      priceScaleId: VOLUME_SCALE_ID,
+      color: VOLUME_MA_COLOR,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    const vwapSeries = chart.addLineSeries({
+      priceScaleId: PRICE_SCALE_ID, // rides the main price scale alongside candles
+      color: VWAP_COLOR,
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    const obvSeries = chart.addLineSeries({
+      priceScaleId: OBV_SCALE_ID,
+      color: OBV_COLOR,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    // Push the candles into the upper band and dock each derived band on its own
+    // overlay scale, so the volume/OBV strips don't share the price axis.
+    chart.priceScale(PRICE_SCALE_ID).applyOptions({ scaleMargins: PRICE_SCALE_MARGINS })
+    chart.priceScale(VOLUME_SCALE_ID).applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS })
+    chart.priceScale(OBV_SCALE_ID).applyOptions({ scaleMargins: OBV_SCALE_MARGINS })
+
     chartRef.current = chart
     seriesRef.current = series
+    volumeSeriesRef.current = volumeSeries
+    volumeMaSeriesRef.current = volumeMaSeries
+    vwapSeriesRef.current = vwapSeries
+    obvSeriesRef.current = obvSeries
     // Capture the Map reference into a local for the cleanup closure
     // (react-hooks/exhaustive-deps: ref.current may change between effect
     // run and cleanup invocation; the local capture is the canonical fix).
@@ -343,6 +417,10 @@ export function CandlestickChart({
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      volumeSeriesRef.current = null
+      volumeMaSeriesRef.current = null
+      vwapSeriesRef.current = null
+      obvSeriesRef.current = null
       overlayMap.clear()
       syncTestRenderHook()
     }
@@ -370,6 +448,13 @@ export function CandlestickChart({
     if (!chart || !candlestick) return
 
     candlestick.setData(bars.map(toLightweightBar))
+
+    // Always-on volume series, derived client-side from the same `bars`. Empty
+    // `bars` yields empty arrays (no NaN/Infinity reaches lightweight-charts).
+    volumeSeriesRef.current?.setData(computeVolumeBars(bars))
+    volumeMaSeriesRef.current?.setData(computeVolumeMa(bars, VOLUME_MA_PERIOD))
+    vwapSeriesRef.current?.setData(computeVwap(bars, VWAP_PERIOD))
+    obvSeriesRef.current?.setData(computeObv(bars))
 
     const desired = new Map<string, OverlaySpec>()
     for (const spec of overlays ?? []) {

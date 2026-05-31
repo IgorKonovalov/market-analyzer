@@ -163,6 +163,9 @@ test('chart.show via MCP switches the renderer to the requested symbol and overl
   const render = await readChartRender(window)
   expect(render.seriesKinds).toContainEqual({ kind: 'candlestick' })
   expect(render.seriesKinds).toContainEqual({ kind: 'ema', period: 20 })
+  // Plan 0027 phase 3: the always-on volume histogram is drawn on its own scale
+  // from the bars the renderer already holds (no overlay needed to summon it).
+  expect(render.seriesKinds).toContainEqual({ kind: 'volume' })
 
   await app.close()
 })
