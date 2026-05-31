@@ -234,7 +234,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'timeframe',
     ])
     expect(literalValues(dumped.OhlcvBackfillFailedPayloadV1, 'reason')).toEqual(
-      ['rate_limited', 'unknown_symbol', 'upstream_unavailable'].sort(),
+      ['rate_limited', 'unknown_symbol', 'upstream_unavailable', 'history_exceeded'].sort(),
     )
   })
 })
