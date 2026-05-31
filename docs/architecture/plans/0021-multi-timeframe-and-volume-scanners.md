@@ -5,7 +5,7 @@
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0023](../adrs/0023-technical-analysis-surface.md) (the analysis surface this builds on), [ADR-0007](../adrs/0007-market-data-provider.md) (bars via Provider), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house)
-> **Depends on:** [Plan 0018](0018-technical-analysis-surface.md) (the `analysis/` surface — indicators, snapshot). Hard dependency: these are consumers of that layer.
+> **Depends on:** [Plan 0018](0018-technical-analysis-surface.md) (the `analysis/` surface — indicators, snapshot) and [Plan 0027](0027-volume-bars-and-analysis.md) (the `analysis/volume.py` **measure layer** — relative volume, OBV, VWAP, `volume_summary`). Hard dependencies: these are consumers of both. **Re-based 2026-05-30:** Plan 0027 now creates `analysis/volume.py`; this plan's phase 2 changed from "build `volume.py` from scratch" to "add the scanner-condition functions on top of it" (see phase 2 below).
 > **Blocked on:** [Plan 0025](0025-timeframe-expansion.md) (timeframe expansion — data-layer support for `4h` / `15m` / `weekly` bars, with in-house 4h resampling). The data layer today supports only `{1d, 1h}`, so this plan's default multi-timeframe ladder cannot run until 0025 lands — see the Blocker note under "Risks". (Decision 2026-05-29: expand the data layer in its own plan rather than narrowing 0021's ladder to `{1d, 1h}`.)
 
 ## TL;DR
@@ -67,13 +67,14 @@ flowchart LR
   - **Tool boundary:** unsupported timeframe rejected; empty timeframe list rejected; missing-bars timeframe surfaces an honest per-timeframe `null` (not a crash). Asserted.
   - `uv run pytest tests/analysis/test_multi_timeframe.py tests/api/test_multi_timeframe_tool.py` passes; mypy strict clean.
 
-### Phase 2 — Volume condition functions (`analysis/volume.py`)
+### Phase 2 — Volume scanner-condition functions (extend `analysis/volume.py`)
 
 - **Owner skill:** `dev`
-- **What:** Pure, trailing functions: `volume_breakout(bars, vol_multiple, price_lookback)` → whether the latest bar's volume exceeds `vol_multiple ×` its trailing average AND price broke its trailing range; `volume_confirmation(bars, lookback)` → whether recent volume backs the recent price move (e.g. up-moves on rising volume) as a 0..1 score; `smart_volume(bars, rsi_low, rsi_high, vol_multiple)` → combined volume-surge-with-RSI-in-band condition. All read only `bars[0..=last]` (trailing).
+- **Re-based 2026-05-30:** `analysis/volume.py` is created by [Plan 0027](0027-volume-bars-and-analysis.md) (the measure layer: `volume_sma`/`relative_volume`/`obv`/`obv_slope`/`vwap`/`volume_summary`). This phase **extends** that existing module with the higher-level scanner-condition functions, consuming the Plan 0027 primitives rather than re-deriving relative volume / breakout math.
+- **What:** Pure, trailing functions added to the existing `analysis/volume.py`: `volume_breakout(bars, vol_multiple, price_lookback)` → whether the latest bar's volume exceeds `vol_multiple ×` its trailing average (reusing Plan 0027's `relative_volume`) AND price broke its trailing range; `volume_confirmation(bars, lookback)` → whether recent volume backs the recent price move (e.g. up-moves on rising volume) as a 0..1 score; `smart_volume(bars, rsi_low, rsi_high, vol_multiple)` → combined volume-surge-with-RSI-in-band condition. All read only `bars[0..=last]` (trailing).
 - **Files touched:**
-  - New `src/market_analyser/analysis/volume.py` (~120–160 lines).
-  - New `tests/analysis/test_volume.py`, with hand-built fixtures (a clear breakout bar; a fake-out; a no-volume drift).
+  - Extend `src/market_analyser/analysis/volume.py` (Plan 0027) with the three scanner-condition functions (~80–110 added lines).
+  - Extend `tests/analysis/test_volume.py` (Plan 0027) with scanner fixtures (a clear breakout bar; a fake-out; a no-volume drift).
 - **Done when:**
   - **Breakout positive/negative:** the breakout fixture returns a positive `volume_breakout` result with the multiple and broken level reported; the drift fixture returns negative. Asserted.
   - **Confirmation score:** up-move-on-rising-volume fixture scores high; up-move-on-falling-volume scores low. Threshold constants explicit. Asserted.
