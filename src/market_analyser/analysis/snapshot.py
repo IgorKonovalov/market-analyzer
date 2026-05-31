@@ -22,6 +22,7 @@ from market_analyser.analysis.types import (
     MomentumStance,
     Trend,
 )
+from market_analyser.analysis.volume import volume_summary
 from market_analyser.data.types import Bar
 
 # --- Tunable classification thresholds -------------------------------------- #
@@ -158,6 +159,19 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         "supertrend_direction": float(last_st.direction) if last_st else None,
     }
 
+    volume = volume_summary(bars)
+    indicator_values.update(
+        {
+            "volume": volume.latest_volume,
+            "vol_sma20": volume.volume_sma,
+            "rel_volume": volume.relative_volume,
+            "vol_pct90": volume.volume_percentile,
+            "obv": volume.obv,
+            "obv_slope": volume.obv_slope,
+            "vwap": volume.vwap,
+        }
+    )
+
     trend = _classify_trend(closes, indicator_values["adx"])
     momentum = _classify_momentum(rsi_val, indicator_values["macd_hist"])
 
@@ -170,6 +184,7 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         as_of=bars[-1].event_ts,
         trend=trend,
         momentum=momentum,
+        volume_stance=volume.stance,
         indicators=indicator_values,
         support_resistance=_support_resistance(bars),
         recent_patterns=recent_patterns,

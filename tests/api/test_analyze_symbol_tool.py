@@ -179,6 +179,11 @@ def test_happy_path_returns_full_snapshot() -> None:
     for key in ("rsi", "macd", "bb_upper", "atr", "adx", "supertrend"):
         assert key in snap.indicators
         assert snap.indicators[key] is not None
+    # Plan 0027: volume measures ride in `indicators`, stance is a top-level field.
+    assert snap.volume_stance.value in {"heavy", "normal", "light"}
+    for key in ("volume", "vol_sma20", "rel_volume", "vol_pct90", "obv", "obv_slope", "vwap"):
+        assert key in snap.indicators
+        assert snap.indicators[key] is not None
     assert set(snap.support_resistance) == {"support", "resistance"}
     assert isinstance(snap.recent_patterns, list)
     assert resp.analyzed_at.tzinfo is not None  # UTC-aware provenance stamp
@@ -333,6 +338,11 @@ def test_analyze_symbol_via_mcp_returns_snapshot(live_server: str, mcp_secret: s
     assert payload["analyzed_at"]
     snapshot = payload["snapshot"]
     assert isinstance(snapshot, dict)
-    assert {"trend", "momentum", "indicators", "support_resistance", "recent_patterns"} <= set(
-        snapshot
-    )
+    assert {
+        "trend",
+        "momentum",
+        "volume_stance",
+        "indicators",
+        "support_resistance",
+        "recent_patterns",
+    } <= set(snapshot)

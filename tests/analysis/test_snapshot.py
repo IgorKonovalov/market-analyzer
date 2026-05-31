@@ -8,7 +8,8 @@ from datetime import UTC, datetime, timedelta
 
 from market_analyser.analysis import indicators as ind
 from market_analyser.analysis.snapshot import condition_snapshot
-from market_analyser.analysis.types import ConditionSnapshot, MomentumStance, Trend
+from market_analyser.analysis.types import ConditionSnapshot, MomentumStance, Trend, VolumeStance
+from market_analyser.analysis.volume import volume_summary
 from market_analyser.data.types import Bar
 
 _TOL = 1e-9
@@ -141,16 +142,20 @@ def test_recent_patterns_surface_bullish_engulfing_on_last_bar() -> None:
 
 
 def test_no_recommendation_field() -> None:
-    assert set(ConditionSnapshot.model_fields) == {
+    fields = set(ConditionSnapshot.model_fields)
+    assert fields == {
         "symbol",
         "timeframe",
         "as_of",
         "trend",
         "momentum",
+        "volume_stance",  # Plan 0027: additive condition field
         "indicators",
         "support_resistance",
         "recent_patterns",
     }
+    # The analyst non-negotiable, pinned: no action/buy/sell field ever appears.
+    assert not (fields & {"action", "signal", "recommendation", "buy", "sell"})
 
 
 # --------------------------------------------------------------------------- #
@@ -175,3 +180,76 @@ def test_anti_lookahead_truncation_matches_full_series_at_k() -> None:
         adx_k = full_adx[k]
         assert adx_k is not None
         assert abs(snap.indicators["adx"] - adx_k.adx) < _TOL  # type: ignore[operator]
+
+
+# --------------------------------------------------------------------------- #
+# Volume integration (Plan 0027 phase 2)                                       #
+# --------------------------------------------------------------------------- #
+
+
+def _vbar(i: int, *, c: float, v: float) -> Bar:
+    return Bar(
+        symbol="TEST",
+        timeframe="1d",
+        event_ts=datetime(2025, 1, 1, tzinfo=UTC) + timedelta(days=i),
+        open=c,
+        high=c + 0.6,
+        low=c - 0.6,
+        close=c,
+        volume=v,
+        source="synthetic",
+    )
+
+
+def _rising_heavy_last(n: int = 60) -> list[Bar]:
+    """Rising closes (OBV accumulates) with flat 1000-volume bars except a heavy
+    final bar — last volume well above its trailing MA."""
+
+    bars = [_vbar(i, c=100.0 + i, v=1000.0) for i in range(n - 1)]
+    bars.append(_vbar(n - 1, c=100.0 + (n - 1), v=4000.0))
+    return bars
+
+
+def test_snapshot_carries_volume_on_heavy_fixture() -> None:
+    snap = condition_snapshot(_rising_heavy_last(), "1d")
+    assert snap.volume_stance == VolumeStance.HEAVY
+    for key in ("rel_volume", "obv", "vwap", "volume", "vol_sma20", "vol_pct90", "obv_slope"):
+        assert key in snap.indicators
+    assert snap.indicators["rel_volume"] is not None
+    assert snap.indicators["obv"] is not None
+    assert snap.indicators["vwap"] is not None
+    # Rising closes -> OBV accumulating -> positive slope.
+    assert snap.indicators["obv_slope"] is not None and snap.indicators["obv_slope"] > 0
+
+
+def test_snapshot_short_series_volume_measures_none_no_crash() -> None:
+    bars = [_vbar(i, c=100.0 + i, v=1000.0) for i in range(3)]  # too short for the windows
+    snap = condition_snapshot(bars, "1d")  # must not raise
+    assert snap.volume_stance == VolumeStance.NORMAL
+    assert snap.indicators["vol_sma20"] is None
+    assert snap.indicators["rel_volume"] is None
+    assert snap.indicators["vwap"] is None
+
+
+def test_snapshot_volume_anti_lookahead_replay() -> None:
+    """With bars truncated at k, the snapshot's volume measures equal a direct
+    volume_summary on the truncated series, and differ from the full-series read
+    where the heavy final bar makes them differ — no future volume leaks back."""
+
+    bars = _rising_heavy_last(60)
+    volume_keys = ("volume", "vol_sma20", "rel_volume", "vol_pct90", "obv", "obv_slope", "vwap")
+    for k in (30, 58):
+        snap = condition_snapshot(bars[: k + 1], "1d")
+        truncated = volume_summary(bars[: k + 1])
+        assert snap.indicators["rel_volume"] == truncated.relative_volume
+        assert snap.indicators["obv"] == truncated.obv
+        assert snap.indicators["vwap"] == truncated.vwap
+        assert snap.volume_stance == truncated.stance
+
+    full = condition_snapshot(bars, "1d")
+    mid = condition_snapshot(bars[:59], "1d")  # excludes the heavy last bar
+    # The heavy last bar lifts relative volume and stance vs the truncated read.
+    assert full.indicators["rel_volume"] != mid.indicators["rel_volume"]
+    assert full.volume_stance == VolumeStance.HEAVY
+    assert mid.volume_stance != VolumeStance.HEAVY
+    assert set(volume_keys) <= set(full.indicators)

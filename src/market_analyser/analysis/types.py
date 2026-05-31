@@ -99,7 +99,10 @@ class ConditionSnapshot(BaseModel):
     ``bb_pct_b``, ``atr``, ``adx``, ``supertrend_direction``, plus the trailing
     percentile ranks ``rsi_pct90`` / ``atr_pct90``); a value is ``None`` when the
     indicator is undefined over the available bars. `support_resistance` maps
-    ``"support"`` / ``"resistance"`` to trailing swing levels.
+    ``"support"`` / ``"resistance"`` to trailing swing levels. `volume_stance` is
+    the coarse volume reading (heavy/normal/light); the numeric volume measures
+    (``volume``, ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``,
+    ``obv_slope``, ``vwap``) ride in `indicators` alongside the others.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -109,6 +112,7 @@ class ConditionSnapshot(BaseModel):
     as_of: datetime
     trend: Trend
     momentum: MomentumStance
+    volume_stance: VolumeStance
     indicators: dict[str, float | None]
     support_resistance: dict[str, list[float]]
     recent_patterns: list[PatternHit]
