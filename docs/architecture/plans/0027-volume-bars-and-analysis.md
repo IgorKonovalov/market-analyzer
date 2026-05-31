@@ -1,6 +1,6 @@
 # 0027 — Volume bars in the chart + volume-aware analysis
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-30
 > **Approved:** 2026-05-30
 > **Owner skill(s):** `dev` (phases 1–2), `ui-builder` (phase 3)

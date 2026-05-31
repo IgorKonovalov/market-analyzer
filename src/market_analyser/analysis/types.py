@@ -55,6 +55,42 @@ class MomentumStance(StrEnum):
     OVERSOLD = "oversold"
 
 
+class VolumeStance(StrEnum):
+    """Coarse volume reading from relative volume (latest ÷ trailing MA).
+
+    Conditions only — heavy/normal/light describes *how much* trading is
+    happening relative to the trailing average, never a buy/sell call.
+    """
+
+    HEAVY = "heavy"  # latest volume >= HEAVY_MULT * trailing MA
+    NORMAL = "normal"
+    LIGHT = "light"  # latest volume <= LIGHT_MULT * trailing MA
+
+
+class VolumeSummary(BaseModel):
+    """Latest trailing volume measures composed for one symbol (Plan 0027).
+
+    Every numeric field is the latest *defined* value of its trailing series, or
+    ``None`` when the available bars are too few for that measure. `stance` is the
+    coarse `VolumeStance` derived from `relative_volume`; it falls back to
+    ``NORMAL`` when relative volume is undefined. The VWAP is a rolling trailing
+    N-period volume-weighted average of the typical price — **not** session VWAP
+    (our bars are predominantly daily with no intraday session boundaries).
+    Conditions only — no buy/sell field.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    latest_volume: float | None
+    volume_sma: float | None
+    relative_volume: float | None  # latest ÷ trailing MA
+    volume_percentile: float | None  # 0..100 trailing rank of the latest volume
+    obv: float | None
+    obv_slope: float | None  # signed; >0 accumulation, <0 distribution
+    vwap: float | None  # rolling trailing N-period
+    stance: VolumeStance
+
+
 class ConditionSnapshot(BaseModel):
     """A composed, point-in-time technical condition read over cached bars.
 
@@ -84,4 +120,6 @@ __all__ = [
     "MomentumStance",
     "PatternHit",
     "Trend",
+    "VolumeStance",
+    "VolumeSummary",
 ]
