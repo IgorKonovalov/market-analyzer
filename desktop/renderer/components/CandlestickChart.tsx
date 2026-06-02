@@ -1,11 +1,16 @@
 /**
- * Lightweight-charts wrapper. Four effects, four responsibilities:
+ * Lightweight-charts wrapper. Three effects, three responsibilities:
  *   1. Create the chart once on mount; dispose on unmount.
- *   2. Push data when `bars` change; never recreate the chart for new data.
- *   3. Reconcile overlay series (Plan 0007 phase 4.5) when `overlays` or
+ *   2. Push data when `bars` change; never recreate the chart for new data;
+ *      reconcile overlay series (Plan 0007 phase 4.5) when `overlays` or
  *      `bars` change: add new line series, remove gone ones, recompute
  *      data for the kept ones.
- *   4. Push markers when `annotations` change; layer onto the candlestick.
+ *   3. Push markers when `annotations` (or the clicked-bar marker) change;
+ *      layer onto the candlestick.
+ *
+ * The pointer-gesture state machine (agent-mode range-select + bar-click) lives
+ * in `useChartGestures` (Plan 0029 phase 1); the component owns chart lifecycle
+ * and declarative series reconciliation and hands the hook its chart/series refs.
  *
  * Disposing on unmount is non-negotiable — without it every navigation leaks
  * a Canvas/WebGL context. See ui-builder/references/best-practices.md.
@@ -16,20 +21,12 @@
  * spec assert against that — NOT the reducer's overlay list — so a render
  * regression that loses a series cannot pass.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { ColorType, createChart } from 'lightweight-charts'
-import type {
-  CandlestickData,
-  IChartApi,
-  ISeriesApi,
-  MouseEventParams,
-  SeriesMarker,
-  Time,
-  UTCTimestamp,
-} from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 
 import { toLightweightBar } from '../api/client'
-import { postBarClicked, postRangeSelected } from '../api/uiEvents'
+import { useChartGestures } from '../hooks/useChartGestures'
 import { computeEma, computeSma } from '../lib/indicators'
 import {
   VOLUME_MA_PERIOD,
@@ -95,15 +92,6 @@ interface Props {
   timeframe?: string
 }
 
-/** Our chart uses `UTCTimestamp` (epoch seconds); convert to ISO for the
- * UI-event payloads. Non-numeric `Time` (business-day) never occurs for our
- * data — guarded so a stray value can't produce `Invalid Date`. */
-function timeToIso(time: Time): string | null {
-  return typeof time === 'number' && Number.isFinite(time)
-    ? new Date(time * 1000).toISOString()
-    : null
-}
-
 /** Human-readable label for a selected [start, end] window. UTC (matching the
  * bar timestamps); the time is shown only when it isn't midnight, so a daily
  * range reads as plain dates. */
@@ -114,27 +102,6 @@ function formatRangeLabel(startIso: string, endIso: string): string {
     return time === '00:00' ? date : `${date} ${time}`
   }
   return `${fmt(startIso)} → ${fmt(endIso)}`
-}
-
-// A drag shorter than this many px is treated as a click, not a range select.
-const MIN_RANGE_SELECT_PX = 3
-
-/** Resolve the clicked bar's OHLC: prefer the click's `seriesData` (exact data
- * point), else fall back to matching `param.time` against the `bars` prop — so a
- * click that lands near but not precisely on a data point still resolves. */
-function resolveOhlc(
-  param: MouseEventParams,
-  series: ISeriesApi<'Candlestick'>,
-  bars: Bar[],
-): { open: number; high: number; low: number; close: number } | null {
-  const cd = param.seriesData.get(series) as CandlestickData | undefined
-  if (cd && typeof cd.open === 'number') {
-    return { open: cd.open, high: cd.high, low: cd.low, close: cd.close }
-  }
-  if (typeof param.time !== 'number') return null
-  const time = param.time
-  const bar = bars.find((b) => Math.floor(new Date(b.event_ts).getTime() / 1000) === time)
-  return bar ? { open: bar.open, high: bar.high, low: bar.low, close: bar.close } : null
 }
 
 interface OverlayEntry {
@@ -170,38 +137,6 @@ export function CandlestickChart({
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-
-  // `select-range` cursor mode: when active (and agent mode is ON), a drag
-  // selects a date range to POST instead of panning the chart.
-  const [selectRangeMode, setSelectRangeMode] = useState(false)
-  // The selection rectangle, in px relative to the chart container. Set on
-  // pointerdown, updated through the drag, and KEPT after release so the user
-  // sees what's selected; cleared on the next drag, Escape, or leaving the mode.
-  const [selection, setSelection] = useState<{ startX: number; endX: number } | null>(null)
-  // The selected window's time range (ISO), for the detail label. Tracks the
-  // drag live and persists with the rectangle after release.
-  const [rangeLabel, setRangeLabel] = useState<{ start: string; end: string } | null>(null)
-  // The event_ts (ISO) of the last clicked bar, marked on the chart so the user
-  // sees which bar they picked. Time-anchored (a series marker), so it tracks
-  // pan/zoom rather than drifting like a pixel overlay would.
-  const [clickedBarTs, setClickedBarTs] = useState<string | null>(null)
-
-  // The gesture handlers are wired once on mount but must read the *current*
-  // props/state — refs keep them live without re-registering listeners.
-  const agentModeRef = useRef(agentModeEnabled)
-  agentModeRef.current = agentModeEnabled
-  const selectRangeRef = useRef(selectRangeMode)
-  selectRangeRef.current = selectRangeMode
-  const symbolRef = useRef(symbol)
-  symbolRef.current = symbol
-  const timeframeRef = useRef(timeframe)
-  timeframeRef.current = timeframe
-  const barsRef = useRef(bars)
-  barsRef.current = bars
-  // Set true when a range drag completes, so the click lightweight-charts may
-  // fire on that same pointerup doesn't also register as a bar-click. Reset on
-  // the next pointerdown and after it's consumed once.
-  const suppressClickRef = useRef(false)
 
   function syncTestRenderHook(): void {
     const kinds: Array<{ kind: string; period?: number | null }> = []
@@ -296,124 +231,7 @@ export function CandlestickChart({
     const overlayMap = overlaySeriesRef.current
     syncTestRenderHook()
 
-    // --- Plan 0014 UI gestures (gated on agent mode via refs) --------------- //
-
-    // Bar-click: fires whenever agent mode is ON (independent of select-range
-    // mode — a click is not a drag). The OHLC comes from the click's seriesData
-    // when available, falling back to a lookup in the bars prop by timestamp so
-    // a click that doesn't resolve exactly onto a data point still works.
-    const handleClick = (param: MouseEventParams): void => {
-      if (suppressClickRef.current) {
-        suppressClickRef.current = false // consume the click that trailed a drag
-        return
-      }
-      if (!agentModeRef.current || !symbolRef.current || !timeframeRef.current) return
-      if (param.time === undefined) return
-      const eventTs = timeToIso(param.time)
-      if (eventTs === null) return
-      const ohlc = resolveOhlc(param, series, barsRef.current)
-      if (ohlc === null) return
-      setClickedBarTs(eventTs) // mark the bar on the chart
-      void postBarClicked({
-        symbol: symbolRef.current,
-        timeframe: timeframeRef.current,
-        event_ts: eventTs,
-        ...ohlc,
-      })
-    }
-    chart.subscribeClick(handleClick)
-
-    // Range-select: in range mode, a pointer drag over the chart maps the start
-    // and end x-coordinates to bar times and POSTs the [start, end] window.
-    // lightweight-charts drives pan/zoom via POINTER events and preventDefaults
-    // pointerdown (which also suppresses the compat mouse events) — so the
-    // selection MUST use pointer events, and the chart's pan is disabled in
-    // range mode (the `handleScroll`/`handleScale` effect below) so the drag is
-    // free to define a selection rather than scroll. Escape cancels + exits.
-    let dragStartX: number | null = null
-    const xInContainer = (clientX: number): number =>
-      clientX - container.getBoundingClientRect().left
-    const rangeFromX = (aX: number, bX: number): { start: string; end: string } | null => {
-      const timeScale = chartRef.current?.timeScale()
-      if (!timeScale) return null
-      const t1 = timeScale.coordinateToTime(Math.min(aX, bX))
-      const t2 = timeScale.coordinateToTime(Math.max(aX, bX))
-      if (t1 === null || t2 === null) return null
-      const start = timeToIso(t1)
-      const end = timeToIso(t2)
-      if (start === null || end === null) return null
-      return { start, end }
-    }
-    const onPointerDown = (e: PointerEvent): void => {
-      // Every fresh interaction clears a stale drag-suppression flag, so a
-      // never-consumed suppression can't swallow a later genuine bar-click.
-      suppressClickRef.current = false
-      if (!agentModeRef.current || !selectRangeRef.current) return
-      dragStartX = xInContainer(e.clientX)
-      // Starting a new selection clears any previous one (and the click marker).
-      setSelection({ startX: dragStartX, endX: dragStartX })
-      setRangeLabel(null)
-      setClickedBarTs(null)
-      try {
-        container.setPointerCapture(e.pointerId)
-      } catch {
-        // jsdom / unsupported environments — capture is a nicety (keeps the
-        // drag alive if the pointer leaves the chart), not required for the POST.
-      }
-    }
-    const onPointerMove = (e: PointerEvent): void => {
-      if (dragStartX === null) return
-      const endX = xInContainer(e.clientX)
-      setSelection({ startX: dragStartX, endX })
-      setRangeLabel(rangeFromX(dragStartX, endX))
-    }
-    const onPointerUp = (e: PointerEvent): void => {
-      if (dragStartX === null) return
-      const startX = dragStartX
-      const endX = xInContainer(e.clientX)
-      dragStartX = null
-      // A click-sized drag is not a range — discard it (no marker, no POST) and
-      // let it fall through to the bar-click handler.
-      if (Math.abs(endX - startX) < MIN_RANGE_SELECT_PX) {
-        setSelection(null)
-        setRangeLabel(null)
-        return
-      }
-      // A real range drag: suppress the click lightweight-charts may fire on
-      // this same release so it doesn't double as a bar-click.
-      suppressClickRef.current = true
-      // Keep the rectangle + label after release so the user sees the selection.
-      setSelection({ startX, endX })
-      if (!agentModeRef.current || !selectRangeRef.current) return
-      const range = rangeFromX(startX, endX)
-      if (range === null || !symbolRef.current || !timeframeRef.current) return
-      setRangeLabel(range)
-      void postRangeSelected({
-        symbol: symbolRef.current,
-        timeframe: timeframeRef.current,
-        range_start: range.start,
-        range_end: range.end,
-      })
-    }
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return
-      dragStartX = null // cancel any in-progress selection
-      setSelection(null)
-      setRangeLabel(null)
-      setClickedBarTs(null) // clear the bar-click marker too
-      setSelectRangeMode(false) // Escape exits the mode + clears the marker
-    }
-    container.addEventListener('pointerdown', onPointerDown)
-    container.addEventListener('pointermove', onPointerMove)
-    container.addEventListener('pointerup', onPointerUp)
-    window.addEventListener('keydown', onKeyDown)
-
     return () => {
-      chart.unsubscribeClick(handleClick)
-      container.removeEventListener('pointerdown', onPointerDown)
-      container.removeEventListener('pointermove', onPointerMove)
-      container.removeEventListener('pointerup', onPointerUp)
-      window.removeEventListener('keydown', onKeyDown)
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
@@ -425,22 +243,6 @@ export function CandlestickChart({
       syncTestRenderHook()
     }
   }, [])
-
-  // Disable the chart's built-in pan/zoom while range-selecting so a drag
-  // defines a selection instead of scrolling the chart; restore it otherwise.
-  // Without this, lightweight-charts' pointer-driven pan eats the drag.
-  useEffect(() => {
-    const chart = chartRef.current
-    if (!chart) return
-    const interactive = !(agentModeEnabled && selectRangeMode)
-    chart.applyOptions({ handleScroll: interactive, handleScale: interactive })
-    if (interactive) {
-      // Left select-range mode: drop the marker — once panning is re-enabled the
-      // pixel-positioned rectangle would no longer line up with its bars.
-      setSelection(null)
-      setRangeLabel(null)
-    }
-  }, [agentModeEnabled, selectRangeMode])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -495,10 +297,16 @@ export function CandlestickChart({
     syncTestRenderHook()
   }, [bars, overlays])
 
-  // Agent mode off → the click marker's affordance is gone; clear it.
-  useEffect(() => {
-    if (!agentModeEnabled) setClickedBarTs(null)
-  }, [agentModeEnabled])
+  // Pointer-gesture state machine + agent-mode POSTs (Plan 0029 phase 1).
+  // Called AFTER the chart-creation effect so its gesture effect sees a
+  // populated `chartRef`/`seriesRef` on mount.
+  const { selectRangeMode, toggleSelectRange, selection, rangeLabel, clickedBarTs } =
+    useChartGestures(containerRef, chartRef, seriesRef, {
+      agentMode: agentModeEnabled,
+      symbol,
+      timeframe,
+      bars,
+    })
 
   const markers = useMemo(() => {
     const base = annotationsToMarkers(annotations ?? [])
@@ -529,7 +337,7 @@ export function CandlestickChart({
           data-testid="select-range-toggle"
           aria-pressed={selectRangeMode}
           className={styles.selectRangeButton}
-          onClick={() => setSelectRangeMode((v) => !v)}
+          onClick={toggleSelectRange}
         >
           {selectRangeMode ? 'Selecting range… (Esc to cancel)' : 'Select range'}
         </button>

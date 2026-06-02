@@ -1,6 +1,6 @@
 # 0029 — CandlestickChart decomposition
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-31
 > **Owner skill(s):** ui-builder
 > **Related ADRs:** [0008-electron-shell-conventions](../adrs/0008-electron-shell-conventions.md) (applies its component conventions; no new decision)
