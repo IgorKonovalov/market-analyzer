@@ -1,8 +1,9 @@
 # 0021 — Multi-timeframe alignment + volume scanners
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
+> **Closed:** 2026-06-02
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0023](../adrs/0023-technical-analysis-surface.md) (the analysis surface this builds on), [ADR-0007](../adrs/0007-market-data-provider.md) (bars via Provider), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house)
 > **Depends on:** [Plan 0018](0018-technical-analysis-surface.md) (the `analysis/` surface — indicators, snapshot) and [Plan 0027](0027-volume-bars-and-analysis.md) (the `analysis/volume.py` **measure layer** — relative volume, OBV, VWAP, `volume_summary`). Hard dependencies: these are consumers of both. **Re-based 2026-05-30:** Plan 0027 now creates `analysis/volume.py`; this plan's phase 2 changed from "build `volume.py` from scratch" to "add the scanner-condition functions on top of it" (see phase 2 below).
@@ -138,3 +139,40 @@ class MultiTimeframeAlignment(BaseModel):          # frozen, extra="forbid"
 ## Followups (after this lands)
 
 Empty at draft time.
+
+## Close review (2026-06-02)
+
+All three phases landed as specified (commits `41a73ba` phase 1, `6ced852` phase 2,
+`f9a2471` phase 3). Both gates cleared at pickup: timeframe support ([Plan 0025](0025-timeframe-expansion.md))
+and `analysis/volume.py` ([Plan 0027](0027-volume-bars-and-analysis.md)) — phase 2
+extends 0027's `relative_volume`/OBV primitives rather than re-deriving them, and the
+default `1w/1d/4h/1h/15m` ladder is now runnable.
+
+Mode 4 verdict: **clean landing, no blockers.** Lens checks: every phase carried a
+single in-vocabulary `dev` owner tag; no ADR reversals (ADR-0007 provider dispatch,
+ADR-0023 analysis surface, ADR-0009 in-house all honoured); reads go through
+`get_ohlcv` with `as_of` truncation, so anti-lookahead holds by construction;
+computations are pure and deterministic (ordered trend tiebreak, divide-by-zero
+guards, no set iteration); `analyzed_at`/`scanned_at` are documented run provenance.
+
+One Minor + three nits, all `dev`-owned, fixed in followup commit `fd35da3` before
+close (no behavior change):
+
+- **(Minor)** the phase-2 anti-lookahead test was tautological (`append future bars
+  then slice them back off` reproduced the input verbatim → `f(x) == f(x)`).
+  Replaced with a genuine trailing-window-locality test (prepend unrelated older
+  bars; verdict unchanged for breakout/confirmation, windowed `volume_multiple` for
+  smart_volume — whose Wilder RSI is path-dependent by design). The property itself
+  always held; only the test was weak.
+- **(nit)** `volume.py` module docstring refreshed to name the phase-2 scanner layer.
+- **(nit)** added `smart_volume` skip/cap coverage (its cap+skip loop is a deliberate
+  per-tool copy, not shared — see "What this plan does NOT do" / risk note).
+- **(nit)** added an end-to-end test of the default ladder (the defaulting path was
+  never executed; all prior tests passed explicit `timeframes`).
+
+Not done (deliberate, per plan): the duplicated `_require_scan_list`/`MAX_SCAN_SYMBOLS`
+across the two multi-symbol tools stays self-contained per the plan's stated decision.
+
+Followups carried forward: none. The "universe-from-screener composition" and
+"Bollinger-squeeze scans" open questions remain out of scope for a future plan, as
+recorded above.
