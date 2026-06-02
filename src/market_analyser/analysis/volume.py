@@ -1,11 +1,18 @@
-"""Pure, trailing volume measures (Plan 0027 phase 1, ADR-0023).
+"""Pure, trailing volume measures + scanner conditions (Plan 0027, Plan 0021; ADR-0023).
 
 Five trailing volume functions over `bars[0..=last]` plus a composed
-`volume_summary`. No pandas/numpy (consistent with ADR-0023). Every series is the
-input length with a leading run of `None` where the measure is mathematically
-undefined, exactly the convention `analysis/indicators.py` uses — `result[i]`
-reads only `bars[0..=i]`, so truncating the future never changes the past (the
-load-bearing anti-lookahead property tested in `tests/analysis/test_volume.py`).
+`volume_summary` (the Plan 0027 measure layer). No pandas/numpy (consistent with
+ADR-0023). Every series is the input length with a leading run of `None` where the
+measure is mathematically undefined, exactly the convention
+`analysis/indicators.py` uses — `result[i]` reads only `bars[0..=i]`, so truncating
+the future never changes the past (the load-bearing anti-lookahead property tested
+in `tests/analysis/test_volume.py`).
+
+On top of the measure layer sit three Plan 0021 phase-2 scanner-condition
+functions — `volume_breakout`, `volume_confirmation`, `smart_volume` — that report
+a condition about the latest bar (price+volume breakout, volume-backs-the-move,
+volume-surge-with-RSI-in-band) by reusing the primitives above. They share the
+same trailing, anti-lookahead discipline; see the banner just above them.
 
 `vwap` here is a **rolling trailing N-period** volume-weighted average of the
 typical price `(high + low + close) / 3`, **not** session VWAP. Our bars are

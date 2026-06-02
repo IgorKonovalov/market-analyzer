@@ -341,3 +341,35 @@ def test_multi_timeframe_via_mcp_returns_alignment(live_server: str, mcp_secret:
     assert {"symbol", "timeframes", "dominant_trend", "agreement"} <= set(alignment)
     assert alignment["dominant_trend"] == "up"
     assert alignment["agreement"] == 1.0
+
+
+def test_multi_timeframe_defaults_to_full_ladder_when_omitted(
+    live_server: str, mcp_secret: str
+) -> None:
+    """Omitting `timeframes` applies the default weekly/daily/4h/1h/15m ladder
+    (Plan 0025 unblocked the non-{1d,1h} cadences). The app fixture caches only
+    1d/1h, so the other cadences come back as honest null snapshots — but the
+    ladder itself is still applied across all five, in cadence-descending order."""
+
+    async def _run() -> dict[str, object]:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            # No `timeframes` key -> the tool's default ladder path fires.
+            result = await session.call_tool("multi_timeframe_analysis", {"symbol": "AAPL"})
+            assert not result.isError, f"multi_timeframe_analysis errored: {result.content}"
+            assert result.structuredContent is not None
+            return dict(result.structuredContent)
+
+    payload = asyncio.run(_run())
+    alignment = payload["alignment"]
+    assert isinstance(alignment, dict)
+    views = alignment["timeframes"]
+    assert isinstance(views, list)
+    assert [v["timeframe"] for v in views] == ["1w", "1d", "4h", "1h", "15m"]
+    by_tf = {v["timeframe"]: v for v in views}
+    # The two cached cadences resolve to real snapshots; the uncached ones are null.
+    assert by_tf["1d"]["snapshot"] is not None
+    assert by_tf["1h"]["snapshot"] is not None
+    assert by_tf["1w"]["snapshot"] is None
+    assert by_tf["4h"]["snapshot"] is None
+    assert by_tf["15m"]["snapshot"] is None
+    assert alignment["dominant_trend"] == "up"  # the two available cadences agree

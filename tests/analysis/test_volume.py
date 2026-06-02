@@ -364,21 +364,40 @@ def test_smart_volume_rejects_same_surge_when_rsi_out_of_band() -> None:
     assert res.qualifies is False
 
 
-def test_scanner_functions_anti_lookahead_truncation() -> None:
-    # Each scanner reports on the latest bar over a trailing window; a verdict
-    # computed on a series is unaffected by bars appended after it (truncating the
-    # future back off reproduces the verdict exactly — no future leak).
-    future = [_bar(100 + j, c=200.0, v=999.0, h=201.0, low=199.0) for j in range(5)]
+def _older_prefix(n: int = 25) -> list[Bar]:
+    """Unrelated, *older* bars (high prices, heavy volume) to prepend ahead of a
+    fixture. They sit outside every scanner's trailing window, so a window-local
+    verdict must ignore them — and a function that (buggily) reached past its
+    trailing window would have its verdict flipped by the higher highs/volume."""
 
+    return [_bar(-n + j, c=150.0, v=1000.0, h=200.0, low=100.0) for j in range(n)]
+
+
+def test_scanner_verdicts_are_trailing_window_local() -> None:
+    # Anti-lookahead's testable face for a latest-bar verdict: each scanner reads
+    # only a bounded trailing window ending at the last bar, so prepending older
+    # history cannot change the verdict (and, by the same construction, no bar
+    # *after* the last is ever read — there is no future to leak). The earlier
+    # "append future bars then slice them back off" check tested nothing but
+    # determinism (the slice reproduced the input verbatim); this prepends
+    # genuinely different bars sitting outside the window.
+    prefix = _older_prefix()
+
+    # volume_breakout / volume_confirmation depend only on fixed trailing windows
+    # (rel-vol period 20, price_lookback 20, confirmation lookback 20), so the
+    # whole verdict is prefix-invariant.
     breakout = _range_then(breakout=True)
-    truncated = (breakout + future)[: len(breakout)]
-    assert vol.volume_breakout(truncated) == vol.volume_breakout(breakout)
+    assert vol.volume_breakout(prefix + breakout) == vol.volume_breakout(breakout)
 
     conf = _confirmation_series(up_volume=300.0, down_volume=50.0)
-    assert vol.volume_confirmation((conf + future)[: len(conf)]) == vol.volume_confirmation(conf)
+    assert vol.volume_confirmation(prefix + conf) == vol.volume_confirmation(conf)
 
+    # smart_volume's surge leg (relative volume) is likewise window-local, so its
+    # volume_multiple is prefix-invariant. Its RSI leg is Wilder's recursive
+    # smoothing seeded from the series start, so a longer history shifts RSI by
+    # design (a deeper past, not a future leak) — assert the windowed leg only.
     osc = _oscillating(last_volume=200.0)
-    assert vol.smart_volume((osc + future)[: len(osc)]) == vol.smart_volume(osc)
+    assert vol.smart_volume(osc).volume_multiple == vol.smart_volume(prefix + osc).volume_multiple
 
 
 def test_scanner_functions_determinism() -> None:

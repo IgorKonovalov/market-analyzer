@@ -376,6 +376,52 @@ def test_smart_volume_scan_rejects_bad_band() -> None:
         )
 
 
+def test_smart_volume_scan_skips_missing_and_failed_symbols() -> None:
+    # smart_volume carries its own copy of the cap + skip loop (deliberately not
+    # shared with volume_breakout), so it needs its own coverage of the path.
+    provider = _SeededProvider(
+        {("A", "1d"): _oscillating("A", last_volume=200.0)},
+        error_symbols={"BOOM"},
+    )
+    resp = asyncio.run(
+        _smart_volume_scan_response(
+            provider=provider,
+            symbols=["A", "MISSING", "BOOM"],
+            timeframe="1d",
+            rsi_low=SMART_RSI_LOW,
+            rsi_high=SMART_RSI_HIGH,
+            vol_multiple=SMART_VOL_MULTIPLE,
+            as_of=None,
+        )
+    )
+    assert [m.symbol for m in resp.matches] == ["A"]  # the rest still scanned
+    assert sorted(resp.skipped) == ["BOOM", "MISSING"]  # no-bars + fetch-error both skipped
+
+
+@pytest.mark.parametrize(
+    ("symbols", "timeframe"),
+    [
+        ([], "1d"),  # empty list
+        (["A", "B"], "5m"),  # unsupported timeframe
+        ([f"S{i}" for i in range(MAX_SCAN_SYMBOLS + 1)], "1d"),  # over the cap
+    ],
+)
+def test_smart_volume_scan_boundary_validation(symbols: list[str], timeframe: str) -> None:
+    provider = _SeededProvider({})
+    with pytest.raises(ValueError):
+        asyncio.run(
+            _smart_volume_scan_response(
+                provider=provider,
+                symbols=symbols,
+                timeframe=timeframe,
+                rsi_low=SMART_RSI_LOW,
+                rsi_high=SMART_RSI_HIGH,
+                vol_multiple=SMART_VOL_MULTIPLE,
+                as_of=None,
+            )
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Live MCP server: registration + transport for all three                       #
 # --------------------------------------------------------------------------- #
