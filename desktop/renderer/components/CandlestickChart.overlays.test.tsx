@@ -51,7 +51,11 @@ interface FakeChart {
   removeSeries: jest.Mock<void, [unknown]>
   remove: jest.Mock<void, []>
   applyOptions: jest.Mock<void, [unknown]>
-  timeScale: () => { fitContent: jest.Mock }
+  timeScale: () => {
+    fitContent: jest.Mock
+    subscribeVisibleLogicalRangeChange: jest.Mock
+    unsubscribeVisibleLogicalRangeChange: jest.Mock
+  }
   // Plan 0014: the component subscribes to clicks for the bar-click gesture.
   subscribeClick: jest.Mock<void, [unknown]>
   unsubscribeClick: jest.Mock<void, [unknown]>
@@ -100,7 +104,12 @@ function buildFakeChart(): FakeChart {
     }),
     remove: jest.fn(),
     applyOptions: jest.fn(),
-    timeScale: () => ({ fitContent: jest.fn() }),
+    timeScale: () => ({
+      fitContent: jest.fn(),
+      // Plan 0030: the chart subscribes to the visible range for lazy paging.
+      subscribeVisibleLogicalRangeChange: jest.fn(),
+      unsubscribeVisibleLogicalRangeChange: jest.fn(),
+    }),
     subscribeClick: jest.fn(),
     unsubscribeClick: jest.fn(),
   }

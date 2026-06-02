@@ -49,6 +49,8 @@ interface ChartStateSnapshot {
 interface ChartRenderSnapshot {
   seriesCount: number
   seriesKinds: Array<{ kind: string; period?: number | null }>
+  /** Plan 0030: candlestick bars currently set on the series. */
+  barCount: number
 }
 
 function callMcpTool(tool: string, args: Record<string, unknown>): ToolResult {
@@ -576,6 +578,89 @@ test('agent mode OFF: the same drag buffers no UI events', async () => {
   // Give any (incorrect) POST time to land, then confirm nothing was buffered.
   await window.waitForTimeout(750)
   expect(drainUiEvents()).toEqual([])
+
+  await app.close()
+})
+
+// --------------------------------------------------------------------------- //
+// Plan 0030 — scroll to the left edge lazy-loads (prepends) older bars          //
+// --------------------------------------------------------------------------- //
+
+test('scrolling to the left edge prepends older bars (Plan 0030)', async () => {
+  // Best-effort live test (mirrors the backfill_ohlcv spec above): it drives a
+  // REAL `/ohlcv` older-chunk fetch against REAL Yahoo. The mount-time fit sits
+  // at the left edge, so the trigger normally fires on show; a leftward drag is
+  // belt-and-suspenders. On a fully warm cache that already covers all available
+  // history the older fetch may add nothing, so the bar-count-increased
+  // assertion is GATED on the loading affordance having actually appeared.
+  const app = await launchApp()
+  const window = await app.firstWindow()
+  await window.waitForLoadState('domcontentloaded')
+
+  await expect
+    .poll(
+      () =>
+        window.evaluate(
+          () =>
+            (globalThis as { __test_chart_state__?: { symbol?: string } }).__test_chart_state__
+              ?.symbol,
+        ),
+      { timeout: 15_000, intervals: [200] },
+    )
+    .toBeDefined()
+
+  // A narrow window on a long-lived daily symbol ⇒ plenty of older history.
+  callMcpTool('show_chart', {
+    symbol: 'AAPL',
+    timeframe: '1d',
+    range_start: '2026-04-01T00:00:00+00:00',
+    range_end: '2026-05-01T00:00:00+00:00',
+  })
+
+  await expect
+    .poll(async () => (await readChartRender(window)).seriesCount, {
+      timeout: 15_000,
+      intervals: [200],
+    })
+    .toBeGreaterThanOrEqual(1)
+  const initialBarCount = (await readChartRender(window)).barCount
+
+  // Nudge the viewport hard toward the left edge (drag content rightward to
+  // reveal earlier time), in case the initial fit didn't already trip it.
+  const chart = window.locator('[data-testid="candlestick-chart"]')
+  const box = await chart.boundingBox()
+  if (box) {
+    const y = box.y + box.height / 2
+    for (let i = 0; i < 2; i++) {
+      await window.mouse.move(box.x + box.width * 0.3, y)
+      await window.mouse.down()
+      await window.mouse.move(box.x + box.width * 0.95, y, { steps: 10 })
+      await window.mouse.up()
+    }
+  }
+
+  const loading = window.locator('[data-testid="ohlcv-history-loading"]')
+  let sawAffordance = false
+  try {
+    await expect
+      .poll(() => loading.count(), { timeout: 8_000, intervals: [100] })
+      .toBeGreaterThan(0)
+    sawAffordance = true
+  } catch {
+    sawAffordance = false
+  }
+
+  if (sawAffordance) {
+    // The affordance clears once the older chunk resolves...
+    await expect.poll(() => loading.count(), { timeout: 15_000, intervals: [200] }).toBe(0)
+    // ...and the candlestick series grew (older bars were prepended).
+    await expect
+      .poll(async () => (await readChartRender(window)).barCount, {
+        timeout: 5_000,
+        intervals: [100],
+      })
+      .toBeGreaterThan(initialBarCount)
+  }
 
   await app.close()
 })

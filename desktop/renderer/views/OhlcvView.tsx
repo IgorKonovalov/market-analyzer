@@ -57,7 +57,8 @@ export function OhlcvView({
   const start = useMemo(() => new Date(range_start), [range_start])
   const end = useMemo(() => new Date(range_end), [range_end])
 
-  const { bars, isLoading, error, refetch } = useOhlcvHistory({ symbol, timeframe, start, end })
+  const { bars, isLoading, error, refetch, loadOlder, isLoadingOlder, olderError, reachedStart } =
+    useOhlcvHistory({ symbol, timeframe, start, end })
   // Lazy paging prepends bars older than the initial window; widen the
   // annotation poll to the buffer's earliest so markers cover prepended bars
   // (Plan 0030 phase 1). End stays the prop window; we never page right.
@@ -141,8 +142,32 @@ export function OhlcvView({
             agentModeEnabled={agentModeEnabled}
             symbol={symbol}
             timeframe={timeframe}
+            onReachLeftEdge={loadOlder}
+            historyTriggerEnabled={!isLoadingOlder && !reachedStart}
             ariaLabel={`Candlestick chart for ${symbol} ${timeframe}, ${bars.length} bars`}
           />
+        )}
+
+        {/* Lazy-history affordances (Plan 0030), pinned to the chart's left
+            edge. Neither shows once the start of available history is reached. */}
+        {isLoadingOlder && !reachedStart && (
+          <span
+            className={styles.historyLoading}
+            role="status"
+            data-testid="ohlcv-history-loading"
+            aria-label="Loading older bars"
+          >
+            <span className={styles.spinnerDot} aria-hidden="true" />
+            Loading history…
+          </span>
+        )}
+        {olderError && !reachedStart && (
+          <div className={styles.historyError} role="alert" data-testid="ohlcv-history-error">
+            <span>Couldn’t load older bars: {olderError.message}</span>
+            <button type="button" onClick={loadOlder}>
+              Retry
+            </button>
+          </div>
         )}
       </div>
 

@@ -12,10 +12,11 @@
  * exactly as App.tsx's `useEventStream` handlers do in production.
  */
 import '@testing-library/jest-dom'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 
 import { notifyBackfill } from '../handlers/backfillBus'
 import type { Timeframe } from '../components/SymbolPicker'
+import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
 import { OhlcvView } from './OhlcvView'
 
 jest.mock('../hooks/useOhlcvHistory', () => ({
@@ -47,6 +48,26 @@ jest.mock('../hooks/useAgentMode', () => ({
 
 const SYMBOL = 'AAPL'
 const TF: Timeframe = '1d'
+
+const mockUseOhlcvHistory = useOhlcvHistory as jest.Mock
+
+/** A fresh default hook return (empty buffer, idle paging) per test. */
+function baseHook(): ReturnType<typeof useOhlcvHistory> {
+  return {
+    bars: [],
+    isLoading: false,
+    error: null,
+    refetch: jest.fn(),
+    loadOlder: jest.fn(),
+    isLoadingOlder: false,
+    olderError: null,
+    reachedStart: false,
+  }
+}
+
+beforeEach(() => {
+  mockUseOhlcvHistory.mockReturnValue(baseHook())
+})
 
 function renderView(): void {
   render(
@@ -132,4 +153,44 @@ it('hides the toast when dismissed', () => {
 
   fireEvent.click(screen.getByLabelText('Dismiss notification'))
   expect(screen.queryByTestId('toast')).not.toBeInTheDocument()
+})
+
+describe('lazy-history affordances (Plan 0030 phase 2)', () => {
+  it('renders the loading affordance iff isLoadingOlder', () => {
+    mockUseOhlcvHistory.mockReturnValue({ ...baseHook(), isLoadingOlder: true })
+    renderView()
+    expect(screen.getByTestId('ohlcv-history-loading')).toBeInTheDocument()
+  })
+
+  it('does not render the loading affordance when not loading older', () => {
+    renderView()
+    expect(screen.queryByTestId('ohlcv-history-loading')).not.toBeInTheDocument()
+  })
+
+  it('renders the error chip iff olderError, and its retry re-invokes loadOlder', () => {
+    const loadOlder = jest.fn()
+    mockUseOhlcvHistory.mockReturnValue({
+      ...baseHook(),
+      olderError: new Error('upstream 502'),
+      loadOlder,
+    })
+    renderView()
+
+    const chip = screen.getByTestId('ohlcv-history-error')
+    expect(chip).toBeInTheDocument()
+    fireEvent.click(within(chip).getByRole('button', { name: 'Retry' }))
+    expect(loadOlder).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders neither affordance when reachedStart is true', () => {
+    mockUseOhlcvHistory.mockReturnValue({
+      ...baseHook(),
+      isLoadingOlder: true,
+      olderError: new Error('ignored once start reached'),
+      reachedStart: true,
+    })
+    renderView()
+    expect(screen.queryByTestId('ohlcv-history-loading')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('ohlcv-history-error')).not.toBeInTheDocument()
+  })
 })

@@ -23,10 +23,11 @@
  */
 import { useEffect, useMemo, useRef } from 'react'
 import { ColorType, createChart } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi, SeriesMarker, UTCTimestamp } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, Logical, SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 
 import { toLightweightBar } from '../api/client'
 import { useChartGestures } from '../hooks/useChartGestures'
+import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import { annotationsToMarkers } from '../lib/markers'
 import { computeOverlayData, isSupportedOverlay, overlayColorFor } from '../lib/overlays'
 import {
@@ -45,6 +46,10 @@ import styles from './CandlestickChart.module.css'
 // The clicked-bar marker reuses the EMA blue; kept local since it's a gesture
 // affordance, not an overlay color (those live in the overlay registry).
 const CLICKED_MARKER_COLOR = '#2563eb'
+
+// Stable no-op for the lazy-history trigger when no `onReachLeftEdge` is wired
+// (keeps the trigger hook's callback ref from churning on every render).
+const NOOP = (): void => {}
 
 // Always-on volume series (Plan 0027 phase 3), each derived client-side from
 // `bars`. The histogram + its MA sit on their own bottom-band price scale; VWAP
@@ -67,6 +72,9 @@ declare global {
     __test_chart_render__?: {
       seriesCount: number
       seriesKinds: ReadonlyArray<{ kind: string; period?: number | null }>
+      /** Candlestick bars currently set on the series (Plan 0030: the lazy-load
+       * e2e asserts this grows after a left-edge prepend). */
+      barCount: number
     }
   }
 }
@@ -83,6 +91,12 @@ interface Props {
   /** Carried in the gesture payloads so the agent knows which chart fired. */
   symbol?: string
   timeframe?: string
+  /** Plan 0030: fired when the user scrolls near the buffer's left edge so the
+   * parent can fetch + prepend older bars. */
+  onReachLeftEdge?: () => void
+  /** Gate for the left-edge trigger — false while an older fetch is in flight
+   * or the start of available history has been reached. */
+  historyTriggerEnabled?: boolean
 }
 
 /** Human-readable label for a selected [start, end] window. UTC (matching the
@@ -114,10 +128,14 @@ export function CandlestickChart({
   agentModeEnabled = false,
   symbol,
   timeframe,
+  onReachLeftEdge,
+  historyTriggerEnabled = false,
 }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  // First-bar timestamp (ms) of the previous render, to detect left-side growth.
+  const prevFirstTsRef = useRef<number | null>(null)
   const overlaySeriesRef = useRef<Map<string, OverlayEntry>>(new Map())
   // Always-on volume series (Plan 0027 phase 3).
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
@@ -138,7 +156,11 @@ export function CandlestickChart({
     for (const { spec } of overlaySeriesRef.current.values()) {
       kinds.push({ kind: spec.kind, period: spec.period ?? null })
     }
-    window.__test_chart_render__ = { seriesCount: kinds.length, seriesKinds: kinds }
+    window.__test_chart_render__ = {
+      seriesCount: kinds.length,
+      seriesKinds: kinds,
+      barCount: seriesRef.current !== null ? bars.length : 0,
+    }
   }
 
   useEffect(() => {
@@ -236,6 +258,17 @@ export function CandlestickChart({
     const candlestick = seriesRef.current
     if (!chart || !candlestick) return
 
+    // Scroll-anchored prepend (Plan 0030): if `bars` grew on the LEFT (older
+    // bars were prepended), capture the visible logical range *before* replacing
+    // the data so we can shift it right by the number of prepended bars — the
+    // viewport stays on the same bars instead of jumping. Any other change
+    // (initial load, symbol/range change, forward growth) keeps the existing
+    // fit-on-update behavior.
+    const newFirstMs = bars.length > 0 ? new Date(bars[0].event_ts).getTime() : null
+    const prevFirstMs = prevFirstTsRef.current
+    const grewOnLeft = prevFirstMs !== null && newFirstMs !== null && newFirstMs < prevFirstMs
+    const rangeBeforePrepend = grewOnLeft ? chart.timeScale().getVisibleLogicalRange() : null
+
     candlestick.setData(bars.map(toLightweightBar))
 
     // Always-on volume series, derived client-side from the same `bars`. Empty
@@ -280,7 +313,20 @@ export function CandlestickChart({
       entry.series.setData(computeOverlayData(bars, spec))
     }
 
-    chart.timeScale().fitContent()
+    if (grewOnLeft && rangeBeforePrepend && prevFirstMs !== null) {
+      let prepended = 0
+      for (const b of bars) {
+        if (new Date(b.event_ts).getTime() < prevFirstMs) prepended += 1
+        else break
+      }
+      chart.timeScale().setVisibleLogicalRange({
+        from: (rangeBeforePrepend.from + prepended) as Logical,
+        to: (rangeBeforePrepend.to + prepended) as Logical,
+      })
+    } else {
+      chart.timeScale().fitContent()
+    }
+    prevFirstTsRef.current = newFirstMs
     syncTestRenderHook()
   }, [bars, overlays])
 
@@ -294,6 +340,15 @@ export function CandlestickChart({
       timeframe,
       bars,
     })
+
+  // Lazy backward paging (Plan 0030): ask the parent for older bars when the
+  // user scrolls near the left edge. A sibling concern to the pointer gestures
+  // (it is not a pointer gesture), and likewise called after the chart-creation
+  // effect so `chartRef` is populated on mount.
+  useLazyHistoryTrigger(chartRef, {
+    enabled: historyTriggerEnabled && onReachLeftEdge !== undefined,
+    onReachLeftEdge: onReachLeftEdge ?? NOOP,
+  })
 
   const markers = useMemo(() => {
     const base = annotationsToMarkers(annotations ?? [])

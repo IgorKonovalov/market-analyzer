@@ -72,6 +72,46 @@
   flex: 1;
   min-height: 360px;
   display: flex;
+  /* Anchor for the left-edge lazy-history affordances (Plan 0030). */
+  position: relative;
+}
+
+/* Left-edge lazy-history affordances (Plan 0030). Absolutely positioned so
+   they overlay the chart without participating in the flex sizing above. */
+.historyLoading,
+.historyError {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+}
+
+.historyLoading {
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg-muted);
+}
+
+.historyError {
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+}
+
+.historyError button {
+  font: inherit;
+  padding: 0 var(--space-2);
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .body > * {

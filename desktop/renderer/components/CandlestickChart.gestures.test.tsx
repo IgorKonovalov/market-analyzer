@@ -55,6 +55,9 @@ jest.mock('lightweight-charts', () => ({
     timeScale: () => ({
       fitContent: jest.fn(),
       coordinateToTime: (x: number) => coordinateToTime(x),
+      // Plan 0030: the chart subscribes to the visible range for lazy paging.
+      subscribeVisibleLogicalRangeChange: jest.fn(),
+      unsubscribeVisibleLogicalRangeChange: jest.fn(),
     }),
     subscribeClick: jest.fn((handler: (param: unknown) => void) => {
       clickHandler = handler
