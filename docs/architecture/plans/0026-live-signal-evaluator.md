@@ -1,9 +1,10 @@
 # 0026 — Live-signal evaluator
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-05-30
+> **Approved:** 2026-06-02
 > **Owner skill(s):** `backtester` (phase 1), `dev` (phase 2), `ui-builder` (phase 3)
-> **Related ADRs:** [ADR-0004](../adrs/0004-strategy-interface.md) (the pure `generate_signals` contract this evaluates), [ADR-0029](0029-advisory-recommendation-boundary.md) (the advisor will consume this primitive — but the evaluator itself stays a condition-reporter, not an advisor), [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (the MCP tool surface), [ADR-0007](../adrs/0007-market-data-provider.md) (bars come through the provider Protocol), [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (the agent-primary / reactive-render model the UI phase follows — no form), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (the SSE event stream the viewer panel subscribes to), [ADR-0018](../adrs/0018-backtest-result-schema.md) (the determinism contract — this plan documents the one wall-clock exception a *live* read carries)
+> **Related ADRs:** [ADR-0004](../adrs/0004-strategy-interface.md) (the pure `generate_signals` contract this evaluates), [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the advisor will consume this primitive — but the evaluator itself stays a condition-reporter, not an advisor), [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md) (the MCP tool surface), [ADR-0007](../adrs/0007-market-data-provider.md) (bars come through the provider Protocol), [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (the agent-primary / reactive-render model the UI phase follows — no form), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (the SSE event stream the viewer panel subscribes to), [ADR-0018](../adrs/0018-backtest-result-schema.md) (the determinism contract — this plan documents the one wall-clock exception a *live* read carries)
 
 ## TL;DR
 
@@ -11,7 +12,7 @@ Today a strategy can only be evaluated *historically* (`run_backtest` over a clo
 
 ## Context & problem
 
-The user's stated direction (2026-05-30) is to grow the app toward live signals, forecasting, and (advisory) trade recommendations. The two foundational decisions are captured in [ADR-0029](0029-advisory-recommendation-boundary.md) (advisor may recommend, not act) and [ADR-0030](0030-forecasting-subsystem.md) (causal forecasting). Both of those consume a primitive the codebase does not yet have: **the evaluation of a strategy against the current bar.**
+The user's stated direction (2026-05-30) is to grow the app toward live signals, forecasting, and (advisory) trade recommendations. The two foundational decisions are captured in [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (advisor may recommend, not act) and [ADR-0030](../adrs/0030-forecasting-subsystem.md) (causal forecasting). Both of those consume a primitive the codebase does not yet have: **the evaluation of a strategy against the current bar.**
 
 What exists today (verified against the tree):
 
@@ -31,11 +32,11 @@ We will add a **pure evaluation core** `backtest/live_signal.py::evaluate_signal
 
 The core: takes the full fetched series and the current wall-clock instant `now` (injected as a parameter so the core itself stays testable and deterministic), **excludes a not-yet-closed latest bar** (a bar is closed when `event_ts + bar_duration <= now`), runs `generate_signals` over the **closed** bars only, then folds the resulting signal stream through a flat/long state machine to derive the **current implied position**, the **most recent signal**, **bars-since-last-signal**, and a **`fresh_signal`** flag (true iff the last signal's `bar_index` equals the last closed bar's index). It returns a `SignalEvaluation` pydantic model. It does **not** apply the `+1` execution offset for position state (that offset is about *price*, not *whether you hold*), and it does **not** drop the last-bar signal.
 
-The tool: `evaluate_signals(strategy_id, symbol, timeframe, range_start, params)` — `timeframe` restricted to the currently-supported `Literal["1d", "1h"]`; `range_start` is the warm-up lookback (the caller must request enough history for the strategy's indicators to warm up); there is **no `range_end`** — the read always runs to the latest available bar (a now-read). It validates that `timeframe` is in the strategy's `META.timeframes`, validates `params` against the strategy's `Params` model, fetches bars via the same provider/coordinator path `get_ohlcv` uses (fetch-on-miss so the latest bar is fresh), calls the core with `now = datetime.now(UTC)`, returns the `SignalEvaluation` to the MCP caller, **and publishes it as a `signal.evaluated v1` SSE event** ([ADR-0017](../adrs/0017-live-ui-updates-via-sse.md)) so the viewer panel can render it live. It rejects any `as_of` parameter; it persists nothing (a live read is ephemeral — the SSE event carries the full small payload inline, no GET route, no DB row) and emits no recommendation language. The MCP return value is the reliable contract; the SSE event is the opportunistic live nudge to a connected viewer (a no-op if none is connected, exactly like `show_chart`).
+The tool: `evaluate_signals(strategy_id, symbol, timeframe, range_start, params)` — `timeframe` accepts the full supported set the data layer now serves (`15m`/`1h`/`4h`/`1d`/`1w`), validated against the `data/timeframes.py` registry ([Plan 0025](0025-timeframe-expansion.md), landed); `range_start` is the warm-up lookback (the caller must request enough history for the strategy's indicators to warm up); there is **no `range_end`** — the read always runs to the latest available bar (a now-read). It validates that `timeframe` is in the strategy's `META.timeframes`, validates `params` against the strategy's `Params` model, fetches bars via the same provider/coordinator path `get_ohlcv` uses (fetch-on-miss so the latest bar is fresh), calls the core with `now = datetime.now(UTC)`, returns the `SignalEvaluation` to the MCP caller, **and publishes it as a `signal.evaluated v1` SSE event** ([ADR-0017](../adrs/0017-live-ui-updates-via-sse.md)) so the viewer panel can render it live. It rejects any `as_of` parameter; it persists nothing (a live read is ephemeral — the SSE event carries the full small payload inline, no GET route, no DB row) and emits no recommendation language. The MCP return value is the reliable contract; the SSE event is the opportunistic live nudge to a connected viewer (a no-op if none is connected, exactly like `show_chart`).
 
 The viewer (phase 3): a **reactive panel** that subscribes to `signal.evaluated v1` on the existing event stream and renders the latest evaluation — strategy/symbol/timeframe, current position, last signal + bars-since, the `fresh_signal` flag, and the forming-bar/`evaluated_through_ts` honesty fields. It has **no form and no controls** — per [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) the agent drives evaluation; the panel reflects it. It presents conditions, never a buy/sell call.
 
-This stays strictly a **condition-reporter** ([ADR-0029](0029-advisory-recommendation-boundary.md)): it reports what the strategy's signals *are*, never "buy/sell." Turning a signal into a recommendation is the advisor's job, a later plan. We rejected reusing `signals_to_trades` (it drops the live-critical last-bar signal and bakes in the historical execution offset); we rejected a form-driven renderer route for the view (it cuts against [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md)'s shrink-the-control-surface grain — the reactive SSE panel matches `show_chart`/`run.completed`); and we rejected a multi-symbol/multi-strategy v1 (fan-out semantics and perf belong in a follow-up once the single primitive is proven).
+This stays strictly a **condition-reporter** ([ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)): it reports what the strategy's signals *are*, never "buy/sell." Turning a signal into a recommendation is the advisor's job, a later plan. We rejected reusing `signals_to_trades` (it drops the live-critical last-bar signal and bakes in the historical execution offset); we rejected a form-driven renderer route for the view (it cuts against [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md)'s shrink-the-control-surface grain — the reactive SSE panel matches `show_chart`/`run.completed`); and we rejected a multi-symbol/multi-strategy v1 (fan-out semantics and perf belong in a follow-up once the single primitive is proven).
 
 ## Architecture diagram
 
@@ -73,15 +74,15 @@ flowchart LR
 ### Phase 1 — Evaluation core + `SignalEvaluation` model
 
 - **Owner skill:** `backtester`
-- **What:** A pure `evaluate_signals(strategy_module, bars, *, now)` in `src/market_analyser/backtest/live_signal.py` and the `SignalEvaluation` pydantic model (in `backtest/types.py` or a new `backtest/live_signal.py`-local model), with the closed-bar filter, the flat/long replay, and the freshness flag. No data fetching, no MCP — a pure function over a supplied series + injected `now`.
+- **What:** A pure `evaluate_signals(strategy_module, bars, *, now)` in `src/market_analyser/backtest/live_signal.py` and the `SignalEvaluation` pydantic model (in `backtest/types.py` or a new `backtest/live_signal.py`-local model), with the closed-bar filter, the flat/long replay, and the freshness flag. No data fetching, no MCP — a pure function over a supplied series + injected `now`. Bar duration for the closed-bar test comes from the `data/timeframes.py` registry (`TimeframeSpec.duration`, [Plan 0025](0025-timeframe-expansion.md)), not a private map.
 - **Files touched:**
-  - New `src/market_analyser/backtest/live_signal.py` (the core + a private `_bar_duration(timeframe)` helper covering `1d`/`1h`).
+  - New `src/market_analyser/backtest/live_signal.py` (the core; reads bar duration from the `data/timeframes.py` registry rather than hardcoding it).
   - `src/market_analyser/backtest/types.py` (add `SignalEvaluation`) or keep the model local to `live_signal.py`.
   - New `tests/backtest/test_live_signal.py`.
 - **Done when:**
   - `evaluate_signals(rsi_module, bars, now=...)` over a fixture where RSI is currently oversold-and-just-entered returns `current_position="long"`, `last_signal.kind="enter_long"` with `bar_index` = the last closed bar, `fresh_signal=True`, `bars_since_last_signal=0`.
   - A fixture where the last signal was several bars back returns `fresh_signal=False`, the correct `bars_since_last_signal`, and the position implied by folding the full signal stream.
-  - A fixture whose latest bar is **still forming** (`event_ts + duration > now`) excludes that bar: `evaluated_through_ts` equals the last *closed* bar's `event_ts`, `latest_bar_excluded_as_forming=True`, and the signal computation does not see the forming bar. A fixture whose latest bar **is** closed sets `latest_bar_excluded_as_forming=False`.
+  - A fixture whose latest bar is **still forming** (`event_ts + duration > now`, where `duration` comes from the `data/timeframes.py` registry) excludes that bar: `evaluated_through_ts` equals the last *closed* bar's `event_ts`, `latest_bar_excluded_as_forming=True`, and the signal computation does not see the forming bar. A fixture whose latest bar **is** closed sets `latest_bar_excluded_as_forming=False`. Cover both a daily (`1d`) and a sub-daily (`1h` or `15m`) cadence so the registry-driven duration is exercised, not just the day case.
   - A fixture with too few bars for indicator warm-up (empty signal stream) returns `current_position="flat"`, `last_signal=None`, `fresh_signal=False` — it does **not** raise.
   - A signal on the **last closed bar** is reported (NOT dropped) — the spec asserts the divergence from `signals_to_trades`, which would drop it. (This is the load-bearing behavioral claim of the plan; the spec must assert the value, not just that the function runs.)
   - The core is pure: same `(strategy_module, bars, now)` in → same `SignalEvaluation` out; no wall-clock read inside the core (it takes `now` as a param). `mypy --strict` clean.
@@ -92,7 +93,7 @@ flowchart LR
 - **What:** A `register_evaluate_signals(server, *, provider, backfill_coordinator, event_bus)` module under `api/mcp_tools/` (matching the Plan 0017 `register_*` pattern), wired into `mcp_app.create_mcp_components`. It resolves the strategy via `discover()`, validates timeframe ∈ `META.timeframes` and `params` against the strategy's `Params`, fetches bars through the provider/coordinator (fetch-on-miss, as `get_ohlcv` does), calls the phase-1 core with `now = datetime.now(UTC)`, returns the `SignalEvaluation` to the caller, and publishes a `signal.evaluated v1` event on the bus. Defines `SignalEvaluatedPayloadV1` in `api/events` (a thin envelope: `VERSION` + the `SignalEvaluation` payload inline) and regenerates the renderer's TS types.
 - **Files touched:**
   - New `src/market_analyser/api/mcp_tools/evaluate_signals.py`.
-  - `src/market_analyser/api/events.py` (add `SignalEvaluatedPayloadV1`; register the `signal.evaluated` event type the way the chart events are registered).
+  - `src/market_analyser/api/events/__init__.py` (the `api/events/` payload package — add `SignalEvaluatedPayloadV1`; register the `signal.evaluated` event type the way the chart events are registered). **Sequencing:** [Plan 0028](0028-data-layer-boundary-hardening.md) phase 3 ([ADR-0032](../adrs/0032-data-layer-no-api-dependency.md)) relocates the event bus/schema out of `api/` to a neutral `events/` core; if 0028 lands first, add the payload there instead — coordinate on the events module location.
   - `src/market_analyser/api/mcp_app.py` (one `register_evaluate_signals(...)` call + import — the thin-hub pattern from Plan 0017; threads `event_bus`).
   - Regenerated renderer types via `node scripts/gen-types.mjs` (so phase 3 has `SignalEvaluatedPayloadV1` / `SignalEvaluation` in TS).
   - New `tests/api/test_evaluate_signals_tool.py`.
@@ -139,7 +140,7 @@ class EvaluatedSignal(BaseModel):
 class SignalEvaluation(BaseModel):
     strategy_id: str
     symbol: str
-    timeframe: Literal["1d", "1h"]
+    timeframe: str                           # a supported timeframe (data/timeframes.py: 15m/1h/4h/1d/1w)
     evaluated_through_ts: datetime           # event_ts of the last CLOSED bar used
     closed_bar_count: int                    # bars actually fed to generate_signals
     latest_bar_excluded_as_forming: bool     # True if a still-forming bar was dropped
@@ -162,22 +163,22 @@ Note: `bar_index` and `bars_since_last_signal` are relative to the **closed-bar*
 ## Risks & open questions
 
 - **Risk: wall-clock dependence leaks into the deterministic path.** Mitigation: the core takes `now` as a parameter and reads no clock itself; only the *tool* reads `datetime.now(UTC)`. `generate_signals` stays pure. This mirrors [Plan 0019](0019-live-quote.md)'s `get_quote` (a now-read that rejects `as_of`). The phase-1 purity spec pins this.
-- **Risk: forming-bar detection needs bar-duration knowledge.** Today `_bar_duration` covers only `1d`/`1h` (the full `SUPPORTED_TIMEFRAMES`). When [Plan 0025](0025-timeframe-expansion.md) lands its `data/timeframes.py` registry, `_bar_duration` should defer to it rather than carry a private map. Captured as a followup; not a blocker (timeframe is `Literal["1d","1h"]` here).
+- **Risk: forming-bar detection needs bar-duration knowledge.** Resolved by reading `TimeframeSpec.duration` from the `data/timeframes.py` registry ([Plan 0025](0025-timeframe-expansion.md), landed) — no private duration map. The tool accepts the full supported set (`15m`/`1h`/`4h`/`1d`/`1w`); 4h is the in-house-resampled cadence, so confirm its `TimeframeSpec.duration` is the resampled `4h`, not the `1h` base, when computing the closed-bar boundary.
 - **Risk: the last-closed-bar signal gets silently dropped** (the exact bug a naive reuse of `signals_to_trades` would introduce). Mitigation: phase-1 done-when asserts the divergence explicitly with a fixture.
 - **Risk: insufficient warm-up history yields an empty signal stream and reads as a bug.** Mitigation: the core treats "no signals" as a valid `flat` / `last_signal=None` result and never raises; the caller controls warm-up via `range_start`. Open question: should the tool warn when `closed_bar_count` is below a strategy-declared minimum? Deferred — strategies don't declare a minimum today; revisit if it bites.
-- **Open question: timezone of the forming-bar boundary for daily bars.** `event_ts` is UTC; a daily bar's "close" is exchange-dependent, not 24h-after-open in all venues. v1 uses `event_ts + 1d <= now_utc` as the closed test, which is correct for the UTC-stamped daily bars the data layer produces today. If [Plan 0025](0025-timeframe-expansion.md)'s registry introduces session-aware durations, revisit. Noted, not solved.
+- **Open question: timezone of the forming-bar boundary for session-anchored bars.** `event_ts` is UTC; a daily/weekly bar's "close" is exchange-dependent, not a fixed span after open in all venues, and the same caveat now applies to the intraday cadences the widened scope admits. v1 uses `event_ts + TimeframeSpec.duration <= now_utc` as the closed test, which is correct for the UTC-stamped bars the data layer produces today. The `data/timeframes.py` registry carries fixed `timedelta` durations, not session-aware ones; if session-aware close times are introduced later, revisit. Noted, not solved.
 
 ## What this plan does NOT do
 
-- **No recommendations.** It reports signal *conditions*, never buy/sell. The advisor that turns this into a recommendation is [ADR-0029](0029-advisory-recommendation-boundary.md)'s separate plan.
+- **No recommendations.** It reports signal *conditions*, never buy/sell. The advisor that turns this into a recommendation is [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)'s separate plan.
 - **No fan-out.** One strategy × one symbol only. Multi-symbol watchlist scans ("which symbols have a fresh signal") and multi-strategy matrices are follow-up plans on top of this primitive. The viewer panel renders a single evaluation, not a grid.
 - **No form-driven UI.** The viewer panel is reactive-only — it reflects the agent's evaluation via SSE ([ADR-0015](../adrs/0015-claude-code-primary-control-surface.md)). It has no strategy/symbol picker and no renderer route that triggers evaluation; the agent is the input. (A standalone explorable view was the rejected alternative.)
-- **No forecasting and no new strategies.** It evaluates the existing six strategies as-is; [ADR-0030](0030-forecasting-subsystem.md) and `strategy-author` work are separate.
+- **No forecasting and no new strategies.** It evaluates the existing six strategies as-is; [ADR-0030](../adrs/0030-forecasting-subsystem.md) and `strategy-author` work are separate.
 - **No persistence.** A live read is ephemeral — nothing is stored (no DB row, no `runs/` artifact). The SSE event is published but not retained; reopening the viewer shows the empty state until the agent evaluates again.
 - **No short signals.** `SignalKind` is long-only today; `current_position` is `flat`/`long`. Shorts are a contract-level change out of scope here.
 
 ## Followups (after this lands)
 
-- When [Plan 0025](0025-timeframe-expansion.md) lands, point `_bar_duration` at the `data/timeframes.py` registry and widen the tool's `timeframe` Literal accordingly.
+- (Resolved at approval — Plan 0025 has landed, so the tool reads durations from `data/timeframes.py` and accepts the full supported set from the outset.)
 - Multi-symbol scan / multi-strategy matrix wrapper plan (the fan-out this primitive enables). That plan must decide how the viewer renders many evaluations (a grid) and whether a fan-out scan should publish one `signal.evaluated` per cell or a single batched event — v1's one-publish-per-eval is fine for a single evaluation but would spam the panel under fan-out.
 - (Architect populates further items from the Mode 4 review at close.)
