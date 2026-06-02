@@ -1,6 +1,6 @@
 # 0030 — Lazy historical loading (scroll-left to fetch older bars)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-02
 > **Approved:** 2026-06-02
 > **Owner skill(s):** `ui-builder`

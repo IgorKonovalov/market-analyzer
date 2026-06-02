@@ -5,7 +5,7 @@
  * view actually renders a toast (and the header spinner) in response to backfill
  * events, ignores non-matching symbols, and that dismiss + re-show work.
  *
- * `useOhlcv` / `useAnnotationsPoll` are mocked to a stable empty state (bars=[]),
+ * `useOhlcvHistory` / `useAnnotationsPoll` are mocked to a stable empty state (bars=[]),
  * so the view renders its empty-state body and never mounts the candlestick
  * chart — keeping lightweight-charts/canvas out of jsdom. The REAL
  * `useBackfillState` + `backfillBus` run, so `notifyBackfill` drives the view
@@ -18,8 +18,17 @@ import { notifyBackfill } from '../handlers/backfillBus'
 import type { Timeframe } from '../components/SymbolPicker'
 import { OhlcvView } from './OhlcvView'
 
-jest.mock('../hooks/useOhlcv', () => ({
-  useOhlcv: jest.fn(() => ({ bars: [], isLoading: false, error: null, refetch: jest.fn() })),
+jest.mock('../hooks/useOhlcvHistory', () => ({
+  useOhlcvHistory: jest.fn(() => ({
+    bars: [],
+    isLoading: false,
+    error: null,
+    refetch: jest.fn(),
+    loadOlder: jest.fn(),
+    isLoadingOlder: false,
+    olderError: null,
+    reachedStart: false,
+  })),
 }))
 jest.mock('../hooks/useAnnotationsPoll', () => ({
   useAnnotationsPoll: jest.fn(() => ({ annotations: [], error: null })),

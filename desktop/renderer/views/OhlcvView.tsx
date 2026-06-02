@@ -21,7 +21,7 @@ import { Toast } from '../components/Toast'
 import { useAgentMode } from '../hooks/useAgentMode'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useBackfillState } from '../hooks/useBackfillState'
-import { useOhlcv } from '../hooks/useOhlcv'
+import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
 import type { Marker, OverlaySpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
 import styles from './OhlcvView.module.css'
@@ -57,8 +57,15 @@ export function OhlcvView({
   const start = useMemo(() => new Date(range_start), [range_start])
   const end = useMemo(() => new Date(range_end), [range_end])
 
-  const { bars, isLoading, error, refetch } = useOhlcv({ symbol, timeframe, start, end })
-  const { annotations } = useAnnotationsPoll({ symbol, timeframe, start, end })
+  const { bars, isLoading, error, refetch } = useOhlcvHistory({ symbol, timeframe, start, end })
+  // Lazy paging prepends bars older than the initial window; widen the
+  // annotation poll to the buffer's earliest so markers cover prepended bars
+  // (Plan 0030 phase 1). End stays the prop window; we never page right.
+  const annStart = useMemo(
+    () => (bars && bars.length > 0 ? new Date(bars[0].event_ts) : start),
+    [bars, start],
+  )
+  const { annotations } = useAnnotationsPoll({ symbol, timeframe, start: annStart, end })
   const { isBackfilling, error: backfillError } = useBackfillState({ symbol, timeframe, refetch })
   const { enabled: agentModeEnabled, setEnabled: setAgentMode } = useAgentMode()
 
