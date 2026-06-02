@@ -25,7 +25,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from market_analyser.api.events import EventBus
+from market_analyser.events import EventBus
 
 router = APIRouter(tags=["events"])
 

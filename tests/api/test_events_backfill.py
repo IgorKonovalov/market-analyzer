@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from market_analyser.api.events import (
+from market_analyser.events import (
     Envelope,
     EventBus,
     GapWindow,

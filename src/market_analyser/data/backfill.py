@@ -14,10 +14,11 @@ partial-surfacing `get_ohlcv_with_status`. Keeping it narrow (rather than the fu
 `MarketDataProvider` Protocol) means the broad Protocol — and the fakes that
 implement it — stay untouched.
 
-Layering note: this module imports the `EventBus` + payloads from
-`market_analyser.api.events` (a data→api reach) because the plan designs the
-coordinator to publish backfill progress directly. The reach is confined here;
-`default_provider` stays free of any api import.
+Layering note: this module imports the `EventBus` + payloads from the
+layer-neutral `market_analyser.events` core (stdlib + pydantic leaf) so the
+coordinator can publish backfill progress directly without reaching up into
+`api/`. This is the dependency arrow ADR-0032 established: `data → events` and
+`api → events`, never `data → api`.
 """
 
 from __future__ import annotations
@@ -29,15 +30,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from market_analyser.api.events import (
+from market_analyser.data.errors import FailureReason, UpstreamDataError, failure_reason
+from market_analyser.data.types import BackfillResult, Bar, Coverage
+from market_analyser.events import (
     EventBus,
     GapWindow,
     OhlcvBackfilledPayloadV1,
     OhlcvBackfillFailedPayloadV1,
     OhlcvBackfillStartedPayloadV1,
 )
-from market_analyser.data.errors import FailureReason, UpstreamDataError, failure_reason
-from market_analyser.data.types import BackfillResult, Bar, Coverage
 
 _logger = logging.getLogger(__name__)
 

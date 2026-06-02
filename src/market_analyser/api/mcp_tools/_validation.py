@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from market_analyser.annotations.types import SUPPORTED_TIMEFRAMES
-from market_analyser.api.events import OverlaySpec
+from market_analyser.events import OverlaySpec
 
 
 def _require_supported_timeframe(timeframe: str) -> None:

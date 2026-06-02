@@ -12,13 +12,13 @@ from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 
 from market_analyser.api.backfill_response import BackfillOhlcvResponse
-from market_analyser.api.events import GapWindow
 from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_ordered_range,
     _require_supported_timeframe,
 )
 from market_analyser.data.backfill import BackfillCoordinator
+from market_analyser.events import GapWindow
 
 BACKFILL_OHLCV_DESCRIPTION = (
     "Pre-warm the local cache for a symbol/timeframe over [start, end] by "

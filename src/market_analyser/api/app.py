@@ -29,7 +29,6 @@ from sqlalchemy import Engine
 from starlette.routing import Route
 
 from market_analyser import __version__
-from market_analyser.api.events import EventBus
 from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.annotations import router as annotations_router
@@ -46,6 +45,7 @@ from market_analyser.config import default_app_data_dir
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
 from market_analyser.persistence.repositories.backtest_runs import (

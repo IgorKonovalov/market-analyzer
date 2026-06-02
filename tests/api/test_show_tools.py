@@ -35,13 +35,6 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from market_analyser.api.app import create_app
-from market_analyser.api.events import (
-    ChartHighlightPayloadV1,
-    ChartShowPayloadV1,
-    ChartUpdatePayloadV1,
-    Envelope,
-    EventBus,
-)
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.types import (
     Bar,
@@ -51,6 +44,13 @@ from market_analyser.data.types import (
     ScreenerRow,
     SentimentSample,
     SymbolInfo,
+)
+from market_analyser.events import (
+    ChartHighlightPayloadV1,
+    ChartShowPayloadV1,
+    ChartUpdatePayloadV1,
+    Envelope,
+    EventBus,
 )
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (

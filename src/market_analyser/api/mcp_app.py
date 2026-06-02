@@ -31,7 +31,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-from market_analyser.api.events import EventBus
 from market_analyser.api.mcp_tools.analyze_symbol import register_analyze_symbol
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
@@ -58,6 +57,7 @@ from market_analyser.api.mcp_tools.write_annotation import register_write_annota
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,

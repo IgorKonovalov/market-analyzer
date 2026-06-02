@@ -47,7 +47,7 @@ const REPO_ROOT = resolve(__dirname, '..', '..', '..')
 function dumpPydanticSchemas(): DumpedSchemas {
   const script = [
     'import json',
-    'from market_analyser.api.events import (',
+    'from market_analyser.events import (',
     '    OverlaySpec, Marker,',
     '    ChartShowPayloadV1, ChartUpdatePayloadV1,',
     '    ChartHighlightPayloadV1, RunCompletedPayloadV1,',

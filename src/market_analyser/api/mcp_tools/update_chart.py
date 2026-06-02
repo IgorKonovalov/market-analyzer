@@ -12,13 +12,13 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from market_analyser.api.events import ChartUpdatePayloadV1, EventBus
 from market_analyser.api.mcp_tools._validation import (
     _parse_overlays,
     _require_non_empty_symbol,
     _require_ordered_range,
     _require_supported_timeframe,
 )
+from market_analyser.events import ChartUpdatePayloadV1, EventBus
 
 
 def register_update_chart(server: FastMCP, *, event_bus: EventBus) -> None:

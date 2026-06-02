@@ -14,11 +14,11 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from market_analyser.annotations.types import Annotation, AnnotationKind
-from market_analyser.api.events import ChartHighlightPayloadV1, EventBus, Marker
 from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_supported_timeframe,
 )
+from market_analyser.events import ChartHighlightPayloadV1, EventBus, Marker
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 
 

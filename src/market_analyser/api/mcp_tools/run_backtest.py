@@ -28,11 +28,11 @@ from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 
-from market_analyser.api.events import EventBus, RunCompletedPayloadV1
 from market_analyser.backtest.engine import run as engine_run
 from market_analyser.backtest.persistence import persist
 from market_analyser.contracts.strategy import discover
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.events import EventBus, RunCompletedPayloadV1
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )

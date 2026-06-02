@@ -12,8 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from market_analyser.api.events import GapWindow
 from market_analyser.data.types import Bar
+from market_analyser.events import GapWindow
 
 
 class GetOhlcvResponse(BaseModel):

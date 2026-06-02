@@ -34,14 +34,6 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 
 from market_analyser.api.app import create_app
-from market_analyser.api.events import (
-    ChartShowPayloadV1,
-    ChartUpdateDroppedPayloadV1,
-    ChartUpdatePayloadV1,
-    Envelope,
-    EventBus,
-    UnknownEventTypeError,
-)
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.types import (
     Bar,
@@ -51,6 +43,14 @@ from market_analyser.data.types import (
     ScreenerRow,
     SentimentSample,
     SymbolInfo,
+)
+from market_analyser.events import (
+    ChartShowPayloadV1,
+    ChartUpdateDroppedPayloadV1,
+    ChartUpdatePayloadV1,
+    Envelope,
+    EventBus,
+    UnknownEventTypeError,
 )
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (

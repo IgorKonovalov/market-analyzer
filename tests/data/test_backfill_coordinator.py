@@ -15,10 +15,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from market_analyser.api.events import EventBus
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.errors import RateLimitedError
 from market_analyser.data.types import BackfillResult, Bar, Coverage
+from market_analyser.events import EventBus
 
 _T1 = datetime(2026, 4, 1, tzinfo=UTC)
 _T2 = datetime(2026, 5, 1, tzinfo=UTC)
