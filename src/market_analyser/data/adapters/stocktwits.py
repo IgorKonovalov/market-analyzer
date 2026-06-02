@@ -35,6 +35,7 @@ from market_analyser.data._http import (
 )
 from market_analyser.data._windows import window_delta
 from market_analyser.data.errors import UnknownSymbolError
+from market_analyser.data.sources import SentimentSource
 from market_analyser.data.types import SentimentSample
 
 _BASE_URL = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
@@ -61,7 +62,7 @@ class StockTwitsHttpClient(ResilientHttpClient):
         return super().classify(exc, response)
 
 
-class StockTwitsAdapter:
+class StockTwitsAdapter(SentimentSource):
     """Fetches StockTwits posts for a ticker and counts their sentiment labels."""
 
     def __init__(self, http_client: StockTwitsHttpClient | None = None) -> None:

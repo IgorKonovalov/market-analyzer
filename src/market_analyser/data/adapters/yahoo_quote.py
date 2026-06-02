@@ -29,6 +29,7 @@ from market_analyser.data.errors import (
     UpstreamDataError,
     UpstreamUnavailableError,
 )
+from market_analyser.data.sources import QuoteSource
 from market_analyser.data.types import Quote
 
 _YF_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
@@ -45,7 +46,7 @@ class _FetchQuoteFn(Protocol):
     def __call__(self, symbol: str, /) -> dict[str, Any]: ...
 
 
-class YahooQuoteAdapter:
+class YahooQuoteAdapter(QuoteSource):
     """Adapter over Yahoo's chart `meta` block. Returns a validated `Quote`."""
 
     def __init__(

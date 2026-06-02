@@ -27,6 +27,7 @@ from market_analyser.data import _vader
 from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
 from market_analyser.data._symbol_match import symbol_matches
 from market_analyser.data._windows import window_delta
+from market_analyser.data.sources import NewsSource
 from market_analyser.data.types import NewsItem
 
 _logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ _FEED_CATALOG: dict[str, Feed] = {
 }
 
 
-class RssNewsAdapter:
+class RssNewsAdapter(NewsSource):
     """Fetches and parses the RSS feed catalog into `NewsItem` rows."""
 
     def __init__(self, http_client: ResilientHttpClient | None = None) -> None:

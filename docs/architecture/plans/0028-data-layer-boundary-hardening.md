@@ -1,6 +1,6 @@
 # 0028 — Data-layer boundary & extensibility hardening
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-31
 > **Owner skill(s):** dev
 > **Related ADRs:** [0031-data-source-adapter-contract](../adrs/0031-data-source-adapter-contract.md), [0032-data-layer-no-api-dependency](../adrs/0032-data-layer-no-api-dependency.md)

@@ -30,6 +30,7 @@ from tradingview_screener.column import col
 from tradingview_screener.query import Query
 
 from market_analyser.data._http import ResilientHttpClient
+from market_analyser.data.sources import ScreenerSource
 from market_analyser.data.types import ScreenerRow
 
 
@@ -96,7 +97,7 @@ _OPS: dict[str, _Operator] = {
 }
 
 
-class TradingViewScreenerAdapter:
+class TradingViewScreenerAdapter(ScreenerSource):
     """Screens TradingView's scanner endpoint via ResilientHttpClient."""
 
     def __init__(self, http_client: ResilientHttpClient | None = None) -> None:

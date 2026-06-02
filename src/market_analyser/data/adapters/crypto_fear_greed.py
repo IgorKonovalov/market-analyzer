@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from market_analyser.data._http import ResilientHttpClient
+from market_analyser.data.sources import MarketSentimentSource
 from market_analyser.data.types import MarketSentimentSample
 
 _FNG_URL = "https://api.alternative.me/fng/"
@@ -38,7 +39,7 @@ class CryptoFearGreedError(ValueError):
     raised at the adapter boundary before model construction."""
 
 
-class CryptoFearGreedAdapter:
+class CryptoFearGreedAdapter(MarketSentimentSource):
     """Fetches the current crypto Fear & Greed reading from Alternative.me."""
 
     def __init__(self, http_client: ResilientHttpClient | None = None) -> None:

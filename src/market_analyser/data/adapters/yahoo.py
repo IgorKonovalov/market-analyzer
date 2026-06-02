@@ -26,6 +26,7 @@ from market_analyser.data.errors import (
     UpstreamDataError,
     UpstreamUnavailableError,
 )
+from market_analyser.data.sources import OhlcvSource, SymbolSearchSource
 from market_analyser.data.timeframes import require_native_interval, uses_intraday_timestamp
 from market_analyser.data.types import Bar, SymbolInfo
 
@@ -60,7 +61,7 @@ _MAX_PERIOD_DAYS = _PERIOD_DAYS[-1][1]
 _DEFAULT_QUOTES_COUNT = 10
 
 
-class YahooAdapter:
+class YahooAdapter(OhlcvSource, SymbolSearchSource):
     """Adapter over the in-house Yahoo Chart fetcher. Returns validated Bars."""
 
     def __init__(
