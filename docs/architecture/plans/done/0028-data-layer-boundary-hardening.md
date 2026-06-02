@@ -1,9 +1,12 @@
 # 0028 — Data-layer boundary & extensibility hardening
 
-> **Status:** in-progress
+> **Status:** done
 > **Created:** 2026-05-31
+> **Closed:** 2026-06-02
 > **Owner skill(s):** dev
-> **Related ADRs:** [0031-data-source-adapter-contract](../adrs/0031-data-source-adapter-contract.md), [0032-data-layer-no-api-dependency](../adrs/0032-data-layer-no-api-dependency.md)
+> **Related ADRs:** [0031-data-source-adapter-contract](../adrs/0031-data-source-adapter-contract.md) (accepted at close), [0032-data-layer-no-api-dependency](../adrs/0032-data-layer-no-api-dependency.md) (accepted at close)
+
+> **Close note (2026-06-02, architect Mode 4):** Clean review — no blockers, no majors. All three phases landed one-commit-each (`130780f`/`ca0cb0d`/`0883fdc`), behavior-preserving. Verified by reading spec bodies, not the pass list: phase-1 contract test pairs `isinstance` with an `inspect.signature` shape check + a guard-the-guard; phase-2 fake-source registry test proves the one-entry-add seam, `_news_vader_sentiment` removed, registries are plain dict literals; phase-3 `import market_analyser.data.backfill` pulls in zero `api` modules, grep clean, `api/events/` fully relocated to top-level `events/`. 802 offline specs pass (5 known Windows POSIX skips), renderer parity guard 10/10 green. The phase-2 rss-vader clock seam (`now=lambda: _now()`) correctly late-binds the provider's `_now` so frozen-clock tests still hold. One nit left as-is: `test_sentiment_source_dispatch.py` docstring still says "Plan 0012 phase 2" (historically accurate). ADRs 0031/0032 flipped `proposed → accepted`.
 
 ## TL;DR
 

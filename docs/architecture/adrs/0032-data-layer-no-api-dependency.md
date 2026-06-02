@@ -1,7 +1,7 @@
 # ADR-0032 — The data layer must not depend on the api layer
 
-> **Status:** proposed
-> **Date:** 2026-05-31
+> **Status:** accepted
+> **Date:** 2026-05-31 (accepted 2026-06-02 at Plan 0028 close)
 > **Related plan(s):** [0028-data-layer-boundary-hardening](../plans/0028-data-layer-boundary-hardening.md)
 
 ## Context
