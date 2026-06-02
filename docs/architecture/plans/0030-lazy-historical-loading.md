@@ -1,11 +1,22 @@
 # 0030 — Lazy historical loading (scroll-left to fetch older bars)
 
-> **Status:** in-progress
+> **Status:** implementation complete — pending [Plan 0031](0031-yahoo-absolute-range-fetch.md) (Yahoo absolute-range fetch)
 > **Created:** 2026-06-02
 > **Approved:** 2026-06-02
 > **Owner skill(s):** `ui-builder`
+> **Blocked by:** [Plan 0031](0031-yahoo-absolute-range-fetch.md) — see the 2026-06-02 update below. Both renderer phases are committed and correct, but the feature cannot work end-to-end until the data layer can fetch a window that ends in the past.
 > **Related ADRs:** [ADR-0008](../adrs/0008-electron-shell-conventions.md) (renderer/component conventions; no new decision), [ADR-0007](../adrs/0007-market-data-provider.md) (the `/ohlcv` sync gap-fetch this rides on), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (why the SSE backfill path is *not* the mechanism here)
 > **Depends on:** [Plan 0029](0029-candlestick-chart-decomposition.md) — phase 2 edits `CandlestickChart.tsx`, which 0029 is mid-refactor. Sequence 0030 after 0029 lands. (Phase 1 touches no chart file and could start earlier if needed.)
+
+## Update 2026-06-02 — blocked: the "older bars are fetchable today" premise was false
+
+Both renderer phases shipped (`4526882` phase 1, `04f0758` phase 2) and pass typecheck/lint/test. Manual testing then showed scroll-left loads nothing: `loadOlder` fires correctly and requests the right older window, but `GET /ohlcv` returns ~11 bars (then 1) for a full-year past window, so the buffer stops growing and `reachedStart` latches.
+
+**Root cause is in the data layer, not this plan's renderer code.** The Yahoo adapter fetches with Yahoo's now-relative `range=` parameter and filters to `[start, end]` (`data/adapters/_yahoo_fetch.py:46`, `data/adapters/yahoo.py:112-167`), so a window ending in the *past* barely overlaps the now-anchored fetch. The Context section below claims "older bars are *fetchable today*" via the synchronous gap-fetch — that holds **only for windows ending at/near now**, which is every prior caller (initial loads, backfills). Backward paging is the first feature to request past-ending windows, exposing the latent limitation.
+
+The fix is [Plan 0031](0031-yahoo-absolute-range-fetch.md) (`dev`): switch the Yahoo fetcher to absolute `period1`/`period2` timestamps. **No change to this plan's renderer code is required** — it is correct and will work once 0031 lands. After 0031, re-run the manual scroll smoke (Phase 2 done-when) and, if clean, take this plan through its close ceremony (`implementation complete — pending 0031` → `done`).
+
+The original Context/Decision below are preserved as written (append-only); read them with this correction in mind.
 
 ## TL;DR
 
