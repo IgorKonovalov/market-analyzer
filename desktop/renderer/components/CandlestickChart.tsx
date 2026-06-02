@@ -27,7 +27,8 @@ import type { IChartApi, ISeriesApi, SeriesMarker, UTCTimestamp } from 'lightwei
 
 import { toLightweightBar } from '../api/client'
 import { useChartGestures } from '../hooks/useChartGestures'
-import { computeEma, computeSma } from '../lib/indicators'
+import { annotationsToMarkers } from '../lib/markers'
+import { computeOverlayData, isSupportedOverlay, overlayColorFor } from '../lib/overlays'
 import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
@@ -41,17 +42,9 @@ import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
 import styles from './CandlestickChart.module.css'
 
-const MARKER_LABEL_MAX = 24
-const BULLISH_COLOR = '#16a34a'
-const BEARISH_COLOR = '#dc2626'
-
-// MVP overlay support. The envelope schema permits `rsi`/`macd`/`bbands`
-// so an agent can request them, but the renderer logs-and-skips them
-// until the corresponding indicator math + presentation lands.
-const SUPPORTED_OVERLAY_KINDS: ReadonlySet<OverlaySpec['kind']> = new Set(['ema', 'sma'])
-
-const OVERLAY_COLOR_EMA = '#2563eb'
-const OVERLAY_COLOR_SMA = '#f97316'
+// The clicked-bar marker reuses the EMA blue; kept local since it's a gesture
+// affordance, not an overlay color (those live in the overlay registry).
+const CLICKED_MARKER_COLOR = '#2563eb'
 
 // Always-on volume series (Plan 0027 phase 3), each derived client-side from
 // `bars`. The histogram + its MA sit on their own bottom-band price scale; VWAP
@@ -111,12 +104,6 @@ interface OverlayEntry {
 
 function overlayKey(spec: OverlaySpec): string {
   return `${spec.kind}:${spec.period ?? 'na'}`
-}
-
-function overlayColorFor(spec: OverlaySpec): string {
-  if (spec.kind === 'ema') return OVERLAY_COLOR_EMA
-  if (spec.kind === 'sma') return OVERLAY_COLOR_SMA
-  return '#888888'
 }
 
 export function CandlestickChart({
@@ -260,7 +247,7 @@ export function CandlestickChart({
 
     const desired = new Map<string, OverlaySpec>()
     for (const spec of overlays ?? []) {
-      if (!SUPPORTED_OVERLAY_KINDS.has(spec.kind)) {
+      if (!isSupportedOverlay(spec.kind)) {
         console.warn(
           `[CandlestickChart] unsupported overlay kind "${spec.kind}" — ignored (MVP renders ema/sma only)`,
         )
@@ -316,7 +303,7 @@ export function CandlestickChart({
       time,
       position: 'aboveBar',
       shape: 'circle',
-      color: OVERLAY_COLOR_EMA,
+      color: CLICKED_MARKER_COLOR,
       text: clickedBarTs.slice(0, 10),
     }
     // setMarkers requires ascending time order.
@@ -373,54 +360,4 @@ export function CandlestickChart({
       </div>
     </div>
   )
-}
-
-function computeOverlayData(bars: Bar[], spec: OverlaySpec): ReturnType<typeof computeEma> {
-  if (spec.kind === 'ema' && spec.period !== null && spec.period !== undefined) {
-    return computeEma(bars, spec.period)
-  }
-  if (spec.kind === 'sma' && spec.period !== null && spec.period !== undefined) {
-    return computeSma(bars, spec.period)
-  }
-  return []
-}
-
-/**
- * Map annotations to lightweight-charts series markers. Bullish goes
- * below the bar with an up-arrow; bearish goes above with a down-arrow.
- * Labels are truncated to ~MARKER_LABEL_MAX chars so a runaway agent
- * can't push a 5KB string into the chart tooltip layer.
- *
- * Returned markers are sorted ascending by time — lightweight-charts
- * requires this and will throw on out-of-order markers.
- *
- * Exported for direct unit testing of the kind->shape mapping.
- */
-export function annotationsToMarkers(annotations: Annotation[]): SeriesMarker<UTCTimestamp>[] {
-  return annotations
-    .map((a) => {
-      const time = Math.floor(new Date(a.event_ts).getTime() / 1000) as UTCTimestamp
-      const text = a.label ? truncateLabel(a.label) : ''
-      if (a.kind === 'bullish_marker') {
-        return {
-          time,
-          position: 'belowBar' as const,
-          shape: 'arrowUp' as const,
-          color: BULLISH_COLOR,
-          text,
-        }
-      }
-      return {
-        time,
-        position: 'aboveBar' as const,
-        shape: 'arrowDown' as const,
-        color: BEARISH_COLOR,
-        text,
-      }
-    })
-    .sort((a, b) => (a.time as number) - (b.time as number))
-}
-
-function truncateLabel(label: string): string {
-  return label.length <= MARKER_LABEL_MAX ? label : `${label.slice(0, MARKER_LABEL_MAX - 1)}…`
 }

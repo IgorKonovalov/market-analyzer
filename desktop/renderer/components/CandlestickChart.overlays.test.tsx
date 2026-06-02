@@ -20,6 +20,7 @@
 import { render } from '@testing-library/react'
 
 import { CandlestickChart } from './CandlestickChart'
+import { OVERLAY_REGISTRY } from '../lib/overlays'
 import type { Bar } from '../types/sidecar/bar'
 
 // ---------- lightweight-charts mock --------------------------------------- //
@@ -239,5 +240,20 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
     expect(window.__test_chart_render__!.seriesCount).toBe(BASE_COUNT)
     expect(fakeChart.removeSeries).toHaveBeenCalledTimes(1)
     expect(removedLineSeries[0]).toBe(overlaySeries)
+  })
+
+  it('reconciles a newly-registered overlay kind — registry entry is the only seam (Plan 0029)', () => {
+    // `rsi` is MVP-unsupported (logged-and-skipped in the prior test). Adding a
+    // single OVERLAY_REGISTRY entry — no other component edit — must make it
+    // render: this is the four-spots-to-one collapse the plan delivers.
+    try {
+      OVERLAY_REGISTRY.rsi = { color: '#abcdef', compute: () => [] }
+      render(<CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: 'rsi', period: 14 }]} />)
+      const hook = window.__test_chart_render__
+      expect(hook!.seriesKinds).toEqual([...BASE_KINDS, { kind: 'rsi', period: 14 }])
+      expect(overlayLineSeries()).toHaveLength(1)
+    } finally {
+      delete OVERLAY_REGISTRY.rsi
+    }
   })
 })
