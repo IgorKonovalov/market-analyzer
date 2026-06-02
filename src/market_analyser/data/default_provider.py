@@ -18,6 +18,7 @@ from typing import Any, Literal
 
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
+from market_analyser.data.adapters.rss_vader_sentiment import RssVaderSentimentAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
@@ -28,6 +29,7 @@ from market_analyser.data.errors import (
     failure_reason,
 )
 from market_analyser.data.resample import resample_ohlcv
+from market_analyser.data.sources import MarketSentimentSource, SentimentSource
 from market_analyser.data.timeframes import bar_duration, max_history, resampled_from
 from market_analyser.data.types import (
     BackfillResult,
@@ -78,13 +80,6 @@ def _history_cap_message(timeframe: str, start: datetime, end: datetime) -> str:
     )
 
 
-# VADER's conventional compound-score cutoffs for the positive/neutral/negative
-# split used to build the sentiment breakdown.
-_SENTIMENT_POSITIVE = 0.05
-_SENTIMENT_NEGATIVE = -0.05
-_RSS_VADER_SOURCE = "rss-vader"
-
-
 class DefaultMarketDataProvider:
     """Dispatches across per-source adapters with optional cache. See ADR-0007."""
 
@@ -106,6 +101,21 @@ class DefaultMarketDataProvider:
         self._crypto_fng = crypto_fng if crypto_fng is not None else CryptoFearGreedAdapter()
         self._stocktwits = stocktwits if stocktwits is not None else StockTwitsAdapter()
         self._repo = bar_repository
+
+        # Selector registries (ADR-0031): adding a sentiment source or a
+        # market-sentiment market is one dict entry, not a dispatch-body branch.
+        # Plain dict literals (no set iteration) keep the dispatch deterministic.
+        # The rss-vader adapter reads its `as_of` through this module's `_now`
+        # (resolved at call time) so the provider stays the single owner of that
+        # determinism seam — tests freeze `default_provider._now` and the sample
+        # observes the frozen value.
+        self._sentiment_sources: dict[str, SentimentSource] = {
+            "rss-vader": RssVaderSentimentAdapter(self._news, now=lambda: _now()),
+            "stocktwits": self._stocktwits,
+        }
+        self._market_sentiment_sources: dict[str, MarketSentimentSource] = {
+            "crypto": self._crypto_fng,
+        }
 
     def get_ohlcv(
         self,
@@ -338,33 +348,13 @@ class DefaultMarketDataProvider:
                 "as_of is not supported for sentiment queries — results are "
                 "wall-clock-sensitive (Plan 0010 / ADR-0019)",
             )
-        if source == "rss-vader":
-            return self._news_vader_sentiment(symbol, window)
-        if source == "stocktwits":
-            return self._stocktwits.fetch_sentiment(symbol=symbol, window=window)
-        # Defensive: the Literal guards callers at type-check time; this catches a
-        # runtime caller that bypassed the type (Plan 0012 phase 2 done-when).
-        raise ValueError(f"unknown sentiment source {source!r}")
-
-    def _news_vader_sentiment(self, symbol: str, window: str) -> SentimentSample:
-        items = self._news.fetch(symbol=symbol, window=window, with_sentiment=True)
-        scores = [item.compound_sentiment for item in items if item.compound_sentiment is not None]
-        # No news = zero (neutral) sentiment, not unknown sentiment.
-        mean = sum(scores) / len(scores) if scores else 0.0
-        positive = sum(1 for s in scores if s > _SENTIMENT_POSITIVE)
-        negative = sum(1 for s in scores if s < _SENTIMENT_NEGATIVE)
-        return SentimentSample(
-            symbol=symbol,
-            score=mean,
-            window=window,
-            as_of=_now(),
-            source=_RSS_VADER_SOURCE,
-            breakdown={
-                "positive": positive,
-                "negative": negative,
-                "neutral": len(scores) - positive - negative,
-            },
-        )
+        # Registry lookup + delegate. The Literal guards callers at type-check
+        # time; the None-check catches a runtime caller that bypassed the type
+        # (Plan 0012 phase 2 done-when) and any future unregistered source.
+        adapter = self._sentiment_sources.get(source)
+        if adapter is None:
+            raise ValueError(f"unknown sentiment source {source!r}")
+        return adapter.fetch_sentiment(symbol=symbol, window=window)
 
     def get_news(
         self,
@@ -399,16 +389,19 @@ class DefaultMarketDataProvider:
                 "as_of is not supported for market sentiment — the Fear & Greed "
                 "index is wall-clock-sensitive (Plan 0011 / ADR-0019)",
             )
-        if market != "crypto":
+        adapter = self._market_sentiment_sources.get(market)
+        if adapter is None:
             raise NotImplementedError(
                 f"market {market!r} F&G not implemented; see Plan 0011 followups",
             )
-        return self._crypto_fng.fetch_current()
+        return adapter.fetch_current()
 
 
 def _now() -> datetime:
-    """Wall-clock seam for the sentiment `as_of`, monkeypatched by tests to freeze
-    time (cf. the adapters' own `_now`)."""
+    """Wall-clock seam for the rss-vader sentiment `as_of`. Injected into the
+    `RssVaderSentimentAdapter` at construction (resolved at call time), so the
+    provider remains the single owner of the seam; monkeypatched by tests to
+    freeze time (cf. the adapters' own `_now`)."""
     return datetime.now(tz=UTC)
 
 

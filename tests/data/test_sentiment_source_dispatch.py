@@ -79,6 +79,29 @@ def test_unknown_source_raises_value_error() -> None:
         provider.get_sentiment(symbol="AAPL", window="24h", source="bogus")  # type: ignore[arg-type]
 
 
+def test_registry_entry_dispatches_a_fake_source() -> None:
+    """A new sentiment source is a one-entry registry add, not a dispatch-body
+    edit (ADR-0031): inserting a fake `SentimentSource` makes `get_sentiment`
+    route to it without any change to the dispatch method."""
+    fake_sample = SentimentSample(
+        symbol="AAPL",
+        score=0.25,
+        window="24h",
+        as_of=_FROZEN,
+        source="fake",
+        breakdown={"positive": 2, "negative": 1, "neutral": 0},
+    )
+    fake = MagicMock()
+    fake.fetch_sentiment.return_value = fake_sample
+    provider = DefaultMarketDataProvider()
+    provider._sentiment_sources["fake"] = fake  # the entire cost of adding a source
+
+    result = provider.get_sentiment(symbol="AAPL", window="24h", source="fake")  # type: ignore[arg-type]
+
+    assert result.source == "fake"
+    fake.fetch_sentiment.assert_called_once_with(symbol="AAPL", window="24h")
+
+
 @pytest.mark.parametrize("source", ["rss-vader", "stocktwits"])
 def test_as_of_rejected_for_every_source(source: str) -> None:
     provider = DefaultMarketDataProvider()
