@@ -1,8 +1,10 @@
 """Yahoo Finance adapter — thin wrapper over the in-house OHLCV fetcher.
 
 The adapter does three things the raw fetcher does not:
-1. Translates the contract's `start: datetime, end: datetime` window into the
-   range-period strings Yahoo's chart API accepts.
+1. Validates the contract's `start: datetime, end: datetime` window and translates
+   the canonical timeframe into Yahoo's native `interval` string. The window is
+   passed through verbatim — the fetcher requests it via absolute period1/period2
+   (Plan 0031), so no span→range mapping happens here.
 2. Validates every bar through the `Bar` pydantic model — rejecting NaN, negative,
    non-UTC, or out-of-window data per `best-practices.md`'s boundary rule.
 3. Filters the response to the requested `[start, end]` window.
@@ -13,7 +15,6 @@ Per ADR-0007, this adapter is package-internal: downstream code imports the
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -30,8 +31,6 @@ from market_analyser.data.sources import OhlcvSource, SymbolSearchSource
 from market_analyser.data.timeframes import require_native_interval, uses_intraday_timestamp
 from market_analyser.data.types import Bar, SymbolInfo
 
-_logger = logging.getLogger(__name__)
-
 # Yahoo's chart endpoint occasionally times out under load; the shared client's
 # defaults (transient-failure handling, bounded concurrency) cover it. No
 # in-memory result store: OHLCV bars are persisted cross-session in SQLite, so
@@ -40,19 +39,10 @@ _REQUEST_TIMEOUT_SECONDS = 15.0
 
 
 class _FetchOhlcvFn(Protocol):
-    def __call__(self, symbol: str, period: str, interval: str = ...) -> list[dict[str, Any]]: ...
+    def __call__(
+        self, symbol: str, start: datetime, end: datetime, interval: str = ...
+    ) -> list[dict[str, Any]]: ...
 
-
-# Range strings supported by Yahoo's chart API via the in-house fetcher.
-# Ordered shortest → longest so we can pick the smallest sufficient period.
-_PERIOD_DAYS: tuple[tuple[str, int], ...] = (
-    ("1mo", 31),
-    ("3mo", 93),
-    ("6mo", 186),
-    ("1y", 366),
-    ("2y", 732),
-)
-_MAX_PERIOD_DAYS = _PERIOD_DAYS[-1][1]
 
 # Result cap for symbol search. Yahoo honours `quotesCount`, so this also bounds
 # the upstream payload. Kept adapter-internal (not a Protocol/route parameter):
@@ -82,10 +72,11 @@ class YahooAdapter(OhlcvSource, SymbolSearchSource):
     def _default_fetch(
         self,
         symbol: str,
-        period: str,
+        start: datetime,
+        end: datetime,
         interval: str = "1d",
     ) -> list[dict[str, Any]]:
-        return _fetch_yahoo_ohlcv(symbol, period, interval, client=self._client)
+        return _fetch_yahoo_ohlcv(symbol, start, end, interval, client=self._client)
 
     def fetch_ohlcv(
         self,
@@ -109,40 +100,27 @@ class YahooAdapter(OhlcvSource, SymbolSearchSource):
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
 
-        span_days = (end_utc - start_utc).days + 1
-        if span_days > _MAX_PERIOD_DAYS:
-            raise ValueError(
-                f"requested span {span_days}d exceeds supported max {_MAX_PERIOD_DAYS}d",
-            )
-
-        period = _smallest_period_for(span_days)
-        period_days = next((d for label, d in _PERIOD_DAYS if label == period), span_days)
-        if period_days > span_days:
-            _logger.debug(
-                "yahoo over-fetch: requested span=%dd, picked period=%s (%dd), ratio=%.2fx",
-                span_days,
-                period,
-                period_days,
-                period_days / max(span_days, 1),
-            )
+        # The window is fetched verbatim via absolute period1/period2 (Plan 0031),
+        # so there is no span→range cap here. Intraday-history horizons are real
+        # Yahoo limits, enforced by `default_provider._exceeds_history_cap` before
+        # this adapter is reached; uncapped timeframes (1d, 1w) have no ceiling.
         try:
-            raw = self._fetch(symbol, period, interval)
+            raw = self._fetch(symbol, start_utc, end_utc, interval)
         except ResilientHttpError as err:
             raise _classify_http_error(err, symbol) from err
 
         if not raw:
-            # An empty response on a >= 1mo period for a structurally-valid
-            # symbol is treated as unknown-symbol: a multi-day window of zero
-            # bars on a known-good interval is implausible for a live, listed
-            # name (Plan 0013 phase 1). `_smallest_period_for` floors the period
-            # at "1mo" (31d), so the period_days >= 30 heuristic always holds
-            # here. A non-empty response whose rows all fall outside the exact
-            # requested window still returns `[]` below (the gap-too-small case
-            # the caller's `if not fetched` path handles) — only a genuinely
-            # empty upstream response lands here.
+            # An empty response for a structurally-valid symbol over an absolute
+            # window is treated as unknown-symbol: zero bars on a known-good
+            # interval is implausible for a live, listed name (Plan 0013 phase 1).
+            # A non-empty response whose rows all fall outside the exact requested
+            # window still returns `[]` below (the gap-too-small case the caller's
+            # `if not fetched` path handles) — only a genuinely empty upstream
+            # response lands here.
             raise UnknownSymbolError(
-                f"yahoo: no rows for {symbol.upper()!r} over period {period!r} "
-                f"({timeframe}) — symbol is likely unknown or unlisted",
+                f"yahoo: no rows for {symbol.upper()!r} over "
+                f"[{start_utc.isoformat()}, {end_utc.isoformat()}] ({timeframe}) — "
+                f"symbol is likely unknown or unlisted",
                 symbol=symbol.upper(),
             )
 
@@ -274,13 +252,6 @@ def _parse_retry_after(value: str | None) -> int | None:
         return int(value.strip())
     except ValueError:
         return None
-
-
-def _smallest_period_for(span_days: int) -> str:
-    for label, days in _PERIOD_DAYS:
-        if days >= span_days:
-            return label
-    return _PERIOD_DAYS[-1][0]
 
 
 def _parse_event_ts(date_str: str, timeframe: str) -> datetime:

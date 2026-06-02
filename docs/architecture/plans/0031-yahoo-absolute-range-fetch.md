@@ -1,6 +1,6 @@
 # 0031 — Yahoo absolute-range fetch (`period1`/`period2`)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-02
 > **Owner skill(s):** `dev`
 > **Related ADRs:** [ADR-0007](../adrs/0007-market-data-provider.md) (the `MarketDataProvider`/adapter contract this lives under — no new decision; the fetch *mechanism* is an adapter implementation detail ADR-0007 never specified)
@@ -69,18 +69,24 @@ flowchart LR
   - `_yahoo_fetch.py`: change `_fetch_yahoo_ohlcv` to take the absolute window (recommended: `start: datetime, end: datetime`, keeping `interval`, `client`) and build `?period1={int(start.timestamp())}&period2={int(end.timestamp())}&interval={interval}`. Update the `_FetchOhlcvFn` Protocol in `yahoo.py:42-43` to match. Guard `_parse_chart_payload` so a Yahoo error envelope / missing `timestamp` raises a typed `UpstreamUnavailableError` (or `UnknownSymbolError` for a clearly-empty result) instead of a raw `KeyError`/`TypeError` that escapes as a 500 (absorbs the 2026-05-31 audit follow-up).
   - `yahoo.py::fetch_ohlcv`: drop the `_PERIOD_DAYS`/`_smallest_period_for`/`_MAX_PERIOD_DAYS` span→range machinery; pass `start_utc`/`end_utc` to the fetcher. Keep the `[start_utc, end_utc]` row filter and the empty-response→`UnknownSymbolError` heuristic (re-phrased against the window). Remove the 732-day `ValueError` cap for timeframes with no `max_history` horizon; rely on `default_provider._exceeds_history_cap` (`default_provider.py:63-68,132-133`) for intraday horizons (unchanged).
   - Update the fetcher-injection test fakes and any unit test asserting the old `?range=` URL or the period-string mapping.
-- **Files touched:** `src/market_analyser/data/adapters/_yahoo_fetch.py`, `src/market_analyser/data/adapters/yahoo.py`, the Yahoo adapter/fetcher tests under `tests/` (whichever assert URL shape, period mapping, or the 732-day cap), and the audit follow-up's parse-guard test.
+- **Files touched:** `src/market_analyser/data/adapters/_yahoo_fetch.py`, `src/market_analyser/data/adapters/yahoo.py`, the Yahoo adapter/fetcher tests under `tests/` (whichever assert URL shape, period mapping, or the 732-day cap), the audit follow-up's parse-guard test, and a route-level integration test under `tests/api/` (`TestClient` + injected fetcher, past-window fetch).
 - **Done when:**
   - A unit test (fetcher mocked / recorded payload) asserts the request URL carries `period1`/`period2` (not `range=`) for a given `[start, end]`, and that the returned bars cover the full requested window — including a window whose `end` is well in the past (the regression that motivated this plan).
   - A unit test asserts a now-ending window still returns the same bars it did before (no regression for the initial-load / backfill path).
   - A unit test asserts a Yahoo error/empty envelope raises the typed taxonomy (no raw `KeyError`/500).
   - For an uncapped timeframe (`1d`), a multi-year span no longer raises the 732-day `ValueError`; for an intraday timeframe past its horizon, `_exceeds_history_cap` still raises `HistoryExceededError` (behavior preserved).
+  - **Route-level integration test (deterministic, no network) — the e2e gate for this fix:** build the FastAPI app via `create_app` wired with a `DefaultMarketDataProvider` whose adapter has an injected fake/recorded fetcher (the `_FetchOhlcvFn` seam), then hit `GET /ohlcv` through a `TestClient` for a **past-ending** window. Assert (a) the response carries the full window's bars (not the ~11-bar now-anchored remnant the bug produced), and (b) the fetcher was invoked with the absolute `[start, end]` window — proving the chain route → `get_ohlcv` → `_coverage_gaps` → `YahooAdapter.fetch_ohlcv` → fetcher threads the real window end-to-end, not just the adapter in isolation. A past-ending window backed by an empty cache must drive a gap-fetch and return the fetched bars. (An Electron e2e is deliberately NOT used: it would either bypass Yahoo via cache — proving nothing about this fix — or require live network; the `TestClient` integration test is the right deterministic level.)
   - `uv run pytest` green; no change to the `MarketDataProvider` Protocol surface or return types (ADR-0007 intact).
-  - **Live smoke (best-effort, in the commit message):** `GET /ohlcv` for `AAPL 1d` over a window ending ~1 year ago returns ~250 bars (not ~11), mirroring the existing live-test caveat style.
+  - **Live smoke (best-effort, in the commit message):** `GET /ohlcv` for `AAPL 1d` over a window ending ~1 year ago returns ~250 bars (not ~11) against real Yahoo — the real-world confirmation the deterministic test can't give (it stubs the fetcher), mirroring the existing live-test caveat style.
 
 ## Cross-plan follow-up (not a phase here)
 
-After phase 1 lands, [Plan 0030](0030-lazy-historical-loading.md) becomes end-to-end functional with no renderer change. The `ui-builder`/architect should re-run Plan 0030's manual scroll smoke (older bars stream in on scroll-left; viewport stays anchored; paging stops cleanly at true data start or an intraday horizon) and, if clean, take Plan 0030 through its close ceremony. Flip Plan 0030 `implementation complete — pending 0031` → `done` at that point.
+After phase 1 lands, [Plan 0030](0030-lazy-historical-loading.md) becomes end-to-end functional with no renderer change. Two things gate Plan 0030's close, and they are independent:
+
+- **This plan (0031)** unblocks the *live* path — once it ships, the real Yahoo fetch returns past windows, so Plan 0030's manual scroll smoke and its (now non-gating) live e2e case work for real.
+- **Plan 0030's own deterministic seeded-cache e2e** (`ui-builder`, the added close-blocking item in its Phase 2 done-when) does **not** depend on 0031 — seeding the cache bypasses Yahoo — so it can be written and pass *now*, proving the renderer wiring independently.
+
+When both have landed: `ui-builder`/architect re-runs the manual scroll smoke (older bars stream in; viewport anchored; paging stops cleanly at data start / intraday horizon) and takes Plan 0030 through its close ceremony (`implementation complete — pending …` → `done`).
 
 ## Data shapes
 

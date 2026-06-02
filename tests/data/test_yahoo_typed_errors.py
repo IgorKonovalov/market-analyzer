@@ -46,7 +46,9 @@ def _raising_fetcher(
         else HttpResponse(status_code=status, headers=headers or {}, body=b"", elapsed_seconds=0.0)
     )
 
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         raise ResilientHttpError(
             source_name="yahoo",
             last_response=last_response,
@@ -57,7 +59,9 @@ def _raising_fetcher(
     return fetcher
 
 
-def _empty_fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+def _empty_fetcher(
+    symbol: str, start: datetime, end: datetime, interval: str = "1d"
+) -> list[dict[str, Any]]:
     return []
 
 

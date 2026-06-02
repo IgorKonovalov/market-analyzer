@@ -24,7 +24,9 @@ _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "yahoo"
 
 
 def _make_fetcher(rows: list[dict[str, Any]]) -> Any:
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         return rows
 
     return fetcher
@@ -142,7 +144,9 @@ def test_fetch_ohlcv_translates_canonical_timeframe_to_yahoo_interval() -> None:
     # "1w" -> "1wk", "15m" stays "15m". Proven via the injectable fetcher seam.
     captured: dict[str, str] = {}
 
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         captured["interval"] = interval
         # Date string must match the cadence the adapter expects to parse: weekly
         # bars are date-only, 15m bars carry an intraday HH:MM.
@@ -255,35 +259,47 @@ def test_fetch_ohlcv_rejects_start_after_end() -> None:
         )
 
 
-def test_fetch_ohlcv_rejects_span_over_2y() -> None:
-    adapter = YahooAdapter(fetcher=_make_fetcher([]))
-    with pytest.raises(ValueError, match="exceeds supported max"):
-        adapter.fetch_ohlcv(
-            "AAPL",
-            "1d",
-            datetime(2020, 1, 1, tzinfo=UTC),
-            datetime(2026, 1, 1, tzinfo=UTC),
-        )
+def test_fetch_ohlcv_passes_absolute_window_to_fetcher() -> None:
+    # Plan 0031: the adapter hands the fetcher the exact [start, end] window
+    # (no span→range collapse), so a multi-year 1d span is fetched verbatim and
+    # no longer raises the old 732-day cap.
+    captured: dict[str, datetime] = {}
 
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
+        captured["start"] = start
+        captured["end"] = end
+        return [_good_row("2022-06-15")]
 
-def test_fetch_ohlcv_picks_smallest_sufficient_period() -> None:
-    captured: dict[str, str] = {}
-
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
-        captured["period"] = period
-        # Return one in-window row so the adapter doesn't classify this as an
-        # empty (unknown-symbol) response (Plan 0013) — the claim under test is
-        # period *selection*, not the empty-response path.
-        return [_good_row("2026-04-28")]
-
+    start = datetime(2020, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 1, 1, tzinfo=UTC)
     adapter = YahooAdapter(fetcher=fetcher)
-    adapter.fetch_ohlcv(
+    bars = adapter.fetch_ohlcv("AAPL", "1d", start, end)
+
+    assert captured["start"] == start
+    assert captured["end"] == end
+    assert len(bars) == 1
+    assert bars[0].event_ts == datetime(2022, 6, 15, tzinfo=UTC)
+
+
+def test_fetch_ohlcv_returns_full_past_ending_window() -> None:
+    # The regression that motivated Plan 0031: a window whose `end` is well in the
+    # past must return all its in-window bars, not a now-clustered handful.
+    rows = [_good_row(f"2024-06-{day:02d}") for day in range(3, 11)]
+    adapter = YahooAdapter(fetcher=_make_fetcher(rows))
+
+    bars = adapter.fetch_ohlcv(
         "AAPL",
         "1d",
-        datetime(2026, 4, 25, tzinfo=UTC),
-        datetime(2026, 5, 1, tzinfo=UTC),
+        datetime(2024, 6, 3, tzinfo=UTC),
+        datetime(2024, 6, 10, tzinfo=UTC),
     )
-    assert captured["period"] == "1mo"
+
+    # 2024-06-03 .. 2024-06-10 inclusive (the filter keeps both endpoints).
+    assert [b.event_ts.date().isoformat() for b in bars] == [
+        f"2024-06-{day:02d}" for day in range(3, 11)
+    ]
 
 
 # -- Plan 0009 phase 3: HTTP now routes through ResilientHttpClient -----------

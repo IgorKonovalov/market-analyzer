@@ -9,6 +9,7 @@ fetcher builds the expected Yahoo chart URL.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +21,12 @@ from market_analyser.data.adapters._yahoo_fetch import (
     _fetch_yahoo_ohlcv,
     _parse_chart_payload,
 )
+from market_analyser.data.errors import UpstreamUnavailableError
 
 _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "yahoo"
+
+_START = datetime(2026, 1, 1, tzinfo=UTC)
+_END = datetime(2026, 2, 1, tzinfo=UTC)
 
 
 def _client_returning(payload: bytes, captured: dict[str, Any]) -> ResilientHttpClient:
@@ -38,15 +43,23 @@ def _client_returning(payload: bytes, captured: dict[str, Any]) -> ResilientHttp
     return client
 
 
-def test_fetch_goes_through_client_and_builds_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_goes_through_client_and_builds_absolute_window_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Plan 0031: the request carries absolute period1/period2 (Unix seconds),
+    # not the now-relative range= — so a past-ending window is fetched verbatim.
     payload = (_FIXTURE_DIR / "aapl_1d.json").read_bytes()
     captured: dict[str, Any] = {}
     client = _client_returning(payload, captured)
 
-    rows = _fetch_yahoo_ohlcv("AAPL", "1mo", "1d", client=client)
+    rows = _fetch_yahoo_ohlcv("AAPL", _START, _END, "1d", client=client)
 
     assert captured["method"] == "GET"
-    assert captured["url"] == f"{_YF_BASE}/AAPL?interval=1d&range=1mo"
+    assert captured["url"] == (
+        f"{_YF_BASE}/AAPL"
+        f"?period1={int(_START.timestamp())}&period2={int(_END.timestamp())}&interval=1d"
+    )
+    assert "range=" not in captured["url"]
     assert [r["date"] for r in rows] == [
         "2026-01-01",
         "2026-01-02",
@@ -64,10 +77,35 @@ def test_fetch_url_encodes_symbol_path_segment() -> None:
     captured: dict[str, Any] = {}
     client = _client_returning(payload, captured)
 
-    _fetch_yahoo_ohlcv("BTC USD", "1mo", "1d", client=client)
+    _fetch_yahoo_ohlcv("BTC USD", _START, _END, "1d", client=client)
 
-    assert captured["url"] == f"{_YF_BASE}/BTC%20USD?interval=1d&range=1mo"
+    assert captured["url"] == (
+        f"{_YF_BASE}/BTC%20USD"
+        f"?period1={int(_START.timestamp())}&period2={int(_END.timestamp())}&interval=1d"
+    )
     assert " " not in captured["url"]
+
+
+def test_parse_raises_on_error_envelope() -> None:
+    # Yahoo returns 200 OK with a populated error envelope; that must surface as
+    # the typed taxonomy, not a raw KeyError escaping as a 500 (Plan 0031).
+    payload = {"chart": {"error": {"code": "Not Found", "description": "No data"}, "result": None}}
+    with pytest.raises(UpstreamUnavailableError, match="error envelope"):
+        _parse_chart_payload(payload, "1d")
+
+
+def test_parse_raises_on_null_result() -> None:
+    payload = {"chart": {"error": None, "result": None}}
+    with pytest.raises(UpstreamUnavailableError, match="null/empty 'result'"):
+        _parse_chart_payload(payload, "1d")
+
+
+def test_parse_missing_timestamp_returns_empty() -> None:
+    # A well-formed result with no `timestamp` key is Yahoo's "no bars for this
+    # window" — yields [] so the adapter's empty-response heuristic classifies it,
+    # rather than raising here.
+    payload = {"chart": {"error": None, "result": [{"meta": {"symbol": "AAPL"}}]}}
+    assert _parse_chart_payload(payload, "1d") == []
 
 
 def test_parse_skips_none_rows() -> None:

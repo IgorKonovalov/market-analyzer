@@ -24,7 +24,9 @@ from market_analyser.data.types import Bar
 
 
 def _fake_yahoo() -> YahooAdapter:
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         return [
             {
                 "date": "2026-04-15",

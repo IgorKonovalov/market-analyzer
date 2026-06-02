@@ -61,7 +61,9 @@ def _yahoo_with_calls(
     """Fetcher that returns the same `rows` regardless of period (legacy helper)."""
     calls: list[str] = []
 
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         calls.append(symbol)
         return rows
 
@@ -71,13 +73,15 @@ def _yahoo_with_calls(
 def _yahoo_with_call_log(
     rows: list[dict[str, Any]],
 ) -> tuple[YahooAdapter, list[tuple[str, str]]]:
-    """Fetcher that records (symbol, period) per call. The adapter still filters
+    """Fetcher that records (symbol, interval) per call. The adapter still filters
     the response to [start, end], so we can return a generous superset of bars
     and trust the adapter to discard the rest."""
     calls: list[tuple[str, str]] = []
 
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
-        calls.append((symbol, period))
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
+        calls.append((symbol, interval))
         return rows
 
     return YahooAdapter(fetcher=fetcher), calls
@@ -114,12 +118,15 @@ def test_full_cache_coverage_no_fetch(repo: BarRepository) -> None:
         datetime(2026, 4, 1, tzinfo=UTC),
         datetime(2026, 4, 30, tzinfo=UTC),
     )
-    assert warm_calls == [("AAPL", "1mo")]
+    assert warm_calls == [("AAPL", "1d")]
 
     # Now build a fresh provider whose adapter would scream if called.
-    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def explode(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         raise AssertionError(
-            f"adapter must not be called for fully cached coverage: {symbol} {period}",
+            f"adapter must not be called for fully cached coverage: "
+            f"{symbol} [{start.isoformat()}, {end.isoformat()}]",
         )
 
     no_call_provider = DefaultMarketDataProvider(
@@ -214,7 +221,9 @@ def test_as_of_with_partial_coverage_raises(repo: BarRepository) -> None:
 
     # Adapter that explodes if called: anti-lookahead must short-circuit before
     # any remote fetch.
-    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def explode(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         raise AssertionError("as_of must never fall through to a remote fetch")
 
     provider = DefaultMarketDataProvider(
@@ -259,7 +268,9 @@ def test_as_of_with_full_coverage_returns_bars(repo: BarRepository) -> None:
         datetime(2026, 4, 30, tzinfo=UTC),
     )
 
-    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def explode(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         raise AssertionError("as_of with full coverage must not call the adapter")
 
     provider = DefaultMarketDataProvider(
@@ -297,7 +308,9 @@ def _scripted_yahoo(outcomes: list[list[dict[str, Any]] | Exception]) -> YahooAd
     outcome per gap the provider fetches (gaps are fetched in sorted order)."""
     state = {"i": 0}
 
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         outcome = outcomes[state["i"]]
         state["i"] += 1
         if isinstance(outcome, Exception):
@@ -400,7 +413,9 @@ def test_get_ohlcv_with_status_full_cache_hit_is_clean(repo: BarRepository) -> N
         datetime(2026, 4, 30, tzinfo=UTC),
     )
 
-    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def explode(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         raise AssertionError("full cache hit must not fetch")
 
     provider = DefaultMarketDataProvider(yahoo=YahooAdapter(fetcher=explode), bar_repository=repo)
@@ -491,7 +506,9 @@ def test_get_ohlcv_4h_resamples_from_one_1h_fetch(repo: BarRepository) -> None:
     # and 08:00-12:00 1h bars collapse into two 4h buckets.
     intervals: list[str] = []
 
-    def fetcher(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def fetcher(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         intervals.append(interval)
         return [
             _intraday_row(f"2026-01-05 {hour:02d}:00", close=100.0 + hour) for hour in range(4, 12)
@@ -534,7 +551,9 @@ def test_get_ohlcv_4h_with_status_carries_base_partial_reason(repo: BarRepositor
 
 
 def _no_fetch_provider(repo: BarRepository) -> DefaultMarketDataProvider:
-    def explode(symbol: str, period: str, interval: str = "1d") -> list[dict[str, Any]]:
+    def explode(
+        symbol: str, start: datetime, end: datetime, interval: str = "1d"
+    ) -> list[dict[str, Any]]:
         raise AssertionError("over-history request must not reach the adapter")
 
     return DefaultMarketDataProvider(yahoo=YahooAdapter(fetcher=explode), bar_repository=repo)

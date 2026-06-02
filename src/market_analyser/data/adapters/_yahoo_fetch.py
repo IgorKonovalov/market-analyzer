@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import quote
 
 from market_analyser.data._http import ResilientHttpClient
+from market_analyser.data.errors import UpstreamUnavailableError
 from market_analyser.data.timeframes import yahoo_interval_uses_intraday_timestamp
 
 _YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
@@ -26,13 +27,19 @@ _YF_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
 
 def _fetch_yahoo_ohlcv(
     symbol: str,
-    period: str,
+    start: datetime,
+    end: datetime,
     interval: str = "1d",
     *,
     client: ResilientHttpClient,
 ) -> list[dict[str, Any]]:
-    """Fetch OHLCV rows from Yahoo's chart API for ``symbol`` over ``period``,
-    issuing the request through ``client``.
+    """Fetch OHLCV rows from Yahoo's chart API for ``symbol`` over the absolute
+    window ``[start, end]``, issuing the request through ``client``.
+
+    The window is passed verbatim via Yahoo's absolute ``period1``/``period2``
+    (Unix-second) parameters rather than the now-relative ``range=`` — so a
+    window that ends in the past (Plan 0030 backward paging, Plan 0031) is
+    fetched as requested instead of being clamped to the most recent N days.
 
     Returns one dict per bar (keys: ``date`` str, ``open`` / ``high`` / ``low`` /
     ``close`` float, ``volume`` int). ``date`` is formatted ``%Y-%m-%d`` for daily
@@ -43,15 +50,40 @@ def _fetch_yahoo_ohlcv(
     # a mistyped "BTC USD") otherwise raises http.client.InvalidURL before the
     # request leaves the process. Unreserved chars (incl. '-' in "BTC-USD") are
     # left untouched by quote(), so existing symbols are unchanged.
-    url = f"{_YF_BASE}/{quote(symbol, safe='')}?interval={interval}&range={period}"
+    period1 = int(start.timestamp())
+    period2 = int(end.timestamp())
+    url = (
+        f"{_YF_BASE}/{quote(symbol, safe='')}"
+        f"?period1={period1}&period2={period2}&interval={interval}"
+    )
     response = client.get(url, expect_json=True)
     return _parse_chart_payload(response.json(), interval)
 
 
 def _parse_chart_payload(payload: Any, interval: str) -> list[dict[str, Any]]:
-    """Parse a Yahoo chart payload into OHLCV row dicts."""
-    result = payload["chart"]["result"][0]
-    timestamps = result["timestamp"]
+    """Parse a Yahoo chart payload into OHLCV row dicts.
+
+    Yahoo returns 200 OK even for failures, signalling them in the body: a
+    populated ``chart.error`` envelope or a null/empty ``chart.result``. Those —
+    and any structurally broken payload — raise `UpstreamUnavailableError` rather
+    than escaping as a raw ``KeyError``/``TypeError`` (→ 500). A *well-formed but
+    empty* result (no ``timestamp`` key, which Yahoo returns for a window with no
+    data) yields ``[]``; the adapter's empty-response heuristic decides whether
+    that is an unknown symbol or a legitimately-empty window.
+    """
+    chart = payload.get("chart") if isinstance(payload, dict) else None
+    if not isinstance(chart, dict):
+        raise UpstreamUnavailableError("yahoo: malformed chart payload (no 'chart' object)")
+    if chart.get("error") is not None:
+        raise UpstreamUnavailableError(f"yahoo: chart error envelope: {chart['error']!r}")
+    results = chart.get("result")
+    if not results:
+        raise UpstreamUnavailableError("yahoo: chart payload has null/empty 'result'")
+    result = results[0]
+    timestamps = result.get("timestamp")
+    if not timestamps:
+        # Well-formed result, no bars for the window — let the caller classify.
+        return []
     quote = result["indicators"]["quote"][0]
     intraday = yahoo_interval_uses_intraday_timestamp(interval)
     date_fmt = "%Y-%m-%d %H:%M" if intraday else "%Y-%m-%d"
