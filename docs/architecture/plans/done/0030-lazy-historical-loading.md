@@ -1,6 +1,6 @@
 # 0030 — Lazy historical loading (scroll-left to fetch older bars)
 
-> **Status:** implementation complete — pending [Plan 0031](0031-yahoo-absolute-range-fetch.md) (data-layer fix) + a deterministic seeded-cache e2e (Phase 2 done-when, `ui-builder`)
+> **Status:** done (close ceremony 2026-06-03) — both renderer phases (`4526882`/`04f0758`) + the deterministic seeded-cache e2e (`0cd7f7a`) landed and reviewed; the data-layer blocker [Plan 0031](0031-yahoo-absolute-range-fetch.md) closed in the same ceremony, so the live path now works. Mode 4: no blockers. Verified: 27 renderer Jest specs (useOhlcvHistory / useLazyHistoryTrigger / CandlestickChart.lazy / OhlcvView) green; the seeded e2e is real (asserts barCount growth + second `/ohlcv` fetch + affordance via MutationObserver); live past-window fetch confirmed via 0031 (249 bars). The best-effort live scroll smoke (`live-chart.spec.ts`) is non-gating per the Phase 2 done-when.
 > **Created:** 2026-06-02
 > **Approved:** 2026-06-02
 > **Owner skill(s):** `ui-builder`

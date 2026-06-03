@@ -40,7 +40,7 @@ This index is the one-minute entrypoint: what exists, each one's status, and how
 | [0030](0030-forecasting-subsystem.md) | Forecasting subsystem (causal, validated, direction-as-probability) | proposed — accepts at first forecasting plan close | mirrors 0018; reuses 0024 | none yet (Plan 0020 prereq) |
 | [0031](0031-data-source-adapter-contract.md) | Per-capability data-source Protocols + selector-registry dispatch | accepted (Plan 0028 close 2026-06-02) | relates 0007/0009 | 0028 |
 | [0032](0032-data-layer-no-api-dependency.md) | Data layer imports no `api` modules (event bus in neutral `events/` core) | accepted (Plan 0028 close 2026-06-02) | relates 0007 | 0028 |
-| [0033](0033-empty-ohlcv-response-by-recency.md) | Empty Yahoo OHLCV response classified by window recency | proposed — accepts at Plan 0031 close | refines 0013 heuristic; relates 0007 | 0031 |
+| [0033](0033-empty-ohlcv-response-by-recency.md) | Empty Yahoo OHLCV response classified by window recency | accepted (Plan 0031 close 2026-06-03) | refines 0013 heuristic; relates 0007 | 0031 |
 
 **Standalone (no supersede/refine lineage):** 0012/0013 (a peer pair), 0017, 0019, 0021, 0023, 0025, 0026, 0027, 0028, 0031, 0032. Everything else sits in one of the chains below. ADR-0029 and ADR-0030 were decided together (2026-05-30) and compose (the advisor consumes forecasts) but are independent decisions; ADR-0029 carves out of ADR-0015's "conditions are facts" framing and sits one layer below ADR-0025 (execution), and ADR-0030 mirrors ADR-0018's determinism contract and reuses ADR-0024's walk-forward machinery.
 

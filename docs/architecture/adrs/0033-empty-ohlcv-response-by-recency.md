@@ -1,6 +1,6 @@
 # ADR-0033 — Empty Yahoo OHLCV response classified by window recency
 
-> **Status:** proposed — accepts at Plan 0031 close
+> **Status:** accepted (Plan 0031 close 2026-06-03)
 > **Date:** 2026-06-03
 > **Related plan(s):** [0031](../plans/0031-yahoo-absolute-range-fetch.md) (phase 2 — the change this records), [0030](../plans/0030-lazy-historical-loading.md) (the backward-paging feature this unblocks)
 > **Related ADRs:** [ADR-0007](0007-market-data-provider.md) (the Provider/adapter contract — unchanged); refines the Plan 0013 `UnknownSymbolError` heuristic in [`data/errors.py`](../../../src/market_analyser/data/errors.py)

@@ -1,6 +1,6 @@
 # 0031 — Yahoo absolute-range fetch (`period1`/`period2`)
 
-> **Status:** in-progress — phase 1 landed (`ce8067f` fetch fix + `f93e431` route e2e gate); phase 2 (post-review finding M1: map the typed upstream taxonomy to `/ohlcv` HTTP status) pending. Not closeable until phase 2 lands.
+> **Status:** done (close ceremony 2026-06-03) — phase 1 (`ce8067f` fetch fix + `f93e431` route e2e gate) and phase 2 (`6bcae22` typed-error→HTTP mapping + recency-gated empty response; ADR-0033 `eae0391`) both landed and reviewed. [ADR-0033](../adrs/0033-empty-ohlcv-response-by-recency.md) accepted at this close. Mode 4: no blockers; one harmless redundant-catch nit left as-is. Unblocked Plan 0030 (closed same ceremony). Verified: 45 Python route/adapter/fetch/typed-error specs green over the real provider+adapter chain; live past-window smoke = 249 AAPL 1d bars (pre-fix: ~11).
 > **Created:** 2026-06-02
 > **Owner skill(s):** `dev`
 > **Related ADRs:** [ADR-0007](../adrs/0007-market-data-provider.md) (the `MarketDataProvider`/adapter contract this lives under — no new decision; the fetch *mechanism* is an adapter implementation detail ADR-0007 never specified)
