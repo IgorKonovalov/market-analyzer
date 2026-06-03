@@ -1,6 +1,6 @@
 # 0032 — DeFi wallet discovery (paste an address → see positions)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-03
 > **Owner skill(s):** dev
 > **Related ADRs:** [0034](../adrs/0034-defi-portfolio-aggregator.md) (Zerion aggregator), [0035](../adrs/0035-defi-domain-placement.md) (`defi/` domain placement), [0038](../adrs/0038-third-party-api-key-storage.md) (secrets store — phase 1 implements it), [0031](../adrs/0031-data-source-adapter-contract.md) (source Protocol seam), [0019](../adrs/0019-external-http-adapter-resilience.md) (resilience client), [0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE progress), [0015](../adrs/0015-claude-code-primary-control-surface.md) (agent-driven loop)

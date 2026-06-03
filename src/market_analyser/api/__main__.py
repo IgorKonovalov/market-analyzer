@@ -53,6 +53,7 @@ from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME
 from market_analyser.config import default_app_data_dir, load_config
 from market_analyser.persistence.engine import make_engine
+from market_analyser.persistence.secrets import SECRETS_FILENAME, SecretsStore
 
 MCP_SECRET_FILENAME = "mcp-secret.json"
 
@@ -174,10 +175,12 @@ async def _serve(
     runs_dir = default_app_data_dir() / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
     agent_mode_path = default_app_data_dir() / AGENT_MODE_FILENAME
+    secrets_store = SecretsStore(default_app_data_dir() / SECRETS_FILENAME)
     app = create_app(
         secret=secret,
         mcp_secret=mcp_secret,
         mcp_secret_path=mcp_secret_path,
+        secrets_store=secrets_store,
         engine=engine,
         runs_dir=runs_dir,
         dev_origin=dev_origin,

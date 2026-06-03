@@ -53,6 +53,7 @@ from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
 from market_analyser.persistence.repository import BarRepository
+from market_analyser.persistence.secrets import SecretsStore
 
 AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({"/healthz"})
 MCP_PREFIX = "/mcp"
@@ -64,6 +65,7 @@ def create_app(
     secret: str,
     mcp_secret: str | None = None,
     mcp_secret_path: Path | None = None,
+    secrets_store: SecretsStore | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
@@ -182,6 +184,10 @@ def create_app(
     app.state.runs_dir = runs_dir
     app.state.mcp_secret = mcp_secret
     app.state.mcp_secret_path = mcp_secret_path
+    # The third-party API-key store (Plan 0032, ADR-0038) backs the renderer-only
+    # write/status secret endpoints and is read server-side by DeFi adapters.
+    # Tests pass a tmp-path store; production wires `<data-dir>/secrets.json`.
+    app.state.secrets_store = secrets_store
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
@@ -275,7 +281,11 @@ def create_app(
     if backtest_runs_repository is not None and runs_dir is not None:
         app.include_router(backtests_router)
 
-    if mcp_secret is not None and mcp_secret_path is not None:
+    # The settings router carries both the MCP-secret routes (need a secret path)
+    # and the third-party API-key routes (need a secrets store). Register it when
+    # *either* backing resource is present; each route 503s defensively if its own
+    # resource is absent.
+    if (mcp_secret is not None and mcp_secret_path is not None) or secrets_store is not None:
         app.include_router(settings_router)
 
     # `POST /settings/stop` is always registered (no MCP-secret dependency).
