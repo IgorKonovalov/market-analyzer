@@ -1,6 +1,6 @@
 # ADR-0027 — Crypto macro regime as an in-house neutral structural classification
 
-> **Status:** proposed | accepts at [Plan 0022](../plans/0022-macro-context.md) close
+> **Status:** accepted (2026-06-03, at [Plan 0022](../plans/done/0022-macro-context.md) close — see the close note appended below)
 > **Date:** 2026-05-29
 > **Related:** [ADR-0007](0007-market-data-provider.md) (the `get_macro_context` Provider method this signal rides on), [ADR-0009](0009-rewrite-data-layer-in-house.md) (we own derived-signal logic in-house), [Plan 0022](../plans/0022-macro-context.md) (the implementing plan)
 
@@ -55,3 +55,20 @@ Two invariants are pinned by tests in Plan 0022 phase 1, so the guarantee is enf
 - **No classification — raw numbers only.** Emit `btc_dominance_pct` and `total_market_cap_change_24h` and let the consumer interpret. Rejected: the whole value of `bitcoin_market_pulse` is the one-glance read; forcing every consumer to re-derive "is this BTC-led or alt-rotation?" both duplicates the logic and invites each consumer to invent its own (inconsistent, unaudited) thresholds. Centralising the rule once, with tests, is the safer shape — the raw fields remain available for anyone who wants them.
 - **A continuous structural score (e.g. −1 … +1).** Rejected for v1: a score implies a precision the two coarse inputs don't support, and "what does −0.3 mean?" is harder to consume than four named conditions. A score could supersede this ADR later if the inputs grow richer.
 - **Capture it as a plan detail, no ADR.** Rejected: per `CLAUDE.md` ("new ADR-shaped question → architect, even if it feels like a small edit"), a new in-house classification taxonomy that becomes a consumed signal is exactly the durable decision an ADR exists to record. A narrative paragraph in a plan body that closes and moves to `done/` is not a discoverable contract.
+
+## Pinned thresholds & sourcing — confirmed at Plan 0022 close (2026-06-03)
+
+The Decision deferred the exact numeric thresholds to the implementer, to be confirmed against the taxonomy at close. They are pinned in `src/market_analyser/data/adapters/coingecko.py` (`classify_crypto_regime`), confirmed here, and reproduced so the mapping is auditable without reading code:
+
+- **`risk_off_structure`**: `total_market_cap_change_24h <= -5.0` (% over 24h). Evaluated **first** — a material broad contraction takes priority over the dominance trend, per the table's intent.
+- **Dominance-trend proxy.** BTC dominance *change* (which a single `/global` snapshot cannot give on its own) is recovered as `relative = btc_change_24h - total_market_cap_change_24h`. Because total market cap includes BTC, `sign(relative) == sign(Δdominance)`, so the proxy is exact for direction.
+- **`btc_led`**: not materially contracting and `relative >= +1.0` pp (BTC outperforming the whole market → dominance rising).
+- **`alt_structure`**: not materially contracting and `relative <= -1.0` pp (BTC underperforming → dominance falling).
+- **`neutral`**: not materially contracting and `|relative| < 1.0` pp (within the dominance-trend deadband).
+
+Two clarifications recorded (append-only) where the proposed body above was looser than the as-built rule:
+
+1. **Sourcing is two keyless calls, not one.** The Context's "single-call `/global`" framing was a planning-time simplification. `/global` carries dominance, total market cap, and total-cap 24h change but **neither BTC's spot price nor BTC's own 24h move**; the adapter adds a second keyless call (`/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true`) for both. Both share one `ResilientHttpClient` (60s TTL), so the resilience and caching properties this ADR assumed are unchanged. The second call is **load-bearing for `regime`** — it supplies `btc_change_24h`, the dominance-trend input — not merely for display.
+2. **`alt_structure` is gated only by the −5% risk-off floor**, not by a separate "total market cap flat-to-rising" test. The table row reads "while total market cap is flat-to-rising"; the pinned rule instead labels `alt_structure` for *any* non-materially-contracting market (`total > -5%`) where BTC underperforms by ≥1pp — which includes **mildly** contracting markets (e.g. total −3%, BTC −4.5%). This is a deliberate two-axis simplification (risk-off floor, then relative performance) and is broader than the original prose; the coarseness is the price already acknowledged in Consequences, and the raw `btc_dominance_pct` / `total_market_cap_change_24h` fields remain available for finer reads.
+
+Re-tuning any of these constants remains a deliberate change that must amend or supersede this ADR and re-pin the determinism fixtures (per Consequences) — not a free parameter to nudge silently.

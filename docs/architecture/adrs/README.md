@@ -30,12 +30,12 @@ This index is the one-minute entrypoint: what exists, each one's status, and how
 | [0020](0020-shared-data-dir-contract.md) | Shared data-dir contract (Python ↔ Electron) | accepted | refines 0016 (+ related 0006) | 0007 |
 | [0021](0021-renderer-to-agent-feedback.md) | Renderer→agent feedback (MCP resources + notifications) | proposed | — | 0014 |
 | [0022](0022-sidecar-shutdown-cleanup-in-lifespan.md) | Sidecar shutdown cleanup in app lifespan | accepted | refines 0016 (shutdown contract) | none (bug fix) |
-| [0023](0023-technical-analysis-surface.md) | Technical-analysis surface in `analysis/` | proposed — accepts at Plan 0018 close | — | 0018 |
+| [0023](0023-technical-analysis-surface.md) | Technical-analysis surface in `analysis/` | accepted (Plan 0018 close 2026-05-30) | — | 0018 |
 | [0024](0024-extended-backtest-metrics.md) | Extended backtest metrics (definitions + degenerate convention) | proposed — accepts at Plan 0020 close | extends 0018 | 0020 |
 | [0025](0025-trade-execution-feasibility.md) | Trade-execution feasibility (posture + venue comparison) | proposed (exploratory — no plan, no close ceremony) | relates 0006/0007/0011 | none |
 | [0026](0026-symbol-search-bound-to-ohlcv-provider.md) | Symbol search bound to the OHLCV provider | accepted (Plan 0024 close 2026-05-29) | relates 0007 | 0024 |
-| [0027](0027-crypto-macro-regime-classification.md) | Crypto macro regime as an in-house neutral structural classification | proposed — accepts at Plan 0022 close | relates 0007/0009 | 0022 |
-| [0028](0028-timeframe-resampling-and-expansion.md) | Canonical timeframe registry + in-house 4h resampling + per-timeframe history caps | proposed — accepts at Plan 0025 close | relates 0007/0009/0019 | 0025 |
+| [0027](0027-crypto-macro-regime-classification.md) | Crypto macro regime as an in-house neutral structural classification | accepted (Plan 0022 close 2026-06-03) | relates 0007/0009 | 0022 |
+| [0028](0028-timeframe-resampling-and-expansion.md) | Canonical timeframe registry + in-house 4h resampling + per-timeframe history caps | accepted (Plan 0025 close 2026-05-30) | relates 0007/0009/0019 | 0025 |
 | [0029](0029-advisory-recommendation-boundary.md) | Advisory recommendation boundary (the app may recommend, not act) | proposed — accepts at first advisor plan close | carves out of 0015; below 0025 | none yet |
 | [0030](0030-forecasting-subsystem.md) | Forecasting subsystem (causal, validated, direction-as-probability) | proposed — accepts at first forecasting plan close | mirrors 0018; reuses 0024 | none yet (Plan 0020 prereq) |
 | [0031](0031-data-source-adapter-contract.md) | Per-capability data-source Protocols + selector-registry dispatch | accepted (Plan 0028 close 2026-06-02) | relates 0007/0009 | 0028 |

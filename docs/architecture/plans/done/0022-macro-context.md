@@ -1,8 +1,9 @@
 # 0022 — Macro context: Bitcoin market pulse + global market snapshot
 
-> **Status:** approved
+> **Status:** done (close ceremony 2026-06-03) — all three `dev` phases landed on branch `plan-0022-macro-context` (`a26b2ec` CoinGecko adapter + `MacroContext`/`CryptoRegime` + `get_macro_context`; `ae3bed8` `bitcoin_market_pulse`; `af56648` `market_snapshot`) and reviewed. Mode 4: no blockers. The two implementer decisions both confirmed sound — (1) the two-endpoint CoinGecko approach (`/global` + `/simple/price`) is necessary because `/global` carries neither BTC's spot price nor its 24h change, which the `MacroContext` shape requires; (2) the BTC-vs-whole-market 24h relative-performance dominance-trend proxy is exact for direction. Paired [ADR-0027](../adrs/0027-crypto-macro-regime-classification.md) accepted, with a close note recording the as-built two-call sourcing + the pinned thresholds (−5% risk-off floor, 1pp deadband) and reconciling the `alt_structure` wording. Verified: 28 plan-0022 specs + the full 307-pass API suite green; mypy `--strict` clean on all three new modules. NB: the implementation branch is **not yet merged to `main`** (close docs committed independently).
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
+> **Closed:** 2026-06-03
 > **Owner skill(s):** `dev` (all phases)
 > **Related ADRs:** [ADR-0027](../adrs/0027-crypto-macro-regime-classification.md) (**paired** — the `regime` structural-classification taxonomy; `proposed`, accepts at this plan's close), [ADR-0007](../adrs/0007-market-data-provider.md) (new Provider method `get_macro_context`), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (CoinGecko on the resilience client), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house)
 > **Depends on:** [Plan 0019](0019-live-quote.md) (`get_quote` — the `market_snapshot` fan-out composes it). [Plan 0009](0009-resilience-and-tradingview-screener.md) phase 1 (`ResilientHttpClient`).
