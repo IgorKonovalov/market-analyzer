@@ -27,11 +27,12 @@ import { useEventStream } from './hooks/useEventStream'
 import styles from './App.module.css'
 import type { Timeframe } from './components/SymbolPicker'
 import { BacktestView } from './views/BacktestView'
+import { NewsView } from './views/NewsView'
 import { OhlcvView } from './views/OhlcvView'
 import { RecentBacktestsView } from './views/RecentBacktestsView'
 import { SettingsView } from './views/SettingsView'
 
-type View = 'chart' | 'settings' | 'backtest' | 'recent-backtests'
+type View = 'chart' | 'news' | 'settings' | 'backtest' | 'recent-backtests'
 
 /**
  * Test-only window-attached snapshot of the chart state. The Playwright
@@ -173,6 +174,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'news' ? 'page' : undefined}
+            onClick={() => setView('news')}
+            data-testid="nav-news"
+          >
+            News
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => setView('settings')}
             data-testid="nav-settings"
@@ -194,6 +204,7 @@ export function App(): JSX.Element {
           onRefresh={onRefresh}
         />
       )}
+      {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}
       {view === 'recent-backtests' && (
         <RecentBacktestsView onSelect={onSelectRun} refreshKey={recentListRefresh} />
