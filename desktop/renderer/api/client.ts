@@ -27,6 +27,7 @@ import type { SidecarPort } from '../../shared/schemas/sidecar'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
+import type { NewsResponse } from '../types/sidecar/news-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import type { AgentModeState } from '../types/ui-events'
 
@@ -176,6 +177,15 @@ export interface GetOhlcvParams {
 
 export type GetAnnotationsParams = GetOhlcvParams
 
+export type NewsWindow = '1h' | '4h' | '24h' | '7d'
+
+export interface GetNewsParams {
+  /** Blank/omitted → browse all feeds (the response then has `sentiment: null`). */
+  symbol?: string
+  window: NewsWindow
+  limit?: number
+}
+
 export const api = {
   getOhlcv({ symbol, timeframe, start, end }: GetOhlcvParams): Promise<Bar[]> {
     const params = new URLSearchParams({
@@ -216,6 +226,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     })
+  },
+  /**
+   * Recent headlines + aggregate tone (Plan 0023). Hits the renderer-bearer-
+   * gated `GET /news`. A blank/omitted `symbol` browses all feeds and the
+   * response carries `sentiment: null` (no per-symbol aggregate). Feed content
+   * is untrusted — the view renders it as text and sanitizes hrefs (ADR-0008).
+   */
+  getNews({ symbol, window, limit }: GetNewsParams): Promise<NewsResponse> {
+    const params = new URLSearchParams({ window })
+    const trimmed = symbol?.trim()
+    if (trimmed) params.set('symbol', trimmed)
+    if (limit !== undefined) params.set('limit', String(limit))
+    return callJson<NewsResponse>(`/news?${params.toString()}`)
   },
   getMcpSecret(): Promise<McpSecretRecord> {
     return callJson<McpSecretRecord>('/settings/mcp-secret')
