@@ -173,6 +173,11 @@ def test_ohlcv_value_error_returns_422(client: TestClient) -> None:
 
 
 def test_ohlcv_upstream_error_returns_502(client: TestClient) -> None:
+    # Backstop branch only: a *bare* ResilientHttpError (a path that did not pass
+    # through the adapter's re-classification) still maps to 502. The real
+    # DefaultMarketDataProvider+YahooAdapter chain raises the typed taxonomy
+    # instead — that per-kind mapping (incl. this 502 for UpstreamUnavailableError)
+    # is proven over the real chain in test_ohlcv_route_historical.py.
     class UpstreamDownProvider(FakeMarketDataProvider):
         def get_ohlcv(
             self,

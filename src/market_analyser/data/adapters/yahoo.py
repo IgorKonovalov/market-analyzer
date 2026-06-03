@@ -28,7 +28,11 @@ from market_analyser.data.errors import (
     UpstreamUnavailableError,
 )
 from market_analyser.data.sources import OhlcvSource, SymbolSearchSource
-from market_analyser.data.timeframes import require_native_interval, uses_intraday_timestamp
+from market_analyser.data.timeframes import (
+    bar_duration,
+    require_native_interval,
+    uses_intraday_timestamp,
+)
 from market_analyser.data.types import Bar, SymbolInfo
 
 # Yahoo's chart endpoint occasionally times out under load; the shared client's
@@ -84,6 +88,8 @@ class YahooAdapter(OhlcvSource, SymbolSearchSource):
         timeframe: str,
         start: datetime,
         end: datetime,
+        *,
+        now: datetime | None = None,
     ) -> list[Bar]:
         symbol = symbol.strip()
         if not symbol:
@@ -110,19 +116,29 @@ class YahooAdapter(OhlcvSource, SymbolSearchSource):
             raise _classify_http_error(err, symbol) from err
 
         if not raw:
-            # An empty response for a structurally-valid symbol over an absolute
-            # window is treated as unknown-symbol: zero bars on a known-good
-            # interval is implausible for a live, listed name (Plan 0013 phase 1).
+            # Classify an empty upstream response by window RECENCY, not emptiness
+            # alone (ADR-0033). Yahoo has no explicit "no such symbol" signal, so we
+            # infer one — but only where a live, listed name MUST have data: a window
+            # reaching the leading edge (its `end` within one bar of `now`). A
+            # strictly-historical empty window is a legitimate end-of-history (the
+            # symbol predates the requested range, or Yahoo's coverage does) and
+            # returns `[]` — Plan 0030's backward paging reads that as `reachedStart`,
+            # and the route's UnknownSymbolError->404 stays unambiguous ("no such
+            # symbol", never "ran out of history"). `now` comes from the provider's
+            # `_now`/`as_of` seam (this adapter never reads the wall clock); absent it,
+            # the conservative leading-edge reading applies.
             # A non-empty response whose rows all fall outside the exact requested
             # window still returns `[]` below (the gap-too-small case the caller's
             # `if not fetched` path handles) — only a genuinely empty upstream
             # response lands here.
-            raise UnknownSymbolError(
-                f"yahoo: no rows for {symbol.upper()!r} over "
-                f"[{start_utc.isoformat()}, {end_utc.isoformat()}] ({timeframe}) — "
-                f"symbol is likely unknown or unlisted",
-                symbol=symbol.upper(),
-            )
+            if _reaches_leading_edge(end_utc, timeframe, now):
+                raise UnknownSymbolError(
+                    f"yahoo: no rows for {symbol.upper()!r} over "
+                    f"[{start_utc.isoformat()}, {end_utc.isoformat()}] ({timeframe}) — "
+                    f"symbol is likely unknown or unlisted",
+                    symbol=symbol.upper(),
+                )
+            return []
 
         bars: list[Bar] = []
         for row in raw:
@@ -252,6 +268,18 @@ def _parse_retry_after(value: str | None) -> int | None:
         return int(value.strip())
     except ValueError:
         return None
+
+
+def _reaches_leading_edge(end: datetime, timeframe: str, now: datetime | None) -> bool:
+    """Whether the requested window's `end` reaches the leading edge — within one
+    bar of `now` (ADR-0033). At the leading edge a live, listed symbol must have
+    data, so an empty response there signals an unknown symbol; a strictly-earlier
+    window's empty response is a legitimate end-of-history. With no `now` reference
+    the window is conservatively treated as leading-edge (preserves the Plan 0013
+    unknown-symbol signal for callers that don't supply one)."""
+    if now is None:
+        return True
+    return end >= now - bar_duration(timeframe)
 
 
 def _parse_event_ts(date_str: str, timeframe: str) -> datetime:

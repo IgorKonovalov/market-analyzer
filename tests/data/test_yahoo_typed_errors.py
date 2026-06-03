@@ -6,14 +6,15 @@ The adapter's `fetcher` seam is injected with doubles that raise
 retries / hits a permanent status) or return an empty list. Asserts:
 - HTTP 429 → `RateLimitedError` carrying the status + parsed `Retry-After`.
 - 5xx / connection-refused / timeout → `UpstreamUnavailableError`.
-- empty response on a >= 1mo period for a valid symbol → `UnknownSymbolError`.
+- empty response on a leading-edge window → `UnknownSymbolError`; on a strictly-
+  historical window → `[]` (end-of-history, not unknown symbol — ADR-0033).
 - input-validation bugs still raise plain `ValueError`, NOT the typed taxonomy.
 - the taxonomy is importable from the public `market_analyser.data` surface.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -100,11 +101,34 @@ def test_timeout_becomes_upstream_unavailable() -> None:
         adapter.fetch_ohlcv("AAPL", "1d", _START, _END)
 
 
-def test_empty_response_on_multiday_period_becomes_unknown_symbol() -> None:
+def test_empty_response_at_leading_edge_becomes_unknown_symbol() -> None:
+    # An empty response for a window reaching the leading edge (its `end` within
+    # one bar of `now`) is an unknown symbol — a live, listed name must have data
+    # there (ADR-0033, recency discriminator). `now == _END` puts the window at
+    # the edge.
     adapter = YahooAdapter(fetcher=_empty_fetcher)
     with pytest.raises(UnknownSymbolError) as excinfo:
-        adapter.fetch_ohlcv("MADEUP", "1d", _START, _END)
+        adapter.fetch_ohlcv("MADEUP", "1d", _START, _END, now=_END)
     assert excinfo.value.symbol == "MADEUP"
+
+
+def test_empty_response_with_no_now_reference_defaults_to_unknown_symbol() -> None:
+    # Absent a `now` reference the window is conservatively treated as leading-edge,
+    # preserving the Plan 0013 unknown-symbol signal for callers that don't supply
+    # one (ADR-0033).
+    adapter = YahooAdapter(fetcher=_empty_fetcher)
+    with pytest.raises(UnknownSymbolError):
+        adapter.fetch_ohlcv("MADEUP", "1d", _START, _END)
+
+
+def test_empty_response_on_historical_window_returns_empty() -> None:
+    # An empty response for a strictly-historical window (its `end` well before
+    # `now`) is a legitimate end-of-history, NOT an unknown symbol: it returns `[]`
+    # so the provider passes it through and the renderer latches `reachedStart`
+    # (ADR-0033). Here `now` is a year past the window's end.
+    adapter = YahooAdapter(fetcher=_empty_fetcher)
+    bars = adapter.fetch_ohlcv("AAPL", "1d", _START, _END, now=_END + timedelta(days=365))
+    assert bars == []
 
 
 def test_input_validation_still_raises_plain_value_error() -> None:

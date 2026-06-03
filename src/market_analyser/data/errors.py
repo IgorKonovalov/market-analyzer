@@ -53,10 +53,12 @@ class UnknownSymbolError(UpstreamDataError):
     converge on this one type:
 
     - StockTwits returns a definitive 404 ("not tracked"); and
-    - Yahoo accepts the request but returns no rows for a span where rows would
-      normally be expected (structurally valid symbol, multi-day period) —
-      distinguished from the legitimate-empty case (e.g. a weekend gap on a 1d
-      timeframe) by the period size.
+    - Yahoo accepts the request but returns no rows for a window that reaches the
+      leading edge (its `end` within one bar of "now"), where a live, listed name
+      must have data — distinguished by window **recency** (ADR-0033), not period
+      size. A strictly-historical empty window is a legitimate end-of-history
+      (the symbol predates the range, or Yahoo's coverage does) and returns `[]`,
+      NOT this error; the recency reference is the provider's `_now`/`as_of` seam.
 
     The caller treats both identically ("symbol unusable"); `message` conveys
     which upstream and why. Supersedes Plan 0012's `SymbolNotCoveredError`."""

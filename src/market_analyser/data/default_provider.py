@@ -148,7 +148,7 @@ class DefaultMarketDataProvider:
                 raise ValueError(
                     "as_of requires a configured BarRepository — no remote fetch when as_of is set",
                 )
-            return self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
+            return self._yahoo.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
 
         if as_of is not None:
             cached = self._repo.get_bars(symbol, timeframe, start, end, as_of=as_of)
@@ -167,7 +167,7 @@ class DefaultMarketDataProvider:
             return cached
         merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
         for gap_start, gap_end in gaps:
-            fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end)
+            fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end, now=_now())
             if not fetched:
                 continue
             self._repo.upsert_bars(fetched)
@@ -244,7 +244,7 @@ class DefaultMarketDataProvider:
             )
 
         if self._repo is None:
-            bars = self._yahoo.fetch_ohlcv(symbol, timeframe, start, end)
+            bars = self._yahoo.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
             return BackfillResult(bars=list(bars), partial_reason=None, message=None)
 
         cached = self._repo.get_bars(symbol, timeframe, start, end)
@@ -256,7 +256,7 @@ class DefaultMarketDataProvider:
         failures: list[UpstreamDataError] = []
         for gap_start, gap_end in gaps:
             try:
-                fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end)
+                fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end, now=_now())
             except UpstreamDataError as err:
                 failures.append(err)
                 continue

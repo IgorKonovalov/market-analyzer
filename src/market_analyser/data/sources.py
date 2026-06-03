@@ -42,7 +42,14 @@ from market_analyser.data.types import (
 @runtime_checkable
 class OhlcvSource(Protocol):
     """A source of raw OHLCV bars for a `[start, end]` window. No `as_of`: the
-    provider owns the anti-lookahead orchestration and delegates only the fetch."""
+    provider owns the anti-lookahead orchestration and delegates only the fetch.
+
+    `now` is the provider's recency reference (its `_now`/`as_of` seam), passed so
+    the source classifies an empty upstream response by window recency rather than
+    by reading the wall clock itself (ADR-0033): an empty *leading-edge* window is
+    an unknown symbol, an empty *historical* window is a legitimate end-of-history.
+    Defaulted so a caller without a reference keeps the conservative leading-edge
+    reading; the provider always supplies it."""
 
     def fetch_ohlcv(
         self,
@@ -50,6 +57,8 @@ class OhlcvSource(Protocol):
         timeframe: str,
         start: datetime,
         end: datetime,
+        *,
+        now: datetime | None = None,
     ) -> Sequence[Bar]: ...
 
 
