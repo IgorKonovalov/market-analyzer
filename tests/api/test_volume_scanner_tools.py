@@ -44,6 +44,7 @@ from market_analyser.api.mcp_tools.volume_breakout import _volume_breakout_scan_
 from market_analyser.api.mcp_tools.volume_confirmation import _volume_confirmation_response
 from market_analyser.data.types import (
     Bar,
+    MacroContext,
     MarketSentimentSample,
     NewsItem,
     Quote,
@@ -200,6 +201,11 @@ class _SeededProvider:
     def get_market_sentiment(
         self, market: str, window: str = "current", as_of: datetime | None = None
     ) -> MarketSentimentSample:
+        raise NotImplementedError
+
+    def get_macro_context(
+        self, market: str = "crypto", as_of: datetime | None = None
+    ) -> MacroContext:
         raise NotImplementedError
 
     def get_news(

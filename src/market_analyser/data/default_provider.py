@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from typing import Any, Literal
 
+from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.rss_vader_sentiment import RssVaderSentimentAdapter
@@ -35,6 +36,7 @@ from market_analyser.data.types import (
     BackfillResult,
     Bar,
     Coverage,
+    MacroContext,
     MarketSentimentSample,
     NewsItem,
     Quote,
@@ -91,6 +93,7 @@ class DefaultMarketDataProvider:
         screener: TradingViewScreenerAdapter | None = None,
         news: RssNewsAdapter | None = None,
         crypto_fng: CryptoFearGreedAdapter | None = None,
+        coingecko: CoinGeckoAdapter | None = None,
         stocktwits: StockTwitsAdapter | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
@@ -99,6 +102,7 @@ class DefaultMarketDataProvider:
         self._screener = screener if screener is not None else TradingViewScreenerAdapter()
         self._news = news if news is not None else RssNewsAdapter()
         self._crypto_fng = crypto_fng if crypto_fng is not None else CryptoFearGreedAdapter()
+        self._coingecko = coingecko if coingecko is not None else CoinGeckoAdapter()
         self._stocktwits = stocktwits if stocktwits is not None else StockTwitsAdapter()
         self._repo = bar_repository
 
@@ -395,6 +399,23 @@ class DefaultMarketDataProvider:
                 f"market {market!r} F&G not implemented; see Plan 0011 followups",
             )
         return adapter.fetch_current()
+
+    def get_macro_context(
+        self,
+        market: Literal["crypto"] = "crypto",
+        as_of: datetime | None = None,
+    ) -> MacroContext:
+        # The macro read is wall-clock-current (CoinGecko's `/global` snapshot has
+        # no replayable history to honour `as_of` against), so reject `as_of` at
+        # the boundary like the quote/screener/sentiment methods (Plan 0022 /
+        # ADR-0027). `market` is crypto-only in v1 — the closed `Literal` enforces
+        # that at type-check time; the parameter is accepted for forward-compat.
+        if as_of is not None:
+            raise ValueError(
+                "as_of is not supported for macro context — the crypto macro read "
+                "is wall-clock-current (Plan 0022 / ADR-0027)",
+            )
+        return self._coingecko.fetch_macro_context()
 
 
 def _now() -> datetime:
