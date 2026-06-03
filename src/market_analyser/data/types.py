@@ -175,6 +175,55 @@ class MarketSentimentSample(BaseModel):
     window: str = "current"  # always "current" in v1
 
 
+# The crypto macro regime vocabulary (Plan 0022 / ADR-0027): a fixed, closed,
+# neutral four-value set naming a *structural condition* (where capital is
+# sitting), never an action or risk grade. The classification rule lives in the
+# CoinGecko adapter; this is the type the data layer and consumers switch on.
+CryptoRegime = Literal["btc_led", "alt_structure", "risk_off_structure", "neutral"]
+
+
+class MacroContext(BaseModel):
+    """A single-call crypto macro read (Plan 0022 / ADR-0027): BTC price + 24h
+    change, BTC dominance, total market cap + 24h change, plus a neutral
+    structural `regime` descriptor.
+
+    `as_of` is the upstream snapshot timestamp (CoinGecko `/global` `updated_at`,
+    epoch seconds) normalised to UTC — the read is wall-clock-current, so
+    `get_macro_context` rejects an `as_of` *argument* (there is no replayable
+    history; the provider raises there). `regime` is a structural condition, not
+    a recommendation — see ADR-0027 for the closed vocabulary and the invariants
+    pinned by tests.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    market: Literal["crypto"]  # extends additively if a non-crypto macro read lands
+    btc_price: float = Field(gt=0)
+    btc_change_24h: float
+    btc_dominance_pct: float = Field(ge=0, le=100)
+    total_market_cap_usd: float = Field(gt=0)
+    total_market_cap_change_24h: float
+    regime: CryptoRegime
+    as_of: datetime
+    source: str = Field(min_length=1)  # "coingecko"
+
+    @field_validator("as_of")
+    @classmethod
+    def _as_of_must_be_utc(cls, v: datetime) -> datetime:
+        if v.tzinfo is None:
+            raise ValueError("as_of must be timezone-aware (UTC)")
+        return v.astimezone(UTC)
+
+    @field_validator(
+        "btc_price", "btc_change_24h", "total_market_cap_usd", "total_market_cap_change_24h"
+    )
+    @classmethod
+    def _measurements_must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("macro measurements must be finite (no NaN/Inf)")
+        return v
+
+
 @dataclass(frozen=True)
 class Coverage:
     """Cache-only read result for backfill scheduling (Plan 0013): the bars
@@ -202,6 +251,8 @@ __all__ = [
     "BackfillResult",
     "Bar",
     "Coverage",
+    "CryptoRegime",
+    "MacroContext",
     "MarketSentimentSample",
     "NewsItem",
     "Quote",

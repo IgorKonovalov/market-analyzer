@@ -16,6 +16,7 @@ from market_analyser.api.app import create_app
 from market_analyser.data._http import ResilientHttpError
 from market_analyser.data.types import (
     Bar,
+    MacroContext,
     MarketSentimentSample,
     NewsItem,
     Quote,
@@ -69,6 +70,11 @@ class FakeMarketDataProvider:
     def get_market_sentiment(
         self, market: str, window: str = "current", as_of: datetime | None = None
     ) -> MarketSentimentSample:
+        raise NotImplementedError
+
+    def get_macro_context(
+        self, market: str = "crypto", as_of: datetime | None = None
+    ) -> MacroContext:
         raise NotImplementedError
 
     def get_news(
@@ -156,6 +162,11 @@ def test_ohlcv_value_error_returns_422(client: TestClient) -> None:
         ) -> Sequence[Bar]:
             raise ValueError("simulated provider validation error")
 
+        def get_macro_context(
+            self, market: str = "crypto", as_of: datetime | None = None
+        ) -> MacroContext:
+            raise NotImplementedError
+
     failing = FailingProvider(bars=[])
     client = TestClient(create_app(secret=SECRET, provider=failing))
     response = client.get(
@@ -193,6 +204,11 @@ def test_ohlcv_upstream_error_returns_502(client: TestClient) -> None:
                 last_exception=ValueError("boom"),
                 attempts=1,
             )
+
+        def get_macro_context(
+            self, market: str = "crypto", as_of: datetime | None = None
+        ) -> MacroContext:
+            raise NotImplementedError
 
     failing = UpstreamDownProvider(bars=[])
     client = TestClient(create_app(secret=SECRET, provider=failing))

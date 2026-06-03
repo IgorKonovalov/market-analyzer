@@ -14,6 +14,7 @@ Method-by-method readiness for Plan 0001:
                        Plan 0012 adds a `source` selector (rss-vader | stocktwits).
     get_news           implemented in Plan 0010 (RSS news adapter).
     get_market_sentiment  implemented in Plan 0011 (crypto Fear & Greed).
+    get_macro_context  implemented in Plan 0022 (CoinGecko crypto macro pulse).
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from market_analyser.data.types import (
     Bar,
+    MacroContext,
     MarketSentimentSample,
     NewsItem,
     Quote,
@@ -90,3 +92,9 @@ class MarketDataProvider(Protocol):
         window: str = "current",
         as_of: datetime | None = None,
     ) -> MarketSentimentSample: ...
+
+    def get_macro_context(
+        self,
+        market: Literal["crypto"] = "crypto",
+        as_of: datetime | None = None,
+    ) -> MacroContext: ...

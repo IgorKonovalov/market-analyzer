@@ -34,6 +34,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
 )
 from market_analyser.data.types import (
     Bar,
+    MacroContext,
     MarketSentimentSample,
     NewsItem,
     Quote,
@@ -123,6 +124,11 @@ class _SeededProvider:
     def get_market_sentiment(
         self, market: str, window: str = "current", as_of: datetime | None = None
     ) -> MarketSentimentSample:
+        raise NotImplementedError
+
+    def get_macro_context(
+        self, market: str = "crypto", as_of: datetime | None = None
+    ) -> MacroContext:
         raise NotImplementedError
 
     def get_news(
