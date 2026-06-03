@@ -31,7 +31,7 @@ This index is the one-minute entrypoint: what exists, each one's status, and how
 | [0021](0021-renderer-to-agent-feedback.md) | Renderer→agent feedback (MCP resources + notifications) | proposed | — | 0014 |
 | [0022](0022-sidecar-shutdown-cleanup-in-lifespan.md) | Sidecar shutdown cleanup in app lifespan | accepted | refines 0016 (shutdown contract) | none (bug fix) |
 | [0023](0023-technical-analysis-surface.md) | Technical-analysis surface in `analysis/` | accepted (Plan 0018 close 2026-05-30) | — | 0018 |
-| [0024](0024-extended-backtest-metrics.md) | Extended backtest metrics (definitions + degenerate convention) | proposed — accepts at Plan 0020 close | extends 0018 | 0020 |
+| [0024](0024-extended-backtest-metrics.md) | Extended backtest metrics (definitions + degenerate convention) | accepted (Plan 0020 close 2026-06-03) | extends 0018 | 0020 |
 | [0025](0025-trade-execution-feasibility.md) | Trade-execution feasibility (posture + venue comparison) | proposed (exploratory — no plan, no close ceremony) | relates 0006/0007/0011 | none |
 | [0026](0026-symbol-search-bound-to-ohlcv-provider.md) | Symbol search bound to the OHLCV provider | accepted (Plan 0024 close 2026-05-29) | relates 0007 | 0024 |
 | [0027](0027-crypto-macro-regime-classification.md) | Crypto macro regime as an in-house neutral structural classification | accepted (Plan 0022 close 2026-06-03) | relates 0007/0009 | 0022 |

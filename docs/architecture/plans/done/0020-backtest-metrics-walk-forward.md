@@ -1,8 +1,9 @@
 # 0020 — Extended backtest metrics + walk-forward evaluation + strategy-comparison leaderboard
 
-> **Status:** approved
+> **Status:** done (close ceremony 2026-06-03) — all three phases landed on branch `plan-0020-backtest-metrics` (`37ebbcb` phase 1: six extended metrics + `ENGINE_VERSION` 0.1.0→0.2.0 + golden-fixture regen; `e751c77` phase 2: `walk_forward()` + `WalkForwardFold`/`WalkForwardResult`/`WalkForwardConfigError`; `3aa9b82` phase 3: `compare_strategies` + `walk_forward_backtest` MCP tools) and reviewed; **branch merged to `main` at close**. Mode 4: no blockers. All four implementer-flagged decisions confirmed sound: (1) metric fields carry defaults equal to their ADR-0024 degenerate value — the engine always sets them explicitly — accepted; (2) `BacktestRunSummary` left unchanged (a Calmar column is a persistence migration, `dev` territory) — accepted; (3) no hardcoded "material degradation" flag (the threshold was never pinned; `full_run_baseline` + `aggregate` are exposed for the consumer) — accepted; (4) `float|None` rendering + leaderboard/fold views deferred to a `ui-builder` follow-up (now in the index). Paired [ADR-0024](../adrs/0024-extended-backtest-metrics.md) accepted (with a close note recording the field-default convention). Verified: 88 backtest specs (incl. golden/determinism) + 13 tool specs green; mypy `--strict` clean on all six modules. Determinism + anti-lookahead pinned by tests (per-fold `metrics == direct run()` on the isolated slice).
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
+> **Closed:** 2026-06-03
 > **Owner skill(s):** `backtester` (phases 1–2), `dev` (phase 3) — cross-skill handoff at the phase 2 → 3 boundary
 > **Related ADRs:** [ADR-0024](../adrs/0024-extended-backtest-metrics.md) (this plan's paired decision — metric definitions; accepts at close), [ADR-0018](../adrs/0018-backtest-result-schema.md) (result schema + determinism contract; extended additively)
 > **Depends on:** [Plan 0008](done/0008-backtest-engine-v1.md) (engine, `BacktestResult`, `run()`, golden tests — closed). [Plan 0002](done/0002-strategy-interface.md) (`discover()`, six reference strategies — closed).

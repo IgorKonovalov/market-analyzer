@@ -1,6 +1,6 @@
 # ADR-0024 — Extended backtest metrics: definitions and degenerate-value convention
 
-> **Status:** proposed | accepts at Plan 0020 close
+> **Status:** accepted (2026-06-03, at [Plan 0020](../plans/done/0020-backtest-metrics-walk-forward.md) close — see the close note appended below)
 > **Date:** 2026-05-24
 > **Related plan(s):** [0020-backtest-metrics-walk-forward](../plans/0020-backtest-metrics-walk-forward.md)
 > **Extends:** [ADR-0018](0018-backtest-result-schema.md) (backtest result schema)
@@ -54,3 +54,10 @@ Rejected. The append *mechanism* is covered by ADR-0018, but the *formulas and d
 
 ## Notes
 - Walk-forward (Plan 0020) reports these same metrics per fold; pinning the definitions here means per-fold and full-run numbers are computed identically.
+
+## Close note — confirmed at Plan 0020 close (2026-06-03)
+
+Implemented exactly as decided; no formula or degenerate-value divergence. One implementation refinement this ADR did not specify, recorded for auditability:
+
+- **Field defaults.** The Decision lists the six fields by type (`calmar: float | None`, …) without defaults. As built, each field carries a **default equal to its own degenerate value** (`calmar/profit_factor/expectancy/best_trade_return/worst_trade_return = None`, `sortino = 0.0`) so a hand-built `BacktestMetrics` (test fixtures, the persistence/route schemas) stays constructible without enumerating all thirteen fields. This does **not** weaken the convention: the engine's `_calc_metrics` always sets every field explicitly, and the defaults equal the honest degenerate value, so no partial construction can misreport. Confirmed acceptable at close.
+- **Annualization basis.** `_TIMEFRAME_BARS_PER_YEAR` covers `1d`/`1h`/`1m`; Sortino and Calmar inherit it from Sharpe as the Decision intended. Timeframes added since (Plan 0025's `15m`/`4h`/`1w`) are not yet in this table, so the Plan 0020 tools constrain `timeframe` to the supported three at the MCP boundary — a known, honest limitation, not a determinism gap.
