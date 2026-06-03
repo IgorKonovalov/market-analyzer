@@ -1,6 +1,6 @@
 # 0033 — UI theme control + visual polish
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-03
 > **Owner skill(s):** ui-builder
 > **Related ADRs:** [0039-renderer-theming-localstorage](../adrs/0039-renderer-theming-localstorage.md) (paired — accepts at this plan's close), [0008-electron-shell-conventions](../adrs/0008-electron-shell-conventions.md) (CSP), [0006-persistence-layout](../adrs/0006-persistence-layout.md) (why theme does *not* go in config.json)

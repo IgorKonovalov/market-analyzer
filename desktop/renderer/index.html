@@ -8,6 +8,21 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' http://127.0.0.1:* http://localhost:5173 ws://localhost:5173"
     />
     <title>market-analyser</title>
+    <!--
+      Pre-paint theme bootstrap (Plan 0033 / ADR-0039). Sets html[data-theme]
+      from localStorage BEFORE the module bundle loads so there is no
+      flash-of-wrong-theme on reload. `system` (no/invalid value) leaves the
+      attribute absent so the prefers-color-scheme media query governs.
+
+      CSP: the prod main-process header is `script-src 'self'` (no
+      'unsafe-inline'), so this inline script is allowed via a SHA-256 hash in
+      `electron/window.ts` prodCsp(). DO NOT reformat the script body without
+      updating that hash — `window.csp.test.ts` recomputes it from this exact
+      text and fails loudly on drift (it prints the correct hash to paste).
+    -->
+    <script>
+      try { var t = localStorage.getItem('ma.theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -8,10 +8,18 @@
 import { BrowserWindow, session } from 'electron'
 import { join } from 'node:path'
 
-function prodCsp(sidecarPort: number): string {
+// SHA-256 of the pre-paint theme bootstrap's inline script body in
+// `renderer/index.html` (Plan 0033 / ADR-0039). The prod header is
+// `script-src 'self'` with NO 'unsafe-inline', so the no-flash inline script is
+// admitted by hash rather than by weakening the policy — every *other* inline
+// script stays blocked. `window.csp.test.ts` recomputes this from index.html and
+// fails (printing the correct value) if the script body ever drifts.
+const THEME_BOOTSTRAP_HASH = "'sha256-/S8F+mnl2GAmvianKuWkKUsRJvwB1fAeeClx//cBksI='"
+
+export function prodCsp(sidecarPort: number): string {
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src 'self' ${THEME_BOOTSTRAP_HASH}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     `connect-src 'self' http://127.0.0.1:${sidecarPort}`,
