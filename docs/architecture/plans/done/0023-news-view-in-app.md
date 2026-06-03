@@ -1,6 +1,6 @@
 # 0023 — News view in the app interface
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-06-03. Phase 1 (`dev`, `d207c52`): renderer-bearer-gated `GET /news` + frozen `NewsResponse` envelope (`_news_models.py`) + emitted `news-item`/`news-response`/`sentiment-sample` TS types; window validated via the shared `SentimentWindow` literal, blank/whitespace symbol treated as browse (no aggregate). Phase 2 (`ui-builder`, `dc1cf10`): `NewsView` + typed `api.getNews` + **News** nav tab; untrusted feed content rendered as text (no `dangerouslySetInnerHTML`), hrefs sanitized to `http(s)` and opened via `shell.openExternal`, server-side ±0.05 bucketing not re-implemented (badge = sign only). Clean Mode 4 (no blockers; two nits — stale "Four views" docstring in `App.tsx:1`, and the unrelated open 0012 `news_for.py` inline-window followup). Verified green at close: 8 route specs + 7 `NewsView` specs, full suites (renderer 229, API 328 + 5 known Windows skips), `mypy --strict` (239 files), `gen-types --check` no drift, renderer typecheck. Branch `plan-0023-news-view` merged to `main` at close (`3f42ac8`).
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (phase 1), `ui-builder` (phase 2)
@@ -149,4 +149,8 @@ GET /news?symbol=BTC&window=24h&limit=50   ->  200
 
 ## Followups (after this lands)
 
-Empty at draft time. Architect populates from review findings + implementer notes at the close ceremony. Candidate already identified: an optional `GET /news` REST liveness step in `tests/smoke/golden_path.py` (not owed by the Plan 0016 followup, which is MCP-tool-scoped).
+Populated at the 2026-06-03 close from the Mode 4 review. All non-blocking; pick up opportunistically.
+
+- **nit (`ui-builder`):** `desktop/renderer/App.tsx:1` docstring still says "Four views" — it's now five (News added). One-line comment refresh.
+- **optional (`dev`):** a `GET /news` REST liveness step in `tests/smoke/golden_path.py`. Not owed by the Plan 0016 followup (MCP-tool-scoped); add only if a renderer-route smoke step is wanted.
+- **out of scope (carried, not introduced here):** the open 0012 followup — `news_for.py` still declares the window vocabulary inline — remains open. The new `news.py` route does it right (imports `SentimentWindow`); the MCP tool was untouched by this plan.
