@@ -93,7 +93,7 @@ Now you write code. For **each phase in order**:
    - The whole e2e suite is green, **including specs from prior, not-yet-closed plans.** A new phase that lets a previously-skipped spec finally run, and that spec then fails, is a finding for this session — surface it. Do not assume "wasn't broken before, not my problem now"; if the failure is in scope for the current plan, fix it; if it's owned by a sibling skill, route it before committing the phase.
 
    When tooling makes a spec pass with a placeholder (Playwright in particular will exit 0 on a body with no `expect`), the placeholder is **not** an acceptable shortcut to clear the done-when. The plan's done-when is a behavioral claim about the running system, and the spec's job is to defend that claim.
-4. **Commit the phase.** Conventional commit per `references/commit-conventions.md`. One commit per phase is the default; split into multiple commits within a phase only when the phase has logically independent pieces.
+4. **Commit the phase** via the `/safe-commit` ceremony. Conventional commit per `references/commit-conventions.md`. **Stage only the files this phase changed, by explicit path — never `git add -A` / `.` / `--all`** (a `PreToolUse` hook denies broad staging, because parallel sessions share this working tree). `git status` first; if you see in-progress files that aren't yours, leave them and surface them — don't stage, stash, or `checkout` another session's work. One commit per phase is the default; split into multiple commits within a phase only when the phase has logically independent pieces.
 5. **Move to the next phase.** Don't pause for review — the architect reviews after the last phase, not between phases. If the user wants a mid-plan checkpoint, they'll say so.
 
 Rules that compound across all phases:
@@ -172,7 +172,7 @@ The boundaries matter more than the to-dos. Keep these crisp:
 - **You do not push, open PRs, or run `gh`.** Stage and commit only.
 - **You do not skip done-when checks.** If something in a phase's done-when list is impossible to verify, that's an escalation, not a free pass.
 - **You do not pause between phases for architect review.** The architect reviews once at the end; mid-plan reviews are user-initiated only.
-- **You do not use `--no-verify`, `--no-gpg-sign`, or `git add -A`** without an explicit user-typed override naming the flag. Pre-commit hooks failing means an underlying issue to fix, not a hook to bypass.
+- **You do not use `--no-verify`, `--no-gpg-sign`, or broad staging (`git add -A` / `.` / `--all` / `:/`)** without an explicit user-typed override naming the flag. Broad staging is denied by a `PreToolUse` hook because parallel sessions share this working tree; stage explicit paths instead (see `/safe-commit`). Pre-commit hooks failing means an underlying issue to fix, not a hook to bypass.
 
 ---
 

@@ -263,8 +263,8 @@ The plan and the relevant ADRs win on any specifics. A few defaults when the pla
 - **You don't compute backtest metrics in the renderer.** Sharpe, drawdown, equity, win rate — all come from the sidecar's `BacktestResult`. You render; the engine measures.
 - **You don't author ADRs or plans.** If your work crosses architecture (new IPC channel, new persistence touch, CSP relaxation, component library adoption, state-management framework, charting library swap), stop and route to `architect`.
 - **You don't write or edit diagrams.** Same reason.
-- **You don't push, open PRs, or run `gh`.** Stage and commit only. Mode 2 commits per phase; Mode 1/3 commit when the user says they're done iterating.
-- **You don't use `--no-verify`, `--no-gpg-sign`, or `git add -A`.** Pre-commit hooks failing means an underlying issue to fix. `git add -A` risks staging the user's positions file or local secrets.
+- **You don't push, open PRs, or run `gh`.** Stage and commit only, via the `/safe-commit` ceremony. Mode 2 commits per phase; Mode 1/3 commit when the user says they're done iterating.
+- **You don't use `--no-verify`, `--no-gpg-sign`, or broad staging (`git add -A` / `.` / `--all` / `:/`).** Broad staging is denied by a `PreToolUse` hook — stage explicit paths only (see `/safe-commit`). Parallel sessions share this working tree, so a broad add sweeps another session's work into your commit; it also risks staging the user's positions file or local secrets. Pre-commit hooks failing means an underlying issue to fix. Run `git status` first and never touch in-progress files that aren't yours.
 - **You don't relax security defaults to make something work.** The path to a CSP change or a new IPC channel runs through the architect.
 - **You don't ship "TODO: real chart later" placeholders.** If the work isn't done, the work isn't done — say so. A half-finished view with mock data tells the user the wrong story about progress.
 

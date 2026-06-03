@@ -8,7 +8,7 @@ This file is the orientation map for the project's skill ecosystem. Skills do th
 
 ## Skill ecosystem
 
-Eight skills under `.claude/skills/`. Each has its own SKILL.md + references. Trust their descriptions — Claude Code triggers them automatically. This table is the orientation, not the trigger.
+Nine skills under `.claude/skills/`. Each has its own SKILL.md + references. Trust their descriptions — Claude Code triggers them automatically. This table is the orientation, not the trigger.
 
 | Skill              | Owns                                            | Triggers on                                                       |
 |--------------------|-------------------------------------------------|-------------------------------------------------------------------|
@@ -20,6 +20,7 @@ Eight skills under `.claude/skills/`. Each has its own SKILL.md + references. Tr
 | `market-analyst`   | Read-only TradFi analysis → `runs/analysis/`    | Candlestick scans, trend/momentum snapshots, screeners            |
 | `defi-analyst`     | Read-only DeFi analysis → `runs/defi/`          | Pool screens, LP positions, lending health, on-chain audits       |
 | `skill-creator`    | `.claude/skills/`                               | Creating, editing, or measuring skills (meta)                     |
+| `safe-commit`      | The commit ceremony (explicit-path staging, gates, message file) | Any imminent commit — "commit this", "commit the phase"  |
 
 **Hard splits to remember:**
 - **TradFi vs DeFi.** Stocks/indices/futures → `market-analyst`. Pools/LPs/lending → `defi-analyst`. Never both.
@@ -64,6 +65,7 @@ These apply to **every** skill that writes code or analysis in this repo.
 - **Security defaults are not optional.** Electron renderer: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, double-CSP. Renderer never imports Node, never reaches the network except via the typed sidecar fetch client (which injects the bearer).
 - **Validate at boundaries.** Pydantic for sidecar inputs, Zod for IPC payloads, typed responses for sidecar HTTP. Don't validate again inside trusted code paths.
 - **Conditions are facts, decisions are the user's.** Analyst skills (`market-analyst`, `defi-analyst`) report conditions; they never recommend buy/sell/exit/rebalance.
+- **Commit hygiene under concurrency.** Parallel sessions share one working tree, so stage only the files you changed, by explicit path — **never `git add -A` / `.` / `--all` / `:/`** (a `PreToolUse` hook denies broad staging). `git status` first; never stage, stash, or `checkout` another session's in-progress files. Never rewrite history (no amend/rebase/reset), never push. The `/safe-commit` skill is the ceremony that encodes all of this.
 
 ## Where things live
 

@@ -252,6 +252,7 @@ A few important boundaries:
 - **You do not write implementation code.** That's for `strategy-author`, `backtester`, `ui-builder`, or a human. If a plan needs a code snippet to be unambiguous, embed a short illustrative one (under ~20 lines) and label it as illustrative.
 - **You do not silently change ADRs.** ADRs that are `accepted` are append-only. To change a decision, write a new ADR that supersedes it.
 - **You do not skip the interview step in Mode 1.** Even when the user seems impatient, two or three questions up front saves a rewrite later. If the user explicitly says "skip the questions, just draft", you can — but say one line acknowledging what you're guessing at, so they can correct course.
+- **You do not use broad staging (`git add -A` / `.` / `--all` / `:/`) for your own commits** (status flips, README refresh, ADRs, moving plans to `done/`). A `PreToolUse` hook denies it because parallel sessions share this working tree. Stage the docs you changed by explicit path via the `/safe-commit` ceremony; `git status` first and leave any in-progress files that aren't yours. Never rewrite history (no amend/rebase/reset), and never push.
 
 ---
 
