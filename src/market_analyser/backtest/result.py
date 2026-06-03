@@ -35,11 +35,26 @@ class EquityPoint(BaseModel):
 
 
 class BacktestMetrics(BaseModel):
-    """The four-helper output cluster.
+    """The metric output cluster.
 
-    `sharpe` and `win_rate` are NaN-safe — degenerate inputs (zero-std
-    equity curve, zero closed trades) collapse to `0.0` rather than `NaN`
-    so consumers never have to special-case the float.
+    `sharpe`, `sortino`, and `win_rate` are NaN-safe — degenerate inputs
+    (zero-std equity curve, no downside, zero closed trades) collapse to
+    `0.0` rather than `NaN` so consumers never have to special-case the
+    float.
+
+    The six fields appended after `buy_and_hold_return` are the extended
+    metric set pinned by
+    [ADR-0024](../../../docs/architecture/adrs/0024-extended-backtest-metrics.md).
+    Per that ADR, ratio / per-trade metrics that are *genuinely undefined*
+    (no losing trade to divide by, never-dipped curve, no closed trades)
+    are `None` — never `0.0` (which would carry a distinct, wrong meaning)
+    and never `NaN`/`inf` (not JSON-representable). `sortino` is the one
+    exception: it is Sharpe-family, so it keeps the `0.0` collapse.
+
+    Defaults match each field's ADR-0024 degenerate value so a hand-built
+    metrics object (test fixtures, the persistence/route schemas) stays
+    valid without enumerating all thirteen fields; the engine's
+    `_calc_metrics` always sets every field explicitly.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -51,6 +66,13 @@ class BacktestMetrics(BaseModel):
     win_rate: float
     trade_count: int
     buy_and_hold_return: float
+    # --- Extended metrics (ADR-0024), appended in wire-stable order ---
+    calmar: float | None = None
+    sortino: float = 0.0
+    profit_factor: float | None = None
+    expectancy: float | None = None
+    best_trade_return: float | None = None
+    worst_trade_return: float | None = None
 
 
 class BacktestResult(BaseModel):

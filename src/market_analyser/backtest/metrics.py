@@ -159,6 +159,66 @@ def _max_drawdown_and_duration(equities: Sequence[float]) -> tuple[float, int]:
     return max_dd, max_dd_duration
 
 
+def _sortino(returns: Sequence[float], bars_per_year: int) -> float:
+    """Annualized Sortino ratio per [ADR-0024].
+
+    `mean(returns) / downside_deviation * sqrt(bars_per_year)`, where
+    `downside_deviation = stdev({min(r, 0) for r in returns})` (target/MAR
+    = 0, sample stdev ddof=1). Sharpe-family, so it keeps the `0.0`
+    collapse: fewer than two returns, or no downside (every clamped value
+    is 0 so the stdev is 0), yields `0.0` — never NaN.
+    """
+
+    if len(returns) < 2:
+        return 0.0
+    downside = [min(r, 0.0) for r in returns]
+    downside_deviation = statistics.stdev(downside)
+    if downside_deviation <= 0.0:
+        return 0.0
+    return statistics.fmean(returns) / downside_deviation * math.sqrt(bars_per_year)
+
+
+def _calmar(
+    total_return: float,
+    max_drawdown: float,
+    bars_per_year: int,
+    n_bars: int,
+) -> float | None:
+    """Calmar ratio per [ADR-0024]: `annualized_total_return / abs(max_drawdown)`.
+
+    `annualized_total_return = (1 + total_return) ** (bars_per_year / n_bars) - 1`.
+    `n_bars` is the bar count of the equity series. When the curve never
+    dipped (`max_drawdown == 0.0`) Calmar is undefined (division by zero)
+    and returns `None`, not `0.0`. Long-only positive-price equity keeps
+    `1 + total_return > 0`, so the fractional power is always real.
+    """
+
+    if max_drawdown == 0.0:
+        return None
+    # `float ** float` is typed `Any` (it can go complex for a negative base);
+    # pin it back to float — the base is always positive here.
+    annualized_total_return: float = (1.0 + total_return) ** (bars_per_year / n_bars) - 1.0
+    return annualized_total_return / abs(max_drawdown)
+
+
+def _profit_factor(per_trade_returns: Sequence[float]) -> float | None:
+    """Gross profit / gross loss over closed trades, per [ADR-0024].
+
+    Gross profit/loss sum the positive / negative per-trade returns
+    (gross loss as a positive magnitude). Undefined — and so `None`, never
+    `inf` or `0.0` — when there are no closed trades or no losing trade to
+    divide by (`gross_loss == 0`).
+    """
+
+    if not per_trade_returns:
+        return None
+    gross_profit = sum(r for r in per_trade_returns if r > 0.0)
+    gross_loss = -sum(r for r in per_trade_returns if r < 0.0)
+    if gross_loss == 0.0:
+        return None
+    return gross_profit / gross_loss
+
+
 def _calc_metrics(
     trades: Sequence[Trade],
     equity_curve: Sequence[EquityPoint],
@@ -167,12 +227,21 @@ def _calc_metrics(
     *,
     buy_and_hold_return: float = 0.0,
 ) -> BacktestMetrics:
-    """Compute the seven-field `BacktestMetrics` summary.
+    """Compute the extended `BacktestMetrics` summary.
 
     Sharpe is per-bar mean / per-bar sample std (`statistics.stdev`,
     ddof=1), then annualized by `sqrt(bars_per_year[timeframe])`. NaN-safe:
     zero std (flat curve) collapses to 0.0, never NaN. Zero closed trades
     collapses `win_rate` to 0.0, also never NaN.
+
+    The six extended metrics (Calmar, Sortino, profit factor, expectancy,
+    best/worst trade) follow the definitions and degenerate-value
+    convention pinned by
+    [ADR-0024](../../../docs/architecture/adrs/0024-extended-backtest-metrics.md):
+    genuinely-undefined ratio / per-trade metrics are `None`, except
+    Sortino, which is Sharpe-family and keeps the `0.0` collapse. Per-trade
+    returns are computed on the cost-adjusted trade prices this helper
+    receives (`exit_price / entry_price - 1` for each closed long trade).
 
     `buy_and_hold_return` is passed through from `_buy_and_hold_return`;
     the engine computes it from the same `bars` `_build_equity_curve` saw
@@ -206,12 +275,26 @@ def _calc_metrics(
 
     max_dd, max_dd_duration = _max_drawdown_and_duration(equities)
 
+    sortino = _sortino(returns, bars_per_year)
+    calmar = _calmar(total_return, max_dd, bars_per_year, len(equities))
+
     closed_trades = [t for t in trades if t.exit_price is not None]
     trade_count = len(closed_trades)
     win_count = sum(
         1 for t in closed_trades if t.exit_price is not None and t.exit_price > t.entry_price
     )
     win_rate = win_count / trade_count if trade_count > 0 else 0.0
+
+    # Per-trade fractional returns on the cost-adjusted prices (ADR-0024).
+    per_trade_returns: list[float] = []
+    for t in closed_trades:
+        assert t.exit_price is not None  # closed by construction; narrows for mypy
+        per_trade_returns.append(t.exit_price / t.entry_price - 1.0)
+
+    profit_factor = _profit_factor(per_trade_returns)
+    expectancy = statistics.fmean(per_trade_returns) if per_trade_returns else None
+    best_trade_return = max(per_trade_returns) if per_trade_returns else None
+    worst_trade_return = min(per_trade_returns) if per_trade_returns else None
 
     return BacktestMetrics(
         total_return=total_return,
@@ -221,6 +304,12 @@ def _calc_metrics(
         win_rate=win_rate,
         trade_count=trade_count,
         buy_and_hold_return=buy_and_hold_return,
+        calmar=calmar,
+        sortino=sortino,
+        profit_factor=profit_factor,
+        expectancy=expectancy,
+        best_trade_return=best_trade_return,
+        worst_trade_return=worst_trade_return,
     )
 
 
@@ -244,4 +333,7 @@ __all__ = [
     "_build_equity_curve",
     "_buy_and_hold_return",
     "_calc_metrics",
+    "_calmar",
+    "_profit_factor",
+    "_sortino",
 ]
