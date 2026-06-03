@@ -97,13 +97,27 @@ def _parse_chart_payload(payload: Any, interval: str) -> list[dict[str, Any]]:
         v = quote["volume"][i]
         if None in (o, h, low, c):
             continue
+        o = round(o, 4)
+        h = round(h, 4)
+        low = round(low, 4)
+        c = round(c, 4)
+        # Reconcile the OHLC envelope. Yahoo occasionally emits a bar — almost
+        # always the current, still-forming bar of a 24/7 market like BTC-USD —
+        # whose close or open sits just outside the recorded [low, high]: the
+        # high/low arrays lag the latest tick, and independent 4-dp rounding can
+        # nudge two near-equal values across the boundary. Since `high` is by
+        # definition the period maximum and `low` the minimum, widen the envelope
+        # to enclose all four prices instead of letting one glitchy bar fail
+        # `Bar` validation and 422 the entire chart load.
+        hi = max(o, h, low, c)
+        lo = min(o, h, low, c)
         rows.append(
             {
                 "date": datetime.fromtimestamp(ts, tz=UTC).strftime(date_fmt),
-                "open": round(o, 4),
-                "high": round(h, 4),
-                "low": round(low, 4),
-                "close": round(c, 4),
+                "open": o,
+                "high": hi,
+                "low": lo,
+                "close": c,
                 "volume": v or 0,
             },
         )

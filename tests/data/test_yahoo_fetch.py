@@ -22,6 +22,7 @@ from market_analyser.data.adapters._yahoo_fetch import (
     _parse_chart_payload,
 )
 from market_analyser.data.errors import UpstreamUnavailableError
+from market_analyser.data.types import Bar
 
 _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "yahoo"
 
@@ -182,3 +183,61 @@ def test_parse_null_volume_normalized_to_zero() -> None:
     rows = _parse_chart_payload(payload, "1d")
 
     assert rows[0]["volume"] == 0
+
+
+def test_parse_reconciles_ohlc_envelope_for_glitchy_bar() -> None:
+    # Regression for the 2026-06-03 "BTC-USD 1d -> sidecar 422: close (65174.2109)
+    # outside [low, high]" failure. Yahoo can return a bar — typically the current,
+    # still-forming bar of a 24/7 market — whose close/open falls just outside the
+    # recorded [low, high]. The parser must widen high/low to enclose all four
+    # prices so the bar passes `Bar` validation, rather than one glitchy bar
+    # 422-ing the whole chart load.
+    payload = {
+        "chart": {
+            "error": None,
+            "result": [
+                {
+                    "meta": {"symbol": "BTC-USD"},
+                    "timestamp": [1767225600, 1767312000],
+                    "indicators": {
+                        "quote": [
+                            {
+                                # bar 0: close (65174.2109) below recorded low (65180.0)
+                                # bar 1: close (105.0) above recorded high (102.0)
+                                "open": [65185.0, 100.0],
+                                "high": [65200.0, 102.0],
+                                "low": [65180.0, 99.0],
+                                "close": [65174.2109, 105.0],
+                                "volume": [10, 20],
+                            },
+                        ],
+                    },
+                },
+            ],
+        },
+    }
+
+    rows = _parse_chart_payload(payload, "1d")
+
+    # bar 0: low widened down to enclose the glitchy close; high unchanged.
+    assert rows[0]["low"] == 65174.2109
+    assert rows[0]["high"] == 65200.0
+    # bar 1: high widened up to enclose the glitchy close; low unchanged.
+    assert rows[1]["high"] == 105.0
+    assert rows[1]["low"] == 99.0
+    # Open/close are preserved verbatim (the real traded prices).
+    assert rows[0]["close"] == 65174.2109
+    assert rows[1]["open"] == 100.0
+    # Every reconciled row now satisfies low <= open,close <= high → valid Bar.
+    for r in rows:
+        Bar(
+            symbol="BTC-USD",
+            timeframe="1d",
+            event_ts=datetime(2026, 1, 1, tzinfo=UTC),
+            open=r["open"],
+            high=r["high"],
+            low=r["low"],
+            close=r["close"],
+            volume=r["volume"],
+            source="yahoo",
+        )
