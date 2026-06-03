@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from market_analyser.data.types import (
     Bar,
@@ -37,6 +37,13 @@ from market_analyser.data.types import (
     SentimentSample,
     SymbolInfo,
 )
+
+if TYPE_CHECKING:
+    # Type-only reference so `data/` carries no runtime import of the `defi/`
+    # domain (the adapter that *produces* DefiPosition imports it at runtime;
+    # this Protocol only names the return type). `defi/models` imports nothing
+    # from `data/`, so there is no import cycle.
+    from market_analyser.defi.models import DefiPosition
 
 
 @runtime_checkable
@@ -118,3 +125,14 @@ class MarketSentimentSource(Protocol):
     market-sentiment registry."""
 
     def fetch_current(self) -> MarketSentimentSample: ...
+
+
+@runtime_checkable
+class WalletPositionsSource(Protocol):
+    """A source that discovers a wallet's interpreted DeFi positions across the
+    target EVM chains (ADR-0035 / ADR-0034). `address` is a raw `0x…` EVM
+    address; the source returns the normalized, boundary-validated positions it
+    can decode. Members of the DeFi wallet-positions selector registry, keyed by
+    source name ("zerion"), built in the composition root (ADR-0031)."""
+
+    def fetch_positions(self, address: str) -> Sequence[DefiPosition]: ...

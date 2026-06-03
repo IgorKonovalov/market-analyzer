@@ -43,9 +43,11 @@ from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.data.sources import WalletPositionsSource
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
@@ -188,6 +190,15 @@ def create_app(
     # write/status secret endpoints and is read server-side by DeFi adapters.
     # Tests pass a tmp-path store; production wires `<data-dir>/secrets.json`.
     app.state.secrets_store = secrets_store
+    # DeFi wallet-positions sources (Plan 0032, ADR-0031/0034/0035): the
+    # ADR-0031 selector registry, keyed by source name. The Zerion adapter reads
+    # its key lazily from the secrets store, so it constructs even before a key
+    # is set; a keyless scan fails typed at call time. Built only when a store is
+    # present (the adapter needs one); the phase-3 discovery service consumes it.
+    wallet_positions_sources: dict[str, WalletPositionsSource] = {}
+    if secrets_store is not None:
+        wallet_positions_sources["zerion"] = ZerionAdapter(secrets_store=secrets_store)
+    app.state.wallet_positions_sources = wallet_positions_sources
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
