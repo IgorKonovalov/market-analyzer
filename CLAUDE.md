@@ -34,7 +34,7 @@ Eight skills under `.claude/skills/`. Each has its own SKILL.md + references. Tr
 architect (design + plan)  →  user "go"  →  dev or sibling (implement all phases)  →  fresh architect session (close ceremony: review + status flip + move plan to plans/done/)
 ```
 
-- One plan, one session per implementer. Sibling-owned phases get routed to that sibling (per the plan's `Owner skill:` tag).
+- One plan, one session per implementer — or, for plans the index marks disjoint, one **git worktree** per implementer running in parallel (see [plans/README § Parallel execution](docs/architecture/plans/README.md#parallel-execution)). Sibling-owned phases get routed to that sibling (per the plan's `Owner skill:` tag).
 - The implementer never reviews their own work or moves plans to `done/`. That's architect's close ceremony.
 - Implementer commits per phase (conventional-commit) but never pushes.
 
