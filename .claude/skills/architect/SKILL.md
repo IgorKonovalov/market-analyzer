@@ -207,6 +207,15 @@ This domain has real consequences for incorrect outputs, even though there's no 
 
 Group findings by severity (`blocker` / `major` / `minor` / `nit`). For each finding: what, where (file:line), why it matters, suggested fix. Don't pad the response with what went well unless the user asks — they want the deltas. Open with a one-sentence verdict (e.g. "Plan 0001 landed cleanly; no blockers, two minor items"), then the findings, then any plan-status / ADR / diagram bookkeeping the user needs to do post-review.
 
+### Close-ceremony bookkeeping (after a review that closes a plan)
+
+When the review is clean enough to close the plan (or after the user accepts the findings), the close ceremony runs these steps — all architect-owned, committed to `main` by explicit path via `/safe-commit`:
+
+1. **Flip the plan `Status:` to `done`** (rich one-line summary: the phase commits, the Mode 4 verdict, what was verified) and **`git mv` the file to `plans/done/`**.
+2. **Accept any paired ADRs** the plan gated (`proposed` → `accepted`), and refresh the **ADR index** (`adrs/README.md`) row to match the ADR file's own `Status:`.
+3. **Refresh the plans index** (`plans/README.md`): roster → recently-closed, execution order, next-free-number.
+4. **Merge the implementation branch, if one exists.** Plans implemented in a parallel git worktree live on their own branch (`plan-NNNN-<slug>`, per [plans/README § Parallel execution](../../../docs/architecture/plans/README.md#parallel-execution)); the close ceremony is the documented merge gate. Check `git worktree list` / `git branch` first — **if such a branch exists and the review passed**, merge it into `main` with an explicit merge commit (`git merge --no-ff plan-NNNN-<slug>`). Before relying on it: confirm the merge is conflict-free (`git merge-base main <branch>`, then a no-overlap check of the files the branch changed against what `main` changed since that base) and that the post-merge tree is green. **Surface conflicts rather than forcing them**; never rewrite history, never push (the user pushes). If **no such branch exists** — the plan was implemented directly in this working tree — there is nothing to merge; skip this step. The doc-close commit (steps 1–3) and the merge are independent: landing the close docs first keeps them clean even if the merge is deferred or the branch turns out not to exist.
+
 ---
 
 ## House style for documents

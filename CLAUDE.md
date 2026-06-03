@@ -32,7 +32,7 @@ Nine skills under `.claude/skills/`. Each has its own SKILL.md + references. Tru
 ### New feature (most common)
 
 ```
-architect (design + plan)  →  user "go"  →  dev or sibling (implement all phases)  →  fresh architect session (close ceremony: review + status flip + move plan to plans/done/)
+architect (design + plan)  →  user "go"  →  dev or sibling (implement all phases)  →  fresh architect session (close ceremony: review + status flip + move plan to plans/done/ + merge the implementation branch if one exists)
 ```
 
 - One plan, one session per implementer — or, for plans the index marks disjoint, one **git worktree** per implementer running in parallel (see [plans/README § Parallel execution](docs/architecture/plans/README.md#parallel-execution)). Sibling-owned phases get routed to that sibling (per the plan's `Owner skill:` tag).
