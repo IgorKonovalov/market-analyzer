@@ -39,6 +39,7 @@ from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
 from market_analyser.api.mcp_tools.list_annotations import register_list_annotations
+from market_analyser.api.mcp_tools.market_snapshot import register_market_snapshot
 from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     register_multi_timeframe_analysis,
 )
@@ -128,6 +129,7 @@ def create_mcp_components(
     register_sentiment_for_news(server, provider=provider)
     register_crypto_fear_greed(server, provider=provider)
     register_bitcoin_market_pulse(server, provider=provider)
+    register_market_snapshot(server, provider=provider)
     register_stocktwits_sentiment(server, provider=provider)
 
     if backtest_runs_repository is not None and runs_dir is not None:
