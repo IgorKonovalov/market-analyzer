@@ -49,8 +49,6 @@ def get_news(
     # No symbol → no per-symbol aggregate. A blank/whitespace symbol is treated
     # as "no symbol" so a just-cleared input box browses all feeds, never 422s.
     sentiment = (
-        provider.get_sentiment(symbol=symbol, window=window)
-        if symbol and symbol.strip()
-        else None
+        provider.get_sentiment(symbol=symbol, window=window) if symbol and symbol.strip() else None
     )
     return NewsResponse(items=list(items), sentiment=sentiment, queried_at=_now())
