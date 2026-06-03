@@ -25,6 +25,7 @@ response.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -47,6 +48,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
+from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
 from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
@@ -61,6 +63,7 @@ from market_analyser.api.mcp_tools.write_annotation import register_write_annota
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.data.sources import WalletPositionsSource
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.repositories.backtest_runs import (
@@ -77,6 +80,7 @@ def create_mcp_components(
     backfill_coordinator: BackfillCoordinator | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
     runs_dir: Path | None = None,
+    wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -143,6 +147,16 @@ def create_mcp_components(
             repository=backtest_runs_repository,
             event_bus=event_bus,
             runs_dir=runs_dir,
+        )
+
+    # `scan_wallet` (Plan 0032) is registered only when a wallet-positions source
+    # is wired (the adapter needs the secrets store); without it the DeFi toolset
+    # is simply absent, nothing degrades.
+    if wallet_positions_sources:
+        register_scan_wallet(
+            server,
+            wallet_positions_sources=wallet_positions_sources,
+            event_bus=event_bus,
         )
 
     # streamable_http_app() also lazily constructs the session manager; we call

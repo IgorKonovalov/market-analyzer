@@ -18,7 +18,7 @@ liveness without holding either secret.
 from __future__ import annotations
 
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -33,6 +33,7 @@ from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.backtests import router as backtests_router
+from market_analyser.api.routes.defi import router as defi_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.news import router as news_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
@@ -68,6 +69,7 @@ def create_app(
     mcp_secret: str | None = None,
     mcp_secret_path: Path | None = None,
     secrets_store: SecretsStore | None = None,
+    wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
@@ -144,6 +146,17 @@ def create_app(
         if isinstance(effective_provider, SupportsBackfill)
         else None
     )
+    # DeFi wallet-positions sources (Plan 0032, ADR-0031/0034/0035): the ADR-0031
+    # selector registry, keyed by source name. An explicit `wallet_positions_sources`
+    # wins (tests inject a fake); otherwise the Zerion adapter is built from the
+    # secrets store (it reads its key lazily, so it constructs even before a key is
+    # set — a keyless scan fails typed at call time). Empty when no store is wired.
+    if wallet_positions_sources is not None:
+        effective_wallet_sources: dict[str, WalletPositionsSource] = dict(wallet_positions_sources)
+    elif secrets_store is not None:
+        effective_wallet_sources = {"zerion": ZerionAdapter(secrets_store=secrets_store)}
+    else:
+        effective_wallet_sources = {}
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
@@ -153,6 +166,7 @@ def create_app(
             backfill_coordinator=backfill_coordinator,
             backtest_runs_repository=backtest_runs_repository,
             runs_dir=runs_dir,
+            wallet_positions_sources=effective_wallet_sources,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None
@@ -190,15 +204,10 @@ def create_app(
     # write/status secret endpoints and is read server-side by DeFi adapters.
     # Tests pass a tmp-path store; production wires `<data-dir>/secrets.json`.
     app.state.secrets_store = secrets_store
-    # DeFi wallet-positions sources (Plan 0032, ADR-0031/0034/0035): the
-    # ADR-0031 selector registry, keyed by source name. The Zerion adapter reads
-    # its key lazily from the secrets store, so it constructs even before a key
-    # is set; a keyless scan fails typed at call time. Built only when a store is
-    # present (the adapter needs one); the phase-3 discovery service consumes it.
-    wallet_positions_sources: dict[str, WalletPositionsSource] = {}
-    if secrets_store is not None:
-        wallet_positions_sources["zerion"] = ZerionAdapter(secrets_store=secrets_store)
-    app.state.wallet_positions_sources = wallet_positions_sources
+    # The DeFi wallet-positions registry (built above) is exposed for the
+    # `POST /defi/scan` route and the `scan_wallet` tool; the phase-3 scan job
+    # consumes the selected source.
+    app.state.wallet_positions_sources = effective_wallet_sources
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
@@ -298,6 +307,12 @@ def create_app(
     # resource is absent.
     if (mcp_secret is not None and mcp_secret_path is not None) or secrets_store is not None:
         app.include_router(settings_router)
+
+    # `POST /defi/scan` is mounted only when a wallet-positions source is wired
+    # (Plan 0032). Renderer-bearer-gated by the central middleware; the agent
+    # reaches the same scan job through the `scan_wallet` MCP tool instead.
+    if effective_wallet_sources:
+        app.include_router(defi_router)
 
     # `POST /settings/stop` is always registered (no MCP-secret dependency).
     # Renderer-bearer-gated by the central middleware; an agent on `/mcp`

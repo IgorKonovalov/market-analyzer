@@ -44,6 +44,12 @@ _logger = logging.getLogger(__name__)
 # The chains a scan targets (ADR-0034), reported up front in `scan_started`.
 TARGET_CHAINS: tuple[str, ...] = ("ethereum", "base", "arbitrum", "optimism")
 
+# An EVM address: `0x` + 40 hex nibbles. The scan input boundary (the
+# `scan_wallet` tool and `POST /defi/scan`) validates against this so a
+# non-address is rejected 4xx before reaching the source. ENS names are out of
+# scope for v1 (raw `0x…` only) — Plan 0032 "What this plan does NOT do".
+EVM_ADDRESS_PATTERN = r"^0x[0-9a-fA-F]{40}$"
+
 ScanFailureReason = Literal["rate_limited", "upstream_unavailable", "malformed_response"]
 
 
@@ -131,4 +137,4 @@ def _classify_failure(err: Exception) -> ScanFailureReason:
     return "upstream_unavailable"
 
 
-__all__ = ["TARGET_CHAINS", "WalletScanResult", "run_wallet_scan"]
+__all__ = ["EVM_ADDRESS_PATTERN", "TARGET_CHAINS", "WalletScanResult", "run_wallet_scan"]
