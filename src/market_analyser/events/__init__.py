@@ -162,6 +162,59 @@ class OhlcvBackfillFailedPayloadV1(BaseModel):
     message: str
 
 
+class DefiScanStartedPayloadV1(BaseModel):
+    """`defi.scan_started v1`: a wallet scan began. Emitted before the upstream
+    call so the renderer can show its spinner. `wallet` is the **masked** address
+    (`0x1234…abcd`) — the full address is never put on the wire (ADR-0038
+    discipline). `chains` is the set of chains being scanned."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    wallet: str
+    chains: list[str]
+
+
+class DefiScanProgressPayloadV1(BaseModel):
+    """`defi.scan_progress v1`: positions decoded for one chain. At least one is
+    emitted between `scan_started` and `scan_completed` for a non-empty wallet."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    wallet: str
+    chain: str
+    position_count: int
+
+
+class DefiScanCompletedPayloadV1(BaseModel):
+    """`defi.scan_completed v1`: the scan finished. `chains` is the chains where
+    positions were found; `position_count` is the total across all chains."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    wallet: str
+    chains: list[str]
+    position_count: int
+
+
+class DefiScanFailedPayloadV1(BaseModel):
+    """`defi.scan_failed v1`: the scan failed with a typed reason. The literal set
+    is closed so the renderer can branch on it exhaustively. A missing/invalid
+    key and any other upstream outage both surface as `upstream_unavailable` on
+    the wire; the precise auth signal reaches the agent through the scan tool's
+    re-raised typed exception (phase 4), keeping this neutral payload decoupled
+    from any one source's error taxonomy."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    wallet: str
+    reason: Literal["rate_limited", "upstream_unavailable", "malformed_response"]
+    message: str
+
+
 TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.show": ChartShowPayloadV1,
     "chart.update": ChartUpdatePayloadV1,
@@ -171,6 +224,10 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
     "ohlcv.backfilled": OhlcvBackfilledPayloadV1,
     "ohlcv.backfill_failed": OhlcvBackfillFailedPayloadV1,
+    "defi.scan_started": DefiScanStartedPayloadV1,
+    "defi.scan_progress": DefiScanProgressPayloadV1,
+    "defi.scan_completed": DefiScanCompletedPayloadV1,
+    "defi.scan_failed": DefiScanFailedPayloadV1,
 }
 
 
