@@ -36,6 +36,7 @@ from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.types import (
     Bar,
+    MacroContext,
     MarketSentimentSample,
     NewsItem,
     Quote,
@@ -128,6 +129,11 @@ class _BarsProvider:
         with_sentiment: bool = False,
         as_of: datetime | None = None,
     ) -> Sequence[NewsItem]:
+        raise NotImplementedError
+
+    def get_macro_context(
+        self, market: str = "crypto", as_of: datetime | None = None
+    ) -> MacroContext:
         raise NotImplementedError
 
 
