@@ -1,6 +1,6 @@
 # 0023 — News view in the app interface
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-05-24
 > **Approved:** 2026-05-24
 > **Owner skill(s):** `dev` (phase 1), `ui-builder` (phase 2)

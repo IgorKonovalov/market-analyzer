@@ -34,6 +34,7 @@ from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.backtests import router as backtests_router
 from market_analyser.api.routes.events import router as events_router
+from market_analyser.api.routes.news import router as news_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
@@ -258,6 +259,10 @@ def create_app(
         return body
 
     app.include_router(ohlcv_router)
+    # `/news` needs only the provider (always present, like /ohlcv); renderer-
+    # bearer-gated by the central middleware. Unconditional — no repository or
+    # runs_dir dependency, unlike /annotations or /backtests (Plan 0023).
+    app.include_router(news_router)
     # `/search` needs only the provider (always present); renderer-bearer-gated
     # by the central middleware like /ohlcv (Plan 0024).
     app.include_router(search_router)

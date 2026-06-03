@@ -49,6 +49,9 @@ const EMIT = new Set([
   'BacktestResult',
   'BacktestRunSummary',
   'SymbolInfo',
+  'NewsItem',
+  'SentimentSample',
+  'NewsResponse',
 ])
 
 const HEADER = [
