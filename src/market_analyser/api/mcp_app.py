@@ -33,6 +33,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from market_analyser.api.mcp_tools.analyze_symbol import register_analyze_symbol
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
+from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
@@ -126,6 +127,7 @@ def create_mcp_components(
     register_news_for(server, provider=provider)
     register_sentiment_for_news(server, provider=provider)
     register_crypto_fear_greed(server, provider=provider)
+    register_bitcoin_market_pulse(server, provider=provider)
     register_stocktwits_sentiment(server, provider=provider)
 
     if backtest_runs_repository is not None and runs_dir is not None:
