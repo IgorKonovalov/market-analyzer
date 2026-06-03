@@ -34,6 +34,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from market_analyser.api.mcp_tools.analyze_symbol import register_analyze_symbol
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
+from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
@@ -55,6 +56,7 @@ from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwi
 from market_analyser.api.mcp_tools.update_chart import register_update_chart
 from market_analyser.api.mcp_tools.volume_breakout import register_volume_breakout
 from market_analyser.api.mcp_tools.volume_confirmation import register_volume_confirmation
+from market_analyser.api.mcp_tools.walk_forward_backtest import register_walk_forward_backtest
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.backfill import BackfillCoordinator
@@ -119,6 +121,8 @@ def create_mcp_components(
     # Protocol; the adapters stay package-internal (ADR-0007).
     register_screener_query(server, provider=provider)
     register_analyze_symbol(server, provider=provider)
+    register_compare_strategies(server, provider=provider)
+    register_walk_forward_backtest(server, provider=provider)
     register_multi_timeframe_analysis(server, provider=provider)
     register_volume_breakout(server, provider=provider)
     register_volume_confirmation(server, provider=provider)

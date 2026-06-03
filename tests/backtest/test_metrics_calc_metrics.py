@@ -189,3 +189,161 @@ def test_sharpe_annualization_changes_with_timeframe() -> None:
     # ratio = sqrt(252*24) / sqrt(252) = sqrt(24)
     ratio = m_1h.sharpe / m_1d.sharpe
     assert isclose(ratio, math.sqrt(24), abs_tol=1e-9)
+
+
+# --- Extended metrics (ADR-0024) ---------------------------------------------
+
+
+def _two_win_one_loss_trades() -> list[Trade]:
+    """Three closed long trades: +10%, +20%, -10% (entry-to-exit, pre-curve)."""
+
+    return [
+        Trade(
+            entry_bar_index=1, exit_bar_index=2, entry_price=100.0, exit_price=110.0, kind="long"
+        ),
+        Trade(
+            entry_bar_index=3, exit_bar_index=4, entry_price=100.0, exit_price=120.0, kind="long"
+        ),
+        Trade(entry_bar_index=5, exit_bar_index=6, entry_price=100.0, exit_price=90.0, kind="long"),
+    ]
+
+
+def test_extended_metrics_on_two_win_one_loss_fixture() -> None:
+    """Every new metric equals its hand-worked / ADR-formula value within 1e-9.
+
+    Per-trade returns are [+0.10, +0.20, -0.10] (independent of the equity
+    curve). The curve [10000, 11000, 9900, 12000] gives total_return=0.20
+    and max_drawdown=-0.10 (the dip from the 11000 peak to 9900).
+    """
+
+    equities = [10_000.0, 11_000.0, 9_900.0, 12_000.0]
+    metrics = _calc_metrics(
+        trades=_two_win_one_loss_trades(),
+        equity_curve=_curve(equities),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+
+    # Per-trade metrics — hand-worked from [+0.10, +0.20, -0.10].
+    assert metrics.trade_count == 3
+    assert isclose(metrics.win_rate, 2.0 / 3.0, abs_tol=1e-9)
+    assert metrics.profit_factor is not None
+    assert isclose(metrics.profit_factor, (0.10 + 0.20) / 0.10, abs_tol=1e-9)  # = 3.0
+    assert metrics.expectancy is not None
+    assert isclose(metrics.expectancy, 0.20 / 3.0, abs_tol=1e-9)  # mean of the three returns
+    assert metrics.best_trade_return is not None
+    assert isclose(metrics.best_trade_return, 0.20, abs_tol=1e-9)
+    assert metrics.worst_trade_return is not None
+    assert isclose(metrics.worst_trade_return, -0.10, abs_tol=1e-9)
+
+    # Calmar — annualized_total_return / |max_drawdown| (ADR-0024).
+    assert isclose(metrics.max_drawdown, -0.10, abs_tol=1e-9)
+    n_bars = len(equities)
+    annualized = (12_000.0 / 10_000.0) ** (252 / n_bars) - 1.0
+    assert metrics.calmar is not None
+    assert isclose(metrics.calmar, annualized / 0.10, rel_tol=1e-9)
+
+    # Sortino — mean(returns) / stdev(downside) * sqrt(252) (ADR-0024).
+    returns = [equities[i] / equities[i - 1] - 1.0 for i in range(1, len(equities))]
+    downside = [min(r, 0.0) for r in returns]
+    expected_sortino = statistics.fmean(returns) / statistics.stdev(downside) * math.sqrt(252)
+    assert isclose(metrics.sortino, expected_sortino, abs_tol=1e-9)
+
+
+def test_zero_trades_extended_metrics_are_none_and_sortino_zero() -> None:
+    """No closed trades + flat curve: ratios/per-trade are None; sortino 0.0."""
+
+    metrics = _calc_metrics(
+        trades=[],
+        equity_curve=_curve([10_000.0, 10_000.0, 10_000.0]),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+    assert metrics.trade_count == 0
+    assert metrics.profit_factor is None
+    assert metrics.expectancy is None
+    assert metrics.best_trade_return is None
+    assert metrics.worst_trade_return is None
+    # Sortino is Sharpe-family — flat curve has no downside, so 0.0 not None.
+    assert metrics.sortino == 0.0
+    assert not math.isnan(metrics.sortino)
+    # Flat curve never dips → max_drawdown 0.0 → Calmar undefined → None.
+    assert metrics.calmar is None
+
+
+def test_all_wins_profit_factor_is_none() -> None:
+    """Zero losing trades → profit_factor None (no gross loss to divide by)."""
+
+    metrics = _calc_metrics(
+        trades=[
+            Trade(
+                entry_bar_index=1,
+                exit_bar_index=2,
+                entry_price=100.0,
+                exit_price=110.0,
+                kind="long",
+            ),
+            Trade(
+                entry_bar_index=3,
+                exit_bar_index=4,
+                entry_price=100.0,
+                exit_price=105.0,
+                kind="long",
+            ),
+        ],
+        equity_curve=_curve([10_000.0, 11_000.0, 11_500.0]),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+    assert metrics.trade_count == 2
+    assert metrics.profit_factor is None
+    # Expectancy / best / worst are still defined (all positive here).
+    assert metrics.expectancy is not None
+    assert isclose(metrics.expectancy, (0.10 + 0.05) / 2.0, abs_tol=1e-9)
+    assert metrics.best_trade_return is not None
+    assert isclose(metrics.best_trade_return, 0.10, abs_tol=1e-9)
+    assert metrics.worst_trade_return is not None
+    assert isclose(metrics.worst_trade_return, 0.05, abs_tol=1e-9)
+
+
+def test_calmar_none_when_curve_never_dips() -> None:
+    """Monotonic-up curve → max_drawdown 0.0 → Calmar None (not 0.0)."""
+
+    metrics = _calc_metrics(
+        trades=[],
+        equity_curve=_curve([10_000.0, 10_500.0, 11_000.0]),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+    assert metrics.max_drawdown == 0.0
+    assert metrics.calmar is None
+    # All-positive returns → no downside → sortino 0.0.
+    assert metrics.sortino == 0.0
+
+
+def test_no_extended_metric_is_ever_nan() -> None:
+    """Across both a normal and a degenerate run, no float metric is NaN."""
+
+    normal = _calc_metrics(
+        trades=_two_win_one_loss_trades(),
+        equity_curve=_curve([10_000.0, 11_000.0, 9_900.0, 12_000.0]),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+    degenerate = _calc_metrics(
+        trades=[],
+        equity_curve=_curve([10_000.0, 10_000.0]),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+    for metrics in (normal, degenerate):
+        for value in (
+            metrics.sharpe,
+            metrics.sortino,
+            metrics.calmar,
+            metrics.profit_factor,
+            metrics.expectancy,
+            metrics.best_trade_return,
+            metrics.worst_trade_return,
+        ):
+            assert value is None or not math.isnan(value)

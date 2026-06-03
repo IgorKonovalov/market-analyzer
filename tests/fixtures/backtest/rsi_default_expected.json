@@ -1,5 +1,5 @@
 {
-  "engine_version": "0.1.0",
+  "engine_version": "0.2.0",
   "strategy_id": "rsi",
   "strategy_version": "1.0.0",
   "symbol": "AAPL",
@@ -850,6 +850,12 @@
     "max_drawdown_duration_bars": 105,
     "win_rate": 0.3333333333333333,
     "trade_count": 3,
-    "buy_and_hold_return": 0.28321699999999983
+    "buy_and_hold_return": 0.28321699999999983,
+    "calmar": -0.027480218146875266,
+    "sortino": 0.007990399507820788,
+    "profit_factor": 0.8192197616038763,
+    "expectancy": -0.0007058354493721941,
+    "best_trade_return": 0.009595645304425915,
+    "worst_trade_return": -0.007779707661002999
   }
 }

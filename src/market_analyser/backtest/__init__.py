@@ -37,6 +37,8 @@ from market_analyser.backtest.result import (
     EquityPoint,
 )
 from market_analyser.backtest.types import Trade
+from market_analyser.backtest.walk_forward import WalkForwardConfigError, walk_forward
+from market_analyser.backtest.walk_forward_types import WalkForwardFold, WalkForwardResult
 
 __all__ = [
     "ENGINE_VERSION",
@@ -47,6 +49,9 @@ __all__ = [
     "StrategyContractError",
     "Trade",
     "UnknownTimeframeError",
+    "WalkForwardConfigError",
+    "WalkForwardFold",
+    "WalkForwardResult",
     "_apply_costs",
     "_build_equity_curve",
     "_buy_and_hold_return",
@@ -54,4 +59,5 @@ __all__ = [
     "bars_hash",
     "run",
     "signals_to_trades",
+    "walk_forward",
 ]

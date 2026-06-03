@@ -11,4 +11,10 @@ export interface BacktestMetrics {
   win_rate: number
   trade_count: number
   buy_and_hold_return: number
+  calmar?: number | null
+  sortino?: number
+  profit_factor?: number | null
+  expectancy?: number | null
+  best_trade_return?: number | null
+  worst_trade_return?: number | null
 }
