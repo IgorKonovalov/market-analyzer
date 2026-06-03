@@ -47,8 +47,9 @@ The Bash tool truncates/garbles PowerShell here-strings (`@'...'@`) and stray `@
 backticks have ended up in commit subjects. Sidestep shell quoting entirely:
 **write the message to a file with the Write tool**, then commit with `-F`.
 
-1. Write the conventional-commit message to `.git/SAFE_COMMIT_MSG` (untracked, so it can't contaminate anything).
-2. `git commit -F .git/SAFE_COMMIT_MSG`
+1. Write the conventional-commit message to `.git/SAFE_COMMIT_MSG-<topic>`, where `<topic>` is a short slug for *this* commit (e.g. `.git/SAFE_COMMIT_MSG-plan0031-phase2`). Files under `.git/` are untracked, so they can't contaminate a commit. **Use a unique per-commit name, never a fixed `.git/SAFE_COMMIT_MSG`** — a shared path is itself a collision point: a parallel session running this same ceremony would clobber your message (and you theirs). If you find a `.git/SAFE_COMMIT_MSG*` file you didn't write, leave it — it's another session's pending commit.
+2. `git commit -F .git/SAFE_COMMIT_MSG-<topic>`
+3. Delete your message file afterward; never touch one belonging to another session.
 
 Conventional-commit format, e.g.:
 
