@@ -6,7 +6,13 @@
  *                                  — system-follow dark, ONLY when no explicit
  *                                    choice is set (attribute absent).
  * An explicit `data-theme` attribute always wins over the OS media query.
- * The dark values live in BOTH (2) and (3) — keep the two blocks in sync.
+ * The dark palette lives in BOTH (2) and (3) — keep the two blocks in sync.
+ *
+ * Scale tokens (spacing, type, radii) are theme-independent and live once in
+ * `:root`. Color + elevation tokens are redeclared per palette. Phase-2 polish
+ * (Plan 0033): refined neutrals, an elevation/shadow set, a type scale, and
+ * semantic bull/bear + on-accent colors so trading numbers and the accent read
+ * correctly in both themes.
  */
 :root {
   color-scheme: light dark;
@@ -19,48 +25,109 @@
     Arial,
     sans-serif;
 
+  /* Spacing */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 16px;
   --space-4: 24px;
+  --space-5: 32px;
 
-  --color-bg: #ffffff;
-  --color-bg-elev: #fafafa;
-  --color-bg-hover: #f0f0f0;
-  --color-fg: #1a1a1a;
-  --color-fg-muted: #666666;
-  --color-border: #e5e5e5;
+  /* Type scale (rem; base 16px). Only the scale changes — still system-ui. */
+  --font-size-xs: 0.6875rem; /* 11 */
+  --font-size-sm: 0.8125rem; /* 13 */
+  --font-size-base: 0.875rem; /* 14 */
+  --font-size-md: 1rem; /* 16 */
+  --font-size-lg: 1.125rem; /* 18 */
+  --font-size-xl: 1.375rem; /* 22 */
+  --line-tight: 1.25;
+  --line-normal: 1.5;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* Light palette (base) */
+  --color-bg: #f6f7f9;
+  --color-bg-elev: #ffffff;
+  --color-bg-hover: #eceef2;
+  --color-bg-sunken: #eef0f4;
+  --color-fg: #11161c;
+  --color-fg-muted: #5b6573;
+  --color-border: #e3e7ec;
+  --color-border-strong: #cdd3db;
   --color-accent: #2563eb;
-  --color-error: #b91c1c;
-  --color-error-bg: #fef2f2;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-soft: #e7eefe;
+  --color-on-accent: #ffffff;
+  --color-error: #b42318;
+  --color-error-bg: #fef3f2;
+  --color-bull: #15803d;
+  --color-bull-bg: #dcfce7;
+  --color-bear: #b42318;
+  --color-bear-bg: #fee4e2;
+
+  /* Elevation — soft, cool shadows for light surfaces. */
+  --shadow-1: 0 1px 2px rgb(15 23 42 / 6%), 0 1px 1px rgb(15 23 42 / 4%);
+  --shadow-2: 0 2px 6px rgb(15 23 42 / 8%), 0 1px 2px rgb(15 23 42 / 5%);
+  --shadow-3: 0 12px 32px rgb(15 23 42 / 14%);
 }
 
-/* Explicit dark choice — wins over `prefers-color-scheme`. */
+/* Dark palette — explicit choice; wins over `prefers-color-scheme`. */
 :root[data-theme='dark'] {
-  --color-bg: #1a1a1a;
-  --color-bg-elev: #242424;
-  --color-bg-hover: #2e2e2e;
-  --color-fg: #f5f5f5;
-  --color-fg-muted: #a3a3a3;
-  --color-border: #3a3a3a;
+  --color-bg: #14171d;
+  --color-bg-elev: #1d212a;
+  --color-bg-hover: #272d38;
+  --color-bg-sunken: #0f1217;
+  --color-fg: #f2f4f7;
+  --color-fg-muted: #9aa4b2;
+  --color-border: #2b313c;
+  --color-border-strong: #3a4150;
   --color-accent: #60a5fa;
-  --color-error: #fca5a5;
-  --color-error-bg: #2a1a1a;
+  --color-accent-hover: #93c5fd;
+  --color-accent-soft: #1b2a45;
+  --color-on-accent: #0b1220;
+  --color-error: #f97066;
+  --color-error-bg: #2a1718;
+  --color-bull: #4ade80;
+  --color-bull-bg: #14331f;
+  --color-bear: #f97066;
+  --color-bear-bg: #3a1a1a;
+
+  /* Elevation — deeper shadows read against dark surfaces. */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 45%);
+  --shadow-2: 0 3px 10px rgb(0 0 0 / 50%);
+  --shadow-3: 0 16px 38px rgb(0 0 0 / 62%);
 }
 
 /* System-follow dark — applies only when the user has made no explicit choice
  * (no `data-theme` attribute). Mirror of the block above; keep in sync. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --color-bg: #1a1a1a;
-    --color-bg-elev: #242424;
-    --color-bg-hover: #2e2e2e;
-    --color-fg: #f5f5f5;
-    --color-fg-muted: #a3a3a3;
-    --color-border: #3a3a3a;
+    --color-bg: #14171d;
+    --color-bg-elev: #1d212a;
+    --color-bg-hover: #272d38;
+    --color-bg-sunken: #0f1217;
+    --color-fg: #f2f4f7;
+    --color-fg-muted: #9aa4b2;
+    --color-border: #2b313c;
+    --color-border-strong: #3a4150;
     --color-accent: #60a5fa;
-    --color-error: #fca5a5;
-    --color-error-bg: #2a1a1a;
+    --color-accent-hover: #93c5fd;
+    --color-accent-soft: #1b2a45;
+    --color-on-accent: #0b1220;
+    --color-error: #f97066;
+    --color-error-bg: #2a1718;
+    --color-bull: #4ade80;
+    --color-bull-bg: #14331f;
+    --color-bear: #f97066;
+    --color-bear-bg: #3a1a1a;
+
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 45%);
+    --shadow-2: 0 3px 10px rgb(0 0 0 / 50%);
+    --shadow-3: 0 16px 38px rgb(0 0 0 / 62%);
   }
 }
 
@@ -79,19 +146,46 @@ body {
   padding: 0;
   background: var(--color-bg);
   color: var(--color-fg);
+  font-size: var(--font-size-base);
+  line-height: var(--line-normal);
+  -webkit-font-smoothing: antialiased;
 }
 
 .appShell {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   gap: var(--space-3);
 }
 
+/* Top chrome: brand identity on the left, nav (and theme toggle, phase 3) on
+ * the right, on a hairline-separated bar. */
+.appHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
 .appHeader h1 {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--font-size-md);
+  font-weight: 700;
   margin: 0;
-  color: var(--color-fg-muted);
+  color: var(--color-fg);
+  letter-spacing: -0.01em;
+}
+
+/* Honor a user's reduced-motion preference for every transition/animation the
+ * polish pass introduces (cards, buttons, toggles, spinners). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }

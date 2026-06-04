@@ -14,15 +14,16 @@
 
 .title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--color-fg);
 }
 
 .lede {
   margin: 0;
   color: var(--color-fg-muted);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .controls {
@@ -43,12 +44,18 @@
 .field input,
 .field select {
   font: inherit;
-  font-size: 13px;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-bg);
+  font-size: var(--font-size-sm);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
   color: var(--color-fg);
+}
+
+.field input:focus-visible,
+.field select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 .field input {
@@ -57,13 +64,20 @@
 
 .controls button {
   font: inherit;
-  font-size: 13px;
-  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-accent);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-on-accent);
   cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.controls button:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 .controls button:focus-visible {
@@ -72,9 +86,10 @@
 }
 
 .statusBlock {
-  padding: var(--space-3);
-  border: 1px dashed var(--color-border);
-  border-radius: 4px;
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elev);
   color: var(--color-fg-muted);
   text-align: center;
 }
@@ -82,7 +97,7 @@
 .error {
   padding: var(--space-3);
   border: 1px solid var(--color-error);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--color-error-bg);
   color: var(--color-error);
 }
@@ -93,9 +108,10 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-elev);
-  font-size: 13px;
+  box-shadow: var(--shadow-1);
+  font-size: var(--font-size-sm);
 }
 
 .toneScore {
@@ -116,7 +132,10 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elev);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
 }
 
 .row {
@@ -181,40 +200,28 @@
   overflow: hidden;
 }
 
-/* Sentiment badge. No semantic success/danger tokens exist project-wide yet,
-   so the bull/bear/neutral palette is scoped to this component. */
+/* Sentiment badge. Uses the project-wide semantic bull/bear tokens (Plan 0033
+   phase 2), so it follows an explicit Light/Dark choice — not just the OS. */
 .badge {
   flex: none;
   padding: 1px var(--space-2);
-  border-radius: 999px;
-  font-size: 11px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .badgeBullish {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--color-bull-bg);
+  color: var(--color-bull);
 }
 
 .badgeBearish {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-bear-bg);
+  color: var(--color-bear);
 }
 
 .badgeNeutral {
   background: var(--color-bg-hover);
   color: var(--color-fg-muted);
-}
-
-@media (prefers-color-scheme: dark) {
-  .badgeBullish {
-    background: #14331f;
-    color: #86efac;
-  }
-
-  .badgeBearish {
-    background: #3a1a1a;
-    color: #fca5a5;
-  }
 }
