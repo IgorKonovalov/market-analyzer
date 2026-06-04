@@ -1,6 +1,6 @@
 # 0032 — DeFi wallet discovery (paste an address → see positions)
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-06-03. Four `dev` phases shipped directly on `main`: phase 1 `SecretsStore` (`b27c580`), phase 2 `WalletPositionsSource` + `ZerionAdapter` + `DefiPosition` (`3c40f79`), phase 3 discovery service + scan job + `defi.scan_*` SSE (`f17a4c5`), phase 4 `scan_wallet` tool + `POST /defi/scan` (`5b2318c`). Clean Mode 4 (no blockers). Boundary-validated position model, typed Zerion error taxonomy, masked wallet on the wire, correct layering (ADR-0032: `defi→events/data`, never `api`). **Paired ADR-0035 (domain placement) + ADR-0038 (secrets) accepted; ADR-0034 (Zerion aggregator) held `proposed` pending the live smoke** (its premise — Zerion decoding quality — is the one unverified done-when). Full offline suite green in pre-push (964 pytest `-m "not network"` incl. all defi specs + `mypy --strict` + ruff). **One Major carried to the live smoke:** the adapter sums per-token LP `value` against a *synthetic* fixture — the smoke must confirm an LP's `usd_value` matches Zerion's reported value (not 2×). No branch to merge (work committed on `main`).
 > **Created:** 2026-06-03
 > **Owner skill(s):** dev
 > **Related ADRs:** [0034](../adrs/0034-defi-portfolio-aggregator.md) (Zerion aggregator), [0035](../adrs/0035-defi-domain-placement.md) (`defi/` domain placement), [0038](../adrs/0038-third-party-api-key-storage.md) (secrets store — phase 1 implements it), [0031](../adrs/0031-data-source-adapter-contract.md) (source Protocol seam), [0019](../adrs/0019-external-http-adapter-resilience.md) (resilience client), [0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE progress), [0015](../adrs/0015-claude-code-primary-control-surface.md) (agent-driven loop)
@@ -56,7 +56,7 @@ flowchart LR
 - **Owner skill:** `dev`
 - **What:** Add the `WalletPositionsSource` Protocol to `data/sources.py`, implement `ZerionAdapter` on `ResilientHttpClient` reading its key from the `SecretsStore`, and define the normalized `DefiPosition` model in `src/market_analyser/defi/`.
 - **Files touched:** `src/market_analyser/data/sources.py` (new Protocol), `src/market_analyser/data/adapters/zerion.py`, `src/market_analyser/defi/models.py`, composition-root wiring (registry entry), `tests/` with a recorded/fixture Zerion response.
-- **Done when:** Against a **fixture** Zerion payload (offline, deterministic), the adapter yields a typed `list[DefiPosition]` spanning the four chains with at least an Aave v3 supply/borrow, a Uniswap v3 LP (with tick range), and an Aerodrome LP correctly classified into the position model; the adapter raises a typed error (not a bare exception) on a 401/empty-key and on a malformed payload.
+- **Done when:** Against a **fixture** Zerion payload (offline, deterministic), the adapter yields a typed `list[DefiPosition]` spanning the four chains with at least an Aave v3 supply/borrow, a Uniswap v3 LP, and an Aerodrome LP correctly classified into the position model; the adapter raises a typed error (not a bare exception) on a 401/empty-key and on a malformed payload. **(Reconciled at close, user-approved):** the LP is classified `kind="lp"` with pool name + both tokens; `tick_lower`/`tick_upper`/`in_range` stay `None` — Zerion does not expose tick boundaries, which is consistent with this plan's "What this plan does NOT do" (the deep-adapter plan reads ticks via RPC / The Graph). The earlier "(with tick range)" phrasing contradicted that NOT-do clause and is removed.
 
 ### Phase 3 — Discovery service + scan job + SSE progress
 - **Owner skill:** `dev`
@@ -122,6 +122,12 @@ class DefiScanCompletedPayloadV1(BaseModel):
 
 ## Followups (after this lands)
 
+Populated at the 2026-06-03 close from the Mode 4 review.
+
+- **(gates ADR-0034 acceptance) Live smoke — the one unrun done-when.** Set a real Zerion key (`POST /settings/secret {"key":"zerion_api_key","value":"zk_…"}` or `MARKET_ANALYSER_ZERION_API_KEY`), call `scan_wallet 0x…` against a known non-empty wallet, and record the masked wallet + position count. **It must also confirm an LP's `usd_value` matches Zerion's reported position value (not 2×):** the adapter sums per-token `value` (`zerion.py`), and the test fixture is *synthetic*, so the per-token-value-splits-to-total assumption is unverified offline. When the smoke passes, flip [ADR-0034](../adrs/0034-defi-portfolio-aggregator.md) → `accepted`.
+- **nit (`dev`):** `tests/data/test_zerion_adapter.py` docstring says "recorded fixture" — it's synthetic/hand-built. Tighten the wording.
+- **nit (`dev`):** `src/market_analyser/events/__init__.py` module docstring still says "MCP tools in phase 3 are the publishers… renderer's `useEventStream` (phase 4)" (Plan 0007 framing) — predates the `defi.scan_*` payloads now in the registry. One-line refresh.
+- **non-blocking (`architect`):** ADR-0034's cost model predates Zerion's $149/mo Builder tier (it only had free + $499); add a one-line addendum so the next DeFi plan's cost math is current.
 - Settings-UI panel to enter the Zerion key (currently set via endpoint/file) — folds into the UI plan (0036) or a small `ui-builder` followup.
 - ENS-name → address resolution (deferred from address validation).
 - Reconcile the `defi-analyst` skill's `src/defi_analyser/` frontmatter reference to `src/market_analyser/defi/` ([ADR-0035](../adrs/0035-defi-domain-placement.md)) once the package exists.

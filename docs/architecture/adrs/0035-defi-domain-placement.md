@@ -1,6 +1,6 @@
 # ADR-0035 — DeFi domain placement: a `defi/` package, on-chain fetch as ADR-0031 sources
 
-> **Status:** proposed — accepts at the first DeFi plan close (the wallet-discovery plan, forthcoming in the 0032+ series — see [plans README](../plans/README.md))
+> **Status:** accepted (Plan 0032 close, 2026-06-03 — the `src/market_analyser/defi/` package exists with `models`/`discovery`/`scan_job`; the Zerion source is wired through the ADR-0031 `WalletPositionsSource` Protocol, obeying ADR-0032 (no `data→api`), verified by the offline suite)
 > **Date:** 2026-06-03
 > **Related plan(s):** forthcoming DeFi series (wallet discovery → deep adapters → P&L → risk → UI)
 > **Related ADRs:** [ADR-0031](0031-data-source-adapter-contract.md) (the per-capability source contract this reuses), [ADR-0032](0032-data-layer-no-api-dependency.md) (the layering rule this obeys), [ADR-0007](0007-market-data-provider.md) (the TradFi provider this deliberately does **not** overload), [ADR-0009](0009-rewrite-data-layer-in-house.md) (in-house data-layer policy), [ADR-0019](0019-external-http-adapter-resilience.md) (the resilience client on-chain adapters inherit), [ADR-0006](0006-persistence-layout.md) (SQLite cache the immutable-tx-history cache lands in)

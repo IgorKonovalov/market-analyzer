@@ -1,6 +1,6 @@
 # ADR-0038 — Third-party API-key storage: a `0600` secrets file, write-only to the renderer
 
-> **Status:** proposed — accepts at Plan 0032 close (its phase 1 implements this)
+> **Status:** accepted (Plan 0032 close, 2026-06-03 — phase 1 implemented this: `SecretsStore` over a `0600` `secrets.json`, env-override-first, write-only `GET/POST /settings/secret(s)`, value never logged/echoed; verified by `tests/persistence/test_secrets.py` + `tests/api/test_secrets_route.py`)
 > **Date:** 2026-06-03
 > **Related plan(s):** [0032](../plans/0032-defi-wallet-discovery.md) (phase 1)
 > **Related ADRs:** [ADR-0011](0011-bearer-secret-transport.md) (the no-argv / no-log secret discipline this extends), [ADR-0006](0006-persistence-layout.md) (why not `config.json` or SQLite), [ADR-0020](0020-shared-data-dir-contract.md) (where the file resolves), [ADR-0002](0002-ipc-local-http.md) (the localhost+bearer channel a set-key call rides), [ADR-0034](0034-defi-portfolio-aggregator.md) (the first consumer)
