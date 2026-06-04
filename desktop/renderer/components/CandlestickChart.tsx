@@ -21,7 +21,7 @@
  * spec assert against that — NOT the reducer's overlay list — so a render
  * regression that loses a series cannot pass.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ColorType, createChart } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, Logical, SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 
@@ -209,6 +209,11 @@ export function CandlestickChart({
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  // Bar count currently drawn on the candlestick, updated by the bars effect.
+  // Held in a ref (not read from `bars` in syncTestRenderHook) so the hook can be
+  // a stable useCallback — otherwise listing it in the mount effect's deps would
+  // make a `bars` change recreate the chart.
+  const barCountRef = useRef(0)
   // Effective theme (light/dark) drives in-place chart recoloring. A change
   // flows through `applyOptions`, never a remount — the chart-creation effect's
   // deps are `[]`, so the instance persists. (Plan 0033 phase 4.)
@@ -216,7 +221,9 @@ export function CandlestickChart({
     resolveEffective(getStoredTheme()),
   )
 
-  function syncTestRenderHook(): void {
+  // Reflect what's drawn into the test hook. Stable identity (reads only refs),
+  // so it can sit in the effect dep arrays without retriggering them.
+  const syncTestRenderHook = useCallback((): void => {
     const kinds: Array<{ kind: string; period?: number | null }> = []
     if (seriesRef.current !== null) {
       kinds.push({ kind: 'candlestick' })
@@ -232,9 +239,9 @@ export function CandlestickChart({
     window.__test_chart_render__ = {
       seriesCount: kinds.length,
       seriesKinds: kinds,
-      barCount: seriesRef.current !== null ? bars.length : 0,
+      barCount: seriesRef.current !== null ? barCountRef.current : 0,
     }
-  }
+  }, [])
 
   useEffect(() => {
     const container = containerRef.current
@@ -330,7 +337,7 @@ export function CandlestickChart({
       overlayMap.clear()
       syncTestRenderHook()
     }
-  }, [])
+  }, [syncTestRenderHook])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -349,6 +356,7 @@ export function CandlestickChart({
     const rangeBeforePrepend = grewOnLeft ? chart.timeScale().getVisibleLogicalRange() : null
 
     candlestick.setData(bars.map(toLightweightBar))
+    barCountRef.current = bars.length
 
     // Always-on volume series, derived client-side from the same `bars`. Empty
     // `bars` yields empty arrays (no NaN/Infinity reaches lightweight-charts).
@@ -410,7 +418,7 @@ export function CandlestickChart({
     }
     prevFirstTsRef.current = newFirstMs
     syncTestRenderHook()
-  }, [bars, overlays])
+  }, [bars, overlays, syncTestRenderHook])
 
   // Pointer-gesture state machine + agent-mode POSTs (Plan 0029 phase 1).
   // Called AFTER the chart-creation effect so its gesture effect sees a
