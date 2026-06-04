@@ -38,6 +38,7 @@ import urllib.request
 from pathlib import Path
 
 import uvicorn
+from dotenv import load_dotenv
 
 from market_analyser import __version__
 from market_analyser.api.app import create_app
@@ -62,6 +63,25 @@ SECRET_ENV_VAR = "MARKET_ANALYSER_SECRET"
 SECRET_BYTES = 32  # → 64 hex chars
 
 _DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+
+# Repo-root .env, resolved from this file's location (src/market_analyser/api/
+# __main__.py → parents[3] is the repo root). Loaded explicitly, never via a CWD
+# walk, so a stray .env in some working directory can't be picked up.
+_REPO_ROOT_DOTENV = Path(__file__).resolve().parents[3] / ".env"
+
+
+def _load_repo_dotenv(dotenv_path: Path = _REPO_ROOT_DOTENV) -> None:
+    """Populate `MARKET_ANALYSER_*` env overrides from a repo-root `.env` in dev.
+
+    Loads the developer's gitignored repo-root `.env` (if present) into the
+    process environment so keys like `MARKET_ANALYSER_ZERION_API_KEY` take effect
+    without a manual export. `override=False` means a real environment variable
+    always wins, and a missing file is a silent no-op — so packaged builds, which
+    ship no `.env` next to the bundled source, load nothing. Canonical secret
+    storage remains `secrets.json` (ADR-0038); this only feeds the env-override
+    layer that `SecretsStore` already reads.
+    """
+    load_dotenv(dotenv_path=dotenv_path, override=False)
 
 
 def _dev_origin(raw: str) -> str:
@@ -270,6 +290,7 @@ def _run_stop(lockfile_path: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> None:
+    _load_repo_dotenv()
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
     if args.command == "stop":

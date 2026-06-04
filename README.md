@@ -145,7 +145,7 @@ Secrets:
     http://127.0.0.1:<port>/settings/secret
   ```
 
-  A repo-root `.env` (see [`.env.example`](.env.example)) is **not** auto-loaded by the sidecar — it is a reference for the variable names; you still must export the variable or use the endpoint. Free Developer tier: <https://zerion.io/api>.
+  In a **dev / source checkout** the sidecar auto-loads a repo-root `.env` (see [`.env.example`](.env.example)) at startup, so putting `MARKET_ANALYSER_ZERION_API_KEY=zk_…` there is enough — no manual export needed. A real environment variable still wins over `.env` (`override=False`), and **packaged builds load nothing** (no `.env` ships next to the bundled source), so the endpoint / `secrets.json` path remains the mechanism for installed apps. Free Developer tier: <https://zerion.io/api>.
 
 ## Project structure
 
