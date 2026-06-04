@@ -73,8 +73,27 @@ function setupClipboard(): { writeText: jest.Mock } {
   return { writeText }
 }
 
+function installMatchMedia(initialDark: boolean): void {
+  const state = { matches: initialDark }
+  window.matchMedia = jest.fn().mockReturnValue({
+    get matches() {
+      return state.matches
+    },
+    media: '(prefers-color-scheme: dark)',
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => true,
+  }) as unknown as typeof window.matchMedia
+}
+
 beforeEach(() => {
   setupWindowApi()
+  window.localStorage.clear()
+  delete document.documentElement.dataset.theme
+  installMatchMedia(false)
 })
 
 afterEach(() => {
@@ -178,6 +197,63 @@ describe('SettingsView — rotate', () => {
     const rotateCall = calls.find((c) => c.url.endsWith('/settings/mcp-secret/rotate'))
     expect(rotateCall).toBeDefined()
     expect(rotateCall?.init.method).toBe('POST')
+  })
+})
+
+describe('SettingsView — Appearance theme control', () => {
+  const radio = (name: string): HTMLInputElement =>
+    screen.getByRole('radio', { name }) as HTMLInputElement
+
+  it('renders all three options with System selected by default', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('theme-option-system')
+
+    expect(radio('System').checked).toBe(true)
+    expect(radio('Light').checked).toBe(false)
+    expect(radio('Dark').checked).toBe(false)
+  })
+
+  it('selecting Dark sets the theme (data-theme + localStorage) and checks Dark', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('theme-option-dark')
+    fireEvent.click(radio('Dark'))
+
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(window.localStorage.getItem('ma.theme')).toBe('dark')
+    expect(radio('Dark').checked).toBe(true)
+  })
+
+  it('selecting Light pins light regardless of OS', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('theme-option-light')
+    fireEvent.click(radio('Light'))
+
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(window.localStorage.getItem('ma.theme')).toBe('light')
+  })
+
+  it('selecting System removes the attribute and clears storage', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('theme-option-dark')
+    // Pin dark first, then back to system.
+    fireEvent.click(radio('Dark'))
+    fireEvent.click(radio('System'))
+
+    expect(document.documentElement.dataset.theme).toBeUndefined()
+    expect(window.localStorage.getItem('ma.theme')).toBeNull()
+    expect(radio('System').checked).toBe(true)
   })
 })
 

@@ -25,6 +25,7 @@ import { notifyRunCompleted } from './handlers/runCompletedBus'
 import { useBacktestResult } from './hooks/useBacktestResult'
 import { useEventStream } from './hooks/useEventStream'
 import styles from './App.module.css'
+import { ThemeToggle } from './components/ThemeToggle'
 import type { Timeframe } from './components/SymbolPicker'
 import { BacktestView } from './views/BacktestView'
 import { NewsView } from './views/NewsView'
@@ -190,6 +191,7 @@ export function App(): JSX.Element {
             Settings
           </button>
         </nav>
+        <ThemeToggle />
       </header>
       {view === 'chart' && (
         <OhlcvView
