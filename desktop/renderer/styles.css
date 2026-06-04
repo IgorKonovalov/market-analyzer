@@ -73,6 +73,21 @@
   --shadow-1: 0 1px 2px rgb(15 23 42 / 6%), 0 1px 1px rgb(15 23 42 / 4%);
   --shadow-2: 0 2px 6px rgb(15 23 42 / 8%), 0 1px 2px rgb(15 23 42 / 5%);
   --shadow-3: 0 12px 32px rgb(15 23 42 / 14%);
+
+  /* Chart palette (Plan 0033 phase 4). Read by CandlestickChart via computed
+   * styles and fed to lightweight-charts as concrete colors (it can't resolve
+   * var()); re-applied in place on theme change. Light values. */
+  --chart-up: #26a69a;
+  --chart-down: #ef5350;
+  --chart-volume: #cbd5e1;
+  --overlay-volume-ma: #64748b;
+  --overlay-vwap: #9333ea;
+  --overlay-obv: #0891b2;
+  --overlay-ema: #2563eb;
+  --overlay-sma: #f97316;
+  --marker-clicked: #2563eb;
+  --marker-bullish: #16a34a;
+  --marker-bearish: #dc2626;
 }
 
 /* Dark palette — explicit choice; wins over `prefers-color-scheme`. */
@@ -100,6 +115,19 @@
   --shadow-1: 0 1px 2px rgb(0 0 0 / 45%);
   --shadow-2: 0 3px 10px rgb(0 0 0 / 50%);
   --shadow-3: 0 16px 38px rgb(0 0 0 / 62%);
+
+  /* Chart palette — dark. Brighter lines/candles read against dark surfaces. */
+  --chart-up: #2dd4bf;
+  --chart-down: #f87171;
+  --chart-volume: #334155;
+  --overlay-volume-ma: #94a3b8;
+  --overlay-vwap: #c084fc;
+  --overlay-obv: #22d3ee;
+  --overlay-ema: #60a5fa;
+  --overlay-sma: #fb923c;
+  --marker-clicked: #60a5fa;
+  --marker-bullish: #4ade80;
+  --marker-bearish: #f87171;
 }
 
 /* System-follow dark — applies only when the user has made no explicit choice
@@ -128,6 +156,19 @@
     --shadow-1: 0 1px 2px rgb(0 0 0 / 45%);
     --shadow-2: 0 3px 10px rgb(0 0 0 / 50%);
     --shadow-3: 0 16px 38px rgb(0 0 0 / 62%);
+
+    /* Chart palette — dark (mirror of the explicit block). */
+    --chart-up: #2dd4bf;
+    --chart-down: #f87171;
+    --chart-volume: #334155;
+    --overlay-volume-ma: #94a3b8;
+    --overlay-vwap: #c084fc;
+    --overlay-obv: #22d3ee;
+    --overlay-ema: #60a5fa;
+    --overlay-sma: #fb923c;
+    --marker-clicked: #60a5fa;
+    --marker-bullish: #4ade80;
+    --marker-bearish: #f87171;
   }
 }
 

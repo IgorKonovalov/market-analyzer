@@ -35,6 +35,7 @@ const mockPostBar = postBarClicked as jest.Mock
 interface FakeCandleSeries {
   setData: jest.Mock
   setMarkers: jest.Mock
+  applyOptions: jest.Mock
 }
 
 let candleSeries: FakeCandleSeries
@@ -70,7 +71,7 @@ jest.mock('lightweight-charts', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks()
-  candleSeries = { setData: jest.fn(), setMarkers: jest.fn() }
+  candleSeries = { setData: jest.fn(), setMarkers: jest.fn(), applyOptions: jest.fn() }
   clickHandler = null
   coordinateToTime = (x) => 1_714_000_000 + x
 })

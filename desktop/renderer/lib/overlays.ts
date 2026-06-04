@@ -20,8 +20,12 @@ import type { Bar } from '../types/sidecar/bar'
 import type { OverlayKind, OverlaySpec } from '../types/events'
 
 export interface OverlayDefinition {
-  /** Line color for the overlay series. */
+  /** Fallback line color — used when the theme token is unset (and the value
+   * asserted by non-DOM unit tests). The chart prefers `colorToken` at runtime. */
   color: string
+  /** CSS custom property the chart resolves per theme (Plan 0033 phase 4). When
+   * present and set, it overrides `color`; absent → `color` is used as-is. */
+  colorToken?: string
   /** Trailing indicator math: value at index `i` uses `bars[0..=i]` only. */
   compute(bars: Bar[], period: number): LineData[]
 }
@@ -30,8 +34,16 @@ export interface OverlayDefinition {
  * `OverlayKind` union also carries MVP-unsupported kinds (rsi/macd/bbands) that
  * deliberately have no entry yet. */
 export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> = {
-  ema: { color: '#2563eb', compute: (bars, period) => computeEma(bars, period) },
-  sma: { color: '#f97316', compute: (bars, period) => computeSma(bars, period) },
+  ema: {
+    color: '#2563eb',
+    colorToken: '--overlay-ema',
+    compute: (bars, period) => computeEma(bars, period),
+  },
+  sma: {
+    color: '#f97316',
+    colorToken: '--overlay-sma',
+    compute: (bars, period) => computeSma(bars, period),
+  },
 }
 
 const FALLBACK_COLOR = '#888888'
@@ -46,6 +58,13 @@ export function isSupportedOverlay(kind: OverlayKind): boolean {
  * unregistered kind (which the reconcile loop never actually draws). */
 export function overlayColorFor(spec: OverlaySpec): string {
   return OVERLAY_REGISTRY[spec.kind]?.color ?? FALLBACK_COLOR
+}
+
+/** CSS custom property a registered overlay resolves its color from, or `null`
+ * for a kind with no token (then `overlayColorFor` is used directly). The chart
+ * reads this token off the themed DOM so the line recolors with the theme. */
+export function overlayColorTokenFor(spec: OverlaySpec): string | null {
+  return OVERLAY_REGISTRY[spec.kind]?.colorToken ?? null
 }
 
 /** Compute the overlay's line data, or `[]` for an unregistered kind or a

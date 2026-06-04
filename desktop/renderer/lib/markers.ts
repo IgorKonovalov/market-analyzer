@@ -9,8 +9,19 @@ import type { SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 import type { Annotation } from '../types/sidecar/annotation'
 
 const MARKER_LABEL_MAX = 24
-const BULLISH_COLOR = '#16a34a'
-const BEARISH_COLOR = '#dc2626'
+
+/** Default marker colors — used when the caller passes none. These are the
+ * light-theme values; the chart overrides them with theme tokens (Plan 0033
+ * phase 4). Kept as the default so non-DOM unit tests stay color-stable. */
+export const DEFAULT_MARKER_COLORS: MarkerColors = {
+  bullish: '#16a34a',
+  bearish: '#dc2626',
+}
+
+export interface MarkerColors {
+  bullish: string
+  bearish: string
+}
 
 /**
  * Map annotations to lightweight-charts series markers. Bullish goes
@@ -18,10 +29,16 @@ const BEARISH_COLOR = '#dc2626'
  * Labels are truncated to ~MARKER_LABEL_MAX chars so a runaway agent
  * can't push a 5KB string into the chart tooltip layer.
  *
+ * `colors` lets the chart layer supply theme-resolved bull/bear colors; omit it
+ * and the light-theme defaults are used (the unit test's expectation).
+ *
  * Returned markers are sorted ascending by time — lightweight-charts
  * requires this and will throw on out-of-order markers.
  */
-export function annotationsToMarkers(annotations: Annotation[]): SeriesMarker<UTCTimestamp>[] {
+export function annotationsToMarkers(
+  annotations: Annotation[],
+  colors: MarkerColors = DEFAULT_MARKER_COLORS,
+): SeriesMarker<UTCTimestamp>[] {
   return annotations
     .map((a) => {
       const time = Math.floor(new Date(a.event_ts).getTime() / 1000) as UTCTimestamp
@@ -31,7 +48,7 @@ export function annotationsToMarkers(annotations: Annotation[]): SeriesMarker<UT
           time,
           position: 'belowBar' as const,
           shape: 'arrowUp' as const,
-          color: BULLISH_COLOR,
+          color: colors.bullish,
           text,
         }
       }
@@ -39,7 +56,7 @@ export function annotationsToMarkers(annotations: Annotation[]): SeriesMarker<UT
         time,
         position: 'aboveBar' as const,
         shape: 'arrowDown' as const,
-        color: BEARISH_COLOR,
+        color: colors.bearish,
         text,
       }
     })

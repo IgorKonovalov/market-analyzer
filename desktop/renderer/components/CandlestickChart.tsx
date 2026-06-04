@@ -21,15 +21,26 @@
  * spec assert against that — NOT the reducer's overlay list — so a render
  * regression that loses a series cannot pass.
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ColorType, createChart } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, Logical, SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 
 import { toLightweightBar } from '../api/client'
 import { useChartGestures } from '../hooks/useChartGestures'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
-import { annotationsToMarkers } from '../lib/markers'
-import { computeOverlayData, isSupportedOverlay, overlayColorFor } from '../lib/overlays'
+import { DEFAULT_MARKER_COLORS, annotationsToMarkers } from '../lib/markers'
+import {
+  computeOverlayData,
+  isSupportedOverlay,
+  overlayColorFor,
+  overlayColorTokenFor,
+} from '../lib/overlays'
+import {
+  getStoredTheme,
+  resolveEffective,
+  subscribeEffective,
+  type EffectiveTheme,
+} from '../lib/theme'
 import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
@@ -43,9 +54,68 @@ import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
 import styles from './CandlestickChart.module.css'
 
-// The clicked-bar marker reuses the EMA blue; kept local since it's a gesture
-// affordance, not an overlay color (those live in the overlay registry).
-const CLICKED_MARKER_COLOR = '#2563eb'
+// Fallback chart colors (light-theme values) used when a theme token is unset —
+// e.g. in jsdom unit tests where styles.css isn't loaded. At runtime the tokens
+// in styles.css win and follow the chosen theme. See `readChartColors`.
+const CHART_COLOR_FALLBACK = {
+  text: '#1a1a1a',
+  border: '#e5e5e5',
+  candleUp: '#26a69a',
+  candleDown: '#ef5350',
+  volume: '#cbd5e1',
+  volumeMa: '#64748b',
+  vwap: '#9333ea',
+  obv: '#0891b2',
+  markerClicked: '#2563eb',
+  markerBullish: DEFAULT_MARKER_COLORS.bullish,
+  markerBearish: DEFAULT_MARKER_COLORS.bearish,
+} as const
+
+interface ChartColors {
+  text: string
+  border: string
+  candleUp: string
+  candleDown: string
+  volume: string
+  volumeMa: string
+  vwap: string
+  obv: string
+  markerClicked: string
+  markerBullish: string
+  markerBearish: string
+}
+
+/** Read the chart palette off the themed DOM. lightweight-charts can't resolve
+ * `var(--x)` (it hands strings straight to canvas), so each token is resolved to
+ * a concrete color here, falling back to the light defaults when unset. */
+function readChartColors(el: HTMLElement): ChartColors {
+  const c = getComputedStyle(el)
+  const v = (name: string, fallback: string): string => c.getPropertyValue(name).trim() || fallback
+  return {
+    text: v('--color-fg', CHART_COLOR_FALLBACK.text),
+    border: v('--color-border', CHART_COLOR_FALLBACK.border),
+    candleUp: v('--chart-up', CHART_COLOR_FALLBACK.candleUp),
+    candleDown: v('--chart-down', CHART_COLOR_FALLBACK.candleDown),
+    volume: v('--chart-volume', CHART_COLOR_FALLBACK.volume),
+    volumeMa: v('--overlay-volume-ma', CHART_COLOR_FALLBACK.volumeMa),
+    vwap: v('--overlay-vwap', CHART_COLOR_FALLBACK.vwap),
+    obv: v('--overlay-obv', CHART_COLOR_FALLBACK.obv),
+    markerClicked: v('--marker-clicked', CHART_COLOR_FALLBACK.markerClicked),
+    markerBullish: v('--marker-bullish', CHART_COLOR_FALLBACK.markerBullish),
+    markerBearish: v('--marker-bearish', CHART_COLOR_FALLBACK.markerBearish),
+  }
+}
+
+/** Resolve an overlay series' color from its theme token, falling back to the
+ * registry's static color when the token is unset/unknown. */
+function overlaySeriesColor(spec: OverlaySpec, el: HTMLElement): string {
+  const token = overlayColorTokenFor(spec)
+  if (token !== null) {
+    const resolved = getComputedStyle(el).getPropertyValue(token).trim()
+    if (resolved) return resolved
+  }
+  return overlayColorFor(spec)
+}
 
 // Stable no-op for the lazy-history trigger when no `onReachLeftEdge` is wired
 // (keeps the trigger hook's callback ref from churning on every render).
@@ -59,9 +129,6 @@ const NOOP = (): void => {}
 const PRICE_SCALE_ID = 'right' // the default price (candlestick) scale
 const VOLUME_SCALE_ID = 'volume'
 const OBV_SCALE_ID = 'obv'
-const VOLUME_MA_COLOR = '#64748b'
-const VWAP_COLOR = '#9333ea'
-const OBV_COLOR = '#0891b2'
 // Candles occupy the upper band; volume hugs the bottom; OBV gets a strip above it.
 const PRICE_SCALE_MARGINS = { top: 0.05, bottom: 0.4 }
 const VOLUME_SCALE_MARGINS = { top: 0.82, bottom: 0 }
@@ -142,6 +209,12 @@ export function CandlestickChart({
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  // Effective theme (light/dark) drives in-place chart recoloring. A change
+  // flows through `applyOptions`, never a remount — the chart-creation effect's
+  // deps are `[]`, so the instance persists. (Plan 0033 phase 4.)
+  const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>(() =>
+    resolveEffective(getStoredTheme()),
+  )
 
   function syncTestRenderHook(): void {
     const kinds: Array<{ kind: string; period?: number | null }> = []
@@ -167,22 +240,20 @@ export function CandlestickChart({
     const container = containerRef.current
     if (!container) return
 
-    // lightweight-charts hands these strings to canvas APIs that don't
-    // resolve CSS variables; passing `var(--color-fg)` paints with the
-    // browser's invalid-color fallback. Read the computed values once at
-    // mount and feed real color strings in.
-    const computed = getComputedStyle(container)
-    const textColor = computed.getPropertyValue('--color-fg').trim() || '#1a1a1a'
-    const borderColor = computed.getPropertyValue('--color-border').trim() || '#e5e5e5'
+    // lightweight-charts hands these strings to canvas APIs that don't resolve
+    // CSS variables; passing `var(--chart-up)` paints with the browser's
+    // invalid-color fallback. Resolve every token to a concrete color at mount
+    // (and again on theme change in the recolor effect below).
+    const colors = readChartColors(container)
 
     const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor,
+        textColor: colors.text,
       },
       grid: {
-        vertLines: { color: borderColor },
-        horzLines: { color: borderColor },
+        vertLines: { color: colors.border },
+        horzLines: { color: colors.border },
       },
       timeScale: {
         timeVisible: false,
@@ -190,34 +261,42 @@ export function CandlestickChart({
       },
       autoSize: true,
     })
-    const series = chart.addCandlestickSeries()
+    const series = chart.addCandlestickSeries({
+      upColor: colors.candleUp,
+      downColor: colors.candleDown,
+      wickUpColor: colors.candleUp,
+      wickDownColor: colors.candleDown,
+      borderUpColor: colors.candleUp,
+      borderDownColor: colors.candleDown,
+    })
 
     // Always-on volume series (Plan 0027 phase 3). Created once at mount; their
     // data is pushed in the bars effect. Disposed by `chart.remove()` on unmount
     // alongside the candlestick (the chart owns all its series).
     const volumeSeries = chart.addHistogramSeries({
       priceScaleId: VOLUME_SCALE_ID,
+      color: colors.volume,
       priceFormat: { type: 'volume' },
       priceLineVisible: false,
       lastValueVisible: false,
     })
     const volumeMaSeries = chart.addLineSeries({
       priceScaleId: VOLUME_SCALE_ID,
-      color: VOLUME_MA_COLOR,
+      color: colors.volumeMa,
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
     })
     const vwapSeries = chart.addLineSeries({
       priceScaleId: PRICE_SCALE_ID, // rides the main price scale alongside candles
-      color: VWAP_COLOR,
+      color: colors.vwap,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
     })
     const obvSeries = chart.addLineSeries({
       priceScaleId: OBV_SCALE_ID,
-      color: OBV_COLOR,
+      color: colors.obv,
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -301,8 +380,11 @@ export function CandlestickChart({
     for (const [key, spec] of desired) {
       let entry = overlaySeriesRef.current.get(key)
       if (entry === undefined) {
+        const color = containerRef.current
+          ? overlaySeriesColor(spec, containerRef.current)
+          : overlayColorFor(spec)
         const series = chart.addLineSeries({
-          color: overlayColorFor(spec),
+          color,
           lineWidth: 2,
           priceLineVisible: false,
           lastValueVisible: false,
@@ -350,26 +432,71 @@ export function CandlestickChart({
     onReachLeftEdge: onReachLeftEdge ?? NOOP,
   })
 
-  const markers = useMemo(() => {
-    const base = annotationsToMarkers(annotations ?? [])
-    if (clickedBarTs === null) return base
-    const time = Math.floor(new Date(clickedBarTs).getTime() / 1000) as UTCTimestamp
-    const clicked: SeriesMarker<UTCTimestamp> = {
-      time,
-      position: 'aboveBar',
-      shape: 'circle',
-      color: CLICKED_MARKER_COLOR,
-      text: clickedBarTs.slice(0, 10),
-    }
-    // setMarkers requires ascending time order.
-    return [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
-  }, [annotations, clickedBarTs])
-
+  // Markers (annotation markers + the clicked-bar affordance) are themed: their
+  // colors resolve from the DOM tokens, so they recolor when `effectiveTheme`
+  // changes. Built in an effect (not useMemo) so the container is mounted and
+  // the tokens resolve; re-set on annotation / clicked-bar / theme change.
   useEffect(() => {
     const series = seriesRef.current
-    if (!series) return
+    const container = containerRef.current
+    if (!series || !container) return
+    const colors = readChartColors(container)
+    const base = annotationsToMarkers(annotations ?? [], {
+      bullish: colors.markerBullish,
+      bearish: colors.markerBearish,
+    })
+    let markers = base
+    if (clickedBarTs !== null) {
+      const time = Math.floor(new Date(clickedBarTs).getTime() / 1000) as UTCTimestamp
+      const clicked: SeriesMarker<UTCTimestamp> = {
+        time,
+        position: 'aboveBar',
+        shape: 'circle',
+        color: colors.markerClicked,
+        text: clickedBarTs.slice(0, 10),
+      }
+      // setMarkers requires ascending time order.
+      markers = [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
+    }
     series.setMarkers(markers)
-  }, [markers])
+  }, [annotations, clickedBarTs, effectiveTheme])
+
+  // Recolor the EXISTING chart when the effective theme changes — re-read the
+  // tokens and push them via applyOptions. No remount (the creation effect's
+  // deps are `[]`); also runs once on mount, idempotent with creation colors.
+  useEffect(() => {
+    const container = containerRef.current
+    const chart = chartRef.current
+    const candlestick = seriesRef.current
+    if (!container || !chart || !candlestick) return
+    const colors = readChartColors(container)
+    chart.applyOptions({
+      layout: { textColor: colors.text },
+      grid: {
+        vertLines: { color: colors.border },
+        horzLines: { color: colors.border },
+      },
+    })
+    candlestick.applyOptions({
+      upColor: colors.candleUp,
+      downColor: colors.candleDown,
+      wickUpColor: colors.candleUp,
+      wickDownColor: colors.candleDown,
+      borderUpColor: colors.candleUp,
+      borderDownColor: colors.candleDown,
+    })
+    volumeSeriesRef.current?.applyOptions({ color: colors.volume })
+    volumeMaSeriesRef.current?.applyOptions({ color: colors.volumeMa })
+    vwapSeriesRef.current?.applyOptions({ color: colors.vwap })
+    obvSeriesRef.current?.applyOptions({ color: colors.obv })
+    for (const { spec, series } of overlaySeriesRef.current.values()) {
+      series.applyOptions({ color: overlaySeriesColor(spec, container) })
+    }
+  }, [effectiveTheme])
+
+  // Track the effective theme; the subscription fires on an explicit theme
+  // change and on an OS flip while in `system` mode. Unsubscribes on unmount.
+  useEffect(() => subscribeEffective(setEffectiveTheme), [])
 
   return (
     <div className={styles.wrapper}>

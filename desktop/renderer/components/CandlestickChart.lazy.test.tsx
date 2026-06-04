@@ -40,7 +40,11 @@ function buildFakeChart(): Record<string, unknown> {
     unsubscribeVisibleLogicalRangeChange: jest.fn(),
   }
   return {
-    addCandlestickSeries: jest.fn(() => ({ setData: jest.fn(), setMarkers: jest.fn() })),
+    addCandlestickSeries: jest.fn(() => ({
+      setData: jest.fn(),
+      setMarkers: jest.fn(),
+      applyOptions: jest.fn(),
+    })),
     addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
     addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
     priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),

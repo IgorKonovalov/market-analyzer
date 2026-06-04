@@ -40,6 +40,7 @@ interface FakeHistogramSeries {
 interface FakeCandlestickSeries {
   setData: jest.Mock
   setMarkers: jest.Mock
+  applyOptions: jest.Mock
 }
 
 interface FakeChart {
@@ -83,6 +84,7 @@ function buildFakeChart(): FakeChart {
     addCandlestickSeries: jest.fn(() => ({
       setData: jest.fn(),
       setMarkers: jest.fn(),
+      applyOptions: jest.fn(),
     })),
     addLineSeries: jest.fn((opts: unknown) => {
       const s: FakeLineSeries = {
