@@ -1,6 +1,6 @@
 # ADR-0039 — Renderer theming: `data-theme` override + localStorage persistence
 
-> **Status:** proposed — accepts at Plan 0033 close
+> **Status:** accepted (Plan 0033 close, 2026-06-04)
 > **Date:** 2026-06-03
 > **Related plan(s):** [0033-ui-theme-and-visual-polish](../plans/0033-ui-theme-and-visual-polish.md)
 
