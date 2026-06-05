@@ -14,8 +14,9 @@ This README is the entrypoint for developers cloning the repo; design docs live 
 - **Strategy contract + six reference strategies** (`rsi`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`) — pure `generate_signals(bars, params) -> list[Signal]` modules with a pydantic `Params` model and a `META` constant. Discover them via `market-analyser strategies list [--json]`.
 - **Backtest engine v1** — pure `run(strategy, bars, params, **costs) -> BacktestResult` producing an equity curve, trade log, and metrics; deterministic and cross-process byte-identical modulo run provenance. Results persist to disk + a SQLite index and render in the chart's backtest views.
 - **Technical-analysis surface** under `src/market_analyser/analysis/` — trailing/anti-lookahead indicators, candlestick-pattern detectors, and a `condition_snapshot` (trend / momentum / support-resistance / recent patterns).
-- **Data breadth** — a shared resilient HTTP client (TTL cache + retry + backoff + concurrency cap) behind the TradingView screener, RSS news + per-headline VADER sentiment, StockTwits sentiment, and the crypto Fear & Greed index.
-- **Secure Electron shell** — `contextIsolation`, `sandbox`, no node integration, double-CSP, dual-bearer auth. The renderer reaches the sidecar only through a typed `window.api.*` bridge.
+- **Data breadth** — a shared resilient HTTP client (TTL cache + retry + backoff + concurrency cap) behind the TradingView screener, RSS news + per-headline VADER sentiment, StockTwits sentiment, the crypto Fear & Greed index, a live quote, symbol search, multi-timeframe + volume analysis, and a crypto macro-context snapshot.
+- **DeFi wallet analysis** — paste an EVM address to discover decoded positions across Ethereum / Base / Arbitrum / Optimism via Zerion (`scan_wallet` / `POST /defi/scan`), consumed by the `defi-analyst` skill. Requires a Zerion key (see [Configuration](#configuration)).
+- **Secure Electron shell** — `contextIsolation`, `sandbox`, no node integration, double-CSP, dual-bearer auth, in-app Light/Dark/System theming. The renderer reaches the sidecar only through a typed `window.api.*` bridge.
 
 ## Architecture at a glance
 
@@ -236,6 +237,14 @@ These apply to every change (also in [`CLAUDE.md`](CLAUDE.md)):
 ### Commit style
 
 Conventional commits, enforced by `commitizen` and a `commit-msg` Husky hook. Implementers commit per phase; pushes are user-driven. CI runs on push and tag.
+
+## Roadmap
+
+Design direction lives in [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md); in-flight and approved plans are indexed in [`docs/architecture/plans/README.md`](docs/architecture/plans/README.md).
+
+The app is evolving from a read-only research + decision-support tool toward **contained, gated decision-execution**. A user-approved program (2026-06-05; Plans 0036–0046) adds, in priority order: **price forecasting** (next-bar direction-as-probability, walk-forward-validated), an **advisory layer** that synthesises conditions / signals / backtests / forecasts into labeled, basis-carrying recommendations, **cross-venue portfolio management + position risk** (Binance + DeFi + a manual positions file, average-cost basis), **Polymarket prediction-market odds** as a read-only signal, and **assisted, testnet-first trade execution** on Binance USDⓈ-M Futures. The two principle crossings — *recommend* and *act* — are each contained to one new, gated skill (`advisor`, `trader`); the read-only analyst surfaces keep their "conditions are facts" contract, every order requires explicit human confirmation, and execution stays testnet-only until the full order loop is proven. **None of this program is implemented yet — these are approved plans, not shipped features.**
+
+**Auto-update** (installer auto-update) is deferred to a future packaging plan.
 
 ## Security model
 
