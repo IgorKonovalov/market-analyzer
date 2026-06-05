@@ -245,3 +245,93 @@ def test_implements_lp_position_detail_source_protocol(tmp_path: Path) -> None:
 
     adapter = RpcLpDetailAdapter(secrets_store=_store_with_base_rpc(tmp_path))
     assert isinstance(adapter, LpPositionDetailSource)
+
+
+# -- Plan 0034 phase 4: Uniswap-v3 two-hop (tokenId-keyed) ----------------------
+#
+# Live verification is deferred (F3 — no in-scope wallet holds a Uni-v3 position);
+# the read + tokenId resolution are exercised here against recorded responses.
+
+_NPM = "0x03a520b32c04bf3beef7beb72e919cf822ed34f1"  # Base NonfungiblePositionManager
+_OWNER = "0xae5b…9790"
+_TOKEN_ID = 12345
+_SEL_BALANCE_OF = "0x70a08231"
+_SEL_TOKEN_OF_OWNER_BY_INDEX = "0x2f745c59"
+
+
+def _positions_with_tokens_result(
+    token0: str, token1: str, tl: int, tu: int, owed0: int, owed1: int
+) -> bytes:
+    # positions(tokenId): token0=word2, token1=word3, tickLower=5, tickUpper=6,
+    # tokensOwed0=10, tokensOwed1=11.
+    words = [_uint_word(0)] * 12
+    words[2] = _addr_word(token0)
+    words[3] = _addr_word(token1)
+    words[5] = _int_word(tl)
+    words[6] = _int_word(tu)
+    words[10] = _uint_word(owed0)
+    words[11] = _uint_word(owed1)
+    return b"".join(words)
+
+
+def _univ3_responses() -> dict[tuple[str, str], str]:
+    return {
+        (_NPM, _SEL_POSITIONS): _hex(
+            _positions_with_tokens_result(
+                _USDC, _WETH, _TICK_LOWER, _TICK_UPPER, _OWED0_RAW, _OWED1_RAW
+            )
+        ),
+        (_POOL, _SEL_SLOT0): _hex(_slot0_result(_CURRENT_TICK)),
+        (_USDC, _SEL_SYMBOL): _hex(_string_result("USDC")),
+        (_WETH, _SEL_SYMBOL): _hex(_string_result("WETH")),
+        (_USDC, _SEL_DECIMALS): _hex(_uint_word(6)),
+        (_WETH, _SEL_DECIMALS): _hex(_uint_word(18)),
+    }
+
+
+def _resolution_responses() -> dict[tuple[str, str], str]:
+    table = _univ3_responses()
+    table[(_POOL, _SEL_TOKEN0)] = _hex(_addr_word(_USDC))
+    table[(_POOL, _SEL_TOKEN1)] = _hex(_addr_word(_WETH))
+    table[(_NPM, _SEL_BALANCE_OF)] = _hex(_uint_word(1))
+    table[(_NPM, _SEL_TOKEN_OF_OWNER_BY_INDEX)] = _hex(_uint_word(_TOKEN_ID))
+    return table
+
+
+def test_univ3_detail_decodes_via_token_id(tmp_path: Path) -> None:
+    adapter = _adapter(tmp_path, _ok_responder(_univ3_responses()))
+    detail = adapter.fetch_lp_detail(chain="base", pool_address=_POOL, token_id=_TOKEN_ID)
+
+    assert detail.tick_lower == _TICK_LOWER
+    assert detail.tick_upper == _TICK_UPPER
+    assert detail.current_tick == _CURRENT_TICK
+    assert detail.in_range is True
+    fees = {t.symbol: t for t in detail.uncollected_fees}
+    assert set(fees) == {"USDC", "WETH"}
+    assert fees["USDC"].amount == pytest.approx(1.5)
+    assert fees["WETH"].amount == pytest.approx(0.02)
+
+
+def test_resolve_univ3_token_id_matches_pool_pair(tmp_path: Path) -> None:
+    adapter = _adapter(tmp_path, _ok_responder(_resolution_responses()))
+    token_id = adapter.resolve_univ3_token_id(chain="base", pool_address=_POOL, owner=_OWNER)
+    assert token_id == _TOKEN_ID
+
+
+def test_resolve_univ3_token_id_returns_none_when_wallet_holds_no_position(
+    tmp_path: Path,
+) -> None:
+    table = _resolution_responses()
+    table[(_NPM, _SEL_BALANCE_OF)] = _hex(_uint_word(0))  # owns no Uni-v3 positions
+    adapter = _adapter(tmp_path, _ok_responder(table))
+    assert adapter.resolve_univ3_token_id(chain="base", pool_address=_POOL, owner=_OWNER) is None
+
+
+def test_resolve_then_fetch_two_hop_round_trip(tmp_path: Path) -> None:
+    # The two-hop the enrichment runs: resolve the tokenId, then read its detail.
+    adapter = _adapter(tmp_path, _ok_responder(_resolution_responses()))
+    token_id = adapter.resolve_univ3_token_id(chain="base", pool_address=_POOL, owner=_OWNER)
+    assert token_id is not None
+    detail = adapter.fetch_lp_detail(chain="base", pool_address=_POOL, token_id=token_id)
+    assert detail.current_tick == _CURRENT_TICK
+    assert detail.in_range is True
