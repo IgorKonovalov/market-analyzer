@@ -20,7 +20,7 @@
  * on the same key, so the polled DB row arriving ~1 s later replaces the
  * live marker without creating a visual duplicate.
  */
-import type { Timeframe } from '../components/SymbolPicker'
+import { DEFAULT_TIMEFRAME, KNOWN_TIMEFRAMES, type Timeframe } from '../lib/timeframes'
 import type {
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
@@ -51,14 +51,13 @@ export type ChartAction =
   | { kind: 'ui/set-timeframe'; timeframe: Timeframe }
   | { kind: 'ui/refresh'; nowIso: string; lookbackDays: number }
 
-// Mirror of `src/market_analyser/annotations/types.py::SUPPORTED_TIMEFRAMES`
-// — the MCP boundary rejects anything not in this set, so a payload arriving
-// here with an exotic value indicates a bug upstream. We narrow defensively
-// to '1d' instead of crashing.
-const KNOWN_TIMEFRAMES: ReadonlySet<string> = new Set(['1d', '1h'])
-
+// The MCP boundary rejects anything not in the canonical timeframe set
+// (`lib/timeframes`, mirroring the backend), so a payload arriving here with an
+// exotic value indicates a bug upstream. We narrow defensively to the default
+// instead of crashing — but a genuinely-supported 15m/4h/1w now passes through
+// unchanged (previously this coerced everything outside {1d,1h} to 1d).
 function asTimeframe(value: string): Timeframe {
-  return (KNOWN_TIMEFRAMES.has(value) ? value : '1d') as Timeframe
+  return KNOWN_TIMEFRAMES.has(value) ? (value as Timeframe) : DEFAULT_TIMEFRAME
 }
 
 function dedupHighlights(existing: Marker[], incoming: Marker[]): Marker[] {
@@ -152,7 +151,7 @@ export function initialChartState(nowIso: string = new Date().toISOString()): Ch
   const startMs = endMs - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
   return {
     symbol: 'AAPL',
-    timeframe: '1d',
+    timeframe: DEFAULT_TIMEFRAME,
     range_start: new Date(startMs).toISOString(),
     range_end: nowIso,
     overlays: [],

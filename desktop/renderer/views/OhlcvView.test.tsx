@@ -15,7 +15,7 @@ import '@testing-library/jest-dom'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 
 import { notifyBackfill } from '../handlers/backfillBus'
-import type { Timeframe } from '../components/SymbolPicker'
+import type { Timeframe } from '../lib/timeframes'
 import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
 import { OhlcvView } from './OhlcvView'
 

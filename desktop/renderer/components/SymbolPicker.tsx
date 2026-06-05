@@ -12,11 +12,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { useSymbolSearch } from '../hooks/useSymbolSearch'
+import { TIMEFRAMES, type Timeframe } from '../lib/timeframes'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import styles from './SymbolPicker.module.css'
-
-export const TIMEFRAMES = ['1d', '1h', '5m', '1m'] as const
-export type Timeframe = (typeof TIMEFRAMES)[number]
 
 interface Props {
   symbol: string

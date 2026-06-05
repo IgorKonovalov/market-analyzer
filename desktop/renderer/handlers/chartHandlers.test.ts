@@ -48,6 +48,29 @@ describe('applyChartShow', () => {
     })
     expect(next.overlays).toEqual([])
   })
+
+  it.each(['15m', '4h', '1w'])(
+    'preserves the now-supported timeframe %s instead of coercing it to 1d',
+    (timeframe) => {
+      const next = applyChartShow(baseState(), {
+        symbol: 'BTC-USD',
+        timeframe,
+        range_start: '2026-04-20T00:00:00+00:00',
+        range_end: '2026-05-20T00:00:00+00:00',
+      })
+      expect(next.timeframe).toBe(timeframe)
+    },
+  )
+
+  it('still narrows a genuinely-unsupported timeframe to the default (1d)', () => {
+    const next = applyChartShow(baseState(), {
+      symbol: 'BTC-USD',
+      timeframe: '5m', // dropped from the supported set — defensive narrow
+      range_start: '2026-04-20T00:00:00+00:00',
+      range_end: '2026-05-20T00:00:00+00:00',
+    })
+    expect(next.timeframe).toBe('1d')
+  })
 })
 
 describe('applyChartUpdate', () => {
