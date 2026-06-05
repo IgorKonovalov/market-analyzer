@@ -1,6 +1,6 @@
 # 0047 — Smoke-run data-layer fixes + chart legend, timeframe & live-price UX
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev, ui-builder
 > **Related ADRs:** [0006](../adrs/0006-persistence-layout.md) (persistence), [0007](../adrs/0007-market-data-provider.md) (provider seam), [0008](../adrs/0008-desktop-shell-electron.md) (shell conventions), [0015](../adrs/0015-claude-code-primary-control-surface.md) (agent-driven renders), [0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE), [0019](../adrs/0019-external-http-adapter-resilience.md) (live quote / `get_quote`), [0023](../adrs/0023-technical-analysis-surface.md) (analysis surface), [0028](../adrs/0028-timeframe-resampling-and-expansion.md) (timeframe registry), [0039](../adrs/0039-renderer-theming-localstorage.md) (theming)
