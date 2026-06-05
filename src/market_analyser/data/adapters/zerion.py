@@ -116,7 +116,12 @@ class ZerionAdapter:
         try:
             response = self._http.get(
                 url,
-                params={"currency": "usd"},
+                # `filter[positions]` defaults to `only_simple` on Zerion's side,
+                # which returns ONLY plain wallet balances and excludes every
+                # complex DeFi position (Aave / Uniswap-v3 / Aerodrome) — i.e. the
+                # whole point of discovery. Request `no_filter` to get complex
+                # positions too; the parser drops the simple balances by kind.
+                params={"currency": "usd", "filter[positions]": "no_filter"},
                 headers={"Authorization": _basic_auth_header(key)},
                 expect_json=True,
             )

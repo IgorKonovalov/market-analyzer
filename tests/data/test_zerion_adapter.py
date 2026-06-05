@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -171,6 +172,36 @@ def test_malformed_payload_raises_typed_zerion_error(tmp_path: Path) -> None:
     )
     with pytest.raises(ZerionError):
         adapter.fetch_positions(_WALLET)
+
+
+def test_request_asks_for_complex_positions(tmp_path: Path) -> None:
+    """Regression (live-smoke 2026-06-04): without `filter[positions]`, Zerion
+    defaults to `only_simple` and returns zero DeFi positions for a populated
+    wallet. The adapter must send `filter[positions]=no_filter`."""
+    captured: list[str] = []
+    client = ResilientHttpClient(source_name="zerion-test", cache_ttl_seconds=0.0, max_retries=0)
+
+    def _fake_perform(
+        method: str,
+        url: str,
+        body_arg: bytes | None,
+        headers: Mapping[str, str] | None,
+        *,
+        proxy: ProxyConfig | None,
+    ) -> HttpResponse:
+        captured.append(url)
+        return HttpResponse(
+            status_code=200, headers={}, body=_FIXTURE.read_bytes(), elapsed_seconds=0.0
+        )
+
+    client._perform_request = _fake_perform  # type: ignore[method-assign, assignment]
+    ZerionAdapter(secrets_store=_store_with_key(tmp_path), http_client=client).fetch_positions(
+        _WALLET
+    )
+
+    assert captured, "the adapter must perform exactly one request"
+    query = parse_qs(urlparse(captured[0]).query)
+    assert query.get("filter[positions]") == ["no_filter"]
 
 
 def test_implements_wallet_positions_source_protocol(tmp_path: Path) -> None:
