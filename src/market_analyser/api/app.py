@@ -180,6 +180,7 @@ def create_app(
             backtest_runs_repository=backtest_runs_repository,
             runs_dir=runs_dir,
             wallet_positions_sources=effective_wallet_sources,
+            lp_detail_sources=effective_lp_detail_sources,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None

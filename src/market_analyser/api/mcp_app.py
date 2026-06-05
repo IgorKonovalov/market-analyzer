@@ -64,7 +64,7 @@ from market_analyser.api.mcp_tools.write_annotation import register_write_annota
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
-from market_analyser.data.sources import WalletPositionsSource
+from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.repositories.backtest_runs import (
@@ -82,6 +82,7 @@ def create_mcp_components(
     backtest_runs_repository: BacktestRunsRepository | None = None,
     runs_dir: Path | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
+    lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -170,6 +171,7 @@ def create_mcp_components(
             server,
             wallet_positions_sources=wallet_positions_sources,
             event_bus=event_bus,
+            lp_detail_sources=lp_detail_sources,
         )
 
     # streamable_http_app() also lazily constructs the session manager; we call

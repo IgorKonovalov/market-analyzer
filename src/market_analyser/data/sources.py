@@ -162,3 +162,16 @@ class LpPositionDetailSource(Protocol):
         pool_address: str,
         token_id: int | None = None,
     ) -> LpPositionDetail: ...
+
+    def resolve_univ3_token_id(
+        self,
+        *,
+        chain: Chain,
+        pool_address: str,
+        owner: str,
+    ) -> int | None:
+        """Resolve a wallet's Uniswap-v3 position NFT `token_id` for a pool (the
+        two-hop first hop), or `None` when the wallet holds no matching position.
+        A one-hop-only source returns `None`; the enrichment step calls this only
+        for Uni-v3-class positions, then passes the id to `fetch_lp_detail`."""
+        ...

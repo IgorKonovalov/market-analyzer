@@ -16,7 +16,7 @@ import pytest
 from pydantic import ValidationError
 
 from market_analyser.data.errors import RateLimitedError, UpstreamUnavailableError
-from market_analyser.defi.models import DefiPosition, PositionToken
+from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail, PositionToken
 from market_analyser.defi.scan_job import WalletScanResult, run_wallet_scan
 from market_analyser.events import Envelope, EventBus
 
@@ -161,3 +161,66 @@ def test_upstream_error_maps_to_unavailable_reason() -> None:
 def test_no_completed_event_on_failure() -> None:
     _result, _raised, events = _run_scan(_FakeSource(error=UpstreamUnavailableError("down")))
     assert all(e.type != "defi.scan_completed" for e in events)
+
+
+# -- Plan 0034 phase 5: enrichment wired into the scan flow ---------------------
+
+
+def _lp_position(pool_address: str, chain: Chain = "base") -> DefiPosition:
+    return DefiPosition(
+        position_id=f"{chain}:aerodrome:{pool_address}",
+        chain=chain,
+        protocol="aerodrome",
+        kind="lp",
+        tokens=[PositionToken(symbol="WETH", address="0x42", amount=0.1)],
+        usd_value=1000.0,
+        pool="WETH / AERO",
+        pool_address=pool_address,
+    )
+
+
+class _FakeLpDetailSource:
+    def fetch_lp_detail(
+        self, *, chain: Chain, pool_address: str, token_id: int | None = None
+    ) -> LpPositionDetail:
+        return LpPositionDetail(
+            tick_lower=-200,
+            tick_upper=200,
+            current_tick=100,
+            in_range=True,
+            uncollected_fees=[PositionToken(symbol="WETH", address="0x42", amount=0.02)],
+        )
+
+    def resolve_univ3_token_id(self, *, chain: Chain, pool_address: str, owner: str) -> int | None:
+        return None
+
+
+def test_scan_enriches_lp_positions_when_detail_source_present() -> None:
+    pool = "0xe3800a58b5535935850a10e082952ec3577d8dcc"
+
+    async def run() -> WalletScanResult:
+        bus = EventBus()
+        return await run_wallet_scan(
+            source=_FakeSource([_lp_position(pool)]),
+            address=_WALLET,
+            event_bus=bus,
+            lp_detail_source=_FakeLpDetailSource(),
+            sleep=lambda _s: None,
+        )
+
+    result = asyncio.run(run())
+    [position] = result.positions
+    assert position.tick_lower == -200
+    assert position.tick_upper == 200
+    assert position.in_range is True
+    assert position.current_tick == 100
+    assert position.uncollected_fees is not None
+    assert position.uncollected_fees[0].symbol == "WETH"
+
+
+def test_scan_without_detail_source_leaves_positions_at_discovery_depth() -> None:
+    pool = "0xe3800a58b5535935850a10e082952ec3577d8dcc"
+    result, _raised, _events = _run_scan(_FakeSource([_lp_position(pool)]))
+    assert result is not None
+    [position] = result.positions
+    assert position.tick_lower is None  # no enrichment without a detail source

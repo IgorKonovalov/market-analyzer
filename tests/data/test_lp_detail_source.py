@@ -31,6 +31,15 @@ class _FakeLpDetailSource:
             uncollected_fees=[PositionToken(symbol="WETH", address="0x42", amount=0.01)],
         )
 
+    def resolve_univ3_token_id(
+        self,
+        *,
+        chain: Chain,
+        pool_address: str,
+        owner: str,
+    ) -> int | None:
+        return None
+
 
 def test_protocol_is_runtime_checkable_and_fake_satisfies_it() -> None:
     source = _FakeLpDetailSource()

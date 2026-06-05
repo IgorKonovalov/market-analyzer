@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from market_analyser.data.adapters.zerion import ZerionAuthError, ZerionError
 from market_analyser.data.errors import RateLimitedError, UpstreamDataError
-from market_analyser.data.sources import WalletPositionsSource
+from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
 from market_analyser.defi.scan_job import EVM_ADDRESS_PATTERN, run_wallet_scan
 from market_analyser.events import EventBus
 
@@ -31,6 +31,8 @@ router = APIRouter(prefix="/defi", tags=["defi"])
 # The default wallet-positions source (ADR-0034); the registry seam keeps it
 # swappable.
 _DEFAULT_SOURCE = "zerion"
+# The default LP-detail source (Plan 0034); enriches LP positions when present.
+_DEFAULT_LP_DETAIL_SOURCE = "rpc"
 
 
 class ScanRequest(BaseModel):
@@ -60,9 +62,16 @@ async def post_defi_scan(request: Request, body: ScanRequest) -> ScanResponse:
     if source is None:
         # The route is only mounted when a source exists, so this is defensive.
         raise HTTPException(status_code=503, detail="no wallet-positions source configured")
+    lp_detail_sources: Mapping[str, LpPositionDetailSource] = request.app.state.lp_detail_sources
+    lp_detail_source = lp_detail_sources.get(_DEFAULT_LP_DETAIL_SOURCE)
     event_bus: EventBus = request.app.state.event_bus
     try:
-        result = await run_wallet_scan(source=source, address=body.address, event_bus=event_bus)
+        result = await run_wallet_scan(
+            source=source,
+            address=body.address,
+            event_bus=event_bus,
+            lp_detail_source=lp_detail_source,
+        )
     except ZerionAuthError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except RateLimitedError as err:

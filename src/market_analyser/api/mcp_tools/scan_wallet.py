@@ -28,13 +28,16 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from market_analyser.data.adapters.zerion import ZerionAuthError, ZerionError
 from market_analyser.data.errors import UpstreamDataError, failure_reason
-from market_analyser.data.sources import WalletPositionsSource
+from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
 from market_analyser.defi.scan_job import EVM_ADDRESS_PATTERN, run_wallet_scan
 from market_analyser.events import EventBus
 
 # The default wallet-positions source for this plan (ADR-0034). The registry seam
 # keeps this swappable — a later config could choose another source by name.
 _DEFAULT_SOURCE = "zerion"
+
+# The default LP-detail source (Plan 0034); the registry seam keeps it swappable.
+_DEFAULT_LP_DETAIL_SOURCE = "rpc"
 
 SCAN_WALLET_DESCRIPTION = (
     "Discover a wallet's DeFi positions from a public EVM address across Ethereum, "
@@ -48,7 +51,9 @@ SCAN_WALLET_DESCRIPTION = (
     "address must be a raw 0x EVM address (40 hex chars); ENS names are not "
     "supported. Streams scan_started/scan_progress/scan_completed on the SSE "
     "stream. Positions are live (not persisted); values are the source's "
-    "interpreted figures (no Uniswap-v3 tick ranges). Data from Zerion."
+    "interpreted figures. When an on-chain RPC source is configured, LP positions "
+    "are enriched (best-effort) with tick_lower/tick_upper/current_tick/in_range "
+    "and uncollected_fees; without it those stay null. Data from Zerion (+ RPC)."
 )
 
 
@@ -66,11 +71,16 @@ def register_scan_wallet(
     *,
     wallet_positions_sources: Mapping[str, WalletPositionsSource],
     event_bus: EventBus,
+    lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
 ) -> None:
-    """Bind the `scan_wallet` tool to `server`. The source + event bus are
+    """Bind the `scan_wallet` tool to `server`. The sources + event bus are
     captured by closure so the tool body keeps its single declared parameter
-    (FastMCP introspects it to build the input schema)."""
+    (FastMCP introspects it to build the input schema). The LP-detail source, when
+    present, enriches discovered LP positions with on-chain detail (Plan 0034)."""
     source = wallet_positions_sources[_DEFAULT_SOURCE]
+    lp_detail_source = (
+        lp_detail_sources.get(_DEFAULT_LP_DETAIL_SOURCE) if lp_detail_sources else None
+    )
 
     @server.tool(description=SCAN_WALLET_DESCRIPTION)
     async def scan_wallet(params: ScanWalletInput) -> dict[str, Any]:
@@ -79,6 +89,7 @@ def register_scan_wallet(
                 source=source,
                 address=params.address,
                 event_bus=event_bus,
+                lp_detail_source=lp_detail_source,
             )
         except ZerionAuthError as err:
             return _error("auth", err)

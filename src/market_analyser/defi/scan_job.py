@@ -21,15 +21,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import ValidationError
 
 from market_analyser.data.errors import RateLimitedError, UpstreamDataError
-from market_analyser.data.sources import WalletPositionsSource
+from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
 from market_analyser.defi.discovery import DiscoveryService, mask_wallet
+from market_analyser.defi.enrichment import enrich_lp_positions
 from market_analyser.defi.models import DefiPosition
 from market_analyser.events import (
     DefiScanCompletedPayloadV1,
@@ -69,11 +71,18 @@ async def run_wallet_scan(
     source: WalletPositionsSource,
     address: str,
     event_bus: EventBus,
+    lp_detail_source: LpPositionDetailSource | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> WalletScanResult:
     """Run a wallet scan, streaming `defi.scan_*` progress; return the result.
 
-    Raises the source's typed error (after publishing `defi.scan_failed`) on
-    failure — never returns a zeroed result."""
+    When `lp_detail_source` is provided, each discovered LP position is enriched
+    with its on-chain tick/fee detail (Plan 0034) — best-effort, so an enrichment
+    failure leaves that position at discovery depth without failing the scan.
+    `sleep` is forwarded to the enrichment spacing (injectable for tests).
+
+    Raises the discovery source's typed error (after publishing `defi.scan_failed`)
+    on a *discovery* failure — never returns a zeroed result."""
     masked = mask_wallet(address)
     event_bus.publish(
         "defi.scan_started",
@@ -91,7 +100,15 @@ async def run_wallet_scan(
             ),
         )
         raise
-    for chain, count in _per_chain_counts(result.positions).items():
+    positions = result.positions
+    if lp_detail_source is not None:
+        # Best-effort depth: enrichment never raises (per-position failures are
+        # swallowed there), so it stays outside the discovery try/except above —
+        # the scan does not fail because deep state was unavailable.
+        positions = await asyncio.to_thread(
+            enrich_lp_positions, result.positions, lp_detail_source, owner=address, sleep=sleep
+        )
+    for chain, count in _per_chain_counts(positions).items():
         event_bus.publish(
             "defi.scan_progress",
             DefiScanProgressPayloadV1(wallet=masked, chain=chain, position_count=count),
@@ -101,12 +118,12 @@ async def run_wallet_scan(
         DefiScanCompletedPayloadV1(
             wallet=masked,
             chains=result.chains,
-            position_count=len(result.positions),
+            position_count=len(positions),
         ),
     )
     return WalletScanResult(
         wallet=masked,
-        positions=result.positions,
+        positions=positions,
         chains=result.chains,
         total_usd_value=result.total_usd_value,
     )
