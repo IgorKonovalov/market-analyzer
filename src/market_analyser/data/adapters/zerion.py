@@ -17,10 +17,18 @@ each with `attributes` (`position_type`, `protocol`, `protocol_module`,
 
 - `protocol_module == "lending"` → `lending_borrow` if `position_type == "loan"`
   else `lending_supply` (Aave supply vs borrow).
-- `protocol_module == "liquidity_pool"` → `lp`; Zerion splits an LP into one
-  position entry per underlying token sharing a `group_id`, so those entries are
-  merged into a single `DefiPosition` with both tokens and summed value.
-- `position_type == "staked"` → `staking`.
+- `protocol_module in {"liquidity_pool", "farming"}` → `lp`. Zerion splits an LP
+  into one position entry per underlying token (leg) sharing a `group_id`, so
+  those entries are merged into a single `DefiPosition` — tokens de-duplicated by
+  symbol (amounts summed, so a repeated leg shows once) and value summed.
+  Aerodrome / Velodrome gauge-staked LPs arrive as `farming`, not
+  `liquidity_pool` (the F1 finding): without matching `farming` they would fall
+  through to `staked` and be mislabelled `staking`.
+- `position_type == "staked"` (module not `liquidity_pool` / `farming`) → `lp`
+  when the position carries a `pool_address` and folds to ≥2 distinct tokens (a
+  gauge-staked LP), else `staking` (genuine single-asset staking).
+- `attributes.pool_address` is threaded onto `DefiPosition.pool_address` — the
+  on-chain join key the deep-adapter / enrichment plan (0034) reads.
 - `wallet` (plain balances) and anything unclassifiable / off-target-chain are
   dropped — discovery is about *DeFi positions*, not raw balances.
 
@@ -183,7 +191,17 @@ def _parse_positions(payload: Any) -> list[DefiPosition]:
 class _ParsedEntry:
     """One decoded Zerion position entry, pre-merge."""
 
-    __slots__ = ("chain", "key", "kind", "pool", "protocol", "token", "usd_value")
+    __slots__ = (
+        "chain",
+        "key",
+        "kind",
+        "pool",
+        "pool_address",
+        "protocol",
+        "staked_provisional_lp",
+        "token",
+        "usd_value",
+    )
 
     def __init__(
         self,
@@ -195,6 +213,8 @@ class _ParsedEntry:
         token: PositionToken,
         usd_value: float,
         pool: str | None,
+        pool_address: str | None,
+        staked_provisional_lp: bool,
     ) -> None:
         self.key = key
         self.chain = chain
@@ -203,14 +223,22 @@ class _ParsedEntry:
         self.token = token
         self.usd_value = usd_value
         self.pool = pool
+        self.pool_address = pool_address
+        self.staked_provisional_lp = staked_provisional_lp
 
 
 class _PositionGroup:
-    """Accumulator that folds same-`group_id` entries into one position."""
+    """Accumulator that folds same-`group_id` entries into one position.
+
+    Per-leg token entries are de-duplicated by symbol (amounts summed) so a
+    multi-leg LP shows each token once rather than repeating a symbol per leg
+    (the F1 fix): a gauge-staked LP arrives as several `staked` entries sharing a
+    `group_id`, sometimes listing the same symbol more than once."""
 
     def __init__(self, first: _ParsedEntry) -> None:
         self._first = first
-        self._tokens: list[PositionToken] = [first.token]
+        # Insertion-ordered, keyed by symbol so duplicate legs fold deterministically.
+        self._tokens: dict[str, PositionToken] = {first.token.symbol: first.token}
         self._usd_value = first.usd_value
 
     @classmethod
@@ -218,18 +246,36 @@ class _PositionGroup:
         return cls(entry)
 
     def merge(self, entry: _ParsedEntry) -> None:
-        self._tokens.append(entry.token)
+        existing = self._tokens.get(entry.token.symbol)
+        if existing is None:
+            self._tokens[entry.token.symbol] = entry.token
+        else:
+            self._tokens[entry.token.symbol] = existing.model_copy(
+                update={"amount": existing.amount + entry.token.amount}
+            )
         self._usd_value += entry.usd_value
 
     def to_position(self) -> DefiPosition:
+        kind = self._first.kind
+        pool = self._first.pool
+        pool_address = self._first.pool_address
+        # A bare `staked` position classified `lp` only on `pool_address` presence
+        # is a genuine single-asset stake, not an LP, when the folded set has fewer
+        # than two distinct tokens — downgrade it to `staking` and drop the LP-only
+        # fields (`_classify_kind` + `_parse_entry` deferred this to here).
+        if self._first.staked_provisional_lp and len(self._tokens) < 2:
+            kind = "staking"
+            pool = None
+            pool_address = None
         return DefiPosition(
             position_id=self._first.key,
             chain=self._first.chain,
             protocol=self._first.protocol,
-            kind=self._first.kind,
-            tokens=self._tokens,
+            kind=kind,
+            tokens=list(self._tokens.values()),
             usd_value=self._usd_value,
-            pool=self._first.pool,
+            pool=pool,
+            pool_address=pool_address,
         )
 
 
@@ -250,7 +296,8 @@ def _parse_entry(entry: Any) -> _ParsedEntry | None:
 
     position_type = attributes.get("position_type")
     protocol_module = attributes.get("protocol_module")
-    kind = _classify_kind(position_type, protocol_module)
+    pool_address = _pool_address_of(attributes)
+    kind = _classify_kind(position_type, protocol_module, pool_address)
     if kind is None:
         return None  # plain wallet balance, reward, or otherwise not a tracked kind
 
@@ -259,6 +306,15 @@ def _parse_entry(entry: Any) -> _ParsedEntry | None:
     protocol = _protocol_of(attributes)
     pool = attributes.get("name") if kind == "lp" else None
     pool = pool if isinstance(pool, str) and pool else None
+    # A bare `staked` position classified `lp` only on `pool_address` presence is
+    # provisional: the ≥2-distinct-token half of the rule is checked once the
+    # group's tokens are folded. Flag it so finalization can downgrade a genuine
+    # single-asset stake that happened to carry a pool address.
+    staked_provisional_lp = (
+        kind == "lp"
+        and position_type == "staked"
+        and protocol_module not in ("liquidity_pool", "farming")
+    )
 
     group_id = attributes.get("group_id")
     stable = group_id if isinstance(group_id, str) and group_id else _entry_id(entry)
@@ -272,7 +328,17 @@ def _parse_entry(entry: Any) -> _ParsedEntry | None:
         token=token,
         usd_value=usd_value,
         pool=pool,
+        pool_address=pool_address,
+        staked_provisional_lp=staked_provisional_lp,
     )
+
+
+def _pool_address_of(attributes: dict[str, Any]) -> str | None:
+    """The on-chain pool/pair contract address Zerion lists for a complex position
+    (`attributes.pool_address`, present on 28/28 complex positions in the survey).
+    A missing / empty / non-string value is `None` — not every position has one."""
+    pool_address = attributes.get("pool_address")
+    return pool_address if isinstance(pool_address, str) and pool_address else None
 
 
 def _chain_of(entry: dict[str, Any]) -> Chain | None:
@@ -291,13 +357,26 @@ def _chain_of(entry: dict[str, Any]) -> Chain | None:
     return _CHAIN_IDS.get(chain_id)
 
 
-def _classify_kind(position_type: Any, protocol_module: Any) -> PositionKind | None:
-    if protocol_module == "liquidity_pool":
+def _classify_kind(
+    position_type: Any, protocol_module: Any, pool_address: str | None
+) -> PositionKind | None:
+    # `protocol_module` is the primary discriminator; its observed vocabulary is
+    # wider than the original adapter assumed: `{liquidity_pool, farming, staked,
+    # lending, nft_staked, None}` (Zerion-API survey §5). Aerodrome / Velodrome
+    # gauge-staked LPs arrive as `farming` (not `liquidity_pool`), so they must be
+    # matched here as `lp` — otherwise they fall through to the `staked` branch and
+    # are mislabelled `staking` (the live-smoke F1 finding).
+    if protocol_module in ("liquidity_pool", "farming"):
         return "lp"
     if protocol_module == "lending":
         return "lending_borrow" if position_type == "loan" else "lending_supply"
     if position_type == "staked":
-        return "staking"
+        # A bare `staked` position (module `staking` / `None`) is a gauge-staked LP
+        # when it carries a `pool_address` (its underlying is a multi-token pool);
+        # genuine single-asset staking (QUICK, OP) carries none. The ≥2-distinct-
+        # token half of the rule is enforced at group finalization, where the
+        # folded token set is known (`_PositionGroup.to_position`).
+        return "lp" if pool_address else "staking"
     if position_type == "loan":
         return "lending_borrow"
     return None

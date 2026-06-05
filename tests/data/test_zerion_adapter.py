@@ -106,7 +106,13 @@ def test_uniswap_v3_lp_folds_two_token_entries_into_one_position(tmp_path: Path)
 
 
 def test_aerodrome_lp_is_classified_and_folded(tmp_path: Path) -> None:
-    lp = [p for p in _positions(tmp_path) if p.protocol == "aerodrome" and p.kind == "lp"]
+    # The non-staked (liquidity_pool) cbBTC/WETH Aerodrome LP — distinct from the
+    # gauge-staked WETH/AERO farm exercised separately.
+    lp = [
+        p
+        for p in _positions(tmp_path)
+        if p.protocol == "aerodrome" and p.kind == "lp" and p.pool == "cbBTC / WETH"
+    ]
     assert len(lp) == 1
     assert {t.symbol for t in lp[0].tokens} == {"cbBTC", "WETH"}
     assert lp[0].usd_value == 1000.0  # 700 + 300
@@ -120,13 +126,56 @@ def test_staking_position_is_classified(tmp_path: Path) -> None:
     assert staking[0].tokens[0].symbol == "OP"
 
 
+def test_single_asset_staked_position_has_no_pool_address(tmp_path: Path) -> None:
+    # The genuine single-asset stake (OP) carries no pool_address and stays
+    # `kind="staking"` — the F1 fix must not promote it to an LP.
+    staking = next(p for p in _positions(tmp_path) if p.kind == "staking")
+    assert staking.pool_address is None
+
+
+def test_gauge_staked_lp_is_classified_as_lp_with_pool_and_address(tmp_path: Path) -> None:
+    # F1: an Aerodrome gauge-staked LP arrives as protocol_module="farming",
+    # position_type="staked" — it must decode to ONE kind="lp" position with the
+    # pool name and a non-None pool_address equal to the fixture's value.
+    farm = [
+        p for p in _positions(tmp_path) if p.protocol == "aerodrome" and p.pool == "WETH / AERO"
+    ]
+    assert len(farm) == 1, "the gauge-staked LP legs must fold into one lp position"
+    position = farm[0]
+    assert position.kind == "lp"
+    assert position.chain == "base"
+    assert position.pool_address == "0xe3800a58b5535935850a10e082952ec3577d8dcc"
+
+
+def test_gauge_staked_lp_dedupes_tokens_by_symbol(tmp_path: Path) -> None:
+    # Two WETH legs (principal 0.16 + reward 0.02) and one AERO leg must fold to
+    # each symbol once, with WETH's amount summed (the de-dup half of the F1 fix).
+    farm = next(
+        p for p in _positions(tmp_path) if p.protocol == "aerodrome" and p.pool == "WETH / AERO"
+    )
+    by_symbol = {t.symbol: t for t in farm.tokens}
+    assert set(by_symbol) == {"WETH", "AERO"}
+    assert by_symbol["WETH"].amount == pytest.approx(0.18)  # 0.16 + 0.02 summed
+    assert by_symbol["AERO"].amount == pytest.approx(500.0)
+    assert farm.usd_value == pytest.approx(800.0)  # 400 + 350 + 50
+
+
+def test_discovered_lp_carries_pool_address(tmp_path: Path) -> None:
+    # The non-staked Aerodrome (liquidity_pool) LP also threads its pool_address.
+    aero = next(
+        p for p in _positions(tmp_path) if p.protocol == "aerodrome" and p.pool == "cbBTC / WETH"
+    )
+    assert aero.pool_address == "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59"
+
+
 def test_plain_wallet_balance_is_dropped(tmp_path: Path) -> None:
     # The "wallet" position_type entry (USDC balance) must not appear — discovery
     # is about DeFi positions, not raw balances.
     positions = _positions(tmp_path)
     assert all(p.kind != "staking" or p.tokens[0].symbol != "USDC" for p in positions)
-    # Exactly the five DeFi positions (2 Aave + 1 Uni LP + 1 Aero LP + 1 staking).
-    assert len(positions) == 5
+    # Exactly the six DeFi positions (2 Aave + 1 Uni LP + 1 Aero LP +
+    # 1 gauge-staked Aero LP + 1 single-asset staking).
+    assert len(positions) == 6
 
 
 def test_token_address_resolves_to_position_chain_implementation(tmp_path: Path) -> None:

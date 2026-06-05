@@ -68,6 +68,14 @@ class DefiPosition(BaseModel):
     tokens: list[PositionToken] = Field(min_length=1)
     usd_value: float  # current position value; boundary-validated below
 
+    # The on-chain pool/pair contract address (`0x…`) Zerion exposes on every
+    # complex position (28/28 in the capability survey). It is the discovery→deep
+    # join key: the deep adapter (Plan 0034 phases 3-4) keys its RPC / The-Graph
+    # read on it, and the enrichment step (phase 5) matches an `LpPositionDetail`
+    # back to the `DefiPosition` it enriches by it. `None` for positions whose
+    # source does not expose it (e.g. single-asset staking). Validated non-empty.
+    pool_address: str | None = Field(default=None, min_length=1)
+
     # LP-only; `None` for non-LP positions and for LP positions whose source does
     # not expose tick boundaries (Zerion — see module docstring).
     pool: str | None = None
