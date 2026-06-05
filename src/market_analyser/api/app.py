@@ -44,6 +44,7 @@ from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
 from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
@@ -165,6 +166,8 @@ def create_app(
     # treats an absent source as "discovery-only" rather than failing.
     if lp_detail_sources is not None:
         effective_lp_detail_sources: dict[str, LpPositionDetailSource] = dict(lp_detail_sources)
+    elif secrets_store is not None:
+        effective_lp_detail_sources = {"rpc": RpcLpDetailAdapter(secrets_store=secrets_store)}
     else:
         effective_lp_detail_sources = {}
     mcp_components = (
