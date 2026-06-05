@@ -19,6 +19,18 @@ from sqlalchemy.orm import Session
 from market_analyser.data.types import Bar
 from market_analyser.persistence.models import BarRow
 
+# SQLite caps host parameters per statement (`SQLITE_MAX_VARIABLE_NUMBER`): 999 on
+# the conservative/older build, 32_766 on >= 3.32. Each upserted row binds one
+# parameter per column, so a single `INSERT ... VALUES` over a deep intraday
+# backfill blows the 999 cap and dies with "too many SQL variables". Size the
+# per-statement row batch to stay under the 999-cap build with margin: the row
+# budget is the variable budget divided by the column count.
+_SQLITE_VARIABLE_BUDGET = 900
+# Columns bound per row in `upsert_bars`' payload (symbol, timeframe, event_ts,
+# open, high, low, close, volume, source, ingested_at).
+_BAR_COLUMN_COUNT = 10
+_UPSERT_CHUNK_ROWS = _SQLITE_VARIABLE_BUDGET // _BAR_COLUMN_COUNT
+
 
 class BarRepository:
     """CRUD façade for the `bars` table. Owns its own per-call sessions."""
@@ -84,22 +96,28 @@ class BarRepository:
                 },
             )
 
-        insert_stmt = sqlite_insert(BarRow).values(payload)
-        update_cols = {
-            "open": insert_stmt.excluded.open,
-            "high": insert_stmt.excluded.high,
-            "low": insert_stmt.excluded.low,
-            "close": insert_stmt.excluded.close,
-            "volume": insert_stmt.excluded.volume,
-            "source": insert_stmt.excluded.source,
-            "ingested_at": insert_stmt.excluded.ingested_at,
-        }
-        upsert_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=["symbol", "timeframe", "event_ts"],
-            set_=update_cols,
-        )
+        # Batch the insert so no single statement exceeds SQLite's host-parameter
+        # cap (see `_UPSERT_CHUNK_ROWS`). All chunks share one session/transaction:
+        # nothing is committed until every chunk has executed, so a mid-batch
+        # failure leaves the session uncommitted and the `with` block's close
+        # rolls the whole upsert back — the write stays all-or-nothing.
         with self._session_factory() as session:
-            session.execute(upsert_stmt)
+            for offset in range(0, len(payload), _UPSERT_CHUNK_ROWS):
+                chunk = payload[offset : offset + _UPSERT_CHUNK_ROWS]
+                insert_stmt = sqlite_insert(BarRow).values(chunk)
+                upsert_stmt = insert_stmt.on_conflict_do_update(
+                    index_elements=["symbol", "timeframe", "event_ts"],
+                    set_={
+                        "open": insert_stmt.excluded.open,
+                        "high": insert_stmt.excluded.high,
+                        "low": insert_stmt.excluded.low,
+                        "close": insert_stmt.excluded.close,
+                        "volume": insert_stmt.excluded.volume,
+                        "source": insert_stmt.excluded.source,
+                        "ingested_at": insert_stmt.excluded.ingested_at,
+                    },
+                )
+                session.execute(upsert_stmt)
             session.commit()
         return len(rows)
 
