@@ -1,6 +1,6 @@
 # 0034 — DeFi deep adapters: LP tick/fee detail (Uniswap-v3 / Aerodrome)
 
-> **Status:** draft — **phases 1–2 are source-independent and ready; phases 3–4 are blocked pending a parallel full-Zerion-API investigation** that decides where the deep state is fetched from. Not for implementation (no "go") until the source is chosen and the plan moves to `approved`.
+> **Status:** draft (ready for approval) — the [Zerion-API capability survey](../references/zerion-api-capabilities.md) (2026-06-05) resolved the gating questions: deep LP state comes from **our own RPC + The Graph keyed on `pool_address`** (present on 28/28 complex positions), confirming ADR-0034's assumption — no Zerion-native deep call, **no new ADR needed**. All four phases are now specified; the Uniswap-v3 path carries one open sub-item (NFT `tokenId` resolution, deferred — no live Uni-v3 in scope). Awaiting user "go" to move to `approved`.
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev
 > **Related ADRs:** [0034](../adrs/0034-defi-portfolio-aggregator.md) (the hybrid — this is its *depth* half; the source choice may **refine** ADR-0034's "deep state comes from our own RPC + The Graph" stance, which would want a small ADR), [0035](../adrs/0035-defi-domain-placement.md) (`defi/` placement; on-chain fetch routed through ADR-0031 sources), [0031](../adrs/0031-data-source-adapter-contract.md) (the per-capability Protocol seam this adds to), [0032](../adrs/0032-data-layer-no-api-dependency.md) (no `data→api`), [0019](../adrs/0019-external-http-adapter-resilience.md) (resilience client a keyed adapter inherits), [0038](../adrs/0038-third-party-api-key-storage.md) (`graph_api_key` / `eth_rpc_url` / `base_rpc_url` already in the secrets schema), [0036](../adrs/0036-defi-pnl-reconstruction.md) / [0037](../adrs/0037-defi-position-risk-forecast.md) (downstream consumers — explicitly out of scope here)
@@ -22,9 +22,9 @@ The scope choice (set at planning, 2026-06-05): **LP detail first**; Aave health
 
 ## Decision
 
-Build LP deep-state as four `dev` phases, all under the existing seams. **Phase 1** fixes F1 in the discovery adapter (no new source). **Phase 2** adds the source-agnostic `LpPositionDetailSource` Protocol (ADR-0031) + the enrichment fields on `DefiPosition` — both fully decidable now. **Phase 3** implements the concrete deep adapter behind that Protocol; its source — our own **RPC + The Graph** (ADR-0034's assumption) vs **Zerion-native** if the parallel investigation shows Zerion suffices — is **deferred to the findings**. **Phase 4** wires enrichment into the scan flow, surfaces the enriched positions, and runs a live smoke.
+Build LP deep-state as four `dev` phases, all under the existing seams. **Phase 1** fixes F1 in the discovery adapter (no new source). **Phase 2** adds the source-agnostic `LpPositionDetailSource` Protocol (ADR-0031) + the enrichment fields on `DefiPosition` — both fully decidable now. **Phase 3** implements the concrete deep adapter behind that Protocol. **The source is decided** ([Zerion-API survey](../references/zerion-api-capabilities.md), 2026-06-05): **our own RPC + The Graph**, keyed on the `pool_address` Zerion exposes on every complex position (28/28 in the survey) — ADR-0034's assumption holds, so **no new ADR is needed**. **Phase 4** wires enrichment into the scan flow, surfaces the enriched positions, and runs a live smoke against the Aerodrome holdings.
 
-Because the source sits behind the ADR-0031 Protocol, the plan's *structure* is independent of the source decision; only phase 3's body and phase 4's smoke target wait. If the chosen source departs from ADR-0034's "RPC + The Graph" stance (e.g. Zerion-native turns out sufficient), that warrants a short ADR refining ADR-0034 §deep-state — flagged, not pre-decided. (Next free ADR: **0040**.)
+One refinement the survey surfaced: discovery→deep keying is **one hop for Velodrome/Aerodrome-class LPs** (ERC-20 LP token — `pool_address` is sufficient) but **two hops for Uniswap-v3** (each position is an NFT; two positions can share a pool with different ranges, so the deep read must key on the position NFT `tokenId`, which the fungible `/positions/` payload does *not* expose — it would come from Zerion's NFT-positions endpoint or an RPC enumeration). The test wallet is Aerodrome-only (no live Uni-v3 — the ADR-0034 F3 gap), so phase 3 targets the Aerodrome path; the Uni-v3 `tokenId`-resolution sub-path is specified but deferred until a wallet exercises it.
 
 We reject doing Aave depth in the same plan (keeps the scope to one position kind and one fetch shape), and reject persisting deep state (it is live/volatile like discovery; the durable cache that matters — decoded tx history — belongs to the P&L plan, ADR-0036).
 
@@ -54,7 +54,7 @@ flowchart LR
 - **Owner skill:** `dev`
 - **What:** In `data/adapters/zerion.py`, distinguish a **gauge-staked LP** (a staked position whose underlying is a multi-token pool — e.g. Aerodrome Slipstream WETH/AERO) from genuine **single-asset staking** (QUICK, OP). Classify the former as `kind="lp"` with the `pool` name set; de-duplicate the per-leg token entries by symbol (sum amounts per symbol) so an LP shows each token once. Single-asset staked positions stay `kind="staking"`.
 - **Files touched:** `src/market_analyser/data/adapters/zerion.py`, `tests/fixtures/zerion_positions.json` (extend with a staked-LP entry mirroring the live `0xae5b…9790` shape), `tests/data/test_zerion_adapter.py`.
-- **Done when:** a fixture staked-LP entry (multi-token, `position_type: staked`, liquidity-pool-ish `protocol_module`/dapp) decodes to one `kind="lp"` position with the pool name and **de-duped** tokens (each symbol once, amounts summed); a single-asset staked entry stays `kind="staking"`; `usd_value` is unchanged (no double-count — already proven at the smoke); full offline `pytest -m "not network"` + `mypy --strict` + `ruff` green. *(The exact staked-LP vs staking discriminator should be confirmed against Zerion's field semantics from the parallel investigation; the observed shape — `position_type: staked` + ≥2 distinct pool tokens + a liquidity/dex `protocol_module` — is the working rule.)*
+- **Done when:** a fixture staked-LP entry (`protocol_module: "farming"`, `position_type: "staked"`, multi-token, carrying a `pool_address`) decodes to one `kind="lp"` position with the pool name and **de-duped** tokens (each symbol once, amounts summed); a single-asset staked entry stays `kind="staking"`; `usd_value` is unchanged (no double-count — already proven at the smoke); full offline `pytest -m "not network"` + `mypy --strict` + `ruff` green. *(Discriminator confirmed by the [survey](../references/zerion-api-capabilities.md) §5: Aerodrome LPs arrive as `protocol_module: "farming"` — which `_classify_kind` matches against neither `liquidity_pool` nor `lending`, so they fall through to `staked`. The real `protocol_module` vocabulary is `{farming, staked, lending, nft_staked, None}`; treat `farming` (and any `staked` position carrying a `pool_address` + ≥2 distinct pool tokens) as `lp`, single-asset `staked` as `staking`. The pool name comes from `pool_address` / `application_metadata`.)*
 
 ### Phase 2 — Deep-state model fields + `LpPositionDetailSource` Protocol
 - **Owner skill:** `dev`
@@ -62,13 +62,14 @@ flowchart LR
 - **Files touched:** `src/market_analyser/defi/models.py` (new fields + `LpPositionDetail`), `src/market_analyser/data/sources.py` (new Protocol, `TYPE_CHECKING` import like `WalletPositionsSource`), composition-root registry entry, `tests/`.
 - **Done when:** the new model fields exist, are `None` by default, and validate finite/non-negative like the rest; `LpPositionDetailSource` is `@runtime_checkable` and a fake source `isinstance`-satisfies it; `gen-types --check` shows the additive fields with no drift breakage; `mypy --strict` + `ruff` green.
 
-### Phase 3 — Concrete deep adapter  ⛔ BLOCKED: source decision pending parallel Zerion-API findings
+### Phase 3 — Concrete deep adapter (RPC + The Graph, `pool_address`-keyed)
 - **Owner skill:** `dev`
-- **What (finalized once the source is chosen):** implement `LpPositionDetailSource` against the chosen source — **either** (a) our own **RPC** (`eth_call` to the Uni-v3 / Aerodrome Slipstream position manager + pool: `slot0` current tick, `positions(tokenId)` tick bounds + owed fees) **plus The Graph** (decentralized-network subgraph for pool/position lookup), reading `eth_rpc_url`/`base_rpc_url`/`graph_api_key` from `SecretsStore` (ADR-0038) on the `ResilientHttpClient` (ADR-0019); **or** (b) **Zerion-native** endpoints if the investigation shows Zerion exposes tick/fee detail keyed to a discovered position.
-- **Done when (to be finalized):** against a fixture, the adapter yields `LpPositionDetail` with correct tick range, in-range flag, and uncollected fees for a Uniswap-v3 and an Aerodrome Slipstream position; typed errors (no bare exceptions); offline-deterministic.
-- **Blocking note:** this phase's body **cannot be written** until the parallel investigation answers the open questions below — chiefly *whether Zerion's discovery payload carries a position identifier (NFT token id / pool contract) we can key an RPC/Graph read on*. May require an ADR refining ADR-0034 §deep-state.
+- **What:** implement `LpPositionDetailSource` against **our own RPC + The Graph**, keyed on the `pool_address` + `chain` from the discovered position. For the Aerodrome/Velodrome (Slipstream) class, read pool/gauge state — `eth_call` for `slot0` current tick + the position's tick bounds and owed fees, and/or a decentralized-network subgraph — reading `eth_rpc_url`/`base_rpc_url`/`graph_api_key` from `SecretsStore` (ADR-0038) on the `ResilientHttpClient` (ADR-0019). Confirm the Aerodrome Slipstream pool/gauge ABI and whether a decentralized-network subgraph exists (else RPC-only).
+- **Files touched:** `src/market_analyser/data/adapters/<deep>.py` (new), composition-root registry entry, `tests/` with a recorded fixture.
+- **Done when:** against a fixture, the adapter yields `LpPositionDetail` (tick range, current tick, in-range, uncollected fees) for an Aerodrome Slipstream position keyed on `pool_address`; typed errors (no bare exceptions); offline-deterministic; `mypy --strict` + `ruff` green.
+- **Uni-v3 sub-path (deferred — closes F3):** Uniswap-v3 needs the position NFT `tokenId` (not just `pool_address`) — resolve it from Zerion's NFT-positions endpoint (survey #6) or an RPC enumeration of the NonfungiblePositionManager before the deep read. Specified here; implemented when a wallet holds a live Uni-v3 position.
 
-### Phase 4 — Enrichment wiring + surface + live smoke  ⛔ depends on phase 3
+### Phase 4 — Enrichment wiring + surface + live smoke (depends on phase 3)
 - **Owner skill:** `dev`
 - **What:** an enrichment step in the `defi/` discovery flow that, after discovery, calls the LP-detail source per `kind="lp"` position and folds the detail into the returned `DefiPosition`s; surface the enriched positions through the existing scan path (and/or a dedicated detail tool); run a live smoke against `0xae5b…9790` (holds Aerodrome Slipstream LPs).
 - **Files touched:** `src/market_analyser/defi/` (enrichment), the scan job / tool / route as needed, `tests/`.
@@ -93,12 +94,10 @@ class LpPositionDetail(BaseModel):       # src/market_analyser/defi/models.py
 
 ## Risks & open questions
 
-- **(Blocking) Source decision is gated on the parallel Zerion-API investigation.** Phases 3–4 finalize only after it lands.
-- **(Critical input the investigation must surface) Does Zerion's positions payload carry a position identifier** — an NFT `tokenId` and/or the pool/pair contract address — that we can key an RPC/Graph deep read on? If not, the RPC/Graph path needs another way to locate the on-chain position, which materially changes phase 3 (and may tilt the decision toward Zerion-native).
-- **Aerodrome Slipstream specifics.** It's a Uni-v3-style concentrated-liquidity fork on Base; confirm the position-manager/pool ABIs and whether a decentralized-network subgraph exists, or whether RPC-only is required.
-- **Keying enrichment to discovered positions.** The enrichment step must reliably match an `LpPositionDetail` back to the `DefiPosition` it enriches (`position_id` stability).
-- **Rate limits / keys.** RPC + The Graph each need a credential (already in the secrets schema) and have their own limits; a request-triggered scan stays modest, but enrichment multiplies calls per LP.
-- **F1 discriminator semantics** — see phase 1 note; confirm against the investigation's field map.
+- **(Resolved by the 2026-06-05 survey) Source + keying.** `pool_address` is present on 28/28 complex positions, so RPC + The Graph keyed on it is sufficient for the Aerodrome class; ADR-0034's assumption holds (no Zerion-native deep call, no new ADR). **Uni-v3 needs the NFT `tokenId`** (two-hop) — open sub-item, deferred (no live Uni-v3 in scope yet — F3).
+- **Aerodrome Slipstream specifics.** It's a Uni-v3-style concentrated-liquidity fork on Base; confirm the position-manager/pool/gauge ABIs and whether a decentralized-network subgraph exists, or whether RPC-only is required. (First real implementation unknown.)
+- **Keying enrichment to discovered positions.** The enrichment step must reliably match an `LpPositionDetail` back to the `DefiPosition` it enriches (`position_id` stability); `pool_address` is the join key.
+- **Rate limits / keys.** RPC + The Graph each need a credential (already in the secrets schema). The survey **observed Zerion 429s under burst (~11 calls)** cleared by ~1.1s spacing — enrichment multiplies calls per LP, so the discovery+enrichment path must space/serialize calls (ADR-0034's "deliberate, never reactive" cadence, now a hard constraint).
 
 ## What this plan does NOT do
 
@@ -109,8 +108,8 @@ class LpPositionDetail(BaseModel):       # src/market_analyser/defi/models.py
 - **No persistence.** Deep state is live, like discovery; the durable tx-history cache belongs to the P&L plan.
 - **No UI.** Agent-driven, like Plan 0032; the DeFi dashboard is a later UI plan.
 
-## Open decision log (fill when the parallel investigation lands)
+## Open decision log
 
-- [ ] **Deep-state source:** our RPC + The Graph (ADR-0034 assumption) **vs** Zerion-native **vs** hybrid. → finalizes phase 3, may need ADR-0040.
-- [ ] **Position identifier available from discovery?** (NFT tokenId / pool address) → see critical risk above.
-- [ ] Then: move Status `draft → approved` and finalize phases 3–4.
+- [x] **Deep-state source** — our RPC + The Graph, keyed on `pool_address` ([survey](../references/zerion-api-capabilities.md) §8). ADR-0034 assumption holds; **no ADR-0040 needed.**
+- [x] **Position identifier from discovery?** — `pool_address` present 28/28 (sufficient for Aerodrome-class). Uni-v3 needs the NFT `tokenId` (two-hop via the NFT-positions endpoint or RPC enumeration) — deferred sub-item.
+- [ ] **User approval** to move Status `draft → approved`, and the scope call: implement phase 3 for the **Aerodrome path only** now (Uni-v3 `tokenId` resolution when a wallet exercises it) vs build both up front.
