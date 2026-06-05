@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from market_analyser.backtest.types import SignalEvaluation
 
@@ -36,12 +36,37 @@ DEFAULT_QUEUE_CAP = 256
 class OverlaySpec(BaseModel):
     """Chart overlay descriptor. The literal set is intentionally narrow — adding
     a new kind is additive (new literal value, possibly new optional fields)
-    and does NOT bump `chart.show`/`chart.update` payload versions."""
+    and does NOT bump `chart.show`/`chart.update` payload versions.
+
+    Two families share this one model, kept disjoint by `_validate_kind_fields`:
+    the indicator overlays (`ema`/`sma`/`rsi`/`macd`/`bbands`, carrying an optional
+    `period`) and the generic `price_line` (a horizontal line at `price` with a
+    `label` and an optional support/resistance `role`) — the channel the agent
+    uses to push S/R levels from `analyze_symbol` (Plan 0047). The new fields are
+    all optional/defaulted, so an indicator overlay still serialises to exactly
+    `{kind, period}` under the bus's `exclude_none` dump — existing overlays are
+    byte-unchanged on the wire."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["ema", "sma", "rsi", "macd", "bbands"]
+    kind: Literal["ema", "sma", "rsi", "macd", "bbands", "price_line"]
     period: int | None = None
+    # `price_line`-only fields (None on indicator overlays, enforced below).
+    price: float | None = None
+    label: str | None = None
+    role: Literal["support", "resistance"] | None = None
+
+    @model_validator(mode="after")
+    def _validate_kind_fields(self) -> OverlaySpec:
+        """Keep the two overlay families disjoint: `price_line` requires both
+        `price` and `label` (a labelless line is useless on the chart); the
+        indicator kinds accept neither `price`/`label`/`role`."""
+        if self.kind == "price_line":
+            if self.price is None or self.label is None:
+                raise ValueError("price_line overlay requires both 'price' and 'label'")
+        elif self.price is not None or self.label is not None or self.role is not None:
+            raise ValueError(f"{self.kind} overlay does not accept price/label/role")
+        return self
 
 
 class Marker(BaseModel):

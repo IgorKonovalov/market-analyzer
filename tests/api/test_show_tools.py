@@ -273,6 +273,51 @@ def test_show_chart_publishes_chart_show_v1(
     assert payload["overlays"] == [{"kind": "ema", "period": 20}]
 
 
+def test_show_chart_publishes_price_line_overlay(
+    live_server: str, mcp_secret: str, event_bus: EventBus
+) -> None:
+    """The new `price_line` overlay kind (Plan 0047) round-trips through
+    `show_chart` onto `chart.show v1`: the S/R level the agent pushes from
+    `analyze_symbol` reaches the bus intact, and an indicator overlay alongside it
+    is byte-unchanged (`exclude_none` drops the price_line-only fields)."""
+    sub = event_bus.subscribe()
+
+    async def _run() -> None:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "show_chart",
+                {
+                    "symbol": "BTC-USD",
+                    "timeframe": "1d",
+                    "range_start": "2026-04-20T00:00:00+00:00",
+                    "range_end": "2026-05-20T00:00:00+00:00",
+                    "overlays": [
+                        {"kind": "ema", "period": 20},
+                        {
+                            "kind": "price_line",
+                            "price": 61335.75,
+                            "label": "R1",
+                            "role": "resistance",
+                        },
+                    ],
+                },
+            )
+            assert not result.isError, f"show_chart errored: {result.content}"
+
+    asyncio.run(_run())
+
+    queued = _drain_queue(sub)
+    assert len(queued) == 1
+    env = queued[0]
+    assert env.type == "chart.show"
+    # Indicator overlay keeps its exact two-field wire shape; the price_line
+    # carries price/label/role and drops the (unset) `period`.
+    assert env.payload["overlays"] == [
+        {"kind": "ema", "period": 20},
+        {"kind": "price_line", "price": 61335.75, "label": "R1", "role": "resistance"},
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # update_chart                                                                #
 # --------------------------------------------------------------------------- #
@@ -455,6 +500,18 @@ def test_highlight_pattern_publishes_event_and_persists_annotation(
                 "range_start": "2026-04-20T00:00:00+00:00",
                 "range_end": "2026-05-20T00:00:00+00:00",
                 "overlays": [{"kind": "unknown"}],  # not in literal set
+            },
+        ),
+        (
+            "show_chart",
+            {
+                "symbol": "AAPL",
+                "timeframe": "1d",
+                "range_start": "2026-04-20T00:00:00+00:00",
+                "range_end": "2026-05-20T00:00:00+00:00",
+                # price_line without the required `label` — the cross-field
+                # validator rejects it (a labelless line is useless on the chart).
+                "overlays": [{"kind": "price_line", "price": 61335.75}],
             },
         ),
         # update_chart rejections

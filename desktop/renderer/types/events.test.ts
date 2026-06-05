@@ -128,12 +128,17 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     dumped = dumpPydanticSchemas()
   })
 
-  it('OverlaySpec fields match', () => {
-    expect(propertyNames(dumped.OverlaySpec)).toEqual(['kind', 'period'])
+  it('OverlaySpec fields match (price_line adds price/label/role; kind set widened)', () => {
+    expect(propertyNames(dumped.OverlaySpec)).toEqual(['kind', 'label', 'period', 'price', 'role'])
+    // price/label/role default to None → not required (price_line's price+label
+    // are enforced by a cross-field validator, not the JSON-schema `required`).
     expect(requiredNames(dumped.OverlaySpec)).toEqual(['kind'])
     expect(literalValues(dumped.OverlaySpec, 'kind')).toEqual(
-      ['bbands', 'ema', 'macd', 'rsi', 'sma'].sort(),
+      ['bbands', 'ema', 'macd', 'price_line', 'rsi', 'sma'].sort(),
     )
+    // `role` is an optional Literal (`| None`), emitted as `anyOf` rather than a
+    // top-level `enum`, so `literalValues` (enum/$ref only) can't read it — the
+    // property-name + required checks above already pin its presence/optionality.
   })
 
   it('Marker fields match', () => {

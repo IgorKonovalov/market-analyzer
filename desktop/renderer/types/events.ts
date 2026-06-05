@@ -14,11 +14,22 @@
  * test still passes.
  */
 
-export type OverlayKind = 'ema' | 'sma' | 'rsi' | 'macd' | 'bbands'
+export type OverlayKind = 'ema' | 'sma' | 'rsi' | 'macd' | 'bbands' | 'price_line'
 
+/** Support/resistance role for a `price_line` overlay; absent for plain levels. */
+export type PriceLineRole = 'support' | 'resistance'
+
+/** Mirror of the pydantic `OverlaySpec`. One model carries two disjoint families
+ * (the sidecar's `_validate_kind_fields` keeps them so): indicator overlays use
+ * `period`; a `price_line` carries `price` + `label` (+ optional `role`) — the
+ * channel the agent pushes S/R levels through (Plan 0047). The non-applicable
+ * fields are absent on the wire (the bus dumps with `exclude_none`). */
 export interface OverlaySpec {
   kind: OverlayKind
   period?: number | null
+  price?: number | null
+  label?: string | null
+  role?: PriceLineRole | null
 }
 
 export type MarkerKind = 'bullish_marker' | 'bearish_marker'
