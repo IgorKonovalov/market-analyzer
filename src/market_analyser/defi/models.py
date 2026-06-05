@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # The EVM majors this plan targets (ADR-0034). A position on any other chain is
 # dropped by the adapter rather than widened into the model.
@@ -77,11 +77,15 @@ class DefiPosition(BaseModel):
     pool_address: str | None = Field(default=None, min_length=1)
 
     # LP-only; `None` for non-LP positions and for LP positions whose source does
-    # not expose tick boundaries (Zerion — see module docstring).
+    # not expose the on-chain detail. The discovery source (Zerion) leaves them
+    # `None`; the deep adapter (Plan 0034 phases 3-4) fills them via RPC / The
+    # Graph and the enrichment step (phase 5) folds them onto the position.
     pool: str | None = None
     tick_lower: int | None = None
     tick_upper: int | None = None
     in_range: bool | None = None
+    current_tick: int | None = None
+    uncollected_fees: list[PositionToken] | None = None
 
     @field_validator("usd_value")
     @classmethod
@@ -93,4 +97,44 @@ class DefiPosition(BaseModel):
         return v
 
 
-__all__ = ["Chain", "DefiPosition", "PositionKind", "PositionToken"]
+class LpPositionDetail(BaseModel):
+    """The deep on-chain state of a single concentrated-liquidity LP position
+    (Uniswap-v3 / Aerodrome Slipstream), produced by an `LpPositionDetailSource`
+    (Plan 0034). It *enriches* the `DefiPosition` discovery returns: the precise
+    tick range, where the pool's current tick sits relative to it (in-range
+    status), and the fees accrued but not yet collected.
+
+    Boundary-validated in the model's house style: ticks are finite ints with
+    `tick_lower < tick_upper`, `in_range` is required to agree with the half-open
+    range `tick_lower <= current_tick < tick_upper` (a mismatch is a decode bug,
+    rejected at construction, not silently trusted), and each uncollected-fee
+    entry is a `PositionToken` (finite, positive amount). No owed fees is an empty
+    list, not `None`. Downstream code (enrichment, later risk) may trust it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    tick_lower: int
+    tick_upper: int
+    current_tick: int
+    in_range: bool  # must equal tick_lower <= current_tick < tick_upper
+    uncollected_fees: list[PositionToken]
+
+    @model_validator(mode="after")
+    def _ticks_ordered_and_in_range_consistent(self) -> LpPositionDetail:
+        if self.tick_lower >= self.tick_upper:
+            raise ValueError("tick_lower must be strictly less than tick_upper")
+        expected = self.tick_lower <= self.current_tick < self.tick_upper
+        if self.in_range != expected:
+            raise ValueError(
+                "in_range must equal (tick_lower <= current_tick < tick_upper)",
+            )
+        return self
+
+
+__all__ = [
+    "Chain",
+    "DefiPosition",
+    "LpPositionDetail",
+    "PositionKind",
+    "PositionToken",
+]

@@ -48,7 +48,7 @@ from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
-from market_analyser.data.sources import WalletPositionsSource
+from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
@@ -70,6 +70,7 @@ def create_app(
     mcp_secret_path: Path | None = None,
     secrets_store: SecretsStore | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
+    lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
@@ -157,6 +158,15 @@ def create_app(
         effective_wallet_sources = {"zerion": ZerionAdapter(secrets_store=secrets_store)}
     else:
         effective_wallet_sources = {}
+    # DeFi LP-detail sources (Plan 0034, ADR-0031/0034): the deep-state selector
+    # registry, the depth half of the wallet sources above. An explicit map wins
+    # (tests inject a fake); the concrete RPC/Graph deep adapter is built from the
+    # secrets store by phase 3. Empty until then — the enrichment step (phase 5)
+    # treats an absent source as "discovery-only" rather than failing.
+    if lp_detail_sources is not None:
+        effective_lp_detail_sources: dict[str, LpPositionDetailSource] = dict(lp_detail_sources)
+    else:
+        effective_lp_detail_sources = {}
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
@@ -208,6 +218,9 @@ def create_app(
     # `POST /defi/scan` route and the `scan_wallet` tool; the phase-3 scan job
     # consumes the selected source.
     app.state.wallet_positions_sources = effective_wallet_sources
+    # The DeFi LP-detail registry (Plan 0034) — consumed by the enrichment step
+    # (phase 5) to deepen discovered LP positions with on-chain tick/fee state.
+    app.state.lp_detail_sources = effective_lp_detail_sources
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.

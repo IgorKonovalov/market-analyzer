@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     # domain (the adapter that *produces* DefiPosition imports it at runtime;
     # this Protocol only names the return type). `defi/models` imports nothing
     # from `data/`, so there is no import cycle.
-    from market_analyser.defi.models import DefiPosition
+    from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail
 
 
 @runtime_checkable
@@ -136,3 +136,29 @@ class WalletPositionsSource(Protocol):
     source name ("zerion"), built in the composition root (ADR-0031)."""
 
     def fetch_positions(self, address: str) -> Sequence[DefiPosition]: ...
+
+
+@runtime_checkable
+class LpPositionDetailSource(Protocol):
+    """A source of the deep on-chain state of a single concentrated-liquidity LP
+    position — the *depth* half of the DeFi program (Plan 0034) that enriches the
+    interpreted positions `WalletPositionsSource` discovers (ADR-0034: deep state
+    comes from our own RPC + The Graph, not the discovery aggregator).
+
+    The position is identified by what the discovery payload exposes: `chain` +
+    `pool_address` is sufficient for the Velodrome/Aerodrome class (the LP is an
+    ERC-20 LP token — one hop). Uniswap-v3 positions are NFTs and two positions
+    can share a pool with different ranges, so `token_id` (the position NFT) is
+    the finer key for that class (two hops). `token_id` is therefore optional:
+    omitted for the one-hop class, supplied for Uni-v3.
+
+    Members of the DeFi LP-detail selector registry, keyed by source name, built
+    in the composition root (ADR-0031)."""
+
+    def fetch_lp_detail(
+        self,
+        *,
+        chain: Chain,
+        pool_address: str,
+        token_id: int | None = None,
+    ) -> LpPositionDetail: ...
