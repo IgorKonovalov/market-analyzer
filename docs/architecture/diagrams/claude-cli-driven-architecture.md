@@ -1,6 +1,6 @@
 # Claude-CLI-driven architecture
 
-Source of truth for the post-[ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) layout — Claude Code as the primary control surface, Electron as the live viewer, sidecar standalone-capable. Update whenever a transport, route, or persisted secret changes shape.
+Source of truth for the post-[ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) layout — Claude Code as the primary control surface, Electron as the live viewer, sidecar standalone-capable. Update whenever a transport, route, or persisted secret changes shape. _Last refreshed 2026-06-05 — full route/tool surface, the `analysis/` + `defi/` lanes, and `secrets.json` (ADR-0038)._
 
 ## Component map
 
@@ -14,20 +14,28 @@ flowchart LR
 
     subgraph Sidecar["Python sidecar (standalone process)"]
         MCPRoute["/mcp<br/>Streamable HTTP<br/>(mcp-secret bearer)"]
-        Routes["/healthz, /ohlcv, /annotations,<br/>/backtests, /events (SSE),<br/>/settings/mcp-secret/rotate<br/>(renderer bearer)"]
+        Routes["Renderer routes (renderer bearer)<br/>/healthz · /ohlcv · /search · /annotations<br/>/backtests · /news · /agent_mode · /ui_events<br/>/defi/scan · /settings/* · /events (SSE)"]
         Bus["In-process event bus<br/>(per-subscriber asyncio queue)"]
-        Tools["MCP tools<br/>get_ohlcv, list/write_annotation,<br/>show_chart, update_chart,<br/>highlight_pattern, run_backtest"]
-        DL["MarketDataProvider +<br/>repositories"]
-        Engine["Backtest engine<br/>(pure run + persist)"]
+        Tools["MCP tools (~26)<br/>OHLCV + backfill · annotations · agent chart<br/>(show/update/highlight) · backtest + walk-forward<br/>+ compare · screener · news/sentiment/stocktwits<br/>· quote · search · analyze_symbol + multi-tf<br/>+ volume · macro (snapshot/btc/fear-greed)<br/>· scan_wallet · ui-events poll"]
+        Analysis["analysis/<br/>(indicators, patterns, snapshot,<br/>volume, multi-timeframe)"]
+        DL["MarketDataProvider +<br/>per-capability sources + repositories"]
+        Engine["Backtest engine<br/>(pure run + walk-forward + persist)"]
+        DeFi["defi/<br/>(wallet discovery, scan job)"]
         Cache[("SQLite cache.sqlite<br/>bars, annotations,<br/>backtest_runs")]
         MCPRoute --> Tools
         Tools --> DL
-        Tools --> Bus
+        Tools --> Analysis
         Tools --> Engine
+        Tools --> DeFi
+        Tools --> Bus
+        Analysis --> DL
         Engine --> DL
         Engine --> Cache
         Engine --> Bus
+        DeFi --> DL
+        DeFi --> Bus
         Routes --> DL
+        Routes --> DeFi
         Bus --> Routes
         DL --> Cache
     end
@@ -35,10 +43,11 @@ flowchart LR
     subgraph UD["User data dir (mode 0600 files)"]
         Lockfile[("sidecar.lock<br/>pid, port, renderer_secret,<br/>process_create_time")]
         MCPSecret[("mcp-secret.json")]
+        Secrets[("secrets.json<br/>third-party API keys<br/>(ADR-0038)")]
     end
 
     subgraph Electron["Electron viewer (optional, attachable)"]
-        View["Main process + Renderer<br/>(React, lightweight-charts)<br/>charts · equity curves · trade log"]
+        View["Main process + Renderer<br/>(React, lightweight-charts)<br/>chart · backtests · news · live signals · settings"]
     end
 
     User -- "types prompts" --> Claude
@@ -50,13 +59,14 @@ flowchart LR
     Sidecar -. "writes on boot<br/>(rotated per sidecar launch)" .-> Lockfile
     View -. "reads on attach" .-> Lockfile
     MCPRoute -. "reads" .-> MCPSecret
+    DeFi -. "reads Zerion key" .-> Secrets
 ```
 
 Boundaries:
 
 - **CLI** is Claude Code with its built-in MCP client. The user's primary input device — symbols, timeframes, strategies, overlay choices, backtest parameters, render commands all originate here.
-- **Sidecar** is the single Python process. It serves two transports on one loopback port: MCP at `/mcp` (Streamable HTTP, agent-facing, per [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md)) and the renderer HTTP routes (viewer-facing, per [ADR-0002](../adrs/0002-ipc-local-http.md)). Both transports share the same data layer, repositories, and SQLite cache. The backtest engine (pure `run` + thin `persist`, per [ADR-0018](../adrs/0018-backtest-result-schema.md)) sits behind the `run_backtest` tool, persists to the `backtest_runs` table, and emits `run.completed v1`. The event bus is in-process — MCP tools and the engine publish; the SSE handler at `/events` is the sole subscriber-dispatch.
-- **User data dir** holds the two persisted secrets, each `0600`. `mcp-secret.json` is long-lived (ADR-0014); `sidecar.lock` is per-sidecar-launch (ADR-0016).
+- **Sidecar** is the single Python process. It serves two transports on one loopback port: MCP at `/mcp` (Streamable HTTP, agent-facing, per [ADR-0014](../adrs/0014-mcp-as-second-sidecar-protocol.md)) and the renderer HTTP routes (viewer-facing, per [ADR-0002](../adrs/0002-ipc-local-http.md)). Both transports share the same data layer, repositories, and SQLite cache. The data layer routes external reads through per-capability source Protocols + a selector registry ([ADR-0031](../adrs/0031-data-source-adapter-contract.md)); the `analysis/` surface ([ADR-0023](../adrs/0023-technical-analysis-surface.md): trailing indicators, candlestick patterns, `condition_snapshot`, volume, multi-timeframe) and the `defi/` domain ([ADR-0035](../adrs/0035-defi-domain-placement.md): wallet discovery + async scan job, emitting `defi.scan_*`) sit beside the backtest engine as agent-callable lanes. The backtest engine (pure `run` + walk-forward + thin `persist`, per [ADR-0018](../adrs/0018-backtest-result-schema.md)/[ADR-0024](../adrs/0024-extended-backtest-metrics.md)) sits behind `run_backtest`/`walk_forward_backtest`/`compare_strategies`, persists to the `backtest_runs` table, and emits `run.completed v1`. The event bus lives in a neutral top-level `events/` core ([ADR-0032](../adrs/0032-data-layer-no-api-dependency.md)) — MCP tools, the engine, and the scan job publish; the SSE handler at `/events` is the sole subscriber-dispatch.
+- **User data dir** holds three persisted files, each `0600`. `mcp-secret.json` is the long-lived MCP bearer (ADR-0014); `sidecar.lock` is per-sidecar-launch (ADR-0016); `secrets.json` holds third-party data-source API keys (e.g. the Zerion key the DeFi scan needs) per [ADR-0038](../adrs/0038-third-party-api-key-storage.md) — its values are never logged and never returned by any endpoint (`GET /settings/secrets` reports only `"set"`/absent).
 - **Electron viewer** is optional. The sidecar runs without it; opening Electron attaches to the running sidecar via the lockfile (or spawns one if none is running). Closing Electron does not stop the sidecar.
 
 Critical invariants:
