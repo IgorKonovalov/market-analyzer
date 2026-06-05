@@ -37,6 +37,7 @@ from market_analyser.api.routes.defi import router as defi_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.news import router as news_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
+from market_analyser.api.routes.quote import router as quote_router
 from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
@@ -309,6 +310,10 @@ def create_app(
     # `/search` needs only the provider (always present); renderer-bearer-gated
     # by the central middleware like /ohlcv (Plan 0024).
     app.include_router(search_router)
+    # `/quote` needs only the provider (always present); renderer-bearer-gated by
+    # the central middleware like /ohlcv. The renderer's price header polls it for
+    # a live, timeframe-independent current price (Plan 0047).
+    app.include_router(quote_router)
 
     if annotations_repository is not None:
         app.include_router(annotations_router)
