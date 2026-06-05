@@ -55,7 +55,11 @@ class EvaluatedSignal(BaseModel):
     kind: SignalKind
     bar_index: int
     event_ts: datetime
-    reason: str | None
+    # `= None` default (not just `| None`) so the SSE bus's `exclude_none` dump
+    # omits it when absent AND `model_json_schema()` marks it optional — keeping
+    # the wire shape, the schema, and the renderer's TS mirror consistent (the
+    # same pattern the chart payloads' optional fields use).
+    reason: str | None = None
 
 
 class SignalEvaluation(BaseModel):
@@ -78,8 +82,10 @@ class SignalEvaluation(BaseModel):
     closed_bar_count: int  # bars actually passed to generate_signals
     latest_bar_excluded_as_forming: bool  # True iff a still-forming latest bar was dropped
     current_position: Literal["flat", "long"]  # implied by folding the signal stream
-    last_signal: EvaluatedSignal | None  # most recent signal, or None if none fired
-    bars_since_last_signal: int | None  # 0 == fired on the last closed bar; None if no signal
+    # `= None` defaults so the SSE bus's `exclude_none` dump omits these when
+    # absent and the schema marks them optional — see EvaluatedSignal.reason.
+    last_signal: EvaluatedSignal | None = None  # most recent signal, or None if none fired
+    bars_since_last_signal: int | None = None  # 0 == fired on the last closed bar; None if none
     fresh_signal: bool  # last_signal fired on the last closed bar
 
 
