@@ -1,6 +1,6 @@
 # 0048 — Fix Slipstream staked-CL deep read (gauge indirection)
 
-> **Status:** draft (2026-06-05) — grounded by the Plan 0034 phase-5 live smoke against `0xae5b…9790` (2026-06-05): the on-chain read chain below was decoded end-to-end against Base mainnet, so the implementer inherits exact addresses/selectors, not assumptions.
+> **Status:** approved (2026-06-05) — grounded by the Plan 0034 phase-5 live smoke against `0xae5b…9790` (2026-06-05): the on-chain read chain below was decoded end-to-end against Base mainnet, so the implementer inherits exact addresses/selectors, not assumptions.
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev
 > **Related ADRs:** [0034](../adrs/0034-defi-portfolio-aggregator.md) (deep state comes from our own RPC + The Graph — **this plan corrects the *keying*, the stance holds, no new ADR**), [0031](../adrs/0031-data-source-adapter-contract.md) (the `LpPositionDetailSource` seam this reworks behind), [0035](../adrs/0035-defi-domain-placement.md) (`defi/` placement), [0038](../adrs/0038-third-party-api-key-storage.md) (`base_rpc_url`/`eth_rpc_url` secrets), [0019](../adrs/0019-external-http-adapter-resilience.md) (resilience client)
