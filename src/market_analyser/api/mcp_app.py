@@ -37,6 +37,7 @@ from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
+from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
@@ -117,6 +118,18 @@ def create_mcp_components(
     register_update_chart(server, event_bus=event_bus)
     register_highlight_pattern(
         server, annotations_repository=annotations_repository, event_bus=event_bus
+    )
+
+    # Live-signal evaluator (Plan 0026): resolves a strategy, fetches fresh bars
+    # to now (fetch-on-miss via the coordinator when present, else the plain
+    # provider fetch), evaluates the current bar, and publishes
+    # `signal.evaluated v1`. Always registered — no extra deps beyond the
+    # always-present provider + event bus; the coordinator may be None.
+    register_evaluate_signals(
+        server,
+        provider=provider,
+        backfill_coordinator=backfill_coordinator,
+        event_bus=event_bus,
     )
 
     register_get_pending_ui_events(server, ui_event_buffer=ui_event_buffer)

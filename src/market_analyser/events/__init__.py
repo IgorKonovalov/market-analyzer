@@ -28,6 +28,8 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from market_analyser.backtest.types import SignalEvaluation
+
 DEFAULT_QUEUE_CAP = 256
 
 
@@ -99,6 +101,22 @@ class RunCompletedPayloadV1(BaseModel):
     kind: Literal["backtest", "analysis", "defi"]
     run_id: str
     artifact_path: str
+
+
+class SignalEvaluatedPayloadV1(BaseModel):
+    """`signal.evaluated v1` payload (Plan 0026): the live signal state of one
+    strategy on one symbol.
+
+    Unlike `run.completed` (which carries identifiers and lets the renderer fetch
+    the large persisted `BacktestResult` via a GET route), this payload rides the
+    full `SignalEvaluation` inline — it is small and ephemeral (nothing is
+    persisted), so the viewer needs no follow-up fetch. A *condition report*,
+    never a recommendation."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    evaluation: SignalEvaluation
 
 
 class ChartUpdateDroppedPayloadV1(BaseModel):
@@ -220,6 +238,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.update": ChartUpdatePayloadV1,
     "chart.highlight": ChartHighlightPayloadV1,
     "run.completed": RunCompletedPayloadV1,
+    "signal.evaluated": SignalEvaluatedPayloadV1,
     "chart.update_dropped": ChartUpdateDroppedPayloadV1,
     "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
     "ohlcv.backfilled": OhlcvBackfilledPayloadV1,
