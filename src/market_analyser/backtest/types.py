@@ -13,9 +13,12 @@ will land alongside `ENTER_SHORT`/`EXIT_SHORT` in their own plan.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from market_analyser.contracts.strategy import SignalKind
 
 
 class Trade(BaseModel):
@@ -36,4 +39,48 @@ class Trade(BaseModel):
     kind: Literal["long"]
 
 
-__all__ = ["Trade"]
+class EvaluatedSignal(BaseModel):
+    """The most-recent signal in a live evaluation (Plan 0026).
+
+    Unlike a backtest `Trade`, this is not executed against a future open — it
+    is the strategy's decision *as emitted*. `bar_index` and `event_ts` index
+    into the CLOSED-bar series (any still-forming latest bar is excluded before
+    indexing), so they are stable across an intrabar re-call until a new bar
+    closes. `kind` carries the strategy contract's `SignalKind` directly (it
+    serialises to `"enter_long"` / `"exit_long"`).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: SignalKind
+    bar_index: int
+    event_ts: datetime
+    reason: str | None
+
+
+class SignalEvaluation(BaseModel):
+    """The current signal state of one strategy on one symbol (Plan 0026).
+
+    A *condition report*, never a recommendation: it states what the strategy's
+    signals are (implied position, most-recent signal, freshness), not what to
+    do about them. Produced by `backtest.live_signal.evaluate_signals` over a
+    closed-bar series; the wall-clock dependence is confined to deciding which
+    bars count as closed (`latest_bar_excluded_as_forming`), so the financially
+    meaningful computation stays pure.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    strategy_id: str
+    symbol: str
+    timeframe: str
+    evaluated_through_ts: datetime  # event_ts of the last CLOSED bar fed to the strategy
+    closed_bar_count: int  # bars actually passed to generate_signals
+    latest_bar_excluded_as_forming: bool  # True iff a still-forming latest bar was dropped
+    current_position: Literal["flat", "long"]  # implied by folding the signal stream
+    last_signal: EvaluatedSignal | None  # most recent signal, or None if none fired
+    bars_since_last_signal: int | None  # 0 == fired on the last closed bar; None if no signal
+    fresh_signal: bool  # last_signal fired on the last closed bar
+
+
+__all__ = ["EvaluatedSignal", "SignalEvaluation", "Trade"]

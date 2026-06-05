@@ -23,6 +23,7 @@ from market_analyser.backtest._bars_hash import bars_hash
 from market_analyser.backtest._version import ENGINE_VERSION
 from market_analyser.backtest.adapter import signals_to_trades
 from market_analyser.backtest.engine import StrategyContractError, run
+from market_analyser.backtest.live_signal import evaluate_signals
 from market_analyser.backtest.metrics import (
     UnknownTimeframeError,
     _apply_costs,
@@ -36,7 +37,7 @@ from market_analyser.backtest.result import (
     BacktestRunSummary,
     EquityPoint,
 )
-from market_analyser.backtest.types import Trade
+from market_analyser.backtest.types import EvaluatedSignal, SignalEvaluation, Trade
 from market_analyser.backtest.walk_forward import WalkForwardConfigError, walk_forward
 from market_analyser.backtest.walk_forward_types import WalkForwardFold, WalkForwardResult
 
@@ -46,6 +47,8 @@ __all__ = [
     "BacktestResult",
     "BacktestRunSummary",
     "EquityPoint",
+    "EvaluatedSignal",
+    "SignalEvaluation",
     "StrategyContractError",
     "Trade",
     "UnknownTimeframeError",
@@ -57,6 +60,7 @@ __all__ = [
     "_buy_and_hold_return",
     "_calc_metrics",
     "bars_hash",
+    "evaluate_signals",
     "run",
     "signals_to_trades",
     "walk_forward",
