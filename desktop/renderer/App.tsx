@@ -27,13 +27,15 @@ import { useEventStream } from './hooks/useEventStream'
 import styles from './App.module.css'
 import { ThemeToggle } from './components/ThemeToggle'
 import type { Timeframe } from './components/SymbolPicker'
+import type { SignalEvaluation } from './types/events'
 import { BacktestView } from './views/BacktestView'
+import { LiveSignalView } from './views/LiveSignalView'
 import { NewsView } from './views/NewsView'
 import { OhlcvView } from './views/OhlcvView'
 import { RecentBacktestsView } from './views/RecentBacktestsView'
 import { SettingsView } from './views/SettingsView'
 
-type View = 'chart' | 'news' | 'settings' | 'backtest' | 'recent-backtests'
+type View = 'chart' | 'news' | 'signals' | 'settings' | 'backtest' | 'recent-backtests'
 
 /**
  * Test-only window-attached snapshot of the chart state. The Playwright
@@ -73,6 +75,10 @@ export function App(): JSX.Element {
   )
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [recentListRefresh, setRecentListRefresh] = useState(0)
+  // Latest live-signal evaluation (Plan 0026). Reactive-only: the panel reflects
+  // whatever the agent last evaluated via `signal.evaluated v1`. No auto-switch —
+  // the user navigates to the Signals tab; the most-recent evaluation persists.
+  const [latestEvaluation, setLatestEvaluation] = useState<SignalEvaluation | null>(null)
 
   const backtestState = useBacktestResult({ runId: selectedRunId })
 
@@ -100,6 +106,7 @@ export function App(): JSX.Element {
     onChartUpdate: (payload) => dispatch({ kind: 'event/chart.update', payload }),
     onChartHighlight: (payload) => dispatch({ kind: 'event/chart.highlight', payload }),
     onRunCompleted: handleRunCompleted,
+    onSignalEvaluated: (payload) => setLatestEvaluation(payload.evaluation),
     onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
     onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
     onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
@@ -175,6 +182,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'signals' ? 'page' : undefined}
+            onClick={() => setView('signals')}
+            data-testid="nav-signals"
+          >
+            Signals
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'news' ? 'page' : undefined}
             onClick={() => setView('news')}
             data-testid="nav-news"
@@ -206,6 +222,7 @@ export function App(): JSX.Element {
           onRefresh={onRefresh}
         />
       )}
+      {view === 'signals' && <LiveSignalView evaluation={latestEvaluation} />}
       {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}
       {view === 'recent-backtests' && (

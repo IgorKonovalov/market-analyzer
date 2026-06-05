@@ -40,6 +40,9 @@ interface DumpedSchemas {
   OhlcvBackfillStartedPayloadV1: JsonSchema
   OhlcvBackfilledPayloadV1: JsonSchema
   OhlcvBackfillFailedPayloadV1: JsonSchema
+  SignalEvaluatedPayloadV1: JsonSchema
+  SignalEvaluation: JsonSchema
+  EvaluatedSignal: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -53,7 +56,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    ChartHighlightPayloadV1, RunCompletedPayloadV1,',
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
+    '    SignalEvaluatedPayloadV1,',
     ')',
+    'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'print(json.dumps({',
     '    "OverlaySpec": OverlaySpec.model_json_schema(),',
     '    "Marker": Marker.model_json_schema(),',
@@ -65,6 +70,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "OhlcvBackfillStartedPayloadV1": OhlcvBackfillStartedPayloadV1.model_json_schema(),',
     '    "OhlcvBackfilledPayloadV1": OhlcvBackfilledPayloadV1.model_json_schema(),',
     '    "OhlcvBackfillFailedPayloadV1": OhlcvBackfillFailedPayloadV1.model_json_schema(),',
+    '    "SignalEvaluatedPayloadV1": SignalEvaluatedPayloadV1.model_json_schema(),',
+    '    "SignalEvaluation": SignalEvaluation.model_json_schema(),',
+    '    "EvaluatedSignal": EvaluatedSignal.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -235,6 +243,53 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     ])
     expect(literalValues(dumped.OhlcvBackfillFailedPayloadV1, 'reason')).toEqual(
       ['rate_limited', 'unknown_symbol', 'upstream_unavailable', 'history_exceeded'].sort(),
+    )
+  })
+
+  it('SignalEvaluatedPayloadV1 carries the evaluation inline', () => {
+    expect(propertyNames(dumped.SignalEvaluatedPayloadV1)).toEqual(['evaluation'])
+    expect(requiredNames(dumped.SignalEvaluatedPayloadV1)).toEqual(['evaluation'])
+  })
+
+  it('SignalEvaluation fields match (last_signal + bars_since_last_signal optional)', () => {
+    expect(propertyNames(dumped.SignalEvaluation)).toEqual([
+      'bars_since_last_signal',
+      'closed_bar_count',
+      'current_position',
+      'evaluated_through_ts',
+      'fresh_signal',
+      'last_signal',
+      'latest_bar_excluded_as_forming',
+      'strategy_id',
+      'symbol',
+      'timeframe',
+    ])
+    // last_signal + bars_since_last_signal have `= None` defaults (the SSE bus
+    // dumps with exclude_none), so they are NOT required — the TS marks them `?`.
+    expect(requiredNames(dumped.SignalEvaluation)).toEqual([
+      'closed_bar_count',
+      'current_position',
+      'evaluated_through_ts',
+      'fresh_signal',
+      'latest_bar_excluded_as_forming',
+      'strategy_id',
+      'symbol',
+      'timeframe',
+    ])
+    expect(literalValues(dumped.SignalEvaluation, 'current_position')).toEqual(['flat', 'long'])
+  })
+
+  it('EvaluatedSignal fields match (reason optional; kind is a closed literal set)', () => {
+    expect(propertyNames(dumped.EvaluatedSignal)).toEqual([
+      'bar_index',
+      'event_ts',
+      'kind',
+      'reason',
+    ])
+    // reason has a `= None` default → not required.
+    expect(requiredNames(dumped.EvaluatedSignal)).toEqual(['bar_index', 'event_ts', 'kind'])
+    expect(literalValues(dumped.EvaluatedSignal, 'kind')).toEqual(
+      ['enter_long', 'exit_long'].sort(),
     )
   })
 })

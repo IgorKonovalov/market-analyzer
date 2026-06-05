@@ -1,0 +1,141 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  max-width: 640px;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--color-fg-muted);
+  text-align: center;
+}
+
+.header {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.strategy {
+  font-weight: 700;
+}
+
+.symbol {
+  font-family: var(--font-mono);
+}
+
+.timeframe {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.dot {
+  color: var(--color-border-strong);
+}
+
+.grid {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.row dt {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.row dd {
+  margin: 0;
+}
+
+.muted {
+  color: var(--color-fg-muted);
+}
+
+.pos_long {
+  color: var(--color-bull);
+  background: var(--color-bull-bg);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.pos_flat {
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.kind_enter_long {
+  color: var(--color-bull);
+  font-weight: 600;
+}
+
+.kind_exit_long {
+  color: var(--color-bear);
+  font-weight: 600;
+}
+
+.reason {
+  color: var(--color-fg-muted);
+  font-style: italic;
+}
+
+/* A fresh signal (fired on the last closed bar) is visually emphasized; a stale
+ * one reads quietly so the two are distinguishable at a glance. */
+.fresh {
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.stale {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.forming {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-sunken);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.disclaimer {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+}

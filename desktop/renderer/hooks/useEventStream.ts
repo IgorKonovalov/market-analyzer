@@ -43,6 +43,7 @@ import type {
   OhlcvBackfillFailedPayloadV1,
   OhlcvBackfillStartedPayloadV1,
   RunCompletedPayloadV1,
+  SignalEvaluatedPayloadV1,
 } from '../types/events'
 
 export type ConnectionState = 'connecting' | 'open' | 'reconnecting'
@@ -52,6 +53,7 @@ export interface EventStreamHandlers {
   onChartUpdate?: (payload: ChartUpdatePayloadV1) => void
   onChartHighlight?: (payload: ChartHighlightPayloadV1) => void
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
+  onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
   onOhlcvBackfillStarted?: (payload: OhlcvBackfillStartedPayloadV1) => void
   onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
@@ -70,6 +72,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'chart.update': 1,
   'chart.highlight': 1,
   'run.completed': 1,
+  'signal.evaluated': 1,
   'chart.update_dropped': 1,
   'ohlcv.backfill_started': 1,
   'ohlcv.backfilled': 1,
@@ -223,6 +226,9 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
       return
     case 'run.completed':
       handlers.onRunCompleted?.(envelope.payload as RunCompletedPayloadV1)
+      return
+    case 'signal.evaluated':
+      handlers.onSignalEvaluated?.(envelope.payload as SignalEvaluatedPayloadV1)
       return
     case 'ohlcv.backfill_started':
       handlers.onOhlcvBackfillStarted?.(envelope.payload as OhlcvBackfillStartedPayloadV1)

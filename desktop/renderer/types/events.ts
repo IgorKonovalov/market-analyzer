@@ -58,6 +58,41 @@ export interface RunCompletedPayloadV1 {
   artifact_path: string
 }
 
+/** The most-recent signal in a live evaluation (Plan 0026). `kind` mirrors the
+ * pydantic `SignalKind` StrEnum. `reason` is optional on the wire — the SSE bus
+ * dumps with `exclude_none`, so it is absent (not `null`) when the strategy
+ * emitted no reason. */
+export interface EvaluatedSignal {
+  kind: 'enter_long' | 'exit_long'
+  bar_index: number
+  /** ISO 8601 UTC timestamp. */
+  event_ts: string
+  reason?: string | null
+}
+
+/** A live strategy-vs-current-bar evaluation (Plan 0026). A condition report,
+ * never a recommendation. `last_signal` / `bars_since_last_signal` are optional
+ * on the wire (absent, via `exclude_none`, when no signal has fired — a flat
+ * evaluation). `bars_since_last_signal === 0` means the signal fired on the last
+ * closed bar (`fresh_signal === true`). */
+export interface SignalEvaluation {
+  strategy_id: string
+  symbol: string
+  timeframe: string
+  /** ISO 8601 UTC timestamp of the last CLOSED bar fed to the strategy. */
+  evaluated_through_ts: string
+  closed_bar_count: number
+  latest_bar_excluded_as_forming: boolean
+  current_position: 'flat' | 'long'
+  last_signal?: EvaluatedSignal | null
+  bars_since_last_signal?: number | null
+  fresh_signal: boolean
+}
+
+export interface SignalEvaluatedPayloadV1 {
+  evaluation: SignalEvaluation
+}
+
 /** A single [start, end] coverage gap a backfill is/was filling (Plan 0013). */
 export interface GapWindow {
   start: string
@@ -93,6 +128,7 @@ export type EnvelopeType =
   | 'chart.update'
   | 'chart.highlight'
   | 'run.completed'
+  | 'signal.evaluated'
   | 'chart.update_dropped'
   | 'ohlcv.backfill_started'
   | 'ohlcv.backfilled'
@@ -116,6 +152,10 @@ export type ChartHighlightEnvelope = Envelope<ChartHighlightPayloadV1> & {
 }
 export type RunCompletedEnvelope = Envelope<RunCompletedPayloadV1> & {
   type: 'run.completed'
+  version: 1
+}
+export type SignalEvaluatedEnvelope = Envelope<SignalEvaluatedPayloadV1> & {
+  type: 'signal.evaluated'
   version: 1
 }
 export type OhlcvBackfillStartedEnvelope = Envelope<OhlcvBackfillStartedPayloadV1> & {
