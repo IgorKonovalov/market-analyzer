@@ -32,6 +32,7 @@ from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     _multi_timeframe_response,
 )
+from market_analyser.data.errors import HistoryExceededError
 from market_analyser.data.types import (
     Bar,
     MacroContext,
@@ -222,6 +223,77 @@ def test_missing_timeframe_surfaces_null_not_crash() -> None:
     assert by_tf["1d"].snapshot is not None
     assert resp.alignment.dominant_trend == Trend.UP
     assert resp.alignment.agreement == 1.0  # the available timeframe agrees with itself
+
+
+class _PartiallyFailingProvider(_SeededProvider):
+    """Like `_SeededProvider`, but `get_ohlcv` raises for the timeframes in
+    `fail_on` — `error` (default a typed `HistoryExceededError`, the 15m-window
+    Yahoo-422 case) lets a test inject a non-typed exception instead."""
+
+    def __init__(
+        self,
+        bars_by_key: dict[tuple[str, str], Sequence[Bar]],
+        *,
+        fail_on: set[str],
+        error: Exception | None = None,
+    ) -> None:
+        super().__init__(bars_by_key)
+        self._fail_on = set(fail_on)
+        self._error = error
+
+    def get_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        as_of: datetime | None = None,
+    ) -> Sequence[Bar]:
+        if timeframe in self._fail_on:
+            raise self._error or HistoryExceededError(
+                f"{timeframe} window reaches past Yahoo's intraday horizon"
+            )
+        return super().get_ohlcv(symbol, timeframe, start, end, as_of)
+
+
+def test_one_timeframe_typed_error_degrades_to_null() -> None:
+    """One timeframe's typed upstream error (the 15m 422) becomes a null snapshot,
+    not a whole-call failure; the rest resolve and agreement spans only the
+    available timeframes."""
+    provider = _PartiallyFailingProvider(
+        {
+            ("BTC-USD", "1d"): _series("BTC-USD", "1d", up=True),
+            ("BTC-USD", "1h"): _series("BTC-USD", "1h", up=True),
+        },
+        fail_on={"15m"},
+    )
+    resp = asyncio.run(
+        _multi_timeframe_response(
+            provider=provider, symbol="BTC-USD", timeframes=["1d", "1h", "15m"], as_of=None
+        )
+    )
+    by_tf = {v.timeframe: v for v in resp.alignment.timeframes}
+    assert by_tf["15m"].snapshot is None  # the 422'd timeframe degraded to a gap
+    assert by_tf["1d"].snapshot is not None
+    assert by_tf["1h"].snapshot is not None
+    assert resp.alignment.dominant_trend == Trend.UP
+    assert resp.alignment.agreement == 1.0  # computed over the two available timeframes only
+
+
+def test_non_typed_exception_still_propagates() -> None:
+    """A non-typed exception from one timeframe's fetch is a real fault — it
+    propagates and fails the call rather than being swallowed as a gap."""
+    provider = _PartiallyFailingProvider(
+        {("BTC-USD", "1d"): _series("BTC-USD", "1d", up=True)},
+        fail_on={"1h"},
+        error=RuntimeError("unexpected non-typed fault"),
+    )
+    with pytest.raises(RuntimeError, match="unexpected non-typed fault"):
+        asyncio.run(
+            _multi_timeframe_response(
+                provider=provider, symbol="BTC-USD", timeframes=["1d", "1h"], as_of=None
+            )
+        )
 
 
 # --------------------------------------------------------------------------- #

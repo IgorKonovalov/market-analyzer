@@ -34,6 +34,7 @@ from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_supported_timeframe,
 )
+from market_analyser.data.errors import UpstreamDataError
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.timeframes import max_history, supported_timeframes_label
 from market_analyser.data.types import Bar
@@ -103,7 +104,19 @@ async def _multi_timeframe_response(
     bars_by_timeframe: dict[str, list[Bar]] = {}
     for timeframe in timeframes:
         start = end - _window_for(timeframe)
-        bars = await asyncio.to_thread(provider.get_ohlcv, symbol, timeframe, start, end, as_of)
+        try:
+            bars = await asyncio.to_thread(provider.get_ohlcv, symbol, timeframe, start, end, as_of)
+        except UpstreamDataError:
+            # One timeframe's upstream/data failure (e.g. the 15m intraday window
+            # hitting Yahoo's range limit → HTTP 422) degrades that timeframe to a
+            # gap, not a whole-call failure: an empty list renders as a `None`
+            # snapshot and `agreement` is computed only over available timeframes,
+            # matching the tool's documented "null when nothing is cached"
+            # contract. Caller bugs (bad input) raise `ValueError` from the
+            # boundary checks above and still surface; any non-typed exception
+            # propagates untouched.
+            bars_by_timeframe[timeframe] = []
+            continue
         bars_by_timeframe[timeframe] = list(bars)
 
     alignment = await asyncio.to_thread(multi_timeframe_alignment, symbol, bars_by_timeframe)
