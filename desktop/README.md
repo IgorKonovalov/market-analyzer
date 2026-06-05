@@ -26,7 +26,12 @@ build pipeline and IPC conventions.
 
 ## Renderer views
 
-Candlestick chart (symbol picker, agent-mode toggle, agent-driven overlays),
-backtest result + recent-runs views, and a settings page. The renderer reaches
-the sidecar only through the typed fetch client (`renderer/api/client.ts`),
-which injects the bearer token.
+- **OHLCV chart** (`OhlcvView` + `CandlestickChart`) — candlestick chart with a symbol picker, agent-mode toggle, theme toggle, agent-driven overlays/markers, and scroll-left lazy loading of older history.
+- **Backtest** (`BacktestView`) + **recent runs** (`RecentBacktestsView`) — result metrics, equity curve, and trade log.
+- **News** (`NewsView`) — headlines with per-headline sentiment.
+- **Live signals** (`LiveSignalView`) — a reactive panel rendering the current-bar signal evaluation pushed over the `/events` SSE stream.
+- **Settings** (`SettingsView`) — sidecar/MCP config plus an Appearance (Light/Dark/System) control; theme state has a single source of truth in `renderer/lib/theme.ts` and is applied pre-paint via a `data-theme` attribute.
+
+The renderer reaches the sidecar only through the typed fetch client
+(`renderer/api/client.ts`), which injects the bearer token. Chart and SSE
+resources dispose on unmount.
