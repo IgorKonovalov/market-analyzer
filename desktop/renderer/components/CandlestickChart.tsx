@@ -90,8 +90,8 @@ import styles from './CandlestickChart.module.css'
 const CHART_COLOR_FALLBACK = {
   text: '#1a1a1a',
   border: '#e5e5e5',
-  candleUp: '#26a69a',
-  candleDown: '#ef5350',
+  candleUp: '#15803d',
+  candleDown: '#b42318',
   volume: '#cbd5e1',
   volumeMa: '#64748b',
   vwap: '#9333ea',
@@ -680,11 +680,17 @@ export function CandlestickChart({
     const colors = readChartColors(container)
     // Drop annotations whose marker-direction layer is toggled off in the legend.
     const visibleAnnotations = (annotations ?? []).filter((a) => !hidden.has(markerLayerId(a.kind)))
-    const base = annotationsToMarkers(visibleAnnotations, {
-      bullish: colors.markerBullish,
-      bearish: colors.markerBearish,
-      neutral: colors.markerNeutral,
-    })
+    const base = annotationsToMarkers(
+      visibleAnnotations,
+      {
+        bullish: colors.markerBullish,
+        bearish: colors.markerBearish,
+        neutral: colors.markerNeutral,
+      },
+      // Glyph-only on the canvas; the label shows in the backed hover tooltip
+      // (Plan 0049 phase 12 — no bare overlapping text over the candles).
+      { includeText: false },
+    )
     let markers = base
     if (clickedBarTs !== null) {
       const time = Math.floor(new Date(clickedBarTs).getTime() / 1000) as UTCTimestamp

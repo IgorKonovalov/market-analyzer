@@ -62,6 +62,13 @@ describe('annotationsToMarkers', () => {
     expect(marker.text).toBe('')
   })
 
+  it('omits the marker text when includeText is false (glyph-only — Plan 0049)', () => {
+    const [marker] = annotationsToMarkers([annotation({ label: 'hammer' })], undefined, {
+      includeText: false,
+    })
+    expect(marker.text).toBe('')
+  })
+
   it('truncates a 25-char label to 24 chars with a trailing ellipsis', () => {
     const long = 'a'.repeat(80)
     const [marker] = annotationsToMarkers([annotation({ label: long })])

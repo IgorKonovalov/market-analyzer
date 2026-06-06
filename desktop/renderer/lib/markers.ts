@@ -149,11 +149,17 @@ export function markerVisual(
 export function annotationsToMarkers(
   markers: ChartMarker[],
   colors: MarkerColors = DEFAULT_MARKER_COLORS,
+  options: { includeText?: boolean } = {},
 ): SeriesMarker<UTCTimestamp>[] {
+  const { includeText = true } = options
   return markers
     .map((m) => {
       const time = Math.floor(new Date(m.event_ts).getTime() / 1000) as UTCTimestamp
-      const text = m.label ? truncateLabel(m.label) : ''
+      // Plan 0049 phase 12: the chart passes includeText:false so markers render
+      // glyph-only — lightweight-charts marker text has no backing and reads as
+      // bare overlapping text over the candles. The label instead shows in the
+      // backed hover tooltip (Plan 0047). Other callers keep the text.
+      const text = includeText && m.label ? truncateLabel(m.label) : ''
       const { size, color } = markerVisual(m.kind, m.strength ?? null, colors)
       if (m.kind === 'bullish_marker') {
         return { time, position: 'belowBar' as const, shape: 'arrowUp' as const, color, size, text }

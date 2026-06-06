@@ -76,9 +76,11 @@
 
   /* Chart palette (Plan 0033 phase 4). Read by CandlestickChart via computed
    * styles and fed to lightweight-charts as concrete colors (it can't resolve
-   * var()); re-applied in place on theme change. Light values. */
-  --chart-up: #26a69a;
-  --chart-down: #ef5350;
+   * var()); re-applied in place on theme change. Light values. Plan 0049 phase
+   * 12: deepened from the muted teal/coral to the saturated bull/bear palette so
+   * candles read clearly on the light background even at a narrow bar width. */
+  --chart-up: #15803d;
+  --chart-down: #b42318;
   --chart-volume: #cbd5e1;
   --overlay-volume-ma: #64748b;
   --overlay-vwap: #9333ea;
@@ -117,8 +119,10 @@
   --shadow-2: 0 3px 10px rgb(0 0 0 / 50%);
   --shadow-3: 0 16px 38px rgb(0 0 0 / 62%);
 
-  /* Chart palette — dark. Brighter lines/candles read against dark surfaces. */
-  --chart-up: #2dd4bf;
+  /* Chart palette — dark. Brighter lines/candles read against dark surfaces.
+   * Plan 0049 phase 12: green/red (matching the bull/bear tokens) for clear
+   * up/down legibility, replacing the muted teal. */
+  --chart-up: #4ade80;
   --chart-down: #f87171;
   --chart-volume: #334155;
   --overlay-volume-ma: #94a3b8;
@@ -160,7 +164,7 @@
     --shadow-3: 0 16px 38px rgb(0 0 0 / 62%);
 
     /* Chart palette — dark (mirror of the explicit block). */
-    --chart-up: #2dd4bf;
+    --chart-up: #4ade80;
     --chart-down: #f87171;
     --chart-volume: #334155;
     --overlay-volume-ma: #94a3b8;
