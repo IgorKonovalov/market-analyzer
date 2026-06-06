@@ -53,6 +53,8 @@ const EMIT = new Set([
   'SentimentSample',
   'NewsResponse',
   'QuoteResponse',
+  'ScanPatternsRequest',
+  'ScanPatternsResponse',
 ])
 
 const HEADER = [

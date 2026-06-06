@@ -38,6 +38,7 @@ from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.news import router as news_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.quote import router as quote_router
+from market_analyser.api.routes.scan_patterns import router as scan_patterns_router
 from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
@@ -314,6 +315,11 @@ def create_app(
     # the central middleware like /ohlcv. The renderer's price header polls it for
     # a live, timeframe-independent current price (Plan 0047).
     app.include_router(quote_router)
+    # `POST /scan_patterns` needs the provider + event bus (both always present);
+    # renderer-bearer-gated by the central middleware. The "Scan patterns" button
+    # posts the visible range; markers arrive via `/events`, mirroring the
+    # `scan_patterns` MCP tool through the same pure core (Plan 0049).
+    app.include_router(scan_patterns_router)
 
     if annotations_repository is not None:
         app.include_router(annotations_router)
