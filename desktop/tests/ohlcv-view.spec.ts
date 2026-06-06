@@ -73,6 +73,26 @@ async function getDataDir(app: ElectronApplication): Promise<string> {
   return app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
 }
 
+/**
+ * Latest `end` (ms) among the captured /ohlcv request URLs at or after
+ * `fromIndex`, or -Infinity if none carry a parseable `end`.
+ *
+ * The chart's lazy-history loader (Plan 0030) fires its own /ohlcv requests on
+ * mount, reaching BACKWARD to older windows (an EARLIER `end`). So the Refresh
+ * fetch can't be identified by request index — it's identified by its window end
+ * advancing to ~now. Taking the max end over post-click requests ignores any
+ * interleaved lazy-history reads (whose ends stay below the initial load's).
+ */
+function latestEndMs(urls: string[], fromIndex: number): number {
+  const ends = urls
+    .slice(fromIndex)
+    .map((u) => new URL(u).searchParams.get('end'))
+    .filter((e): e is string => e !== null)
+    .map((e) => new Date(e).getTime())
+    .filter((n) => !Number.isNaN(n))
+  return ends.length > 0 ? Math.max(...ends) : Number.NEGATIVE_INFINITY
+}
+
 test('cold launch renders a candlestick chart for the default symbol', async () => {
   const app = await electron.launch({
     args: [join(__dirname, '..', 'dist', 'main', 'index.cjs')],
@@ -136,6 +156,12 @@ test('Refresh advances the OHLCV window end timestamp', async () => {
   await expect.poll(() => ohlcvUrls.length, { timeout: 30_000 }).toBeGreaterThanOrEqual(1)
   const firstEnd = new URL(ohlcvUrls[0]).searchParams.get('end')
   expect(firstEnd).not.toBeNull()
+  const firstEndMs = new Date(firstEnd!).getTime()
+
+  // Snapshot the request count before the click. The next request by index is
+  // NOT guaranteed to be the Refresh fetch — the lazy-history loader (Plan 0030)
+  // interleaves its own /ohlcv reads with an earlier `end` (see latestEndMs).
+  const beforeRefresh = ohlcvUrls.length
 
   // Tiny pause so Date.now() definitely differs between the two memo computes.
   await window.waitForTimeout(50)
@@ -144,10 +170,12 @@ test('Refresh advances the OHLCV window end timestamp', async () => {
   await expect(refreshButton).toBeEnabled({ timeout: 15_000 })
   await refreshButton.click()
 
-  await expect.poll(() => ohlcvUrls.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
-  const secondEnd = new URL(ohlcvUrls[1]).searchParams.get('end')
-  expect(secondEnd).not.toBeNull()
-  expect(new Date(secondEnd!).getTime()).toBeGreaterThan(new Date(firstEnd!).getTime())
+  // Refresh advances range_end to ~now, so its /ohlcv request carries an `end`
+  // strictly later than the initial load's. Wait for a post-click request whose
+  // end advanced past firstEnd, ignoring any interleaved lazy-history reads.
+  await expect
+    .poll(() => latestEndMs(ohlcvUrls, beforeRefresh), { timeout: 15_000 })
+    .toBeGreaterThan(firstEndMs)
 
   await app.close()
 })
