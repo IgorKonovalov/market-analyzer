@@ -60,6 +60,8 @@ function buildFakeChart(): Record<string, unknown> {
     }),
     subscribeClick: jest.fn(),
     unsubscribeClick: jest.fn(),
+    subscribeCrosshairMove: jest.fn(),
+    unsubscribeCrosshairMove: jest.fn(),
   }
 }
 

@@ -60,6 +60,9 @@ interface FakeChart {
   // Plan 0014: the component subscribes to clicks for the bar-click gesture.
   subscribeClick: jest.Mock<void, [unknown]>
   unsubscribeClick: jest.Mock<void, [unknown]>
+  // Plan 0047 phase 8: the component subscribes to crosshair moves for the tooltip.
+  subscribeCrosshairMove: jest.Mock<void, [unknown]>
+  unsubscribeCrosshairMove: jest.Mock<void, [unknown]>
 }
 
 let createdLineSeries: FakeLineSeries[] = []
@@ -114,6 +117,8 @@ function buildFakeChart(): FakeChart {
     }),
     subscribeClick: jest.fn(),
     unsubscribeClick: jest.fn(),
+    subscribeCrosshairMove: jest.fn(),
+    unsubscribeCrosshairMove: jest.fn(),
   }
 }
 

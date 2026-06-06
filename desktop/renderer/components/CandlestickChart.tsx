@@ -23,12 +23,27 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ColorType, createChart } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi, Logical, SeriesMarker, UTCTimestamp } from 'lightweight-charts'
+import type {
+  IChartApi,
+  ISeriesApi,
+  LineData,
+  Logical,
+  MouseEventParams,
+  SeriesMarker,
+  UTCTimestamp,
+} from 'lightweight-charts'
 
 import { toLightweightBar } from '../api/client'
 import { useChartGestures } from '../hooks/useChartGestures'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import { DEFAULT_MARKER_COLORS, annotationsToMarkers } from '../lib/markers'
+import {
+  type OverlayReading,
+  type TooltipContent,
+  overlayLabel,
+  tooltipAtTime,
+} from '../lib/tooltip'
+import { ChartTooltip } from './ChartTooltip'
 import {
   computeOverlayData,
   isSupportedOverlay,
@@ -219,6 +234,12 @@ export function CandlestickChart({
   // deps are `[]`, so the instance persists. (Plan 0033 phase 4.)
   const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>(() =>
     resolveEffective(getStoredTheme()),
+  )
+  // Ephemeral hover-tooltip state (Plan 0047 phase 8): the crosshair content +
+  // its position within the chart area. Null while not hovering a labelled bar
+  // or an overlay line. Never persisted, never round-tripped to the sidecar.
+  const [tooltip, setTooltip] = useState<{ content: TooltipContent; x: number; y: number } | null>(
+    null,
   )
 
   // Reflect what's drawn into the test hook. Stable identity (reads only refs),
@@ -469,6 +490,35 @@ export function CandlestickChart({
     series.setMarkers(markers)
   }, [annotations, clickedBarTs, effectiveTheme])
 
+  // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a labelled
+  // marker's text and/or each overlay line's name + value at that bar. Reads only
+  // data already in renderer state (annotations + the overlay readings the chart
+  // pulls from `seriesData`) — no sidecar call. Re-subscribes when `annotations`
+  // change so the handler closes over the current list; overlay series are read
+  // from the ref, so an overlay change needs no re-subscribe.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const handler = (param: MouseEventParams): void => {
+      if (param.time === undefined || param.point === undefined) {
+        setTooltip(null)
+        return
+      }
+      const readings: OverlayReading[] = []
+      for (const { spec, series } of overlaySeriesRef.current.values()) {
+        const datum = param.seriesData.get(series)
+        const value = datum !== undefined ? (datum as LineData).value : undefined
+        if (typeof value === 'number') {
+          readings.push({ label: overlayLabel(spec), value })
+        }
+      }
+      const content = tooltipAtTime(param.time as UTCTimestamp, annotations ?? [], readings)
+      setTooltip(content === null ? null : { content, x: param.point.x, y: param.point.y })
+    }
+    chart.subscribeCrosshairMove(handler)
+    return () => chart.unsubscribeCrosshairMove(handler)
+  }, [annotations])
+
   // Recolor the EXISTING chart when the effective theme changes — re-read the
   // tokens and push them via applyOptions. No remount (the creation effect's
   // deps are `[]`); also runs once on mount, idempotent with creation colors.
@@ -547,6 +597,7 @@ export function CandlestickChart({
             {formatRangeLabel(rangeLabel.start, rangeLabel.end)}
           </div>
         )}
+        {tooltip && <ChartTooltip content={tooltip.content} x={tooltip.x} y={tooltip.y} />}
       </div>
     </div>
   )

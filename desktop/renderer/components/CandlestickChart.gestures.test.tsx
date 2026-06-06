@@ -66,6 +66,8 @@ jest.mock('lightweight-charts', () => ({
     unsubscribeClick: jest.fn(() => {
       clickHandler = null
     }),
+    subscribeCrosshairMove: jest.fn(),
+    unsubscribeCrosshairMove: jest.fn(),
   })),
 }))
 
