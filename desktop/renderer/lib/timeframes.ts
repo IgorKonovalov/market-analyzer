@@ -31,3 +31,23 @@ export const DEFAULT_TIMEFRAME: Timeframe = '1d'
 export function isTimeframe(value: string): value is Timeframe {
   return KNOWN_TIMEFRAMES.has(value)
 }
+
+/** Nominal duration of one bar of each timeframe, in milliseconds. Weeks/days are
+ * treated as fixed spans (the same approximation the analysis lookback windows
+ * use) — precise enough to bound "is this quote inside the latest forming bar's
+ * period?" (Plan 0049 phase 10). */
+const TIMEFRAME_DURATION_MS: Record<Timeframe, number> = {
+  '15m': 15 * 60_000,
+  '1h': 60 * 60_000,
+  '4h': 4 * 60 * 60_000,
+  '1d': 24 * 60 * 60_000,
+  '1w': 7 * 24 * 60 * 60_000,
+}
+
+/** Nominal bar duration (ms) for a timeframe string, or `null` when unrecognised. */
+export function timeframeDurationMs(timeframe: string | undefined): number | null {
+  if (timeframe !== undefined && isTimeframe(timeframe)) {
+    return TIMEFRAME_DURATION_MS[timeframe]
+  }
+  return null
+}

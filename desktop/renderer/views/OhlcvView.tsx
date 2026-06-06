@@ -149,6 +149,7 @@ export function OhlcvView({
             agentModeEnabled={agentModeEnabled}
             symbol={symbol}
             timeframe={timeframe}
+            quote={quote}
             onReachLeftEdge={loadOlder}
             historyTriggerEnabled={!isLoadingOlder && !reachedStart}
             ariaLabel={`Candlestick chart for ${symbol} ${timeframe}, ${bars.length} bars`}

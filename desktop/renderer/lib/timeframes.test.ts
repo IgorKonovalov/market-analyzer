@@ -5,7 +5,13 @@
  * standing in for the `gen-types` parity that doesn't exist for this non-HTTP
  * registry.
  */
-import { DEFAULT_TIMEFRAME, KNOWN_TIMEFRAMES, TIMEFRAMES, isTimeframe } from './timeframes'
+import {
+  DEFAULT_TIMEFRAME,
+  KNOWN_TIMEFRAMES,
+  TIMEFRAMES,
+  isTimeframe,
+  timeframeDurationMs,
+} from './timeframes'
 
 describe('timeframe vocabulary', () => {
   it('is exactly the backend-supported set, cadence-ascending', () => {
@@ -33,5 +39,15 @@ describe('timeframe vocabulary', () => {
     expect(isTimeframe('1d')).toBe(true)
     expect(isTimeframe('5m')).toBe(false)
     expect(isTimeframe('nonsense')).toBe(false)
+  })
+
+  it('timeframeDurationMs returns the nominal bar span, or null for unknown', () => {
+    expect(timeframeDurationMs('15m')).toBe(15 * 60_000)
+    expect(timeframeDurationMs('1h')).toBe(60 * 60_000)
+    expect(timeframeDurationMs('4h')).toBe(4 * 60 * 60_000)
+    expect(timeframeDurationMs('1d')).toBe(24 * 60 * 60_000)
+    expect(timeframeDurationMs('1w')).toBe(7 * 24 * 60 * 60_000)
+    expect(timeframeDurationMs('5m')).toBeNull()
+    expect(timeframeDurationMs(undefined)).toBeNull()
   })
 })

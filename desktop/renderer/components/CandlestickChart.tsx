@@ -80,6 +80,8 @@ import {
 } from '../lib/volume'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
+import type { QuoteResponse } from '../types/sidecar/quote-response'
+import { timeframeDurationMs } from '../lib/timeframes'
 import styles from './CandlestickChart.module.css'
 
 // Fallback chart colors (light-theme values) used when a theme token is unset —
@@ -189,6 +191,10 @@ interface Props {
   /** Carried in the gesture payloads so the agent knows which chart fired. */
   symbol?: string
   timeframe?: string
+  /** Plan 0049 phase 10: the live quote the parent already polls (`useQuotePoll`).
+   * When its `as_of` falls within the latest bar's period, the chart updates the
+   * forming bar in place (no refetch, no new bar). */
+  quote?: QuoteResponse | null
   /** Plan 0030: fired when the user scrolls near the buffer's left edge so the
    * parent can fetch + prepend older bars. */
   onReachLeftEdge?: () => void
@@ -256,6 +262,7 @@ export function CandlestickChart({
   agentModeEnabled = false,
   symbol,
   timeframe,
+  quote,
   onReachLeftEdge,
   historyTriggerEnabled = false,
 }: Props): JSX.Element {
@@ -604,6 +611,33 @@ export function CandlestickChart({
     prevFirstTsRef.current = newFirstMs
     syncTestRenderHook()
   }, [bars, overlays, hidden, syncTestRenderHook])
+
+  // Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`
+  // into the chart's CURRENT (forming) bar via `series.update()` — close tracks
+  // the quote, high/low extend — but ONLY when the quote's `as_of` falls within
+  // the latest bar's period. A quote that predates the latest bar, or has crossed
+  // into a not-yet-fetched new period, touches nothing: we never rewrite a closed
+  // bar nor fabricate a new one (that is a refetch/SSE concern). No new fetch, no
+  // setData — `series.update()` at the last bar's time updates it in place. No
+  // lookahead: this is the live current bar, not historical replay.
+  useEffect(() => {
+    const series = seriesRef.current
+    if (!series || !quote || bars.length === 0) return
+    const periodMs = timeframeDurationMs(timeframe)
+    if (periodMs === null) return
+    const last = bars[bars.length - 1]
+    const lastStartMs = new Date(last.event_ts).getTime()
+    const asOfMs = new Date(quote.as_of).getTime()
+    // Outside the forming bar's [start, start + period) window → leave every bar.
+    if (asOfMs < lastStartMs || asOfMs >= lastStartMs + periodMs) return
+    series.update({
+      time: Math.floor(lastStartMs / 1000) as UTCTimestamp,
+      open: last.open,
+      high: Math.max(last.high, quote.price),
+      low: Math.min(last.low, quote.price),
+      close: quote.price,
+    })
+  }, [quote, bars, timeframe])
 
   // Pointer-gesture state machine + agent-mode POSTs (Plan 0029 phase 1).
   // Called AFTER the chart-creation effect so its gesture effect sees a
