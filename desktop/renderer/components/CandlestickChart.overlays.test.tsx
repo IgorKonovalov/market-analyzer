@@ -88,6 +88,8 @@ function buildFakeChart(): FakeChart {
       setData: jest.fn(),
       setMarkers: jest.fn(),
       applyOptions: jest.fn(),
+      attachPrimitive: jest.fn(),
+      detachPrimitive: jest.fn(),
     })),
     addLineSeries: jest.fn((opts: unknown) => {
       const s: FakeLineSeries = {

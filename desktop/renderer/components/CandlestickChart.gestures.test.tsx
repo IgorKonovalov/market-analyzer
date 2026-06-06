@@ -36,6 +36,8 @@ interface FakeCandleSeries {
   setData: jest.Mock
   setMarkers: jest.Mock
   applyOptions: jest.Mock
+  attachPrimitive: jest.Mock
+  detachPrimitive: jest.Mock
 }
 
 let candleSeries: FakeCandleSeries
@@ -73,7 +75,13 @@ jest.mock('lightweight-charts', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks()
-  candleSeries = { setData: jest.fn(), setMarkers: jest.fn(), applyOptions: jest.fn() }
+  candleSeries = {
+    setData: jest.fn(),
+    setMarkers: jest.fn(),
+    applyOptions: jest.fn(),
+    attachPrimitive: jest.fn(),
+    detachPrimitive: jest.fn(),
+  }
   clickHandler = null
   coordinateToTime = (x) => 1_714_000_000 + x
 })

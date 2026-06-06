@@ -44,6 +44,8 @@ function buildFakeChart(): Record<string, unknown> {
       setData: jest.fn(),
       setMarkers: jest.fn(),
       applyOptions: jest.fn(),
+      attachPrimitive: jest.fn(),
+      detachPrimitive: jest.fn(),
     })),
     addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
     addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),

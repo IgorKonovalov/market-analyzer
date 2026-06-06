@@ -25,6 +25,8 @@ interface FakeCandle {
   setData: jest.Mock
   setMarkers: jest.Mock
   applyOptions: jest.Mock
+  attachPrimitive: jest.Mock
+  detachPrimitive: jest.Mock
 }
 
 let fakeChart: Record<string, unknown>
@@ -38,7 +40,13 @@ jest.mock('lightweight-charts', () => ({
 const createChartMock = createChart as unknown as jest.Mock
 
 function buildFakeChart(): Record<string, unknown> {
-  candle = { setData: jest.fn(), setMarkers: jest.fn(), applyOptions: jest.fn() }
+  candle = {
+    setData: jest.fn(),
+    setMarkers: jest.fn(),
+    applyOptions: jest.fn(),
+    attachPrimitive: jest.fn(),
+    detachPrimitive: jest.fn(),
+  }
   const line = (): { setData: jest.Mock; applyOptions: jest.Mock } => ({
     setData: jest.fn(),
     applyOptions: jest.fn(),

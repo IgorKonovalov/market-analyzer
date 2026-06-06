@@ -60,6 +60,7 @@ import {
   overlayColorTokenFor,
   overlayLayerId,
 } from '../lib/overlays'
+import { PatternSpanPrimitive, SPAN_LAYER_ID, SPAN_LAYER_LABEL, markersToSpans } from '../lib/spans'
 import {
   getStoredTheme,
   resolveEffective,
@@ -254,6 +255,9 @@ export function CandlestickChart({
   // Drawn price lines (Plan 0047 phase 9), keyed by `priceLineId`. price_line
   // overlays are horizontal lines on the candlestick series, not line series.
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
+  // Multi-bar pattern span band (Plan 0049 phase 7): one series primitive,
+  // attached at mount, fed spans/colors/visibility by the spans effect below.
+  const spanPrimitiveRef = useRef<PatternSpanPrimitive | null>(null)
   // Always-on volume series (Plan 0027 phase 3).
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -383,6 +387,16 @@ export function CandlestickChart({
     chart.priceScale(VOLUME_SCALE_ID).applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS })
     chart.priceScale(OBV_SCALE_ID).applyOptions({ scaleMargins: OBV_SCALE_MARGINS })
 
+    // Attach the pattern-span band primitive once (Plan 0049 phase 7). It draws
+    // nothing until the spans effect feeds it spans; `chart.remove()` detaches it.
+    const spanPrimitive = new PatternSpanPrimitive({
+      bullish: colors.markerBullish,
+      bearish: colors.markerBearish,
+      neutral: colors.markerNeutral,
+    })
+    series.attachPrimitive(spanPrimitive)
+    spanPrimitiveRef.current = spanPrimitive
+
     chartRef.current = chart
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
@@ -400,6 +414,7 @@ export function CandlestickChart({
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      spanPrimitiveRef.current = null
       volumeSeriesRef.current = null
       volumeMaSeriesRef.current = null
       vwapSeriesRef.current = null
@@ -550,6 +565,25 @@ export function CandlestickChart({
     series.setMarkers(markers)
   }, [annotations, clickedBarTs, effectiveTheme, hidden])
 
+  // Multi-bar pattern span band (Plan 0049 phase 7): feed the span primitive the
+  // current spans, theme-resolved direction colours, and the legend visibility.
+  // The primitive redraws via `requestUpdate`; the band tracks pan/zoom for free
+  // (the chart re-reads `paneViews`). Recolours in place on a theme flip — no
+  // remount (the deps include `effectiveTheme`, the primitive persists).
+  useEffect(() => {
+    const primitive = spanPrimitiveRef.current
+    const container = containerRef.current
+    if (!primitive || !container) return
+    const colors = readChartColors(container)
+    primitive.setColors({
+      bullish: colors.markerBullish,
+      bearish: colors.markerBearish,
+      neutral: colors.markerNeutral,
+    })
+    primitive.setSpans(markersToSpans(annotations ?? []))
+    primitive.setVisible(!hidden.has(SPAN_LAYER_ID))
+  }, [annotations, effectiveTheme, hidden])
+
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
   // (S/R levels the agent pushes) on the candlestick series. A line toggled off
   // in the legend is removed; re-checking re-creates it. Colours resolve from the
@@ -633,6 +667,18 @@ export function CandlestickChart({
         color: priceLineColor(spec, colors),
         kind: 'price_line',
         visible: !hidden.has(id),
+      })
+    }
+    // One row for ALL multi-bar pattern spans (Plan 0049 phase 7); only present
+    // when at least one span exists. Unchecking it hides every span box and
+    // leaves the arrows/overlays untouched (the spans effect reads `hidden`).
+    if (markersToSpans(annotations ?? []).length > 0) {
+      next.push({
+        id: SPAN_LAYER_ID,
+        label: SPAN_LAYER_LABEL,
+        color: colors.markerNeutral,
+        kind: 'span',
+        visible: !hidden.has(SPAN_LAYER_ID),
       })
     }
     setLayers(next)

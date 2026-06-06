@@ -46,6 +46,8 @@ jest.mock('lightweight-charts', () => ({
   createChart: jest.fn(() => ({
     addCandlestickSeries: jest.fn(() => ({
       setData: jest.fn(),
+      attachPrimitive: jest.fn(),
+      detachPrimitive: jest.fn(),
       setMarkers: jest.fn((m: Array<{ color?: string }>) => {
         lastMarkers = m
       }),
