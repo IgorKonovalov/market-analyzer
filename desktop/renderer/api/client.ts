@@ -29,6 +29,8 @@ import type { Bar } from '../types/sidecar/bar'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 import type { NewsResponse } from '../types/sidecar/news-response'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
+import type { ScanPatternsRequest } from '../types/sidecar/scan-patterns-request'
+import type { ScanPatternsResponse } from '../types/sidecar/scan-patterns-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import type { AgentModeState } from '../types/ui-events'
 
@@ -226,6 +228,20 @@ export const api = {
   getQuote(symbol: string): Promise<QuoteResponse> {
     const params = new URLSearchParams({ symbol })
     return callJson<QuoteResponse>(`/quote?${params.toString()}`)
+  },
+  /**
+   * Sweep the chart's current visible range for candlestick patterns (Plan 0049).
+   * Hits the renderer-bearer-gated `POST /scan_patterns`; the markers themselves
+   * arrive on the `/events` SSE stream (this returns only the `{published, count}`
+   * ack — no second draw path). Same pure core as the `scan_patterns` MCP tool, so
+   * the UI and agent triggers emit identical markers (ADR-0045).
+   */
+  scanPatterns(req: ScanPatternsRequest): Promise<ScanPatternsResponse> {
+    return callJson<ScanPatternsResponse>('/scan_patterns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
   },
   /** Read the persisted agent-mode toggle (Plan 0014). Renderer-bearer-gated. */
   getAgentMode(): Promise<AgentModeState> {

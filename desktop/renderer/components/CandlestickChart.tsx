@@ -30,12 +30,13 @@ import type {
   Logical,
   MouseEventParams,
   SeriesMarker,
+  Time,
   UTCTimestamp,
 } from 'lightweight-charts'
 
 import type { IPriceLine } from 'lightweight-charts'
 
-import { toLightweightBar } from '../api/client'
+import { ApiError, api, toLightweightBar } from '../api/client'
 import { useChartGestures } from '../hooks/useChartGestures'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import {
@@ -194,6 +195,16 @@ interface Props {
   historyTriggerEnabled?: boolean
 }
 
+/** Transient state of the "Scan patterns" sweep (Plan 0049 phase 8). The markers
+ * arrive via SSE; this only tracks the trigger's ack so the button can show
+ * progress / a count / "nothing in view" / an error. */
+type ScanStatus =
+  | { kind: 'idle' }
+  | { kind: 'scanning' }
+  | { kind: 'done'; count: number }
+  | { kind: 'empty' }
+  | { kind: 'error'; message: string }
+
 /** Human-readable label for a selected [start, end] window. UTC (matching the
  * bar timestamps); the time is shown only when it isn't midnight, so a daily
  * range reads as plain dates. */
@@ -293,6 +304,37 @@ export function CandlestickChart({
       return next
     })
   }, [])
+  // "Scan patterns" trigger state (Plan 0049 phase 8). Ephemeral, never persisted.
+  const [scanStatus, setScanStatus] = useState<ScanStatus>({ kind: 'idle' })
+
+  // Sweep the chart's CURRENT visible range (not the full buffer) for patterns via
+  // POST /scan_patterns; the markers come back over SSE (no second draw path). The
+  // bearer is injected by the typed client — never a raw fetch.
+  const scanVisibleRange = useCallback(async (): Promise<void> => {
+    const chart = chartRef.current
+    if (!chart || !symbol || !timeframe) return
+    const range = chart.timeScale().getVisibleRange()
+    const toIso = (t: Time): string | null =>
+      typeof t === 'number' ? new Date(t * 1000).toISOString() : null
+    const rangeStart = range ? toIso(range.from) : null
+    const rangeEnd = range ? toIso(range.to) : null
+    if (rangeStart === null || rangeEnd === null) return
+    setScanStatus({ kind: 'scanning' })
+    try {
+      const ack = await api.scanPatterns({
+        symbol,
+        timeframe,
+        range_start: rangeStart,
+        range_end: rangeEnd,
+      })
+      setScanStatus(
+        ack.published && ack.count > 0 ? { kind: 'done', count: ack.count } : { kind: 'empty' },
+      )
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Pattern scan failed'
+      setScanStatus({ kind: 'error', message })
+    }
+  }, [symbol, timeframe])
 
   // Reflect what's drawn into the test hook. Stable identity (reads only refs),
   // so it can sit in the effect dep arrays without retriggering them.
@@ -752,17 +794,43 @@ export function CandlestickChart({
 
   return (
     <div className={styles.wrapper}>
-      {agentModeEnabled && (
+      <div className={styles.controls}>
+        {agentModeEnabled && (
+          <button
+            type="button"
+            data-testid="select-range-toggle"
+            aria-pressed={selectRangeMode}
+            className={styles.selectRangeButton}
+            onClick={toggleSelectRange}
+          >
+            {selectRangeMode ? 'Selecting range… (Esc to cancel)' : 'Select range'}
+          </button>
+        )}
         <button
           type="button"
-          data-testid="select-range-toggle"
-          aria-pressed={selectRangeMode}
-          className={styles.selectRangeButton}
-          onClick={toggleSelectRange}
+          data-testid="scan-patterns-button"
+          className={styles.scanButton}
+          onClick={scanVisibleRange}
+          disabled={scanStatus.kind === 'scanning' || !symbol || !timeframe}
         >
-          {selectRangeMode ? 'Selecting range… (Esc to cancel)' : 'Select range'}
+          {scanStatus.kind === 'scanning' ? 'Scanning…' : 'Scan patterns'}
         </button>
-      )}
+        {scanStatus.kind === 'done' && (
+          <span data-testid="scan-patterns-status" className={styles.scanStatus}>
+            {scanStatus.count} pattern{scanStatus.count === 1 ? '' : 's'}
+          </span>
+        )}
+        {scanStatus.kind === 'empty' && (
+          <span data-testid="scan-patterns-status" className={styles.scanStatus}>
+            No patterns in view
+          </span>
+        )}
+        {scanStatus.kind === 'error' && (
+          <span data-testid="scan-patterns-error" role="alert" className={styles.scanError}>
+            {scanStatus.message}
+          </span>
+        )}
+      </div>
       <div className={styles.chartArea}>
         <div
           ref={containerRef}
