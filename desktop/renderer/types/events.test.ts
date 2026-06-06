@@ -128,24 +128,39 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     dumped = dumpPydanticSchemas()
   })
 
-  it('OverlaySpec fields match (price_line adds price/label/role; kind set widened)', () => {
-    expect(propertyNames(dumped.OverlaySpec)).toEqual(['kind', 'label', 'period', 'price', 'role'])
-    // price/label/role default to None → not required (price_line's price+label
-    // are enforced by a cross-field validator, not the JSON-schema `required`).
+  it('OverlaySpec fields match (price_line adds price/label/role; supertrend adds multiplier)', () => {
+    expect(propertyNames(dumped.OverlaySpec)).toEqual([
+      'kind',
+      'label',
+      'multiplier',
+      'period',
+      'price',
+      'role',
+    ])
+    // price/label/role/multiplier default to None → not required (price_line's
+    // price+label are enforced by a cross-field validator, not `required`).
     expect(requiredNames(dumped.OverlaySpec)).toEqual(['kind'])
     expect(literalValues(dumped.OverlaySpec, 'kind')).toEqual(
-      ['bbands', 'ema', 'macd', 'price_line', 'rsi', 'sma'].sort(),
+      ['bbands', 'ema', 'macd', 'price_line', 'rsi', 'sma', 'supertrend'].sort(),
     )
     // `role` is an optional Literal (`| None`), emitted as `anyOf` rather than a
     // top-level `enum`, so `literalValues` (enum/$ref only) can't read it — the
     // property-name + required checks above already pin its presence/optionality.
   })
 
-  it('Marker fields match', () => {
-    expect(propertyNames(dumped.Marker)).toEqual(['event_ts', 'kind', 'label'])
+  it('Marker fields match (pattern/span/strength added; neutral_marker kind)', () => {
+    expect(propertyNames(dumped.Marker)).toEqual([
+      'event_ts',
+      'kind',
+      'label',
+      'pattern',
+      'span_end_ts',
+      'span_start_ts',
+      'strength',
+    ])
     expect(requiredNames(dumped.Marker)).toEqual(['event_ts', 'kind'])
     expect(literalValues(dumped.Marker, 'kind')).toEqual(
-      ['bearish_marker', 'bullish_marker'].sort(),
+      ['bearish_marker', 'bullish_marker', 'neutral_marker'].sort(),
     )
   })
 

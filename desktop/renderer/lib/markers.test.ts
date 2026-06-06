@@ -97,12 +97,32 @@ describe('annotationsToMarkers', () => {
     // lightweight-charts' default size is 1; the baseline must be clearly bigger.
     expect(marker.size).toBeGreaterThan(1)
   })
+
+  it('neutral_marker → inBar + circle + neutral token (Plan 0049)', () => {
+    const [marker] = annotationsToMarkers(
+      [{ event_ts: '2026-04-15T00:00:00+00:00', kind: 'neutral_marker', label: 'doji' }],
+      { bullish: '#16a34a', bearish: '#dc2626', neutral: '#64748b' },
+    )
+    expect(marker.position).toBe('inBar')
+    expect(marker.shape).toBe('circle')
+    expect(marker.color).toBe('#64748b')
+  })
+
+  it('scales the glyph from a live marker strength (sweep path)', () => {
+    const strong = annotationsToMarkers([
+      { event_ts: '2026-04-15T00:00:00+00:00', kind: 'bullish_marker', strength: 0.99 },
+    ])[0]
+    const weak = annotationsToMarkers([
+      { event_ts: '2026-04-15T00:00:00+00:00', kind: 'bullish_marker', strength: 0.1 },
+    ])[0]
+    expect(strong.size ?? 0).toBeGreaterThan(weak.size ?? 0)
+  })
 })
 
 describe('markerVisual (strength → size + intensity)', () => {
   // Deliberately not the default hex, so an assertion that the result derives
   // from these proves the color is token-driven, not hardcoded.
-  const TOKENS = { bullish: '#00ff00', bearish: '#0000ff' }
+  const TOKENS = { bullish: '#00ff00', bearish: '#0000ff', neutral: '#888888' }
 
   it('maps a strong bearish marker to a larger size and more-intense token than a weak one', () => {
     const strong = markerVisual('bearish_marker', 0.99, TOKENS)
@@ -120,6 +140,11 @@ describe('markerVisual (strength → size + intensity)', () => {
   it('resolves bullish vs bearish to the passed direction tokens (not hardcoded hex)', () => {
     expect(markerVisual('bullish_marker', 1, TOKENS).color.startsWith(TOKENS.bullish)).toBe(true)
     expect(markerVisual('bearish_marker', 1, TOKENS).color.startsWith(TOKENS.bearish)).toBe(true)
+  })
+
+  it('resolves neutral to the passed neutral token (Plan 0049)', () => {
+    expect(markerVisual('neutral_marker', null, TOKENS).color).toBe(TOKENS.neutral)
+    expect(markerVisual('neutral_marker', 1, TOKENS).color.startsWith(TOKENS.neutral)).toBe(true)
   })
 
   it('treats unknown strength (null) as a full-intensity token at the baseline size', () => {

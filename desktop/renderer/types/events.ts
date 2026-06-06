@@ -14,30 +14,44 @@
  * test still passes.
  */
 
-export type OverlayKind = 'ema' | 'sma' | 'rsi' | 'macd' | 'bbands' | 'price_line'
+export type OverlayKind = 'ema' | 'sma' | 'rsi' | 'macd' | 'bbands' | 'price_line' | 'supertrend'
 
 /** Support/resistance role for a `price_line` overlay; absent for plain levels. */
 export type PriceLineRole = 'support' | 'resistance'
 
 /** Mirror of the pydantic `OverlaySpec`. One model carries two disjoint families
  * (the sidecar's `_validate_kind_fields` keeps them so): indicator overlays use
- * `period`; a `price_line` carries `price` + `label` (+ optional `role`) — the
- * channel the agent pushes S/R levels through (Plan 0047). The non-applicable
- * fields are absent on the wire (the bus dumps with `exclude_none`). */
+ * `period` (+ `supertrend`'s ATR `multiplier`); a `price_line` carries `price` +
+ * `label` (+ optional `role`) — the channel the agent pushes S/R levels through
+ * (Plan 0047). The non-applicable fields are absent on the wire (the bus dumps
+ * with `exclude_none`). `supertrend` (Plan 0049) is an additive indicator kind. */
 export interface OverlaySpec {
   kind: OverlayKind
   period?: number | null
+  /** Supertrend's ATR multiplier (Plan 0049); absent on the other kinds. */
+  multiplier?: number | null
   price?: number | null
   label?: string | null
   role?: PriceLineRole | null
 }
 
-export type MarkerKind = 'bullish_marker' | 'bearish_marker'
+export type MarkerKind = 'bullish_marker' | 'bearish_marker' | 'neutral_marker'
 
+/** Mirror of the pydantic `Marker` (Plan 0049 / ADR-0045). The base shape is a
+ * point arrow at `event_ts`; the additive fields carry first-class pattern
+ * identity (`pattern`), an optional bar span for multi-bar patterns
+ * (`span_start_ts`/`span_end_ts`, present together or not at all), and the
+ * detector `strength`. `kind` gains `neutral_marker` so doji et al. render. All
+ * additions are absent on the wire when unset (the bus dumps with
+ * `exclude_none`), so a legacy point marker is `{event_ts, kind, label?}`. */
 export interface Marker {
   event_ts: string
   kind: MarkerKind
   label?: string | null
+  pattern?: string | null
+  span_start_ts?: string | null
+  span_end_ts?: string | null
+  strength?: number | null
 }
 
 export interface ChartShowPayloadV1 {

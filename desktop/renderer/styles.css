@@ -88,6 +88,7 @@
   --marker-clicked: #2563eb;
   --marker-bullish: #16a34a;
   --marker-bearish: #dc2626;
+  --marker-neutral: #64748b;
 }
 
 /* Dark palette — explicit choice; wins over `prefers-color-scheme`. */
@@ -128,6 +129,7 @@
   --marker-clicked: #60a5fa;
   --marker-bullish: #4ade80;
   --marker-bearish: #f87171;
+  --marker-neutral: #94a3b8;
 }
 
 /* System-follow dark — applies only when the user has made no explicit choice
@@ -169,6 +171,7 @@
     --marker-clicked: #60a5fa;
     --marker-bullish: #4ade80;
     --marker-bearish: #f87171;
+    --marker-neutral: #94a3b8;
   }
 }
 

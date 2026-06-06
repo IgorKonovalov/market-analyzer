@@ -38,8 +38,9 @@ export interface ChartState {
   range_end: string
   overlays: OverlaySpec[]
   /** Live markers from `chart.highlight` envelopes. Deduplicated by
-   * `(event_ts, kind)`. Merged with the polled annotation list at render
-   * time — duplicates between the two sources are resolved on the same key. */
+   * `(event_ts, pattern, kind)` (Plan 0049) so distinct same-bar patterns
+   * survive. Merged with the polled annotation list at render time — duplicates
+   * between the two sources are resolved on the same key. */
   liveHighlights: Marker[]
 }
 
@@ -60,10 +61,19 @@ function asTimeframe(value: string): Timeframe {
   return KNOWN_TIMEFRAMES.has(value) ? (value as Timeframe) : DEFAULT_TIMEFRAME
 }
 
+/** Dedup key (Plan 0049 / ADR-0045): `event_ts | pattern | kind`. Keying on
+ * `pattern` lets two DISTINCT patterns on the same bar+direction (a doji and a
+ * hammer) both survive; a true duplicate (same pattern) still collapses. A marker
+ * without a `pattern` (the legacy `highlight_pattern` path) falls back to the old
+ * `(event_ts, kind)` behaviour via the empty-string segment. */
+function highlightKey(m: Marker): string {
+  return `${m.event_ts}|${m.pattern ?? ''}|${m.kind}`
+}
+
 function dedupHighlights(existing: Marker[], incoming: Marker[]): Marker[] {
   if (incoming.length === 0) return existing
-  const seen = new Set(existing.map((m) => `${m.event_ts}|${m.kind}`))
-  const additions = incoming.filter((m) => !seen.has(`${m.event_ts}|${m.kind}`))
+  const seen = new Set(existing.map(highlightKey))
+  const additions = incoming.filter((m) => !seen.has(highlightKey(m)))
   return additions.length === 0 ? existing : [...existing, ...additions]
 }
 

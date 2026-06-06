@@ -17,6 +17,7 @@ import { AgentModeToggle } from '../components/AgentModeToggle'
 import { CandlestickChart } from '../components/CandlestickChart'
 import { SymbolPicker } from '../components/SymbolPicker'
 import { Toast } from '../components/Toast'
+import type { ChartMarker } from '../lib/markers'
 import type { Timeframe } from '../lib/timeframes'
 import { useAgentMode } from '../hooks/useAgentMode'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
@@ -231,35 +232,47 @@ export function PriceHeader({ symbol, quote }: PriceHeaderProps): JSX.Element {
 
 /**
  * Merge polled DB annotations (authoritative, ~1 Hz) with the in-memory
- * live-highlights buffer (immediate, from SSE). Dedup key is
- * `(event_ts, kind)` — when the polled row arrives for a marker that the
- * SSE event already surfaced, the polled row wins (it carries the full
- * Annotation shape, including `id`/`agent_id`/`created_at`).
+ * live-highlights buffer (immediate, from SSE) into one `ChartMarker[]` the chart
+ * draws. Dedup key is `(event_ts, pattern, kind)` (Plan 0049 / ADR-0045) — when a
+ * polled row arrives for a marker the SSE event already surfaced, the polled row
+ * wins. Keying on `pattern` lets two DISTINCT patterns on one bar+direction both
+ * survive; persisted annotations carry no `pattern`, so they fall back to the old
+ * `(event_ts, kind)` behaviour via the empty segment.
  *
- * Live markers without a polled counterpart are upcast to Annotation
- * shape with `agent_id: 'live'` so the chart marker layer can treat the
- * unified list as Annotation[]. The `live` id signals provenance for any
- * future filtering.
+ * Unlike the old path, this no longer down-casts live markers to `Annotation`
+ * (which can't hold `neutral_marker`, `pattern`, a span, or `strength`): both
+ * sources map into the richer `ChartMarker` so identity/span/strength survive to
+ * the chart layer (phase 7 draws spans; the neutral kind renders in phase 6).
  *
  * Exported for direct unit testing.
  */
+function markerKey(event_ts: string, pattern: string | null | undefined, kind: string): string {
+  return `${event_ts}|${pattern ?? ''}|${kind}`
+}
+
 export function mergePolledAndLive(
   polled: Annotation[],
   live: Marker[],
-  symbol: string,
-  timeframe: string,
-): Annotation[] {
-  if (live.length === 0) return polled
-  const seen = new Set(polled.map((a) => `${a.event_ts}|${a.kind}`))
-  const onlyLive: Annotation[] = live
-    .filter((m) => !seen.has(`${m.event_ts}|${m.kind}`))
+  _symbol: string,
+  _timeframe: string,
+): ChartMarker[] {
+  const polledMarkers: ChartMarker[] = polled.map((a) => ({
+    event_ts: a.event_ts,
+    kind: a.kind,
+    label: a.label ?? null,
+  }))
+  if (live.length === 0) return polledMarkers
+  const seen = new Set(polled.map((a) => markerKey(a.event_ts, null, a.kind)))
+  const onlyLive: ChartMarker[] = live
+    .filter((m) => !seen.has(markerKey(m.event_ts, m.pattern, m.kind)))
     .map((m) => ({
-      symbol,
-      timeframe,
       event_ts: m.event_ts,
       kind: m.kind,
       label: m.label ?? null,
-      agent_id: 'live',
+      pattern: m.pattern ?? null,
+      span_start_ts: m.span_start_ts ?? null,
+      span_end_ts: m.span_end_ts ?? null,
+      strength: m.strength ?? null,
     }))
-  return [...polled, ...onlyLive]
+  return [...polledMarkers, ...onlyLive]
 }

@@ -41,6 +41,7 @@ import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import {
   DEFAULT_MARKER_COLORS,
   annotationsToMarkers,
+  type ChartMarker,
   markerLayerId,
   markerLayerLabel,
 } from '../lib/markers'
@@ -73,7 +74,6 @@ import {
   computeVolumeMa,
   computeVwap,
 } from '../lib/volume'
-import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
 import styles from './CandlestickChart.module.css'
@@ -93,6 +93,7 @@ const CHART_COLOR_FALLBACK = {
   markerClicked: '#2563eb',
   markerBullish: DEFAULT_MARKER_COLORS.bullish,
   markerBearish: DEFAULT_MARKER_COLORS.bearish,
+  markerNeutral: DEFAULT_MARKER_COLORS.neutral,
 } as const
 
 interface ChartColors {
@@ -107,6 +108,7 @@ interface ChartColors {
   markerClicked: string
   markerBullish: string
   markerBearish: string
+  markerNeutral: string
 }
 
 /** Read the chart palette off the themed DOM. lightweight-charts can't resolve
@@ -127,6 +129,7 @@ function readChartColors(el: HTMLElement): ChartColors {
     markerClicked: v('--marker-clicked', CHART_COLOR_FALLBACK.markerClicked),
     markerBullish: v('--marker-bullish', CHART_COLOR_FALLBACK.markerBullish),
     markerBearish: v('--marker-bearish', CHART_COLOR_FALLBACK.markerBearish),
+    markerNeutral: v('--marker-neutral', CHART_COLOR_FALLBACK.markerNeutral),
   }
 }
 
@@ -172,7 +175,7 @@ declare global {
 
 interface Props {
   bars: Bar[]
-  annotations?: Annotation[]
+  annotations?: ChartMarker[]
   overlays?: ReadonlyArray<OverlaySpec>
   ariaLabel?: string
   /** Plan 0014: when true, chart gestures (range-select, bar-click) are
@@ -529,6 +532,7 @@ export function CandlestickChart({
     const base = annotationsToMarkers(visibleAnnotations, {
       bullish: colors.markerBullish,
       bearish: colors.markerBearish,
+      neutral: colors.markerNeutral,
     })
     let markers = base
     if (clickedBarTs !== null) {
@@ -606,10 +610,16 @@ export function CandlestickChart({
     }
     for (const direction of new Set((annotations ?? []).map((a) => a.kind))) {
       const id = markerLayerId(direction)
+      const markerColor =
+        direction === 'bullish_marker'
+          ? colors.markerBullish
+          : direction === 'bearish_marker'
+            ? colors.markerBearish
+            : colors.markerNeutral
       next.push({
         id,
         label: markerLayerLabel(direction),
-        color: direction === 'bullish_marker' ? colors.markerBullish : colors.markerBearish,
+        color: markerColor,
         kind: 'marker',
         visible: !hidden.has(id),
       })

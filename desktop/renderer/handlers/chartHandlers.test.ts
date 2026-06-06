@@ -179,6 +179,28 @@ describe('applyChartHighlight', () => {
     expect(next.liveHighlights[0].label).toBe('first')
     expect(next.liveHighlights[1].label).toBe('fresh')
   })
+
+  it('keeps two same-bar+same-kind markers with DIFFERENT patterns; dedups identical (Plan 0049)', () => {
+    const prev = {
+      ...baseState(),
+      liveHighlights: [
+        { event_ts: '2026-05-15T00:00:00Z', kind: 'bullish_marker' as const, pattern: 'hammer' },
+      ],
+    }
+    const next = applyChartHighlight(prev, {
+      symbol: prev.symbol,
+      timeframe: prev.timeframe,
+      markers: [
+        // same event_ts AND kind as the buffered hammer, but a DIFFERENT pattern
+        // → must survive (the old (event_ts, kind) collision is gone)
+        { event_ts: '2026-05-15T00:00:00Z', kind: 'bullish_marker', pattern: 'bullish_engulfing' },
+        // an exact duplicate of the buffered hammer (event_ts+pattern+kind) → NOT added
+        { event_ts: '2026-05-15T00:00:00Z', kind: 'bullish_marker', pattern: 'hammer' },
+      ],
+    })
+    expect(next.liveHighlights).toHaveLength(2)
+    expect(next.liveHighlights.map((m) => m.pattern)).toEqual(['hammer', 'bullish_engulfing'])
+  })
 })
 
 describe('chartReducer ui actions', () => {

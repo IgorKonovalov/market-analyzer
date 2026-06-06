@@ -11,8 +11,8 @@
  */
 import type { UTCTimestamp } from 'lightweight-charts'
 
-import type { Annotation } from '../types/sidecar/annotation'
-import type { OverlaySpec } from '../types/events'
+import type { MarkerKind, OverlaySpec } from '../types/events'
+import type { ChartMarker } from './markers'
 
 export interface OverlayReading {
   label: string
@@ -33,8 +33,10 @@ export function overlayLabel(spec: OverlaySpec): string {
   return spec.period != null ? `${kind}(${spec.period})` : kind
 }
 
-function markerKindLabel(kind: Annotation['kind']): string {
-  return kind === 'bullish_marker' ? 'Bullish' : 'Bearish'
+function markerKindLabel(kind: MarkerKind): string {
+  if (kind === 'bullish_marker') return 'Bullish'
+  if (kind === 'bearish_marker') return 'Bearish'
+  return 'Neutral'
 }
 
 /**
@@ -45,13 +47,13 @@ function markerKindLabel(kind: Annotation['kind']): string {
  */
 export function tooltipAtTime(
   time: UTCTimestamp | undefined,
-  annotations: Annotation[],
+  chartMarkers: ChartMarker[],
   overlays: OverlayReading[],
 ): TooltipContent | null {
   if (time === undefined) return null
-  const markers = annotations
-    .filter((a) => Math.floor(new Date(a.event_ts).getTime() / 1000) === time)
-    .map((a) => a.label?.trim() || markerKindLabel(a.kind))
+  const markers = chartMarkers
+    .filter((m) => Math.floor(new Date(m.event_ts).getTime() / 1000) === time)
+    .map((m) => m.label?.trim() || markerKindLabel(m.kind))
   if (markers.length === 0 && overlays.length === 0) return null
   return { markers, overlays }
 }
