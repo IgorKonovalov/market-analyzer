@@ -54,6 +54,12 @@ export function isSupportedOverlay(kind: OverlayKind): boolean {
   return kind in OVERLAY_REGISTRY
 }
 
+/** Stable layers-legend id for an indicator overlay (Plan 0047 phase 9). Mirrors
+ * the chart's reconcile key so toggling a row maps to exactly one drawn series. */
+export function overlayLayerId(spec: OverlaySpec): string {
+  return `overlay:${spec.kind}:${spec.period ?? 'na'}`
+}
+
 /** Line color for an overlay, falling back to neutral grey for an
  * unregistered kind (which the reconcile loop never actually draws). */
 export function overlayColorFor(spec: OverlaySpec): string {

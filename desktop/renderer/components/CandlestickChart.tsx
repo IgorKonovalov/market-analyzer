@@ -33,10 +33,17 @@ import type {
   UTCTimestamp,
 } from 'lightweight-charts'
 
+import type { IPriceLine } from 'lightweight-charts'
+
 import { toLightweightBar } from '../api/client'
 import { useChartGestures } from '../hooks/useChartGestures'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
-import { DEFAULT_MARKER_COLORS, annotationsToMarkers } from '../lib/markers'
+import {
+  DEFAULT_MARKER_COLORS,
+  annotationsToMarkers,
+  markerLayerId,
+  markerLayerLabel,
+} from '../lib/markers'
 import {
   type OverlayReading,
   type TooltipContent,
@@ -44,11 +51,13 @@ import {
   tooltipAtTime,
 } from '../lib/tooltip'
 import { ChartTooltip } from './ChartTooltip'
+import { LayersPanel, type ChartLayer } from './LayersPanel'
 import {
   computeOverlayData,
   isSupportedOverlay,
   overlayColorFor,
   overlayColorTokenFor,
+  overlayLayerId,
 } from '../lib/overlays'
 import {
   getStoredTheme,
@@ -202,6 +211,26 @@ function overlayKey(spec: OverlaySpec): string {
   return `${spec.kind}:${spec.period ?? 'na'}`
 }
 
+/** Layers-legend id for a `price_line` overlay (Plan 0047 phase 9). */
+function priceLineId(spec: OverlaySpec): string {
+  return `pline:${spec.label ?? spec.price ?? 'na'}`
+}
+
+/** Display label for a price line in the legend, e.g. `R1 (61335.75)`. */
+function priceLineLabel(spec: OverlaySpec): string {
+  const name = spec.label ?? 'level'
+  return spec.price != null ? `${name} (${spec.price})` : name
+}
+
+/** Price-line colour: a support level reads bullish, a resistance level bearish,
+ * a roleless level uses the neutral clicked/accent token — so the legend swatch
+ * matches the drawn line. */
+function priceLineColor(spec: OverlaySpec, colors: ChartColors): string {
+  if (spec.role === 'support') return colors.markerBullish
+  if (spec.role === 'resistance') return colors.markerBearish
+  return colors.markerClicked
+}
+
 export function CandlestickChart({
   bars,
   annotations,
@@ -219,6 +248,9 @@ export function CandlestickChart({
   // First-bar timestamp (ms) of the previous render, to detect left-side growth.
   const prevFirstTsRef = useRef<number | null>(null)
   const overlaySeriesRef = useRef<Map<string, OverlayEntry>>(new Map())
+  // Drawn price lines (Plan 0047 phase 9), keyed by `priceLineId`. price_line
+  // overlays are horizontal lines on the candlestick series, not line series.
+  const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
   // Always-on volume series (Plan 0027 phase 3).
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -241,6 +273,19 @@ export function CandlestickChart({
   const [tooltip, setTooltip] = useState<{ content: TooltipContent; x: number; y: number } | null>(
     null,
   )
+  // Layers-legend state (Plan 0047 phase 9), all ephemeral: `hidden` is the set
+  // of layer ids the user toggled off; `layers` is the resolved descriptor list
+  // the panel renders. Reset on remount (no persistence) by construction.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
+  const [layers, setLayers] = useState<ChartLayer[]>([])
+  const toggleLayer = useCallback((id: string): void => {
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
 
   // Reflect what's drawn into the test hook. Stable identity (reads only refs),
   // so it can sit in the effect dep arrays without retriggering them.
@@ -345,6 +390,7 @@ export function CandlestickChart({
     // (react-hooks/exhaustive-deps: ref.current may change between effect
     // run and cleanup invocation; the local capture is the canonical fix).
     const overlayMap = overlaySeriesRef.current
+    const priceLineMap = priceLinesRef.current
     syncTestRenderHook()
 
     return () => {
@@ -356,6 +402,8 @@ export function CandlestickChart({
       vwapSeriesRef.current = null
       obvSeriesRef.current = null
       overlayMap.clear()
+      // The chart owns its price lines (disposed by chart.remove); drop our refs.
+      priceLineMap.clear()
       syncTestRenderHook()
     }
   }, [syncTestRenderHook])
@@ -388,12 +436,18 @@ export function CandlestickChart({
 
     const desired = new Map<string, OverlaySpec>()
     for (const spec of overlays ?? []) {
+      // price_line overlays are horizontal lines, reconciled in the price-line
+      // effect below — not line series, and not an "unsupported" warning case.
+      if (spec.kind === 'price_line') continue
       if (!isSupportedOverlay(spec.kind)) {
         console.warn(
           `[CandlestickChart] unsupported overlay kind "${spec.kind}" — ignored (MVP renders ema/sma only)`,
         )
         continue
       }
+      // A layer toggled off in the legend is removed below (absent from `desired`)
+      // and re-added when re-checked.
+      if (hidden.has(overlayLayerId(spec))) continue
       desired.set(overlayKey(spec), spec)
     }
 
@@ -439,7 +493,7 @@ export function CandlestickChart({
     }
     prevFirstTsRef.current = newFirstMs
     syncTestRenderHook()
-  }, [bars, overlays, syncTestRenderHook])
+  }, [bars, overlays, hidden, syncTestRenderHook])
 
   // Pointer-gesture state machine + agent-mode POSTs (Plan 0029 phase 1).
   // Called AFTER the chart-creation effect so its gesture effect sees a
@@ -470,7 +524,9 @@ export function CandlestickChart({
     const container = containerRef.current
     if (!series || !container) return
     const colors = readChartColors(container)
-    const base = annotationsToMarkers(annotations ?? [], {
+    // Drop annotations whose marker-direction layer is toggled off in the legend.
+    const visibleAnnotations = (annotations ?? []).filter((a) => !hidden.has(markerLayerId(a.kind)))
+    const base = annotationsToMarkers(visibleAnnotations, {
       bullish: colors.markerBullish,
       bearish: colors.markerBearish,
     })
@@ -488,7 +544,89 @@ export function CandlestickChart({
       markers = [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
     }
     series.setMarkers(markers)
-  }, [annotations, clickedBarTs, effectiveTheme])
+  }, [annotations, clickedBarTs, effectiveTheme, hidden])
+
+  // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
+  // (S/R levels the agent pushes) on the candlestick series. A line toggled off
+  // in the legend is removed; re-checking re-creates it. Colours resolve from the
+  // theme tokens, so a theme flip recolours the kept lines in place.
+  useEffect(() => {
+    const series = seriesRef.current
+    const container = containerRef.current
+    if (!series || !container) return
+    const colors = readChartColors(container)
+    const desired = new Map<string, OverlaySpec>()
+    for (const spec of overlays ?? []) {
+      if (spec.kind !== 'price_line') continue
+      if (hidden.has(priceLineId(spec))) continue
+      desired.set(priceLineId(spec), spec)
+    }
+    for (const [id, line] of priceLinesRef.current) {
+      if (!desired.has(id)) {
+        series.removePriceLine(line)
+        priceLinesRef.current.delete(id)
+      }
+    }
+    for (const [id, spec] of desired) {
+      const color = priceLineColor(spec, colors)
+      const existing = priceLinesRef.current.get(id)
+      if (existing === undefined) {
+        const line = series.createPriceLine({
+          price: spec.price ?? 0,
+          color,
+          axisLabelVisible: true,
+          title: spec.label ?? '',
+        })
+        priceLinesRef.current.set(id, line)
+      } else {
+        existing.applyOptions({ color })
+      }
+    }
+  }, [overlays, hidden, effectiveTheme])
+
+  // Build the layers-legend descriptor list (Plan 0047 phase 9): one row per
+  // indicator overlay, per marker-direction group present, and per price line —
+  // each with its resolved colour (equal to the colour the layer is drawn with)
+  // and its current visibility. Recomputed when the inputs or theme change.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const colors = readChartColors(container)
+    const next: ChartLayer[] = []
+    for (const spec of overlays ?? []) {
+      if (spec.kind === 'price_line' || !isSupportedOverlay(spec.kind)) continue
+      const id = overlayLayerId(spec)
+      next.push({
+        id,
+        label: overlayLabel(spec),
+        color: overlaySeriesColor(spec, container),
+        kind: 'overlay',
+        visible: !hidden.has(id),
+      })
+    }
+    for (const direction of new Set((annotations ?? []).map((a) => a.kind))) {
+      const id = markerLayerId(direction)
+      next.push({
+        id,
+        label: markerLayerLabel(direction),
+        color: direction === 'bullish_marker' ? colors.markerBullish : colors.markerBearish,
+        kind: 'marker',
+        visible: !hidden.has(id),
+      })
+    }
+    for (const spec of overlays ?? []) {
+      if (spec.kind !== 'price_line') continue
+      const id = priceLineId(spec)
+      next.push({
+        id,
+        label: priceLineLabel(spec),
+        color: priceLineColor(spec, colors),
+        kind: 'price_line',
+        visible: !hidden.has(id),
+      })
+    }
+    setLayers(next)
+  }, [overlays, annotations, hidden, effectiveTheme])
 
   // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a labelled
   // marker's text and/or each overlay line's name + value at that bar. Reads only
@@ -598,6 +736,7 @@ export function CandlestickChart({
           </div>
         )}
         {tooltip && <ChartTooltip content={tooltip.content} x={tooltip.x} y={tooltip.y} />}
+        <LayersPanel layers={layers} onToggle={toggleLayer} />
       </div>
     </div>
   )

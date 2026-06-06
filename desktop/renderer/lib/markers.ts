@@ -25,6 +25,17 @@ export interface MarkerColors {
 
 type MarkerDirection = Annotation['kind']
 
+/** Layers-legend id for a marker direction group (Plan 0047 phase 9). Markers are
+ * grouped by direction, so all bullish markers share one toggle and one row. */
+export function markerLayerId(direction: MarkerDirection): string {
+  return direction === 'bullish_marker' ? 'marker:bullish' : 'marker:bearish'
+}
+
+/** Human label for a marker direction group in the layers legend. */
+export function markerLayerLabel(direction: MarkerDirection): string {
+  return direction === 'bullish_marker' ? 'Bullish markers' : 'Bearish markers'
+}
+
 // Marker glyph sizing (Plan 0047 phase 7). lightweight-charts' default marker
 // `size` is 1; the old markers used it and read as too subtle. `NEUTRAL_SIZE` is
 // the baseline for a marker with no known strength (the current live path — see
