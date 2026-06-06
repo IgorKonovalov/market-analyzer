@@ -70,13 +70,50 @@ class OverlaySpec(BaseModel):
 
 
 class Marker(BaseModel):
-    """`chart.highlight` marker: a single annotation to render on the chart."""
+    """`chart.highlight` marker: a single annotation to render on the chart.
+
+    The base shape is a point-in-time arrow at `event_ts` keyed by `kind`
+    (bullish/bearish). Plan 0049 (ADR-0045) adds first-class pattern identity and
+    an optional bar span, all additively so the existing `highlight_pattern` tool
+    keeps emitting `{event_ts, kind, label?}` markers unchanged:
+
+    - `pattern` — the detector name (`"morning_star"`); identity, not the
+      free-text `label`. Lets the renderer key dedup on `(event_ts, pattern, kind)`
+      so two distinct patterns on the same bar/direction stop collapsing.
+    - `kind="neutral_marker"` — so neutral patterns (doji, neutral marubozu) can be
+      emitted faithfully; `kind` stays the rendering discriminator.
+    - `span_start_ts`/`span_end_ts` — present (together) for a multi-bar pattern's
+      span; absent for single-bar patterns (≡ a point marker on `event_ts`).
+    - `strength` — the detector's conviction score, so the renderer styles without
+      re-deriving it.
+
+    Under the bus's `exclude_none` dump an unset-span point marker still serialises
+    to exactly its set fields — the wire stays clean.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     event_ts: datetime
-    kind: Literal["bullish_marker", "bearish_marker"]
+    kind: Literal["bullish_marker", "bearish_marker", "neutral_marker"]
     label: str | None = None
+    pattern: str | None = None
+    span_start_ts: datetime | None = None
+    span_end_ts: datetime | None = None
+    strength: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_span(self) -> Marker:
+        """A span must be supplied whole and forward-ordered: both endpoints
+        together (a half-span is meaningless) and `span_end_ts >= span_start_ts`."""
+        if (self.span_start_ts is None) != (self.span_end_ts is None):
+            raise ValueError("span requires both span_start_ts and span_end_ts (or neither)")
+        if (
+            self.span_start_ts is not None
+            and self.span_end_ts is not None
+            and self.span_end_ts < self.span_start_ts
+        ):
+            raise ValueError("span_end_ts must be >= span_start_ts")
+        return self
 
 
 class ChartShowPayloadV1(BaseModel):

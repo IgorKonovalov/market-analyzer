@@ -33,6 +33,7 @@ import uvicorn
 from fastapi import FastAPI
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from pydantic import ValidationError
 
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
@@ -52,6 +53,7 @@ from market_analyser.events import (
     ChartUpdatePayloadV1,
     Envelope,
     EventBus,
+    Marker,
 )
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (
@@ -621,3 +623,88 @@ def test_get_ohlcv_still_reachable_after_show_tools_landed(
             return not result.isError
 
     assert asyncio.run(_run()) is True
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0049 ph2: extended chart.highlight Marker schema (ADR-0045)            #
+# Pure-pydantic round-trips — no live server needed.                          #
+# --------------------------------------------------------------------------- #
+
+
+def _wire(marker: Marker) -> dict[str, object]:
+    """The marker as it lands on the bus wire (the bus dumps payloads with
+    `mode="json", exclude_none=True`)."""
+    return marker.model_dump(mode="json", exclude_none=True)
+
+
+def test_marker_neutral_pattern_without_span_round_trips() -> None:
+    """A neutral, named, point pattern (a doji) round-trips on `chart.highlight v1`
+    without a validation error and keeps a clean wire (no null span keys)."""
+    marker = Marker(
+        event_ts=datetime(2026, 5, 15, tzinfo=UTC),
+        kind="neutral_marker",
+        pattern="doji",
+        strength=0.9,
+    )
+    payload = ChartHighlightPayloadV1(symbol="AAPL", timeframe="1d", markers=[marker])
+    reparsed = ChartHighlightPayloadV1.model_validate(payload.model_dump())
+    assert reparsed.markers[0] == marker
+    wire = _wire(marker)
+    assert wire == {
+        "event_ts": "2026-05-15T00:00:00Z",
+        "kind": "neutral_marker",
+        "pattern": "doji",
+        "strength": 0.9,
+    }
+    assert "span_start_ts" not in wire and "span_end_ts" not in wire
+
+
+def test_marker_with_span_round_trips() -> None:
+    """A multi-bar pattern carrying a span round-trips intact."""
+    marker = Marker(
+        event_ts=datetime(2026, 5, 15, tzinfo=UTC),
+        kind="bullish_marker",
+        pattern="morning_star",
+        span_start_ts=datetime(2026, 5, 13, tzinfo=UTC),
+        span_end_ts=datetime(2026, 5, 15, tzinfo=UTC),
+        strength=0.7,
+    )
+    reparsed = Marker.model_validate(marker.model_dump())
+    assert reparsed == marker
+
+
+def test_legacy_point_marker_still_valid_and_wire_unchanged() -> None:
+    """An existing `bullish_marker` with only a label (no new fields) still
+    validates and serialises to exactly its old wire shape — the new optional
+    fields are dropped by `exclude_none`."""
+    marker = Marker(
+        event_ts=datetime(2026, 5, 15, tzinfo=UTC),
+        kind="bullish_marker",
+        label="hammer at support",
+    )
+    assert _wire(marker) == {
+        "event_ts": "2026-05-15T00:00:00Z",
+        "kind": "bullish_marker",
+        "label": "hammer at support",
+    }
+
+
+def test_marker_rejects_reversed_span() -> None:
+    """A span with `span_end_ts < span_start_ts` is rejected by the validator."""
+    with pytest.raises(ValidationError, match="span_end_ts must be >="):
+        Marker(
+            event_ts=datetime(2026, 5, 15, tzinfo=UTC),
+            kind="bearish_marker",
+            span_start_ts=datetime(2026, 5, 15, tzinfo=UTC),
+            span_end_ts=datetime(2026, 5, 13, tzinfo=UTC),
+        )
+
+
+def test_marker_rejects_half_span() -> None:
+    """A span endpoint without its partner is rejected (both-or-neither)."""
+    with pytest.raises(ValidationError, match="both span_start_ts and span_end_ts"):
+        Marker(
+            event_ts=datetime(2026, 5, 15, tzinfo=UTC),
+            kind="bullish_marker",
+            span_start_ts=datetime(2026, 5, 13, tzinfo=UTC),
+        )
