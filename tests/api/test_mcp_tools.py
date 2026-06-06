@@ -445,3 +445,15 @@ def test_ping_tool_no_longer_registered(live_server: str, mcp_secret: str) -> No
     tool_names = asyncio.run(_run())
     assert "ping" not in tool_names
     assert {"get_ohlcv", "write_annotation", "list_annotations"} <= tool_names
+
+
+def test_scan_patterns_tool_is_registered(live_server: str, mcp_secret: str) -> None:
+    """`scan_patterns` (Plan 0049) is wired in `create_mcp_components`; a forgotten
+    registration would drop it from the live toolset and fail here."""
+
+    async def _run() -> set[str]:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.list_tools()
+            return {t.name for t in result.tools}
+
+    assert "scan_patterns" in asyncio.run(_run())

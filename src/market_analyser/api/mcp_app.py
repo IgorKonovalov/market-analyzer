@@ -49,6 +49,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
+from market_analyser.api.mcp_tools.scan_patterns import register_scan_patterns
 from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
@@ -120,6 +121,9 @@ def create_mcp_components(
     register_highlight_pattern(
         server, annotations_repository=annotations_repository, event_bus=event_bus
     )
+    # Pattern sweep (Plan 0049): detect every pattern in a range and publish them
+    # all in one `chart.highlight` event. Derived, not persisted — no repo dep.
+    register_scan_patterns(server, provider=provider, event_bus=event_bus)
 
     # Live-signal evaluator (Plan 0026): resolves a strategy, fetches fresh bars
     # to now (fetch-on-miss via the coordinator when present, else the plain
