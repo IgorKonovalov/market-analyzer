@@ -271,6 +271,12 @@ export function CandlestickChart({
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   // First-bar timestamp (ms) of the previous render, to detect left-side growth.
   const prevFirstTsRef = useRef<number | null>(null)
+  // The `bars` reference from the previous bars-effect run. The effect also runs
+  // on overlay/visibility changes (to reconcile series), but only a genuine DATA
+  // change (a new `bars` array: load, symbol/tf/range change, lazy-prepend) may
+  // refit the view — toggling a layer must preserve the user's zoom/pan
+  // (Plan 0049 phase 11).
+  const prevBarsRef = useRef<Bar[] | null>(null)
   const overlaySeriesRef = useRef<Map<string, OverlayEntry>>(new Map())
   // Supertrend overlays (Plan 0049 phase 9) draw as TWO masked line series (the
   // up/lower band in the bullish token, the down/upper band in the bearish token)
@@ -595,6 +601,7 @@ export function CandlestickChart({
       entry.down.setData(bands.down)
     }
 
+    const barsChanged = prevBarsRef.current !== bars
     if (grewOnLeft && rangeBeforePrepend && prevFirstMs !== null) {
       let prepended = 0
       for (const b of bars) {
@@ -605,9 +612,12 @@ export function CandlestickChart({
         from: (rangeBeforePrepend.from + prepended) as Logical,
         to: (rangeBeforePrepend.to + prepended) as Logical,
       })
-    } else {
+    } else if (barsChanged) {
+      // Only a genuine data change refits — NOT an overlay add or a legend toggle
+      // (those re-run this effect via `overlays`/`hidden` but leave `bars` intact).
       chart.timeScale().fitContent()
     }
+    prevBarsRef.current = bars
     prevFirstTsRef.current = newFirstMs
     syncTestRenderHook()
   }, [bars, overlays, hidden, syncTestRenderHook])
