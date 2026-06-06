@@ -6,7 +6,7 @@ import type { UTCTimestamp } from 'lightweight-charts'
 
 import type { Annotation } from '../types/sidecar/annotation'
 import type { OverlaySpec } from '../types/events'
-import { overlayLabel, tooltipAtTime } from './tooltip'
+import { overlayLabel, tooltipAtTime, tooltipPosition } from './tooltip'
 
 function annotation(overrides: Partial<Annotation> = {}): Annotation {
   return {
@@ -63,5 +63,38 @@ describe('overlayLabel', () => {
     expect(overlayLabel({ kind: 'price_line', price: 100, label: 'R1' } as OverlaySpec)).toBe(
       'PRICE_LINE',
     )
+  })
+})
+
+describe('tooltipPosition (edge-aware placement, Plan 0049 phase 13)', () => {
+  const CONTAINER = { containerWidth: 600, containerHeight: 400 }
+  const SIZE = { width: 200, height: 100 }
+
+  it('places down-right of the crosshair away from the edges', () => {
+    const { left, top } = tooltipPosition({ x: 50, y: 40, ...SIZE, ...CONTAINER }, 12)
+    expect(left).toBe(62) // x + offset
+    expect(top).toBe(52)
+  })
+
+  it('flips LEFT near the right edge so it stays on-screen', () => {
+    const x = 580 // within the tooltip width of the right edge
+    const { left } = tooltipPosition({ x, y: 40, ...SIZE, ...CONTAINER }, 12)
+    expect(left).toBe(x - 12 - SIZE.width) // flipped to the left of the crosshair
+    expect(left + SIZE.width).toBeLessThanOrEqual(CONTAINER.containerWidth)
+  })
+
+  it('flips UP near the bottom edge', () => {
+    const y = 390
+    const { top } = tooltipPosition({ x: 50, y, ...SIZE, ...CONTAINER }, 12)
+    expect(top).toBe(y - 12 - SIZE.height)
+    expect(top + SIZE.height).toBeLessThanOrEqual(CONTAINER.containerHeight)
+  })
+
+  it('clamps fully inside even when the crosshair hugs the corner', () => {
+    const { left, top } = tooltipPosition({ x: 599, y: 399, ...SIZE, ...CONTAINER }, 12)
+    expect(left).toBeGreaterThanOrEqual(0)
+    expect(top).toBeGreaterThanOrEqual(0)
+    expect(left + SIZE.width).toBeLessThanOrEqual(CONTAINER.containerWidth)
+    expect(top + SIZE.height).toBeLessThanOrEqual(CONTAINER.containerHeight)
   })
 })

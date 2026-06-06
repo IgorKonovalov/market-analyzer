@@ -964,7 +964,15 @@ export function CandlestickChart({
             {formatRangeLabel(rangeLabel.start, rangeLabel.end)}
           </div>
         )}
-        {tooltip && <ChartTooltip content={tooltip.content} x={tooltip.x} y={tooltip.y} />}
+        {tooltip && (
+          <ChartTooltip
+            content={tooltip.content}
+            x={tooltip.x}
+            y={tooltip.y}
+            containerWidth={containerRef.current?.clientWidth ?? 0}
+            containerHeight={containerRef.current?.clientHeight ?? 0}
+          />
+        )}
         <LayersPanel layers={layers} onToggle={toggleLayer} />
       </div>
     </div>

@@ -27,6 +27,43 @@ export interface TooltipContent {
   overlays: OverlayReading[]
 }
 
+/** Default gap (px) between the crosshair and the tooltip box. */
+export const TOOLTIP_OFFSET = 12
+
+export interface TooltipBox {
+  /** Crosshair point within the chart container, px. */
+  x: number
+  y: number
+  /** The tooltip's own rendered size, px. */
+  width: number
+  height: number
+  /** The chart container's size, px. */
+  containerWidth: number
+  containerHeight: number
+}
+
+/**
+ * Edge-aware placement for the hover tooltip (Plan 0049 phase 13). Prefers down-
+ * right of the crosshair, but FLIPS to the left / up when that would overflow the
+ * container's right / bottom edge, then clamps so the box stays fully inside
+ * (`left + width <= containerWidth`, `left >= 0`; likewise vertically). Pure, so
+ * the flip logic is unit-tested without a DOM.
+ */
+export function tooltipPosition(
+  box: TooltipBox,
+  offset = TOOLTIP_OFFSET,
+): {
+  left: number
+  top: number
+} {
+  const { x, y, width, height, containerWidth, containerHeight } = box
+  let left = x + offset + width > containerWidth ? x - offset - width : x + offset
+  let top = y + offset + height > containerHeight ? y - offset - height : y + offset
+  left = Math.min(Math.max(left, 0), Math.max(0, containerWidth - width))
+  top = Math.min(Math.max(top, 0), Math.max(0, containerHeight - height))
+  return { left, top }
+}
+
 /** Human label for an overlay series, e.g. `EMA(20)`, `SMA(50)`, `PRICE_LINE`. */
 export function overlayLabel(spec: OverlaySpec): string {
   const kind = spec.kind.toUpperCase()
