@@ -206,6 +206,26 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
     expect(hook!.seriesCount).toBe(BASE_COUNT + 2) // base + ema20 + ema50
   })
 
+  it('renders a supertrend overlay as TWO masked line series and fires no "unsupported" warning (Plan 0049)', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      render(
+        <CandlestickChart
+          bars={FIXTURE_BARS}
+          overlays={[{ kind: 'supertrend', period: 10, multiplier: 3 }]}
+        />,
+      )
+      // Two overlay line series (the up/lower-band + down/upper-band masks), not
+      // the generic single series.
+      expect(overlayLineSeries()).toHaveLength(2)
+      for (const s of overlayLineSeries()) expect(s.setData).toHaveBeenCalled()
+      // supertrend is a supported kind — it must NOT log-and-skip.
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
   it('logs a warning and renders no overlay series when the overlay kind is rsi (MVP-unsupported)', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {

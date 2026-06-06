@@ -56,10 +56,12 @@ import { ChartTooltip } from './ChartTooltip'
 import { LayersPanel, type ChartLayer } from './LayersPanel'
 import {
   computeOverlayData,
+  computeSupertrend,
   isSupportedOverlay,
   overlayColorFor,
   overlayColorTokenFor,
   overlayLayerId,
+  supertrendBands,
 } from '../lib/overlays'
 import { PatternSpanPrimitive, SPAN_LAYER_ID, SPAN_LAYER_LABEL, markersToSpans } from '../lib/spans'
 import {
@@ -263,6 +265,12 @@ export function CandlestickChart({
   // First-bar timestamp (ms) of the previous render, to detect left-side growth.
   const prevFirstTsRef = useRef<number | null>(null)
   const overlaySeriesRef = useRef<Map<string, OverlayEntry>>(new Map())
+  // Supertrend overlays (Plan 0049 phase 9) draw as TWO masked line series (the
+  // up/lower band in the bullish token, the down/upper band in the bearish token)
+  // so the trailing-stop line flips colour at trend changes. Keyed by overlayKey.
+  const supertrendSeriesRef = useRef<
+    Map<string, { up: ISeriesApi<'Line'>; down: ISeriesApi<'Line'> }>
+  >(new Map())
   // Drawn price lines (Plan 0047 phase 9), keyed by `priceLineId`. price_line
   // overlays are horizontal lines on the candlestick series, not line series.
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
@@ -450,6 +458,7 @@ export function CandlestickChart({
     // run and cleanup invocation; the local capture is the canonical fix).
     const overlayMap = overlaySeriesRef.current
     const priceLineMap = priceLinesRef.current
+    const supertrendMap = supertrendSeriesRef.current
     syncTestRenderHook()
 
     return () => {
@@ -464,6 +473,7 @@ export function CandlestickChart({
       overlayMap.clear()
       // The chart owns its price lines (disposed by chart.remove); drop our refs.
       priceLineMap.clear()
+      supertrendMap.clear()
       syncTestRenderHook()
     }
   }, [syncTestRenderHook])
@@ -499,6 +509,9 @@ export function CandlestickChart({
       // price_line overlays are horizontal lines, reconciled in the price-line
       // effect below — not line series, and not an "unsupported" warning case.
       if (spec.kind === 'price_line') continue
+      // supertrend is a two-masked-series overlay, reconciled separately below —
+      // skip the generic single-series path (and its "unsupported" warning).
+      if (spec.kind === 'supertrend') continue
       if (!isSupportedOverlay(spec.kind)) {
         console.warn(
           `[CandlestickChart] unsupported overlay kind "${spec.kind}" — ignored (MVP renders ema/sma only)`,
@@ -536,6 +549,43 @@ export function CandlestickChart({
         overlaySeriesRef.current.set(key, entry)
       }
       entry.series.setData(computeOverlayData(bars, spec))
+    }
+
+    // Supertrend reconcile (Plan 0049 phase 9): each supertrend overlay draws two
+    // masked line series (up=bullish, down=bearish) so the line flips colour at
+    // trend changes. Same add/remove/toggle discipline as the generic overlays.
+    const stColors = containerRef.current ? readChartColors(containerRef.current) : null
+    const upColor = stColors?.markerBullish ?? CHART_COLOR_FALLBACK.markerBullish
+    const downColor = stColors?.markerBearish ?? CHART_COLOR_FALLBACK.markerBearish
+    const desiredSt = new Map<string, OverlaySpec>()
+    for (const spec of overlays ?? []) {
+      if (spec.kind !== 'supertrend') continue
+      if (hidden.has(overlayLayerId(spec))) continue
+      desiredSt.set(overlayKey(spec), spec)
+    }
+    for (const [key, entry] of supertrendSeriesRef.current) {
+      if (!desiredSt.has(key)) {
+        chart.removeSeries(entry.up)
+        chart.removeSeries(entry.down)
+        supertrendSeriesRef.current.delete(key)
+      }
+    }
+    for (const [key, spec] of desiredSt) {
+      let entry = supertrendSeriesRef.current.get(key)
+      if (entry === undefined) {
+        const lineOpts = { lineWidth: 2 as const, priceLineVisible: false, lastValueVisible: false }
+        const up = chart.addLineSeries({ color: upColor, ...lineOpts })
+        const down = chart.addLineSeries({ color: downColor, ...lineOpts })
+        entry = { up, down }
+        supertrendSeriesRef.current.set(key, entry)
+      } else {
+        entry.up.applyOptions({ color: upColor })
+        entry.down.applyOptions({ color: downColor })
+      }
+      const points = computeSupertrend(bars, spec.period ?? 10, spec.multiplier ?? 3)
+      const bands = supertrendBands(points)
+      entry.up.setData(bands.up)
+      entry.down.setData(bands.down)
     }
 
     if (grewOnLeft && rangeBeforePrepend && prevFirstMs !== null) {
@@ -785,6 +835,11 @@ export function CandlestickChart({
     obvSeriesRef.current?.applyOptions({ color: colors.obv })
     for (const { spec, series } of overlaySeriesRef.current.values()) {
       series.applyOptions({ color: overlaySeriesColor(spec, container) })
+    }
+    // Supertrend's two masked series recolor from the bull/bear tokens in place.
+    for (const { up, down } of supertrendSeriesRef.current.values()) {
+      up.applyOptions({ color: colors.markerBullish })
+      down.applyOptions({ color: colors.markerBearish })
     }
   }, [effectiveTheme])
 
