@@ -28,6 +28,7 @@ import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 import type { NewsResponse } from '../types/sidecar/news-response'
+import type { QuoteResponse } from '../types/sidecar/quote-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import type { AgentModeState } from '../types/ui-events'
 
@@ -214,6 +215,17 @@ export const api = {
   searchSymbols(query: string): Promise<SymbolInfo[]> {
     const params = new URLSearchParams({ q: query })
     return callJson<SymbolInfo[]>(`/search?${params.toString()}`)
+  },
+  /**
+   * Live, symbol-level quote for the price header (Plan 0047). Hits the
+   * renderer-bearer-gated `GET /quote?symbol=`. Timeframe-independent — the
+   * header polls this so the displayed current price tracks the live quote,
+   * not the selected OHLCV series' last bar. `change_pct` is a percentage
+   * (already ×100 upstream) and may be `null`.
+   */
+  getQuote(symbol: string): Promise<QuoteResponse> {
+    const params = new URLSearchParams({ symbol })
+    return callJson<QuoteResponse>(`/quote?${params.toString()}`)
   },
   /** Read the persisted agent-mode toggle (Plan 0014). Renderer-bearer-gated. */
   getAgentMode(): Promise<AgentModeState> {

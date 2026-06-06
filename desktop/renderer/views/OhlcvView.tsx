@@ -22,8 +22,10 @@ import { useAgentMode } from '../hooks/useAgentMode'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useBackfillState } from '../hooks/useBackfillState'
 import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
+import { useQuotePoll } from '../hooks/useQuotePoll'
 import type { Marker, OverlaySpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
+import type { QuoteResponse } from '../types/sidecar/quote-response'
 import styles from './OhlcvView.module.css'
 
 export interface OhlcvViewProps {
@@ -69,6 +71,9 @@ export function OhlcvView({
   const { annotations } = useAnnotationsPoll({ symbol, timeframe, start: annStart, end })
   const { isBackfilling, error: backfillError } = useBackfillState({ symbol, timeframe, refetch })
   const { enabled: agentModeEnabled, setEnabled: setAgentMode } = useAgentMode()
+  // Live, symbol-level price — keyed on symbol only, so it is independent of the
+  // selected timeframe and never derives from the last bar's close (Plan 0047).
+  const { quote } = useQuotePoll({ symbol })
 
   // A fresh backfill failure re-shows the toast even if a prior one was dismissed.
   const [toastDismissed, setToastDismissed] = useState(false)
@@ -92,6 +97,7 @@ export function OhlcvView({
           onTimeframeChange={onTimeframeChange}
           disabled={isLoading}
         />
+        <PriceHeader symbol={symbol} quote={quote} />
         <button type="button" className={styles.refresh} onClick={onRefresh} disabled={isLoading}>
           Refresh
         </button>
@@ -179,6 +185,47 @@ export function OhlcvView({
         />
       )}
     </section>
+  )
+}
+
+/** Fixed `en-US` formatting so the rendered price is deterministic regardless of
+ * the host locale (and asserts cleanly in tests). Two decimals + thousands
+ * separators; the currency is appended when the quote carries one. */
+function formatPrice(price: number, currency: string): string {
+  const num = price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return currency ? `${num} ${currency}` : num
+}
+
+export interface PriceHeaderProps {
+  symbol: string
+  quote: QuoteResponse | null
+}
+
+/**
+ * The live current-price header (Plan 0047 phase 6). Shows one symbol-level
+ * price fed by `useQuotePoll`, independent of the selected timeframe. Until the
+ * first quote resolves (or if every poll has failed), it shows an em dash — it
+ * never derives a price from the chart's last bar. The day change renders in the
+ * bullish/bearish theme tokens.
+ */
+export function PriceHeader({ symbol, quote }: PriceHeaderProps): JSX.Element {
+  const change = quote?.change_pct ?? null
+  return (
+    <div className={styles.priceHeader} aria-label={`Current price for ${symbol}`}>
+      <span className={styles.priceValue} data-testid="price-value">
+        {quote ? formatPrice(quote.price, quote.currency) : '—'}
+      </span>
+      {change !== null && (
+        <span
+          className={styles.priceChange}
+          data-direction={change >= 0 ? 'up' : 'down'}
+          data-testid="price-change"
+        >
+          {change >= 0 ? '+' : ''}
+          {change.toFixed(2)}%
+        </span>
+      )}
+    </div>
   )
 }
 
