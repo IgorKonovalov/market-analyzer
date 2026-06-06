@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from market_analyser.analysis import PatternHit, detect_patterns
+from market_analyser.analysis import PatternHit, detect_patterns, resolve_span
 from market_analyser.data.types import Bar
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -53,6 +53,26 @@ _MULTI_BAR = {
     "evening_star",
     "three_white_soldiers",
     "three_black_crows",
+}
+
+# The statically-known bar span per pattern (Plan 0049 phase 1): 1 for the
+# single-bar patterns, 2 for the six two-bar patterns, 3 for the four three-bar
+# patterns. The detector must report exactly this on its `PatternHit`.
+_EXPECTED_SPAN = {
+    "doji": 1,
+    "hammer": 1,
+    "hanging_man": 1,
+    "marubozu": 1,
+    "bullish_engulfing": 2,
+    "bearish_engulfing": 2,
+    "dark_cloud_cover": 2,
+    "piercing_line": 2,
+    "bullish_harami": 2,
+    "bearish_harami": 2,
+    "morning_star": 3,
+    "evening_star": 3,
+    "three_white_soldiers": 3,
+    "three_black_crows": 3,
 }
 
 
@@ -105,3 +125,48 @@ def test_detect_patterns_returns_pattern_hits() -> None:
     bars: Sequence[Bar] = _load("doji")
     hits = detect_patterns(bars)
     assert all(isinstance(h, PatternHit) for h in hits)
+
+
+@pytest.mark.parametrize(("name", "index", "direction"), _POSITIVE)
+def test_pattern_reports_static_span(name: str, index: int, direction: str) -> None:
+    """Each detector reports its statically-known span: single-bar patterns span 1,
+    the six two-bar patterns span 2, the four three-bar patterns span 3."""
+
+    bars = _load(name)
+    hit = next(h for h in detect_patterns(bars) if h.pattern == name and h.bar_index == index)
+    assert hit.span_bars == _EXPECTED_SPAN[name]
+
+
+def test_resolve_span_three_bar_pattern() -> None:
+    """A 3-bar morning_star resolves to (start_ts, end_ts) where start_ts is the
+    timestamp of bar_index - 2 and end_ts is the completing bar's — derived only
+    from trailing bars."""
+
+    bars = _load("morning_star")
+    hit = next(h for h in detect_patterns(bars) if h.pattern == "morning_star")
+    assert hit.span_bars == 3
+    start_ts, end_ts = resolve_span(hit, bars)
+    assert start_ts == bars[hit.bar_index - 2].event_ts
+    assert end_ts == bars[hit.bar_index].event_ts
+    assert start_ts < end_ts
+
+
+def test_resolve_span_single_bar_pattern_is_point() -> None:
+    """A single-bar doji resolves to a zero-width span: start_ts == end_ts =="""
+
+    bars = _load("doji")
+    hit = next(h for h in detect_patterns(bars) if h.pattern == "doji")
+    assert hit.span_bars == 1
+    start_ts, end_ts = resolve_span(hit, bars)
+    assert start_ts == end_ts == bars[hit.bar_index].event_ts
+
+
+def test_resolve_span_rejects_span_before_series_start() -> None:
+    """A hit whose span reaches before bar 0 is malformed for the given series."""
+
+    bars = _load("doji")
+    bad = PatternHit(
+        bar_index=0, pattern="morning_star", direction="bullish", strength=0.5, span_bars=3
+    )
+    with pytest.raises(ValueError, match="reaches before the start"):
+        resolve_span(bad, bars)

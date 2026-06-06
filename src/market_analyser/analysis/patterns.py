@@ -17,6 +17,7 @@ external library.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from market_analyser.analysis.types import Direction, PatternHit
 from market_analyser.data.types import Bar
@@ -92,7 +93,11 @@ def _doji(bars: Sequence[Bar], i: int) -> PatternHit | None:
         return None
     if _body(b) <= DOJI_BODY_RATIO * r:
         return PatternHit(
-            bar_index=i, pattern="doji", direction="neutral", strength=_clamp01(1 - _body(b) / r)
+            bar_index=i,
+            pattern="doji",
+            direction="neutral",
+            strength=_clamp01(1 - _body(b) / r),
+            span_bars=1,
         )
     return None
 
@@ -116,6 +121,7 @@ def _hammer(bars: Sequence[Bar], i: int) -> PatternHit | None:
             pattern="hammer",
             direction="bullish",
             strength=_clamp01(_lower_shadow(b) / _range(b)),
+            span_bars=1,
         )
     return None
 
@@ -128,6 +134,7 @@ def _hanging_man(bars: Sequence[Bar], i: int) -> PatternHit | None:
             pattern="hanging_man",
             direction="bearish",
             strength=_clamp01(_lower_shadow(b) / _range(b)),
+            span_bars=1,
         )
     return None
 
@@ -144,7 +151,11 @@ def _marubozu(bars: Sequence[Bar], i: int) -> PatternHit | None:
     ):
         direction: Direction = "bullish" if _is_bull(b) else "bearish"
         return PatternHit(
-            bar_index=i, pattern="marubozu", direction=direction, strength=_clamp01(_body(b) / r)
+            bar_index=i,
+            pattern="marubozu",
+            direction=direction,
+            strength=_clamp01(_body(b) / r),
+            span_bars=1,
         )
     return None
 
@@ -166,6 +177,7 @@ def _bullish_engulfing(bars: Sequence[Bar], i: int) -> PatternHit | None:
             pattern="bullish_engulfing",
             direction="bullish",
             strength=_clamp01(_body(cur) / _range(cur)) if _range(cur) > 0 else 0.0,
+            span_bars=2,
         )
     return None
 
@@ -186,6 +198,7 @@ def _bearish_engulfing(bars: Sequence[Bar], i: int) -> PatternHit | None:
             pattern="bearish_engulfing",
             direction="bearish",
             strength=_clamp01(_body(cur) / _range(cur)) if _range(cur) > 0 else 0.0,
+            span_bars=2,
         )
     return None
 
@@ -208,6 +221,7 @@ def _dark_cloud_cover(bars: Sequence[Bar], i: int) -> PatternHit | None:
             strength=_clamp01((_body_mid(prev) - cur.close) / _body(prev))
             if _body(prev) > 0
             else 0.0,
+            span_bars=2,
         )
     return None
 
@@ -230,6 +244,7 @@ def _piercing_line(bars: Sequence[Bar], i: int) -> PatternHit | None:
             strength=_clamp01((cur.close - _body_mid(prev)) / _body(prev))
             if _body(prev) > 0
             else 0.0,
+            span_bars=2,
         )
     return None
 
@@ -252,6 +267,7 @@ def _harami(bars: Sequence[Bar], i: int, *, bullish: bool) -> PatternHit | None:
             pattern="bullish_harami" if bullish else "bearish_harami",
             direction="bullish" if bullish else "bearish",
             strength=_clamp01(1 - _body(cur) / _body(prev)),
+            span_bars=2,
         )
     return None
 
@@ -285,6 +301,7 @@ def _morning_star(bars: Sequence[Bar], i: int) -> PatternHit | None:
             pattern="morning_star",
             direction="bullish",
             strength=_clamp01((c.close - _body_mid(a)) / _body(a)),
+            span_bars=3,
         )
     return None
 
@@ -309,6 +326,7 @@ def _evening_star(bars: Sequence[Bar], i: int) -> PatternHit | None:
             pattern="evening_star",
             direction="bearish",
             strength=_clamp01((_body_mid(a) - c.close) / _body(a)),
+            span_bars=3,
         )
     return None
 
@@ -336,6 +354,7 @@ def _three_white_soldiers(bars: Sequence[Bar], i: int) -> PatternHit | None:
         pattern="three_white_soldiers",
         direction="bullish",
         strength=_clamp01(sum(bodies) / 3),
+        span_bars=3,
     )
 
 
@@ -358,6 +377,7 @@ def _three_black_crows(bars: Sequence[Bar], i: int) -> PatternHit | None:
         pattern="three_black_crows",
         direction="bearish",
         strength=_clamp01(sum(bodies) / 3),
+        span_bars=3,
     )
 
 
@@ -379,6 +399,26 @@ _DETECTORS = (
 )
 
 
+def resolve_span(hit: PatternHit, bars: Sequence[Bar]) -> tuple[datetime, datetime]:
+    """Resolve a `PatternHit`'s bar span to `(start_ts, end_ts)` timestamps.
+
+    `end_ts` is the completing bar's timestamp (`bars[hit.bar_index]`); `start_ts`
+    reaches back `span_bars - 1` bars to the formation's first bar. The span is
+    trailing by construction — `start_index <= bar_index` — so this never reads a
+    future bar. Raises `IndexError` if `bar_index` is out of range for `bars`, or
+    `ValueError` if the span reaches before bar 0 (a malformed hit for this
+    series); callers pass the same `bars` the hit was detected over.
+    """
+
+    start_index = hit.bar_index - (hit.span_bars - 1)
+    if start_index < 0:
+        raise ValueError(
+            f"span of {hit.span_bars} bars ending at index {hit.bar_index} "
+            "reaches before the start of the series"
+        )
+    return bars[start_index].event_ts, bars[hit.bar_index].event_ts
+
+
 def detect_patterns(bars: Sequence[Bar]) -> list[PatternHit]:
     """Run every detector over every bar and return the hits.
 
@@ -396,4 +436,4 @@ def detect_patterns(bars: Sequence[Bar]) -> list[PatternHit]:
     return hits
 
 
-__all__ = ["detect_patterns"]
+__all__ = ["detect_patterns", "resolve_span"]

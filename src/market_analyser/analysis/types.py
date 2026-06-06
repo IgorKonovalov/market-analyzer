@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 Direction = Literal["bullish", "bearish", "neutral"]
 
@@ -27,6 +27,14 @@ class PatternHit(BaseModel):
     `bar_index` is the index of the *latest* bar of the formation in the input
     series (the bar at which the pattern completes). `strength` is a detector-
     defined score in `[0, 1]` — relative conviction, not a probability.
+
+    `span_bars` is the statically-known number of bars the formation occupies
+    (1 for single-bar patterns, 2/3 for the multi-bar ones), ending on
+    `bar_index`. It is bookkeeping, not new analysis — a doji always spans 1, a
+    morning star always spans 3 — and it lets a sweep resolve the formation's
+    `(start_ts, end_ts)` for span rendering (Plan 0049, ADR-0045). The span
+    reaches back from `bar_index`, so no future bar is involved: the
+    anti-lookahead guarantee is unchanged.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -35,6 +43,7 @@ class PatternHit(BaseModel):
     pattern: str
     direction: Direction
     strength: float
+    span_bars: int = Field(ge=1, le=3)
 
 
 class Trend(StrEnum):

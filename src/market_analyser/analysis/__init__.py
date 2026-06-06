@@ -11,7 +11,7 @@ invariant is enforced at this layer so callers inherit it for free.
 
 from __future__ import annotations
 
-from market_analyser.analysis.patterns import detect_patterns
+from market_analyser.analysis.patterns import detect_patterns, resolve_span
 from market_analyser.analysis.types import PatternHit
 
-__all__ = ["PatternHit", "detect_patterns"]
+__all__ = ["PatternHit", "detect_patterns", "resolve_span"]
