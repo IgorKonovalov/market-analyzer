@@ -8,7 +8,7 @@
  * and the empty-input case.
  */
 import type { Annotation } from '../types/sidecar/annotation'
-import { annotationsToMarkers } from './markers'
+import { annotationsToMarkers, markerVisual } from './markers'
 
 function annotation(overrides: Partial<Annotation> = {}): Annotation {
   return {
@@ -90,5 +90,52 @@ describe('annotationsToMarkers', () => {
 
   it('returns an empty array for empty input', () => {
     expect(annotationsToMarkers([])).toEqual([])
+  })
+
+  it('sets a larger-than-default marker size on every marker (visibility bump)', () => {
+    const [marker] = annotationsToMarkers([annotation()])
+    // lightweight-charts' default size is 1; the baseline must be clearly bigger.
+    expect(marker.size).toBeGreaterThan(1)
+  })
+})
+
+describe('markerVisual (strength → size + intensity)', () => {
+  // Deliberately not the default hex, so an assertion that the result derives
+  // from these proves the color is token-driven, not hardcoded.
+  const TOKENS = { bullish: '#00ff00', bearish: '#0000ff' }
+
+  it('maps a strong bearish marker to a larger size and more-intense token than a weak one', () => {
+    const strong = markerVisual('bearish_marker', 0.99, TOKENS)
+    const weak = markerVisual('bearish_marker', 0.15, TOKENS)
+
+    expect(strong.size).toBeGreaterThan(weak.size)
+    // Both derive from the passed bearish token (not a hardcoded red)…
+    expect(strong.color.startsWith(TOKENS.bearish)).toBe(true)
+    expect(weak.color.startsWith(TOKENS.bearish)).toBe(true)
+    // …and the strong marker is more intense (higher alpha byte).
+    const alphaByte = (c: string): number => parseInt(c.slice(7, 9) || 'ff', 16)
+    expect(alphaByte(strong.color)).toBeGreaterThan(alphaByte(weak.color))
+  })
+
+  it('resolves bullish vs bearish to the passed direction tokens (not hardcoded hex)', () => {
+    expect(markerVisual('bullish_marker', 1, TOKENS).color.startsWith(TOKENS.bullish)).toBe(true)
+    expect(markerVisual('bearish_marker', 1, TOKENS).color.startsWith(TOKENS.bearish)).toBe(true)
+  })
+
+  it('treats unknown strength (null) as a full-intensity token at the baseline size', () => {
+    const v = markerVisual('bullish_marker', null, TOKENS)
+    expect(v.color).toBe(TOKENS.bullish) // plain token, no alpha byte
+    expect(v.size).toBeGreaterThan(1)
+    // …and smaller than a max-strength marker, so strong still reads strongest.
+    expect(v.size).toBeLessThan(markerVisual('bullish_marker', 1, TOKENS).size)
+  })
+
+  it('clamps out-of-range strength to [0,1]', () => {
+    expect(markerVisual('bullish_marker', 5, TOKENS).size).toBe(
+      markerVisual('bullish_marker', 1, TOKENS).size,
+    )
+    expect(markerVisual('bullish_marker', -3, TOKENS).size).toBe(
+      markerVisual('bullish_marker', 0, TOKENS).size,
+    )
   })
 })
