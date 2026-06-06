@@ -39,18 +39,24 @@ class OverlaySpec(BaseModel):
     and does NOT bump `chart.show`/`chart.update` payload versions.
 
     Two families share this one model, kept disjoint by `_validate_kind_fields`:
-    the indicator overlays (`ema`/`sma`/`rsi`/`macd`/`bbands`, carrying an optional
-    `period`) and the generic `price_line` (a horizontal line at `price` with a
-    `label` and an optional support/resistance `role`) — the channel the agent
-    uses to push S/R levels from `analyze_symbol` (Plan 0047). The new fields are
-    all optional/defaulted, so an indicator overlay still serialises to exactly
+    the indicator overlays (`ema`/`sma`/`rsi`/`macd`/`bbands`/`supertrend`,
+    carrying an optional `period`, plus `supertrend`'s ATR `multiplier`) and the
+    generic `price_line` (a horizontal line at `price` with a `label` and an
+    optional support/resistance `role`) — the channel the agent uses to push S/R
+    levels from `analyze_symbol` (Plan 0047). The new fields are all
+    optional/defaulted, so an indicator overlay still serialises to exactly
     `{kind, period}` under the bus's `exclude_none` dump — existing overlays are
-    byte-unchanged on the wire."""
+    byte-unchanged on the wire.
+
+    `supertrend` (Plan 0049) is additive like `price_line` was: a new indicator
+    kind carrying `period` + the optional `multiplier`. The renderer mirror and
+    client-side draw land in phase 9 (ui-builder)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["ema", "sma", "rsi", "macd", "bbands", "price_line"]
+    kind: Literal["ema", "sma", "rsi", "macd", "bbands", "price_line", "supertrend"]
     period: int | None = None
+    multiplier: float | None = None  # supertrend's ATR multiplier; None on other kinds
     # `price_line`-only fields (None on indicator overlays, enforced below).
     price: float | None = None
     label: str | None = None

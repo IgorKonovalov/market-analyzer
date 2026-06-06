@@ -54,6 +54,7 @@ from market_analyser.events import (
     Envelope,
     EventBus,
     Marker,
+    OverlaySpec,
 )
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (
@@ -320,6 +321,42 @@ def test_show_chart_publishes_price_line_overlay(
     ]
 
 
+def test_show_chart_publishes_supertrend_overlay(
+    live_server: str, mcp_secret: str, event_bus: EventBus
+) -> None:
+    """The new `supertrend` overlay kind (Plan 0049) round-trips through
+    `show_chart` onto `chart.show v1`, carrying its period + ATR multiplier; an
+    `ema` overlay alongside is byte-unchanged (`exclude_none` drops the unset
+    `multiplier`)."""
+    sub = event_bus.subscribe()
+
+    async def _run() -> None:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "show_chart",
+                {
+                    "symbol": "BTC-USD",
+                    "timeframe": "1d",
+                    "range_start": "2026-04-20T00:00:00+00:00",
+                    "range_end": "2026-05-20T00:00:00+00:00",
+                    "overlays": [
+                        {"kind": "ema", "period": 20},
+                        {"kind": "supertrend", "period": 10, "multiplier": 3.0},
+                    ],
+                },
+            )
+            assert not result.isError, f"show_chart errored: {result.content}"
+
+    asyncio.run(_run())
+
+    env = _drain_queue(sub)[0]
+    assert env.type == "chart.show"
+    assert env.payload["overlays"] == [
+        {"kind": "ema", "period": 20},
+        {"kind": "supertrend", "period": 10, "multiplier": 3.0},
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # update_chart                                                                #
 # --------------------------------------------------------------------------- #
@@ -516,6 +553,18 @@ def test_highlight_pattern_publishes_event_and_persists_annotation(
                 "overlays": [{"kind": "price_line", "price": 61335.75}],
             },
         ),
+        (
+            "show_chart",
+            {
+                "symbol": "AAPL",
+                "timeframe": "1d",
+                "range_start": "2026-04-20T00:00:00+00:00",
+                "range_end": "2026-05-20T00:00:00+00:00",
+                # supertrend is an indicator kind — it must reject price_line-only
+                # fields (the validator keeps the families disjoint).
+                "overlays": [{"kind": "supertrend", "period": 10, "price": 100.0}],
+            },
+        ),
         # update_chart rejections
         (
             "update_chart",
@@ -708,3 +757,38 @@ def test_marker_rejects_half_span() -> None:
             kind="bullish_marker",
             span_start_ts=datetime(2026, 5, 13, tzinfo=UTC),
         )
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0049 ph5: the supertrend OverlaySpec kind                              #
+# Pure-pydantic round-trips — no live server needed.                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_supertrend_overlay_round_trips_with_multiplier() -> None:
+    """A `supertrend` overlay carries period + multiplier and serialises to
+    exactly those fields under the bus's `exclude_none` dump."""
+    overlay = OverlaySpec(kind="supertrend", period=10, multiplier=3.0)
+    assert OverlaySpec.model_validate(overlay.model_dump()) == overlay
+    assert overlay.model_dump(mode="json", exclude_none=True) == {
+        "kind": "supertrend",
+        "period": 10,
+        "multiplier": 3.0,
+    }
+
+
+def test_ema_overlay_wire_unchanged_by_multiplier_field() -> None:
+    """Adding `multiplier` to the model leaves an `ema` overlay byte-unchanged on
+    the wire — `exclude_none` drops the unset multiplier."""
+    assert OverlaySpec(kind="ema", period=20).model_dump(mode="json", exclude_none=True) == {
+        "kind": "ema",
+        "period": 20,
+    }
+
+
+def test_supertrend_overlay_rejects_price_line_fields() -> None:
+    """`supertrend` is an indicator kind: the validator still rejects the
+    `price_line`-only fields on it (the families stay disjoint)."""
+    for bad in ({"price": 100.0}, {"label": "x"}, {"role": "support"}):
+        with pytest.raises(ValidationError, match="does not accept price/label/role"):
+            OverlaySpec(kind="supertrend", period=10, **bad)
