@@ -192,7 +192,9 @@ class _FakeLpDetailSource:
         )
 
     def resolve_univ3_token_id(self, *, chain: Chain, pool_address: str, owner: str) -> int | None:
-        return None
+        # A resolved CL position (Plan 0048): the shape-aware resolver returns the
+        # NFT tokenId, which the enrichment passes to `fetch_lp_detail`.
+        return 1
 
 
 def test_scan_enriches_lp_positions_when_detail_source_present() -> None:

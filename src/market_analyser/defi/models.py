@@ -100,9 +100,20 @@ class DefiPosition(BaseModel):
 class LpPositionDetail(BaseModel):
     """The deep on-chain state of a single concentrated-liquidity LP position
     (Uniswap-v3 / Aerodrome Slipstream), produced by an `LpPositionDetailSource`
-    (Plan 0034). It *enriches* the `DefiPosition` discovery returns: the precise
-    tick range, where the pool's current tick sits relative to it (in-range
+    (Plan 0034 / 0048). It *enriches* the `DefiPosition` discovery returns: the
+    precise tick range, where the pool's current tick sits relative to it (in-range
     status), and the fees accrued but not yet collected.
+
+    **`uncollected_fees` definition (Plan 0048).** These are the position struct's
+    `tokensOwed0` / `tokensOwed1` words read *as-is* — claimed-but-not-yet-withdrawn
+    **swap fees**, scaled by each token's decimals. They are *not* recomputed from
+    `feeGrowthInside` deltas, so they **under-report** real-time accrued fees: a CL
+    position's owed words only update on a poke/collect and read `0` in between (the
+    2026-06-05 smoke read `0` for an in-range staked position). This is the cheap,
+    deterministic definition; the accurate `feeGrowthInside` computation was the
+    rejected alternative. For a *staked* CL position, gauge **emissions** are a
+    separate reward stream and are deliberately **out of scope** here — this field
+    is swap fees only.
 
     Boundary-validated in the model's house style: ticks are finite ints with
     `tick_lower < tick_upper`, `in_range` is required to agree with the half-open

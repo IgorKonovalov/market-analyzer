@@ -8,9 +8,14 @@ for each `kind="lp"` position carrying a `pool_address` it reads the on-chain
 state through an `LpPositionDetailSource` (ADR-0031) and returns a new position
 set with the LP-detail fields populated.
 
-Two keying classes (Plan 0034): the Aerodrome / Velodrome class is read one-hop
-on `pool_address`; the Uniswap-v3 class is an NFT, so its `tokenId` is resolved
-first (the source's `resolve_univ3_token_id`) and passed to the detail read.
+Shape-aware, one routing path (Plan 0048). The source's `resolve_univ3_token_id`
+is the discriminator: it probes the `pool_address` and returns the position NFT
+`tokenId` for a concentrated-liquidity shape (staked-CL via the gauge, or
+unstaked-CL via the wallet's `NonfungiblePositionManager`), or `None` for a v2
+constant-product pool (no ticks) or a wallet that holds no matching position. So
+enrichment always resolves first, then reads detail by `tokenId` — it no longer
+branches on the protocol display string (the old `"uniswap" in protocol`), which
+could not tell a v2 farm from a staked-CL farm.
 
 Two disciplines bound the step:
 
@@ -90,28 +95,23 @@ def _is_enrichable(position: DefiPosition) -> bool:
     return position.kind == "lp" and bool(position.pool_address)
 
 
-def _is_univ3(protocol: str) -> bool:
-    """Whether a position's protocol is the Uniswap-v3 NFT class (two-hop)."""
-    return "uniswap" in protocol.lower()
-
-
 def _fetch_detail(
     source: LpPositionDetailSource, position: DefiPosition, owner: str
 ) -> LpPositionDetail | None:
-    """Read one LP position's detail, resolving the Uni-v3 `tokenId` first for the
-    NFT class. Returns `None` when a Uni-v3 position can't be resolved."""
+    """Read one LP position's detail. The shape-aware resolver returns the position
+    NFT `tokenId` (staked-CL or unstaked-CL) or `None` (v2 AMM / no matching
+    position); a `None` means there is nothing to read, so the position is left at
+    discovery depth."""
     pool_address = position.pool_address
     assert pool_address is not None  # guarded by `_is_enrichable`
-    if _is_univ3(position.protocol):
-        token_id = source.resolve_univ3_token_id(
-            chain=position.chain, pool_address=pool_address, owner=owner
-        )
-        if token_id is None:
-            return None
-        return source.fetch_lp_detail(
-            chain=position.chain, pool_address=pool_address, token_id=token_id
-        )
-    return source.fetch_lp_detail(chain=position.chain, pool_address=pool_address)
+    token_id = source.resolve_univ3_token_id(
+        chain=position.chain, pool_address=pool_address, owner=owner
+    )
+    if token_id is None:
+        return None
+    return source.fetch_lp_detail(
+        chain=position.chain, pool_address=pool_address, token_id=token_id
+    )
 
 
 def _fold_detail(position: DefiPosition, detail: LpPositionDetail) -> DefiPosition:
