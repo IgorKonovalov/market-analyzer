@@ -325,26 +325,23 @@ class RpcLpDetailAdapter:
         self, rpc_url: str, *, gauge: str, owner: str
     ) -> tuple[int | None, str | None]:
         """The staked NFT `token_id` **and** the position manager (`gauge.nft()`) for
-        a CL gauge, batched into one JSON-RPC request: `gauge.stakedValues(owner)`
-        gives the staked NFT ids (falling back to `stakedLength` + `stakedByIndex` on
-        a gauge variant without `stakedValues`), and `gauge.nft()` gives the NPM the
-        fetch step reads `positions(token_id)` from. Returning the NPM here lets
-        `fetch_lp_detail` skip a separate `gauge.nft()` round-trip. Returns
-        `(None, npm)` when the owner has no staked position. A gauge with several
-        staked positions in the same pool enriches only the first (a known, accepted
-        simplification)."""
-        staked_raw, nft_raw = self._eth_call_batch(
-            rpc_url,
-            [
-                (gauge, _call(_SEL_STAKED_VALUES, _addr_arg(owner))),
-                (gauge, _SEL_NFT),
-            ],
-        )
-        npm = _decode_address(nft_raw) if nft_raw is not None else None
-        if staked_raw is None:  # this gauge variant lacks stakedValues
-            return self._resolve_staked_via_index(rpc_url, gauge=gauge, owner=owner), npm
-        ids = _decode_uint_array(staked_raw)
-        return (ids[0] if ids else None), npm
+        a CL gauge: `gauge.stakedValues(owner)` gives the staked NFT ids (falling back
+        to `stakedLength` + `stakedByIndex` on a gauge variant without `stakedValues`),
+        and `gauge.nft()` gives the NPM the fetch step reads `positions(token_id)`
+        from. Returning the NPM here lets `fetch_lp_detail` skip a separate
+        `gauge.nft()` read. Returns `(None, None)` when the owner has no staked
+        position (so no `nft()` is read). A gauge with several staked positions in the
+        same pool enriches only the first (a known, accepted simplification)."""
+        try:
+            values = self._eth_call(rpc_url, gauge, _call(_SEL_STAKED_VALUES, _addr_arg(owner)))
+            ids = _decode_uint_array(values)
+            token_id = ids[0] if ids else None
+        except LpDetailError:
+            token_id = self._resolve_staked_via_index(rpc_url, gauge=gauge, owner=owner)
+        if token_id is None:
+            return None, None
+        npm = _decode_address(self._eth_call(rpc_url, gauge, _SEL_NFT))
+        return token_id, npm
 
     def _resolve_staked_via_index(self, rpc_url: str, *, gauge: str, owner: str) -> int | None:
         """Fallback for a gauge without `stakedValues`: `stakedLength(owner)` then
@@ -371,11 +368,8 @@ class RpcLpDetailAdapter:
         matching position."""
         npm = self._npm_for(chain)
         pool = pool_address.lower()
-        token0_raw, token1_raw = self._eth_call_batch(
-            rpc_url, [(pool, _SEL_TOKEN0), (pool, _SEL_TOKEN1)]
-        )
-        want0 = _decode_address(_require(token0_raw, "token0"))
-        want1 = _decode_address(_require(token1_raw, "token1"))
+        want0 = _decode_address(self._eth_call(rpc_url, pool, _SEL_TOKEN0))
+        want1 = _decode_address(self._eth_call(rpc_url, pool, _SEL_TOKEN1))
         count = _decode_uint(
             self._eth_call(rpc_url, npm, _call(_SEL_BALANCE_OF, _addr_arg(owner))), word=0
         )
@@ -405,23 +399,16 @@ class RpcLpDetailAdapter:
         `gauge.pool()`) gives the current tick via `slot0()`; `npm` (from
         `gauge.nft()`, carried from the resolve step — or read here on a direct
         fetch) is the `NonfungiblePositionManager`, whose `positions(token_id)` gives
-        the tick bounds, owed amounts and the two token addresses. `positions` and
-        `slot0` are independent, so they ride one JSON-RPC batch. Verified end-to-end
-        in the 2026-06-05 live smoke."""
+        the tick bounds, owed amounts and the two token addresses. Each read is a
+        paced single `eth_call` (this provider per-call-throttles batched sub-calls —
+        2026-06-07 smoke). Verified end-to-end in the 2026-06-05 live smoke."""
         if npm is None:  # direct fetch with no prior resolve — read the NPM now
             npm = _decode_address(self._eth_call(rpc_url, gauge, _SEL_NFT))
-        position, slot0 = self._eth_call_batch(
-            rpc_url,
-            [
-                (npm, _call(_SEL_POSITIONS, _uint_arg(token_id))),
-                (clpool, _SEL_SLOT0),
-            ],
-        )
-        position_bytes = _require(position, "positions")
-        current_tick = _decode_int(_require(slot0, "slot0"), word=1)
-        addr0 = _decode_address_word(position_bytes, _POS_TOKEN0_WORD)
-        addr1 = _decode_address_word(position_bytes, _POS_TOKEN1_WORD)
-        return self._assemble_detail(rpc_url, current_tick, position_bytes, addr0, addr1)
+        position = self._eth_call(rpc_url, npm, _call(_SEL_POSITIONS, _uint_arg(token_id)))
+        current_tick = _decode_int(self._eth_call(rpc_url, clpool, _SEL_SLOT0), word=1)
+        addr0 = _decode_address_word(position, _POS_TOKEN0_WORD)
+        addr1 = _decode_address_word(position, _POS_TOKEN1_WORD)
+        return self._assemble_detail(rpc_url, current_tick, position, addr0, addr1)
 
     def _fetch_univ3(
         self, rpc_url: str, chain: Chain, pool_address: str, token_id: int
@@ -431,20 +418,13 @@ class RpcLpDetailAdapter:
         tick bounds, owed amounts and the two token addresses directly; `slot0()` on
         the pool gives the current tick. (Two positions can share a pool with
         different ranges, so the pool alone is ambiguous — hence the tokenId key.)
-        `positions` and `slot0` are independent, so they ride one JSON-RPC batch."""
+        Each read is a paced single `eth_call`."""
         npm = self._npm_for(chain)
-        position, slot0 = self._eth_call_batch(
-            rpc_url,
-            [
-                (npm, _call(_SEL_POSITIONS, _uint_arg(token_id))),
-                (pool_address, _SEL_SLOT0),
-            ],
-        )
-        position_bytes = _require(position, "positions")
-        current_tick = _decode_int(_require(slot0, "slot0"), word=1)
-        addr0 = _decode_address_word(position_bytes, _POS_TOKEN0_WORD)
-        addr1 = _decode_address_word(position_bytes, _POS_TOKEN1_WORD)
-        return self._assemble_detail(rpc_url, current_tick, position_bytes, addr0, addr1)
+        position = self._eth_call(rpc_url, npm, _call(_SEL_POSITIONS, _uint_arg(token_id)))
+        current_tick = _decode_int(self._eth_call(rpc_url, pool_address, _SEL_SLOT0), word=1)
+        addr0 = _decode_address_word(position, _POS_TOKEN0_WORD)
+        addr1 = _decode_address_word(position, _POS_TOKEN1_WORD)
+        return self._assemble_detail(rpc_url, current_tick, position, addr0, addr1)
 
     def _assemble_detail(
         self,
@@ -467,9 +447,12 @@ class RpcLpDetailAdapter:
         # zero-owed leg carries no fee to label, and the staked-CL case reads
         # `tokensOwed = 0` until a poke/collect (the live-smoke observation), so
         # skipping the reads spares RPC round-trips per such position under the rate
-        # limit the plan flags. The labels that *are* needed go in one batch.
-        owing = [(addr, raw) for addr, raw in ((addr0, owed0_raw), (addr1, owed1_raw)) if raw > 0]
-        uncollected = self._owed_tokens(rpc_url, owing)
+        # limit the plan flags.
+        uncollected = [
+            self._owed_token(rpc_url, addr, raw)
+            for addr, raw in ((addr0, owed0_raw), (addr1, owed1_raw))
+            if raw > 0
+        ]
         return LpPositionDetail(
             tick_lower=tick_lower,
             tick_upper=tick_upper,
@@ -478,27 +461,14 @@ class RpcLpDetailAdapter:
             uncollected_fees=uncollected,
         )
 
-    def _owed_tokens(self, rpc_url: str, owing: list[tuple[str, int]]) -> list[PositionToken]:
-        """Label and scale each owing fee leg: batch every leg's `symbol()` +
-        `decimals()` into one JSON-RPC request, then divide the raw `tokensOwed` word
-        by `10**decimals`. `uncollected_fees` is the position struct's owed words
-        as-is (Plan 0048 fee definition: swap fees only, under-reports until a poke —
-        see `LpPositionDetail`). Empty in, empty out (no request)."""
-        if not owing:
-            return []
-        calls: list[tuple[str, str]] = []
-        for address, _raw in owing:
-            calls.append((address, _SEL_SYMBOL))
-            calls.append((address, _SEL_DECIMALS))
-        results = self._eth_call_batch(rpc_url, calls)
-        tokens: list[PositionToken] = []
-        for index, (address, raw_owed) in enumerate(owing):
-            symbol = _decode_string(_require(results[2 * index], "symbol"))
-            decimals = _decode_uint(_require(results[2 * index + 1], "decimals"), word=0)
-            tokens.append(
-                PositionToken(symbol=symbol, address=address, amount=raw_owed / (10**decimals))
-            )
-        return tokens
+    def _owed_token(self, rpc_url: str, address: str, raw_owed: int) -> PositionToken:
+        """Label and scale one owed-fee leg: read the token's `symbol()`/`decimals()`
+        and divide the raw `tokensOwed` word by `10**decimals`. `uncollected_fees`
+        is the position struct's owed words as-is (Plan 0048 fee definition: swap
+        fees only, under-reports until a poke — see `LpPositionDetail`)."""
+        symbol = _decode_string(self._eth_call(rpc_url, address, _SEL_SYMBOL))
+        decimals = _decode_uint(self._eth_call(rpc_url, address, _SEL_DECIMALS), word=0)
+        return PositionToken(symbol=symbol, address=address, amount=raw_owed / (10**decimals))
 
     # -- transport ----------------------------------------------------------
 
@@ -542,30 +512,6 @@ class RpcLpDetailAdapter:
             raise _classify_error(err) from err
         return _result_bytes(response.json())
 
-    def _eth_call_batch(self, rpc_url: str, calls: list[tuple[str, str]]) -> list[bytes | None]:
-        """Perform several `eth_call`s in one JSON-RPC batch request; return the
-        decoded result bytes per call **in input order**. A sub-call that returned a
-        JSON-RPC error object (a revert) is `None` — an optional/routing signal the
-        caller decides on (`_require` turns a `None` a read needs into a typed
-        `LpDetailError`). A transport failure of the whole batch raises the shared
-        rate-limit / unavailable errors, exactly like `_eth_call`. Batching collapses
-        a position's independent reads into one round-trip (Plan 0048 burst fix)."""
-        payload = [
-            {
-                "jsonrpc": "2.0",
-                "id": index,
-                "method": "eth_call",
-                "params": [{"to": to, "data": data}, "latest"],
-            }
-            for index, (to, data) in enumerate(calls)
-        ]
-        self._sleep(self._inter_request_seconds)
-        try:
-            response = self._http.post(rpc_url, json=payload, expect_json=True)
-        except ResilientHttpError as err:
-            raise _classify_error(err) from err
-        return _batch_result_bytes(response.json(), len(calls))
-
 
 def _classify_error(err: ResilientHttpError) -> UpstreamDataError:
     """Translate an exhausted/permanent `ResilientHttpError` into the typed
@@ -596,44 +542,6 @@ def _result_bytes(payload: Any) -> bytes:
         return bytes.fromhex(result[2:])
     except ValueError as err:
         raise LpDetailError("lp-detail: JSON-RPC result is not valid hex") from err
-
-
-def _batch_result_bytes(payload: Any, expected: int) -> list[bytes | None]:
-    """Decode a JSON-RPC batch response into result bytes per request id (0..n-1),
-    in order. A per-item `error` object (a revert) becomes `None`; a missing item or
-    a non-hex `result` is a typed `LpDetailError` (the batch shape is broken). The
-    response array may arrive in any order, so items are indexed by their id."""
-    if not isinstance(payload, list):
-        raise LpDetailError("lp-detail: JSON-RPC batch response was not an array")
-    by_id: dict[int, dict[str, Any]] = {}
-    for item in payload:
-        if not isinstance(item, dict) or not isinstance(item.get("id"), int):
-            raise LpDetailError("lp-detail: JSON-RPC batch item missing an integer id")
-        by_id[item["id"]] = item
-    out: list[bytes | None] = []
-    for index in range(expected):
-        item = by_id.get(index)
-        if item is None:
-            raise LpDetailError(f"lp-detail: JSON-RPC batch missing response id {index}")
-        if "error" in item:
-            out.append(None)  # a revert: routing signal, not fatal at this layer
-            continue
-        result = item.get("result")
-        if not isinstance(result, str) or not result.startswith("0x"):
-            raise LpDetailError("lp-detail: JSON-RPC batch result missing or not 0x-hex")
-        try:
-            out.append(bytes.fromhex(result[2:]))
-        except ValueError as err:
-            raise LpDetailError("lp-detail: JSON-RPC batch result is not valid hex") from err
-    return out
-
-
-def _require(result: bytes | None, what: str) -> bytes:
-    """Unwrap a batch sub-result a read genuinely needs: a `None` (the sub-call
-    reverted or returned an error object) becomes a typed `LpDetailError`."""
-    if result is None:
-        raise LpDetailError(f"lp-detail: {what} reverted or returned an error")
-    return result
 
 
 def _word(data: bytes, index: int) -> bytes:

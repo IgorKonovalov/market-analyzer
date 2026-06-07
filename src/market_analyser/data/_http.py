@@ -35,7 +35,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -226,7 +226,7 @@ class ResilientHttpClient:
         self,
         url: str,
         *,
-        json: Mapping[str, Any] | Sequence[Any] | None = None,
+        json: Mapping[str, Any] | None = None,
         params: Mapping[str, str | int | float] | None = None,
         headers: Mapping[str, str] | None = None,
         cache_key: str | None = None,
