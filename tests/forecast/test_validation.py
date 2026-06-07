@@ -21,7 +21,7 @@ import pytest
 
 from market_analyser.backtest.walk_forward import fold_bounds
 from market_analyser.data.types import Bar
-from market_analyser.forecast.features import build_feature_rows
+from market_analyser.forecast.features import FeatureRow, build_feature_rows
 from market_analyser.forecast.labels import LabelParams, build_labels
 from market_analyser.forecast.model import align_samples, predict_proba, train
 from market_analyser.forecast.validation import (
@@ -131,6 +131,52 @@ def test_folds_are_contiguous_and_train_precedes_test() -> None:
     test_rows, _ = align_samples(rows[start:end], labels[start:end])
     assert train_rows and test_rows
     assert max(r.bar_index for r in train_rows) < min(r.bar_index for r in test_rows)
+
+
+def test_validate_purges_train_labels_by_horizon(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The purge guard — anti-lookahead on the *label*, bound to `validate`'s real
+    behaviour rather than a re-derived formula.
+
+    Because ``label[i]`` reads ``close[i + horizon]``, a train sample at ``i`` with
+    ``i + horizon >= start`` would have its target peek into the fold's test window
+    (which begins at ``start``). `validate` trims each fold's train window to
+    ``i < start - horizon`` to close that leak. To prove `validate` actually applies
+    it (not just that the formula is right), we spy on `align_samples` to capture the
+    exact rows `validate` trains on each fold — it calls it twice per fold, train then
+    test — and assert no captured *training* row's forward window reaches the test
+    window. ``horizon=3`` makes the off-by-one unambiguous: drop the purge and the
+    last train index ``start-1`` lands at ``start-1+3 = start+2 >= start``, failing
+    here."""
+
+    from market_analyser.forecast import validation as val
+
+    horizon = 3
+    bars = synthetic_bars(400)
+    n_splits = 5
+
+    real_align = val.align_samples
+    captured: list[list[FeatureRow]] = []
+
+    def _spy(rows: list, labels: list) -> tuple[list, list]:
+        kept_rows, kept_labels = real_align(rows, labels)
+        captured.append(kept_rows)
+        return kept_rows, kept_labels
+
+    monkeypatch.setattr(val, "align_samples", _spy)
+    val.validate(bars, horizon_bars=horizon, flat_band=0.001, n_splits=n_splits)
+
+    bounds = fold_bounds(len(bars), n_splits)
+    assert len(captured) == 2 * len(bounds)  # (train, test) per fold, in fold order
+
+    checked_a_fold = False
+    for fold_index, (start, _end) in enumerate(bounds):
+        train_rows = captured[2 * fold_index]  # the train call precedes the test call
+        test_rows = captured[2 * fold_index + 1]
+        if not train_rows or not test_rows:
+            continue
+        checked_a_fold = True
+        assert max(r.bar_index for r in train_rows) + horizon < start
+    assert checked_a_fold, "expected at least one fold with a non-empty purged train window"
 
 
 def test_validation_is_deterministic() -> None:

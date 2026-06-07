@@ -7,11 +7,17 @@ as "no edge over baseline", not shipped as a forecast.
 `validate(bars, ...)` runs an **expanding-window** walk-forward over the
 contiguous fold partition produced by `backtest.walk_forward.fold_bounds` (the
 reused ADR-0024 machinery — one source of truth for "how a bar series is split").
-Fold *k*'s model is trained on every bar strictly *before* fold *k*'s test window
-and scored only on that test window, so no future bar ever informs an earlier
-fold — the same anti-lookahead grain the strategy walk-forward holds. Fold 0 has
-no prior bars to train on and is the training seed; out-of-sample scoring pools
-folds 1…n-1.
+Fold *k*'s model is trained on bars strictly *before* fold *k*'s test window and
+scored only on that test window, so no future bar ever informs an earlier fold —
+the same anti-lookahead grain the strategy walk-forward holds. Because the label
+is forward-looking (``label[i]`` reads ``close[i + horizon]``), the train window is
+additionally **purged** by ``horizon`` bars: a fold whose test window starts at
+``start`` trains only on samples ``i`` with ``i + horizon < start``, so no training
+*label* peeks into the test window either. Without the purge the last ``horizon``
+training labels would read test-window closes — a subtle leak the contiguous
+feature partition alone does not close. Fold 0 (and any fold whose purged train
+window is empty) has nothing to train on and is the training seed; out-of-sample
+scoring pools the remaining folds.
 
 **Directional skill** is out-of-sample accuracy: the fraction of test bars whose
 predicted argmax direction matches the realised label. It is reported per fold and
@@ -167,7 +173,12 @@ def validate(
     n_scored = 0
 
     for fold_index, (start, end) in enumerate(fold_bounds(len(bars), n_splits)):
-        train_rows, train_labels = align_samples(rows[:start], labels[:start])
+        # Purge the trailing `horizon` training samples: label[i] reads
+        # close[i + horizon], so any train sample with i + horizon >= start would
+        # peek into this fold's test window. Training only on i < start - horizon
+        # keeps the *label* (not just the feature row) strictly out-of-sample.
+        train_cutoff = max(0, start - horizon_bars)
+        train_rows, train_labels = align_samples(rows[:train_cutoff], labels[:train_cutoff])
         test_rows, test_labels = align_samples(rows[start:end], labels[start:end])
 
         trainable = len(train_rows) > 0 and len({lab for lab in train_labels}) >= 2
