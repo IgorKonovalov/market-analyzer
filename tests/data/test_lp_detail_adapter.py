@@ -341,6 +341,27 @@ def test_staked_cl_scales_owed_fees_when_present(tmp_path: Path) -> None:
     assert fees["WETH"].address == _WETH
 
 
+def test_uncollected_fees_are_struct_owed_words_as_is(tmp_path: Path) -> None:
+    # Plan 0048 fee definition (option a): `uncollected_fees` is the position
+    # struct's tokensOwed0/1 read directly and scaled by decimals — NOT recomputed
+    # from feeGrowthInside. So a position whose owed words are 0 reports no fees
+    # (the under-report case the smoke hit), and a non-zero owed word maps 1:1.
+    zero = _adapter(tmp_path, _ok_responder(_staked_cl_responses(0, 0))).fetch_lp_detail(
+        chain="base", pool_address=_GAUGE, token_id=_STAKED_TOKEN_ID
+    )
+    assert zero.uncollected_fees == []  # owed words 0 -> empty (under-reports)
+
+    owed_weth = 12_000_000_000_000_000  # 0.012 WETH, straight from tokensOwed0
+    adapter = _adapter(tmp_path, _ok_responder(_staked_cl_responses(owed_weth, 0)))
+    one_sided = adapter.fetch_lp_detail(
+        chain="base", pool_address=_GAUGE, token_id=_STAKED_TOKEN_ID
+    )
+    # Only the owing leg, value as-is from the struct word (AERO owed 0 -> dropped).
+    assert len(one_sided.uncollected_fees) == 1
+    assert one_sided.uncollected_fees[0].symbol == "WETH"
+    assert one_sided.uncollected_fees[0].amount == pytest.approx(0.012)
+
+
 def test_staked_cl_out_of_range_when_current_tick_above_upper(tmp_path: Path) -> None:
     table = _staked_cl_responses()
     table[(_CLPOOL, _SEL_SLOT0)] = _hex(_slot0_result(90000))  # above tick_upper
