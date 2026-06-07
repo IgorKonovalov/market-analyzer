@@ -457,3 +457,15 @@ def test_scan_patterns_tool_is_registered(live_server: str, mcp_secret: str) -> 
             return {t.name for t in result.tools}
 
     assert "scan_patterns" in asyncio.run(_run())
+
+
+def test_forecast_tool_is_registered(live_server: str, mcp_secret: str) -> None:
+    """`forecast` (Plan 0036) is always registered in `create_mcp_components`
+    (needs only the provider); a forgotten registration would drop it here."""
+
+    async def _run() -> set[str]:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.list_tools()
+            return {t.name for t in result.tools}
+
+    assert "forecast" in asyncio.run(_run())
