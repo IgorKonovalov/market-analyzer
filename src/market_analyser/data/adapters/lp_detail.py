@@ -1,47 +1,55 @@
-"""On-chain LP deep-state adapter — RPC `eth_call` over JSON-RPC (Plan 0034).
+"""On-chain LP deep-state adapter — RPC `eth_call` over JSON-RPC (Plan 0034/0048).
 
 The *depth* half of the DeFi program (ADR-0034): discovery (Zerion, `zerion.py`)
-tells us *which* LP positions a wallet holds and their pool address; this adapter
+tells us *which* LP positions a wallet holds and a `pool_address`; this adapter
 reads the precise on-chain state of one such position — its tick range, where the
 pool's current tick sits relative to it (in-range status), and the fees accrued
 but not yet collected. It implements the source-agnostic `LpPositionDetailSource`
 Protocol (`data/sources.py`, ADR-0031) and is reached only through that seam.
 
-Two concentrated-liquidity classes, keyed differently (Zerion-API survey §8):
+**Three LP shapes, keyed differently (Plan 0048 — the gauge-indirection fix).**
+Zerion's `pool_address` can point at three different contracts, so the adapter
+*probes* to discover the shape rather than trusting the discovery class (which
+cannot separate a v2 farm from a staked-CL farm) or the human pool name:
 
-- **Aerodrome / Velodrome Slipstream (one hop, phase 3).** Keyed on the
-  `pool_address` discovery carries on every complex position. `token_id` is
-  `None`.
-- **Uniswap-v3 (two hops, phase 4).** Each position is an NFT and two positions
-  can share a pool with different ranges, so the read keys on the position NFT
-  `token_id` against the `NonfungiblePositionManager`.
+- **Staked Slipstream CL (gauge indirection).** For a gauge-staked concentrated
+  position Zerion returns the **CL gauge** as `pool_address`. The gauge exposes
+  neither `slot0()` nor a wallet-owned NFT; the position's tick state lives on an
+  NFT *held by the gauge*. The read is a chain: `gauge.pool()` → the CLPool
+  (`slot0` source), `gauge.nft()` → the `NonfungiblePositionManager`,
+  `gauge.stakedValues(owner)` → the staked `tokenId`, `NPM.positions(tokenId)` →
+  bounds + owed + token addresses. This is the case the 2026-06-05 live smoke
+  decoded end-to-end (gauge `0x9564…88f1`, CLPool `0x4e50…ce51`, NPM `0xe1f8…
+  8b53`, tokenId `232923`: ticks `84000..86200`, current `85198`, in range).
+- **Unstaked CL (Uniswap-v3 / unstaked Slipstream).** `pool_address` is the pool
+  and the wallet owns the position NFT, so the read keys on the NFT `tokenId`
+  resolved by enumerating the owner's positions on the canonical
+  `NonfungiblePositionManager` (two positions can share a pool with different
+  ranges, so the pool alone is ambiguous).
+- **v2 constant-product (Aerodrome/Velodrome volatile/stable).** No ticks exist;
+  the resolver returns `None` so the enrichment step leaves the deep fields blank.
 
-Both read the same primitives via real Uniswap-v3-style ABIs (Slipstream is a
-Uni-v3 fork): `slot0()` for the current tick, a position read for the tick bounds
-+ owed token amounts, and `token0()`/`token1()` + ERC-20 `symbol()`/`decimals()`
-to label and scale the owed fees. Calls go through the shared
-`ResilientHttpClient` (ADR-0019); the per-chain RPC URL is read **lazily** from
-the `SecretsStore` (ADR-0038 server-side injection), so the adapter constructs
-before a URL is set and a read without one fails typed (`LpDetailConfigError`),
-not at construction.
+All reads use real Uniswap-v3-style ABIs (Slipstream is a Uni-v3 fork): `slot0()`
+for the current tick, `positions(tokenId)` for the tick bounds + owed token
+amounts + token addresses, and ERC-20 `symbol()`/`decimals()` to label and scale
+the owed fees. Calls go through the shared `ResilientHttpClient` (ADR-0019); the
+per-chain RPC URL is read **lazily** from the `SecretsStore` (ADR-0038 server-side
+injection), so the adapter constructs before a URL is set and a read without one
+fails typed (`LpDetailConfigError`), not at construction.
 
 Errors are typed (done-when): a missing RPC URL or an unsupported chain raises
 `LpDetailConfigError`; a 429 / 5xx / transport exhaustion raises the shared
-`RateLimitedError` / `UpstreamUnavailableError`; a JSON-RPC error object or a
-shape-broken result raises `LpDetailError`. An out-of-range decoded measurement
-surfaces as `pydantic.ValidationError` from the `LpPositionDetail` boundary.
-
-**Live-ABI note (Plan 0034 risk, deferred).** The exact Aerodrome Slipstream
-staked-position view and the Uni-v3 `tokenId` resolution are confirmed against
-mainnet in the phase-5 live smoke — the plan flags the Slipstream ABI as the
-"first real implementation unknown" and defers live Uni-v3 (no in-scope wallet
-holds one, the F3 gap). What is verified offline here is the JSON-RPC call
-construction and the ABI decode path, exercised against recorded fixtures.
+`RateLimitedError` / `UpstreamUnavailableError`; a JSON-RPC error object (a
+revert) or a shape-broken result raises `LpDetailError`. An out-of-range decoded
+measurement surfaces as `pydantic.ValidationError` from the `LpPositionDetail`
+boundary. The shape probe treats a revert as "this getter is absent" — it routes,
+it never surfaces — so a misclassified address degrades to discovery depth rather
+than corrupting the read (the Plan 0034 fail-safe property, preserved).
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
 from market_analyser.data.errors import (
@@ -67,7 +75,9 @@ _RPC_URL_KEYS: dict[Chain, SecretKey] = {
 }
 
 # Function selectors (first 4 bytes of keccak256(signature)). Slipstream is a
-# Uniswap-v3 fork, so the pool/ERC-20 selectors are shared with Uni-v3.
+# Uniswap-v3 fork, so the pool/ERC-20 selectors are shared with Uni-v3. Every
+# selector here is recomputed from its signature and pinned in a keccak self-check
+# test (Plan 0048 risk: trust the selector only after the unit test agrees).
 _SEL_SLOT0 = "0x3850c7bd"  # slot0() -> (sqrtPriceX96, tick, ...)
 _SEL_TOKEN0 = "0x0dfe1681"  # token0() -> address
 _SEL_TOKEN1 = "0xd21220a7"  # token1() -> address
@@ -78,9 +88,17 @@ _SEL_DECIMALS = "0x313ce567"  # decimals() -> uint8
 # feeGrowthInside0, feeGrowthInside1, tokensOwed0, tokensOwed1).
 _SEL_POSITIONS = "0x99fbab88"
 # ERC-721 enumeration on the NonfungiblePositionManager, for resolving a wallet's
-# Uni-v3 position token ids (phase 4).
+# unstaked-CL position token ids.
 _SEL_BALANCE_OF = "0x70a08231"  # balanceOf(address) -> uint256
 _SEL_TOKEN_OF_OWNER_BY_INDEX = "0x2f745c59"  # tokenOfOwnerByIndex(address,uint256) -> uint256
+# CL-gauge indirection (Plan 0048). `pool()`/`nft()` resolve the CLPool and the
+# position manager; `stakedValues`/`stakedLength`/`stakedByIndex` enumerate the
+# owner's staked NFTs held by the gauge (the wallet owns none directly).
+_SEL_POOL = "0x16f0115b"  # pool() -> address (the CLPool, slot0 source)
+_SEL_NFT = "0x47ccca02"  # nft() -> address (the NonfungiblePositionManager)
+_SEL_STAKED_VALUES = "0x4b937763"  # stakedValues(address) -> uint256[]
+_SEL_STAKED_BY_INDEX = "0x38463937"  # stakedByIndex(address,uint256) -> uint256
+_SEL_STAKED_LENGTH = "0xae775c32"  # stakedLength(address) -> uint256
 
 # Word index of each field in the `positions(tokenId)` return (12 words). The
 # token addresses, tick bounds and owed amounts are what the detail needs; the
@@ -95,7 +113,8 @@ _POS_OWED1_WORD = 11
 # Canonical Uniswap-v3 NonfungiblePositionManager per target chain. Ethereum /
 # Arbitrum / Optimism share the original deployment address; Base has its own.
 # (Only chains with a reserved RPC-URL secret are deep-readable — see
-# `_RPC_URL_KEYS` — so resolution covers base / ethereum in practice.)
+# `_RPC_URL_KEYS` — so resolution covers base / ethereum in practice.) Used only
+# by the unstaked-CL path; the staked-CL path reads its NPM from `gauge.nft()`.
 _NPM_ADDRESSES: dict[Chain, str] = {
     "ethereum": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
     "arbitrum": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
@@ -105,11 +124,16 @@ _NPM_ADDRESSES: dict[Chain, str] = {
 
 _WORD_BYTES = 32
 
+# The LP shapes the probe distinguishes (Plan 0048). `staked_cl` reads the gauge
+# chain; `bare_cl` reads the wallet-owned NFT; `v2_amm` has no ticks (skipped).
+_LpShape = Literal["staked_cl", "bare_cl", "v2_amm"]
+
 
 class LpDetailError(ValueError):
-    """A JSON-RPC error object, or a 2xx result whose shape/length the decode
-    required but the payload lacked — raised at the adapter boundary before model
-    construction (caught by the scan path as a malformed-response reason)."""
+    """A JSON-RPC error object (e.g. a revert), or a 2xx result whose shape/length
+    the decode required but the payload lacked — raised at the adapter boundary
+    before model construction (caught by the scan path as a malformed-response
+    reason)."""
 
 
 class LpDetailConfigError(UpstreamDataError):
@@ -142,19 +166,33 @@ class RpcLpDetailAdapter:
         pool_address: str,
         token_id: int | None = None,
     ) -> LpPositionDetail:
-        """Return the deep on-chain state of the LP position at `pool_address`.
+        """Return the deep on-chain state of the LP position identified by
+        `pool_address` + the resolved `token_id`.
 
-        `token_id` selects the keying class: `None` reads the Aerodrome /
-        Velodrome Slipstream one-hop path (phase 3); an integer reads the
-        Uniswap-v3 two-hop path against the position NFT (phase 4).
+        `token_id` is required (the enrichment step resolves it first via
+        `resolve_univ3_token_id`, which is shape-aware). The read self-discriminates
+        between the **staked-CL gauge chain** and the **unstaked-CL** NFT read by
+        probing `gauge.pool()` on `pool_address`: a non-zero address means the
+        address is a CL gauge (staked path); a revert means it is a bare pool
+        (unstaked path).
 
         Raises `LpDetailConfigError` on a missing RPC URL / unsupported chain, the
         shared `RateLimitedError` / `UpstreamUnavailableError` on throttle / outage,
-        and `LpDetailError` (or `pydantic.ValidationError`) on a shape-broken read.
+        and `LpDetailError` (or `pydantic.ValidationError`) on a shape-broken read —
+        including a `token_id` of `None`, which has no read path since the one-hop
+        `pool_address` read was removed (Plan 0048).
         """
         rpc_url = self._rpc_url_for(chain)
         if token_id is None:
-            return self._fetch_aerodrome(rpc_url, pool_address)
+            raise LpDetailError(
+                "lp-detail: token_id is required — the one-hop pool_address read was "
+                "replaced by the shape-aware gauge/NFT chain (Plan 0048)",
+            )
+        clpool = self._gauge_clpool_or_none(rpc_url, pool_address)
+        if clpool is not None:
+            return self._fetch_staked_cl(
+                rpc_url, gauge=pool_address, clpool=clpool, token_id=token_id
+            )
         return self._fetch_univ3(rpc_url, chain, pool_address, token_id)
 
     def resolve_univ3_token_id(
@@ -164,17 +202,104 @@ class RpcLpDetailAdapter:
         pool_address: str,
         owner: str,
     ) -> int | None:
-        """Resolve a wallet's Uniswap-v3 position NFT `token_id` for `pool_address`
-        (the two-hop first hop, phase 4). Enumerates the owner's positions on the
-        `NonfungiblePositionManager` (ERC-721 `balanceOf` + `tokenOfOwnerByIndex`)
-        and returns the first whose `positions(tokenId)` token pair matches the
-        pool's `token0`/`token1`. Returns `None` when the wallet holds no matching
-        position. Discovery does not carry the Uni-v3 `tokenId` (survey §8), so
-        the enrichment step resolves it here before reading detail.
+        """Resolve the position NFT `token_id` for `pool_address`, shape-aware
+        (Plan 0048 generalizes the original Uni-v3-only resolver behind the
+        unchanged seam name). Probes the shape and routes:
+
+        - **staked CL** (`pool_address` is a CL gauge): `gauge.stakedValues(owner)`
+          (falling back to `stakedLength` / `stakedByIndex`) → the staked NFT id.
+        - **unstaked CL** (`pool_address` is a bare CL pool): enumerate the owner's
+          NFTs on the canonical `NonfungiblePositionManager` and match the pool pair.
+        - **v2 AMM** (neither a gauge nor a CL pool): `None` — no NFT, no ticks.
+
+        Returns `None` when the wallet holds no matching position (or the shape has
+        none). The enrichment step calls this first, then passes the id to
+        `fetch_lp_detail`.
 
         Raises `LpDetailConfigError` on a missing RPC URL / a chain with no known
         position manager; transport / shape errors are typed as in `_eth_call`."""
         rpc_url = self._rpc_url_for(chain)
+        shape, _clpool = self._classify_shape(rpc_url, pool_address)
+        if shape == "staked_cl":
+            return self._resolve_staked_cl_token_id(rpc_url, gauge=pool_address, owner=owner)
+        if shape == "bare_cl":
+            return self._resolve_bare_cl_token_id(rpc_url, chain, pool_address, owner)
+        return None  # v2 AMM: no NFT / no ticks
+
+    # -- shape discrimination (the probe) -----------------------------------
+
+    def _classify_shape(self, rpc_url: str, pool_address: str) -> tuple[_LpShape, str | None]:
+        """Probe `pool_address` to discover its LP shape (Plan 0048 discriminator).
+
+        `gauge.pool()` returning a non-zero address ⇒ the address is a CL gauge
+        (staked CL); else a successful `slot0()` ⇒ a bare CL pool (unstaked CL);
+        else (both revert) ⇒ a v2 constant-product pool with no ticks. Returns the
+        shape and, for the staked case, the resolved CLPool address (so the caller
+        need not re-read `gauge.pool()`). A revert is routing signal, not an error."""
+        clpool = self._gauge_clpool_or_none(rpc_url, pool_address)
+        if clpool is not None:
+            return "staked_cl", clpool
+        if self._is_cl_pool(rpc_url, pool_address):
+            return "bare_cl", None
+        return "v2_amm", None
+
+    def _gauge_clpool_or_none(self, rpc_url: str, address: str) -> str | None:
+        """The CLPool address from `gauge.pool()` if `address` is a CL gauge, else
+        `None` (the getter reverted, or returned the zero address — `address` is
+        not a gauge). The probe never raises on a revert: it routes."""
+        try:
+            pool = _decode_address(self._eth_call(rpc_url, address, _SEL_POOL))
+        except LpDetailError:
+            return None
+        return pool if int(pool, 16) != 0 else None
+
+    def _is_cl_pool(self, rpc_url: str, address: str) -> bool:
+        """Whether `address` is a concentrated-liquidity pool — `slot0()` resolves
+        to a tuple (a v2 constant-product pool has no `slot0` and reverts)."""
+        try:
+            _word(self._eth_call(rpc_url, address, _SEL_SLOT0), 1)  # needs ≥2 words
+        except LpDetailError:
+            return False
+        return True
+
+    # -- per-shape token-id resolution --------------------------------------
+
+    def _resolve_staked_cl_token_id(self, rpc_url: str, *, gauge: str, owner: str) -> int | None:
+        """The staked NFT `token_id` from a CL gauge: `gauge.stakedValues(owner)`
+        (the staked NFT ids), falling back to `stakedLength` + `stakedByIndex` on a
+        gauge variant without `stakedValues`. Returns the first staked id, or `None`
+        when the owner has none. A gauge with several staked positions in the same
+        pool enriches only the first (a known, accepted simplification)."""
+        try:
+            values = self._eth_call(rpc_url, gauge, _call(_SEL_STAKED_VALUES, _addr_arg(owner)))
+        except LpDetailError:
+            return self._resolve_staked_via_index(rpc_url, gauge=gauge, owner=owner)
+        ids = _decode_uint_array(values)
+        return ids[0] if ids else None
+
+    def _resolve_staked_via_index(self, rpc_url: str, *, gauge: str, owner: str) -> int | None:
+        """Fallback for a gauge without `stakedValues`: `stakedLength(owner)` then
+        `stakedByIndex(owner, 0)`. `None` when the owner has no staked position."""
+        try:
+            length = _decode_uint(
+                self._eth_call(rpc_url, gauge, _call(_SEL_STAKED_LENGTH, _addr_arg(owner))),
+                word=0,
+            )
+        except LpDetailError:
+            return None
+        if length <= 0:
+            return None
+        call = _call(_SEL_STAKED_BY_INDEX, _addr_arg(owner), _uint_arg(0))
+        return _decode_uint(self._eth_call(rpc_url, gauge, call), word=0)
+
+    def _resolve_bare_cl_token_id(
+        self, rpc_url: str, chain: Chain, pool_address: str, owner: str
+    ) -> int | None:
+        """The unstaked-CL NFT `token_id`: enumerate the owner's positions on the
+        canonical `NonfungiblePositionManager` (ERC-721 `balanceOf` +
+        `tokenOfOwnerByIndex`) and return the first whose `positions(tokenId)` token
+        pair matches the pool's `token0`/`token1`. `None` when the wallet holds no
+        matching position."""
         npm = self._npm_for(chain)
         pool = pool_address.lower()
         want0 = _decode_address(self._eth_call(rpc_url, pool, _SEL_TOKEN0))
@@ -199,30 +324,31 @@ class RpcLpDetailAdapter:
                 return token_id
         return None
 
-    # -- per-class reads ----------------------------------------------------
+    # -- per-shape reads ----------------------------------------------------
 
-    def _fetch_aerodrome(self, rpc_url: str, pool_address: str) -> LpPositionDetail:
-        """One-hop read keyed on `pool_address`: the pool's current tick (`slot0`),
-        the staked position's tick bounds + owed amounts, and the two underlying
-        tokens (read from the pool, for labelling/scaling the owed fees).
-
-        The position read uses the same `positions`-shaped return the Uni-v3 path
-        decodes; the live Slipstream staked-position view is confirmed in the
-        phase-5 smoke (the plan's flagged ABI unknown)."""
-        current_tick = _decode_int(self._eth_call(rpc_url, pool_address, _SEL_SLOT0), word=1)
-        position = self._eth_call(rpc_url, pool_address, _SEL_POSITIONS)
-        addr0 = _decode_address(self._eth_call(rpc_url, pool_address, _SEL_TOKEN0))
-        addr1 = _decode_address(self._eth_call(rpc_url, pool_address, _SEL_TOKEN1))
+    def _fetch_staked_cl(
+        self, rpc_url: str, *, gauge: str, clpool: str, token_id: int
+    ) -> LpPositionDetail:
+        """The staked-CL gauge chain (Plan 0048 core fix). `clpool` (from
+        `gauge.pool()`) gives the current tick via `slot0()`; `gauge.nft()` gives
+        the `NonfungiblePositionManager`, whose `positions(token_id)` gives the tick
+        bounds, owed amounts and the two token addresses. Verified end-to-end in the
+        2026-06-05 live smoke."""
+        npm = _decode_address(self._eth_call(rpc_url, gauge, _SEL_NFT))
+        position = self._eth_call(rpc_url, npm, _call(_SEL_POSITIONS, _uint_arg(token_id)))
+        current_tick = _decode_int(self._eth_call(rpc_url, clpool, _SEL_SLOT0), word=1)
+        addr0 = _decode_address_word(position, _POS_TOKEN0_WORD)
+        addr1 = _decode_address_word(position, _POS_TOKEN1_WORD)
         return self._assemble_detail(rpc_url, current_tick, position, addr0, addr1)
 
     def _fetch_univ3(
         self, rpc_url: str, chain: Chain, pool_address: str, token_id: int
     ) -> LpPositionDetail:
-        """Two-hop read keyed on the position NFT `token_id`: `positions(tokenId)`
-        on the `NonfungiblePositionManager` gives the tick bounds, owed amounts and
-        the two token addresses directly; `slot0()` on the pool gives the current
-        tick. (Two positions can share a pool with different ranges, so the pool
-        alone is ambiguous — hence the tokenId key.)"""
+        """The unstaked-CL read keyed on the position NFT `token_id`:
+        `positions(tokenId)` on the canonical `NonfungiblePositionManager` gives the
+        tick bounds, owed amounts and the two token addresses directly; `slot0()` on
+        the pool gives the current tick. (Two positions can share a pool with
+        different ranges, so the pool alone is ambiguous — hence the tokenId key.)"""
         npm = self._npm_for(chain)
         position = self._eth_call(rpc_url, npm, _call(_SEL_POSITIONS, _uint_arg(token_id)))
         current_tick = _decode_int(self._eth_call(rpc_url, pool_address, _SEL_SLOT0), word=1)
@@ -240,20 +366,23 @@ class RpcLpDetailAdapter:
     ) -> LpPositionDetail:
         """Decode a `positions`-shaped return into tick bounds + owed amounts, label
         and scale the owed fees by reading each token's `symbol()`/`decimals()`, and
-        fold everything into an `LpPositionDetail`. Shared by both keying classes;
-        `addr0`/`addr1` are read from the pool (Aerodrome) or the position struct
-        (Uni-v3) by the caller."""
+        fold everything into an `LpPositionDetail`. Shared by both CL reads;
+        `addr0`/`addr1` come from the position struct (words 2/3)."""
         tick_lower = _decode_int(position, word=_POS_TICK_LOWER_WORD)
         tick_upper = _decode_int(position, word=_POS_TICK_UPPER_WORD)
         owed0_raw = _decode_uint(position, word=_POS_OWED0_WORD)
         owed1_raw = _decode_uint(position, word=_POS_OWED1_WORD)
 
-        sym0 = _decode_string(self._eth_call(rpc_url, addr0, _SEL_SYMBOL))
-        sym1 = _decode_string(self._eth_call(rpc_url, addr1, _SEL_SYMBOL))
-        dec0 = _decode_uint(self._eth_call(rpc_url, addr0, _SEL_DECIMALS), word=0)
-        dec1 = _decode_uint(self._eth_call(rpc_url, addr1, _SEL_DECIMALS), word=0)
-
-        uncollected = _owed_tokens([(sym0, addr0, owed0_raw, dec0), (sym1, addr1, owed1_raw, dec1)])
+        # `symbol()`/`decimals()` are read only for a leg that owes something — a
+        # zero-owed leg carries no fee to label, and the staked-CL case reads
+        # `tokensOwed = 0` until a poke/collect (the live-smoke observation), so
+        # skipping the reads spares four RPC round-trips per such position under the
+        # rate limit the plan flags.
+        uncollected = [
+            self._owed_token(rpc_url, addr, raw)
+            for addr, raw in ((addr0, owed0_raw), (addr1, owed1_raw))
+            if raw > 0
+        ]
         return LpPositionDetail(
             tick_lower=tick_lower,
             tick_upper=tick_upper,
@@ -261,6 +390,15 @@ class RpcLpDetailAdapter:
             in_range=tick_lower <= current_tick < tick_upper,
             uncollected_fees=uncollected,
         )
+
+    def _owed_token(self, rpc_url: str, address: str, raw_owed: int) -> PositionToken:
+        """Label and scale one owed-fee leg: read the token's `symbol()`/`decimals()`
+        and divide the raw `tokensOwed` word by `10**decimals`. `uncollected_fees`
+        is the position struct's owed words as-is (Plan 0048 fee definition: swap
+        fees only, under-reports until a poke — see `LpPositionDetail`)."""
+        symbol = _decode_string(self._eth_call(rpc_url, address, _SEL_SYMBOL))
+        decimals = _decode_uint(self._eth_call(rpc_url, address, _SEL_DECIMALS), word=0)
+        return PositionToken(symbol=symbol, address=address, amount=raw_owed / (10**decimals))
 
     # -- transport ----------------------------------------------------------
 
@@ -352,6 +490,18 @@ def _decode_uint(data: bytes, *, word: int) -> int:
     return int.from_bytes(_word(data, word), "big", signed=False)
 
 
+def _decode_uint_array(data: bytes) -> list[int]:
+    """ABI-decode a dynamic `uint256[]` return: word0 is the data offset, the word
+    at that offset is the element count, then the elements. Used for
+    `gauge.stakedValues(owner)`."""
+    offset = _decode_uint(data, word=0)
+    if offset % _WORD_BYTES != 0:
+        raise LpDetailError("lp-detail: array offset not word-aligned")
+    length_index = offset // _WORD_BYTES
+    length = _decode_uint(data, word=length_index)
+    return [_decode_uint(data, word=length_index + 1 + i) for i in range(length)]
+
+
 def _decode_address(data: bytes) -> str:
     """The low 20 bytes of the first word, as a lowercase `0x…` address."""
     return _decode_address_word(data, 0)
@@ -397,20 +547,6 @@ def _decode_string(data: bytes) -> str:
     if not text:
         raise LpDetailError("lp-detail: decoded token symbol is empty")
     return text
-
-
-def _owed_tokens(legs: list[tuple[str, str, int, int]]) -> list[PositionToken]:
-    """Scale each `(symbol, address, raw_owed, decimals)` leg by its decimals into
-    a `PositionToken`, dropping legs that owe nothing (a zero amount is "no fee",
-    not a malformed token — `PositionToken` requires a positive amount)."""
-    tokens: list[PositionToken] = []
-    for symbol, address, raw, decimals in legs:
-        if raw <= 0:
-            continue
-        tokens.append(
-            PositionToken(symbol=symbol, address=address, amount=raw / (10**decimals)),
-        )
-    return tokens
 
 
 __all__ = ["LpDetailConfigError", "LpDetailError", "RpcLpDetailAdapter"]
