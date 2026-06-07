@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -200,11 +201,22 @@ _REVERT = json.dumps(
 
 def _routed_client(
     responder: Callable[[str, str], tuple[int, bytes]],
+    posts: list[Any] | None = None,
 ) -> ResilientHttpClient:
     """A ResilientHttpClient whose physical attempt routes each `eth_call` to a
-    canned response by `(to, selector)`. `max_retries=0` so a non-2xx path raises
-    immediately with no backoff sleep."""
+    canned response by `(to, selector)`. Handles both a single JSON-RPC request and
+    a JSON-RPC *batch* (an array, Plan 0048): each sub-call is routed through
+    `responder` and the inner result/error objects are reassembled with their request
+    ids. A sub-call whose responder status is non-2xx makes the whole batch HTTP carry
+    that status (a real provider rate-limits/fails the request, not the item).
+    `max_retries=0` so a non-2xx path raises immediately with no backoff sleep.
+    `posts`, if given, records each parsed request body (for batch-structure asserts)."""
     client = ResilientHttpClient(source_name="lp-detail-test", cache_ttl_seconds=0.0, max_retries=0)
+
+    def _route_one(req: Any) -> tuple[int, Any]:
+        call = req["params"][0]
+        status, body = responder(call["to"], call["data"][:10])
+        return status, json.loads(body)
 
     def _fake_perform(
         method: str,
@@ -215,7 +227,26 @@ def _routed_client(
         proxy: ProxyConfig | None,
     ) -> HttpResponse:
         assert body_arg is not None
-        call = json.loads(body_arg)["params"][0]
+        parsed = json.loads(body_arg)
+        if posts is not None:
+            posts.append(parsed)
+        if isinstance(parsed, list):
+            items: list[Any] = []
+            for req in parsed:
+                status, inner = _route_one(req)
+                if status != 200:  # the provider failed/limited the whole batch request
+                    return HttpResponse(
+                        status_code=status,
+                        headers={},
+                        body=b'{"error":"batch"}',
+                        elapsed_seconds=0.0,
+                    )
+                inner["id"] = req["id"]
+                items.append(inner)
+            return HttpResponse(
+                status_code=200, headers={}, body=json.dumps(items).encode(), elapsed_seconds=0.0
+            )
+        call = parsed["params"][0]
         status, body = responder(call["to"], call["data"][:10])
         return HttpResponse(status_code=status, headers={}, body=body, elapsed_seconds=0.0)
 
@@ -254,6 +285,7 @@ def _adapter(
     return RpcLpDetailAdapter(
         secrets_store=_store_with_base_rpc(tmp_path),
         http_client=_routed_client(responder),
+        sleep=lambda _seconds: None,  # don't actually pace in offline tests
     )
 
 
@@ -323,6 +355,42 @@ def test_staked_cl_walks_gauge_pool_nft_positions_slot0(tmp_path: Path) -> None:
     # The gauge itself is never asked for slot0/positions (the original bug).
     assert (_GAUGE, _SEL_SLOT0) not in calls
     assert (_GAUGE, _SEL_POSITIONS) not in calls
+
+
+def test_enrichment_flow_probes_gauge_pool_once_per_position(tmp_path: Path) -> None:
+    # Plan 0048 burst fix: resolve classifies the shape (one gauge.pool()), then
+    # fetch reuses that classification instead of re-probing. Across the resolve→fetch
+    # flow enrichment runs, gauge.pool() AND gauge.nft() each fire exactly once — the
+    # double-probe is gone. (A call-COUNT assertion, not the `in` membership the other
+    # call-pattern tests use, which is what missed the duplication.)
+    calls: list[tuple[str, str]] = []
+    adapter = _adapter(tmp_path, _ok_responder(_staked_cl_responses(), calls))
+    token_id = adapter.resolve_univ3_token_id(chain="base", pool_address=_GAUGE, owner=_OWNER)
+    assert token_id == _STAKED_TOKEN_ID
+    detail = adapter.fetch_lp_detail(chain="base", pool_address=_GAUGE, token_id=token_id)
+    assert detail.in_range is True
+
+    assert [c for c in calls if c == (_GAUGE, _SEL_POOL)] == [(_GAUGE, _SEL_POOL)]  # once
+    assert [c for c in calls if c == (_GAUGE, _SEL_NFT)] == [(_GAUGE, _SEL_NFT)]  # once
+
+
+def test_staked_reads_use_json_rpc_batches(tmp_path: Path) -> None:
+    # Independent calls within a position ride one JSON-RPC batch (a list payload),
+    # so the staked resolve→fetch flow is a handful of HTTP round-trips, not ~6 (the
+    # burst that 429'd the live smoke). Classify pool() is a single; resolve batches
+    # {stakedValues, nft}; fetch batches {positions, slot0}.
+    posts: list[Any] = []
+    client = _routed_client(_ok_responder(_staked_cl_responses()), posts)
+    adapter = RpcLpDetailAdapter(
+        secrets_store=_store_with_base_rpc(tmp_path), http_client=client, sleep=lambda _s: None
+    )
+    token_id = adapter.resolve_univ3_token_id(chain="base", pool_address=_GAUGE, owner=_OWNER)
+    adapter.fetch_lp_detail(chain="base", pool_address=_GAUGE, token_id=token_id)
+
+    batched = [p for p in posts if isinstance(p, list) and len(p) >= 2]
+    assert batched, "expected at least one JSON-RPC batch of independent calls"
+    # Few round-trips total: classify single + resolve batch + fetch batch (owed 0).
+    assert len(posts) <= 4
 
 
 def test_staked_cl_scales_owed_fees_when_present(tmp_path: Path) -> None:
