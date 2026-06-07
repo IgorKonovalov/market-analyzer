@@ -38,6 +38,7 @@ from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
+from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
@@ -157,6 +158,14 @@ def create_mcp_components(
     register_bitcoin_market_pulse(server, provider=provider)
     register_market_snapshot(server, provider=provider)
     register_stocktwits_sentiment(server, provider=provider)
+
+    # `forecast` (Plan 0036): direction-as-probability over cached bars, gated on
+    # beating a naive baseline out-of-sample. Always registered (needs only the
+    # provider). Accepted models persist under a gitignored models/ root sibling to
+    # runs/ (ADR-0040) when a runs_dir is wired; without one, the forecast still
+    # computes and returns, it is simply not cached to disk.
+    forecast_models_dir = runs_dir.parent / "models" if runs_dir is not None else None
+    register_forecast(server, provider=provider, models_dir=forecast_models_dir)
 
     if backtest_runs_repository is not None and runs_dir is not None:
         register_run_backtest(

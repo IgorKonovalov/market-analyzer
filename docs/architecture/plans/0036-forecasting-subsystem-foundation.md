@@ -1,6 +1,6 @@
 # 0036 — Forecasting subsystem foundation
 
-> **Status:** approved (2026-06-05)
+> **Status:** in-progress (2026-06-05)
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev, backtester
 > **Related ADRs:** [ADR-0030](../adrs/0030-forecasting-subsystem.md) (forecasting posture — accepts at this plan's close), [ADR-0040](../adrs/0040-forecasting-model-artifacts.md) (library + determinism + versioning/provenance — accepts at this plan's close), [ADR-0024](../adrs/0024-extended-backtest-metrics.md) (walk-forward machinery this reuses), [ADR-0023](../adrs/0023-technical-analysis-surface.md) (the feature source), [ADR-0018](../adrs/0018-backtest-result-schema.md) (determinism contract)

@@ -68,6 +68,11 @@ positions/
 # per-subdir allowlist.
 runs/
 
+# Trained forecast model artifacts (Plan 0036 / ADR-0040): versioned, gitignored,
+# sibling to runs/. They are data, not credentials, but are regenerable from the
+# cached bars + seed, so they are never versioned.
+models/
+
 # Desktop (Electron) — will be populated in phase 4
 desktop/node_modules/
 desktop/dist/
