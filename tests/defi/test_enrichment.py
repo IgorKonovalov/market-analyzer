@@ -1,9 +1,15 @@
-"""Plan 0034 phase 5 done-when: LP deep-state enrichment.
+"""Plan 0034 phase 5 / Plan 0048 phase 2 done-when: LP deep-state enrichment.
 
 After discovery, each `kind="lp"` position carrying a `pool_address` is deepened
 with its on-chain detail (tick range, current tick, in-range status, uncollected
-fees) read through an `LpPositionDetailSource` — the Aerodrome class one-hop, the
-Uniswap-v3 class two-hop (resolve the NFT tokenId first). Non-LP positions and
+fees) read through an `LpPositionDetailSource`. Plan 0048 makes the routing
+shape-aware via the source's resolver, which is the discriminator:
+
+- a **v2 AMM** pool resolves to `None` → skipped with **no detail read** (no ticks),
+- a **staked-CL** or **unstaked-CL** pool resolves to a position NFT `tokenId` →
+  read by that id.
+
+Enrichment no longer branches on the protocol display string. Non-LP positions and
 LPs whose detail can't be read pass through unchanged (best-effort), order is
 preserved, `usd_value` is untouched, and reads are spaced (serialized).
 """
@@ -16,8 +22,9 @@ from market_analyser.defi.enrichment import enrich_lp_positions
 from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail, PositionToken
 
 _OWNER = "0xae5b…9790"
-_AERO_POOL = "0xe3800a58b5535935850a10e082952ec3577d8dcc"
-_UNI_POOL = "0xc6962004f452be9203591991d15f6b388e09e8d0"
+_STAKED_CL_GAUGE = "0xe3800a58b5535935850a10e082952ec3577d8dcc"  # Zerion gives the gauge
+_UNSTAKED_CL_POOL = "0xc6962004f452be9203591991d15f6b388e09e8d0"
+_V2_POOL = "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59"  # constant-product, no ticks
 
 
 def _detail(current_tick: int = 100) -> LpPositionDetail:
@@ -61,46 +68,51 @@ def _lending(chain: Chain = "ethereum") -> DefiPosition:
 
 
 class _FakeDetailSource:
-    """A configurable `LpPositionDetailSource` recording its calls."""
+    """A configurable `LpPositionDetailSource` recording its calls. The resolver is
+    the shape discriminator: `token_ids[pool] = None` models a v2 pool (or an
+    unresolved position); an int models a resolved CL position NFT."""
 
     def __init__(
         self,
         *,
-        aerodrome: dict[str, LpPositionDetail] | None = None,
-        univ3_token_ids: dict[str, int | None] | None = None,
-        univ3_detail: dict[tuple[str, int], LpPositionDetail] | None = None,
-        errors: dict[str, Exception] | None = None,
+        token_ids: dict[str, int | None] | None = None,
+        details: dict[tuple[str, int | None], LpPositionDetail] | None = None,
+        resolve_errors: dict[str, Exception] | None = None,
+        fetch_errors: dict[str, Exception] | None = None,
     ) -> None:
-        self._aerodrome = aerodrome or {}
-        self._univ3_token_ids = univ3_token_ids or {}
-        self._univ3_detail = univ3_detail or {}
-        self._errors = errors or {}
-        self.fetch_calls: list[tuple[str, int | None]] = []
+        self._token_ids = token_ids or {}
+        self._details = details or {}
+        self._resolve_errors = resolve_errors or {}
+        self._fetch_errors = fetch_errors or {}
         self.resolve_calls: list[str] = []
+        self.fetch_calls: list[tuple[str, int | None]] = []
+
+    def resolve_univ3_token_id(self, *, chain: Chain, pool_address: str, owner: str) -> int | None:
+        self.resolve_calls.append(pool_address)
+        if pool_address in self._resolve_errors:
+            raise self._resolve_errors[pool_address]
+        return self._token_ids.get(pool_address)
 
     def fetch_lp_detail(
         self, *, chain: Chain, pool_address: str, token_id: int | None = None
     ) -> LpPositionDetail:
         self.fetch_calls.append((pool_address, token_id))
-        if pool_address in self._errors:
-            raise self._errors[pool_address]
-        if token_id is None:
-            return self._aerodrome[pool_address]
-        return self._univ3_detail[(pool_address, token_id)]
-
-    def resolve_univ3_token_id(self, *, chain: Chain, pool_address: str, owner: str) -> int | None:
-        self.resolve_calls.append(pool_address)
-        return self._univ3_token_ids.get(pool_address)
+        if pool_address in self._fetch_errors:
+            raise self._fetch_errors[pool_address]
+        return self._details[(pool_address, token_id)]
 
 
 def _no_sleep(_seconds: float) -> None:
     return None
 
 
-def test_aerodrome_lp_is_enriched_one_hop() -> None:
-    source = _FakeDetailSource(aerodrome={_AERO_POOL: _detail()})
+def test_staked_cl_lp_is_enriched_via_resolved_token_id() -> None:
+    source = _FakeDetailSource(
+        token_ids={_STAKED_CL_GAUGE: 232923},
+        details={(_STAKED_CL_GAUGE, 232923): _detail()},
+    )
     [enriched] = enrich_lp_positions(
-        [_lp("aerodrome", _AERO_POOL)], source, owner=_OWNER, sleep=_no_sleep
+        [_lp("aerodrome", _STAKED_CL_GAUGE)], source, owner=_OWNER, sleep=_no_sleep
     )
     assert enriched.tick_lower == -200
     assert enriched.tick_upper == 200
@@ -108,22 +120,33 @@ def test_aerodrome_lp_is_enriched_one_hop() -> None:
     assert enriched.in_range is True
     assert enriched.uncollected_fees is not None
     assert enriched.uncollected_fees[0].symbol == "WETH"
-    assert source.fetch_calls == [(_AERO_POOL, None)]  # one-hop: token_id None
-    assert source.resolve_calls == []  # no NFT resolution for the Aerodrome class
+    assert source.resolve_calls == [_STAKED_CL_GAUGE]  # resolve first (the discriminator)
+    assert source.fetch_calls == [(_STAKED_CL_GAUGE, 232923)]  # then read by tokenId
 
 
-def test_univ3_lp_is_enriched_two_hop() -> None:
+def test_unstaked_cl_lp_is_enriched_via_resolved_token_id() -> None:
     source = _FakeDetailSource(
-        univ3_token_ids={_UNI_POOL: 12345},
-        univ3_detail={(_UNI_POOL, 12345): _detail(current_tick=50)},
+        token_ids={_UNSTAKED_CL_POOL: 12345},
+        details={(_UNSTAKED_CL_POOL, 12345): _detail(current_tick=50)},
     )
     [enriched] = enrich_lp_positions(
-        [_lp("uniswap-v3", _UNI_POOL)], source, owner=_OWNER, sleep=_no_sleep
+        [_lp("uniswap-v3", _UNSTAKED_CL_POOL)], source, owner=_OWNER, sleep=_no_sleep
     )
     assert enriched.in_range is True
     assert enriched.current_tick == 50
-    assert source.resolve_calls == [_UNI_POOL]  # tokenId resolved first
-    assert source.fetch_calls == [(_UNI_POOL, 12345)]  # then read by tokenId
+    assert source.resolve_calls == [_UNSTAKED_CL_POOL]
+    assert source.fetch_calls == [(_UNSTAKED_CL_POOL, 12345)]
+
+
+def test_v2_amm_lp_is_skipped_with_no_detail_read() -> None:
+    # The resolver returns None for a v2 constant-product pool (no ticks); the
+    # position is left at discovery depth and fetch_lp_detail is never called.
+    source = _FakeDetailSource(token_ids={_V2_POOL: None})
+    [out] = enrich_lp_positions([_lp("aerodrome", _V2_POOL)], source, owner=_OWNER, sleep=_no_sleep)
+    assert out.tick_lower is None
+    assert out.in_range is None
+    assert source.resolve_calls == [_V2_POOL]
+    assert source.fetch_calls == []  # no deep read for the no-ticks shape
 
 
 def test_non_lp_position_passes_through_untouched() -> None:
@@ -131,6 +154,7 @@ def test_non_lp_position_passes_through_untouched() -> None:
     [out] = enrich_lp_positions([_lending()], source, owner=_OWNER, sleep=_no_sleep)
     assert out.tick_lower is None
     assert out.current_tick is None
+    assert source.resolve_calls == []
     assert source.fetch_calls == []
 
 
@@ -138,34 +162,33 @@ def test_lp_without_pool_address_is_not_enriched() -> None:
     source = _FakeDetailSource()
     [out] = enrich_lp_positions([_lp("aerodrome", None)], source, owner=_OWNER, sleep=_no_sleep)
     assert out.tick_lower is None
+    assert source.resolve_calls == []
     assert source.fetch_calls == []
 
 
-def test_unresolved_univ3_position_passes_through() -> None:
-    source = _FakeDetailSource(univ3_token_ids={_UNI_POOL: None})
-    [out] = enrich_lp_positions(
-        [_lp("uniswap-v3", _UNI_POOL)], source, owner=_OWNER, sleep=_no_sleep
-    )
-    assert out.tick_lower is None
-    assert source.resolve_calls == [_UNI_POOL]
-    assert source.fetch_calls == []  # nothing to read without a tokenId
-
-
 def test_upstream_error_leaves_position_at_discovery_depth() -> None:
-    source = _FakeDetailSource(errors={_AERO_POOL: UpstreamUnavailableError("rpc down")})
+    source = _FakeDetailSource(
+        token_ids={_STAKED_CL_GAUGE: 1},
+        fetch_errors={_STAKED_CL_GAUGE: UpstreamUnavailableError("rpc down")},
+    )
     [out] = enrich_lp_positions(
-        [_lp("aerodrome", _AERO_POOL)], source, owner=_OWNER, sleep=_no_sleep
+        [_lp("aerodrome", _STAKED_CL_GAUGE)], source, owner=_OWNER, sleep=_no_sleep
     )
     assert out.tick_lower is None  # best-effort: not enriched, not failed
     assert out.usd_value == 1000.0  # discovery numbers untouched
 
 
 def test_config_error_skips_remaining_positions_on_that_chain() -> None:
-    # First base LP hits an unconfigured-RPC error; the second base LP is skipped
-    # without re-attempting (the chain is memoized).
+    # The first base LP hits an unconfigured-RPC error during resolution (the real
+    # adapter reads the RPC URL there first); the second base LP is skipped without
+    # re-attempting (the chain is memoized).
     pool_a = "0x" + "a" * 40
     pool_b = "0x" + "b" * 40
-    source = _FakeDetailSource(errors={pool_a: LpDetailConfigError("no base_rpc_url")})
+    source = _FakeDetailSource(
+        resolve_errors={pool_a: LpDetailConfigError("no base_rpc_url")},
+        token_ids={pool_b: 2},
+        details={(pool_b, 2): _detail()},
+    )
     out = enrich_lp_positions(
         [_lp("aerodrome", pool_a), _lp("aerodrome", pool_b)],
         source,
@@ -173,12 +196,16 @@ def test_config_error_skips_remaining_positions_on_that_chain() -> None:
         sleep=_no_sleep,
     )
     assert all(p.tick_lower is None for p in out)
-    assert source.fetch_calls == [(pool_a, None)]  # second pool never attempted
+    assert source.resolve_calls == [pool_a]  # second pool never attempted
+    assert source.fetch_calls == []
 
 
 def test_order_is_preserved_and_mixed_kinds_handled() -> None:
-    source = _FakeDetailSource(aerodrome={_AERO_POOL: _detail()})
-    positions = [_lending("ethereum"), _lp("aerodrome", _AERO_POOL), _lending("base")]
+    source = _FakeDetailSource(
+        token_ids={_STAKED_CL_GAUGE: 7},
+        details={(_STAKED_CL_GAUGE, 7): _detail()},
+    )
+    positions = [_lending("ethereum"), _lp("aerodrome", _STAKED_CL_GAUGE), _lending("base")]
     out = enrich_lp_positions(positions, source, owner=_OWNER, sleep=_no_sleep)
     assert [p.position_id for p in out] == [p.position_id for p in positions]
     assert out[0].tick_lower is None  # lending untouched
@@ -193,10 +220,11 @@ def test_reads_are_spaced_between_positions() -> None:
         calls.append(seconds)
 
     source = _FakeDetailSource(
-        aerodrome={_AERO_POOL: _detail(), _UNI_POOL: _detail()},
+        token_ids={_STAKED_CL_GAUGE: 1, _UNSTAKED_CL_POOL: 2},
+        details={(_STAKED_CL_GAUGE, 1): _detail(), (_UNSTAKED_CL_POOL, 2): _detail()},
     )
     enrich_lp_positions(
-        [_lp("aerodrome", _AERO_POOL), _lp("aerodrome", _UNI_POOL)],
+        [_lp("aerodrome", _STAKED_CL_GAUGE), _lp("uniswap-v3", _UNSTAKED_CL_POOL)],
         source,
         owner=_OWNER,
         sleep=_record,
