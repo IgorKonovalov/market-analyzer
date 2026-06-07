@@ -1,8 +1,8 @@
 # ADR-0030 — Forecasting subsystem: causal, validated, direction-as-probability
 
-> **Status:** proposed (accepts when the first forecasting plan closes — see Notes)
+> **Status:** accepted (2026-06-07) — the first forecasting plan ([Plan 0036](../plans/done/0036-forecasting-subsystem-foundation.md)) closed; all four invariants are realized and tested (strict causality via per-row truncation-invariance, seeded single-thread determinism golden test, mandatory walk-forward with a baseline-beating gate, honest-uncertainty no-edge verdict)
 > **Date:** 2026-05-30
-> **Related plan(s):** none yet — [Plan 0020](../plans/0020-backtest-metrics-walk-forward.md) (walk-forward) is a hard prerequisite (see Notes)
+> **Related plan(s):** [Plan 0036](../plans/done/0036-forecasting-subsystem-foundation.md) (forecasting subsystem foundation — implements this posture; closed 2026-06-07). [Plan 0020](../plans/0020-backtest-metrics-walk-forward.md) (walk-forward) was the hard prerequisite (see Notes)
 > **Related ADRs:** [ADR-0018](0018-backtest-result-schema.md) (the determinism contract this mirrors), [ADR-0024](0024-extended-backtest-metrics.md) (the walk-forward machinery this reuses for validation), [ADR-0023](0023-technical-analysis-surface.md) (the feature source), [ADR-0007](0007-market-data-provider.md) (bars come through the Protocol), [ADR-0012](0012-dependency-cooldown.md) / [ADR-0013](0013-pin-direct-dependencies.md) (the dep discipline that shapes the model-library choice), [ADR-0029](0029-advisory-recommendation-boundary.md) (the advisor consumes forecasts as a conviction input)
 
 ## Context

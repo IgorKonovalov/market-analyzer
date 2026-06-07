@@ -1,6 +1,6 @@
 # 0036 — Forecasting subsystem foundation
 
-> **Status:** in-progress (2026-06-05)
+> **Status:** done (2026-06-07) — all 4 phases landed on branch `plan-0036-forecasting-subsystem-foundation` (`07a3c75` features → `683c36e` labels+model → `96b6cc8` `fold_bounds` seam + `67e5d7b` validation gate → `82ca0c6` registry + `d14daf1` `forecast` tool → `962c4aa` horizon-purge leak fix), merged to `main` via `--no-ff`. Mode 4 verdict: no blockers, no majors; two minor fix-forward items (declare `joblib`/`threadpoolctl` as direct deps; add a NaN-bar guard). Verified: every named test read at the assertion level — per-row truncation-invariance, label-no-leak perturbation, byte-identical determinism golden, overfit→no-edge gate, model_version stability matrix, save/load identical-prediction round-trip, `forecast` registered in the full-toolset assertion. 52 forecast/api/backtest specs green on merged `main`; merge conflict-free.
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev, backtester
 > **Related ADRs:** [ADR-0030](../adrs/0030-forecasting-subsystem.md) (forecasting posture — accepts at this plan's close), [ADR-0040](../adrs/0040-forecasting-model-artifacts.md) (library + determinism + versioning/provenance — accepts at this plan's close), [ADR-0024](../adrs/0024-extended-backtest-metrics.md) (walk-forward machinery this reuses), [ADR-0023](../adrs/0023-technical-analysis-surface.md) (the feature source), [ADR-0018](../adrs/0018-backtest-result-schema.md) (determinism contract)

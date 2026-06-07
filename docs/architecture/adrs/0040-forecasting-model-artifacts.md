@@ -1,8 +1,8 @@
 # ADR-0040 — Forecasting model artifacts: deterministic library stack + versioning & provenance
 
-> **Status:** proposed — accepts at the first forecasting plan close ([Plan 0036](../plans/0036-forecasting-subsystem-foundation.md))
+> **Status:** accepted (2026-06-07) — [Plan 0036](../plans/done/0036-forecasting-subsystem-foundation.md) closed: `HistGradientBoostingClassifier` (sklearn, no extra native dep) trained seeded + single-thread; `model_version` hashes the five prediction-affecting inputs (feature-set id, model+hparams, training cutoff, lib versions, seed) and is pinned stable/changing by `test_registry.py`; artifacts persist as joblib + `meta.json` under a gitignored `models/` root
 > **Date:** 2026-06-05
-> **Related plan(s):** [Plan 0036](../plans/0036-forecasting-subsystem-foundation.md) (forecasting subsystem foundation)
+> **Related plan(s):** [Plan 0036](../plans/done/0036-forecasting-subsystem-foundation.md) (forecasting subsystem foundation — closed 2026-06-07)
 > **Related ADRs:** [ADR-0030](0030-forecasting-subsystem.md) (the forecasting posture this implements — library/determinism/persistence were left open there), [ADR-0018](0018-backtest-result-schema.md) (the determinism contract this mirrors for model artifacts), [ADR-0012](0012-dependency-cooldown.md)/[ADR-0013](0013-pin-direct-dependencies.md) (the cooldown + exact-pin discipline that shapes the library choice), [ADR-0024](0024-extended-backtest-metrics.md) (the walk-forward machinery the validation reuses)
 
 ## Context
