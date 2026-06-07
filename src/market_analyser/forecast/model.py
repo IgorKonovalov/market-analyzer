@@ -75,6 +75,13 @@ class TrainedModel:
         self.n_samples = n_samples
         self.training_cutoff = training_cutoff
 
+    @property
+    def classifier(self) -> HistGradientBoostingClassifier:
+        """The fitted estimator — exposed read-only so the registry (phase 4) can
+        persist it without reaching into the private slot."""
+
+        return self._clf
+
 
 def align_samples(
     rows: list[FeatureRow | None], labels: list[Direction | None]

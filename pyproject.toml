@@ -111,11 +111,11 @@ module = ["feedparser", "vaderSentiment.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# scikit-learn, statsmodels, and threadpoolctl ship no py.typed marker mypy
-# recognises. The forecasting subsystem (Plan 0036) treats their output as
+# scikit-learn, statsmodels, threadpoolctl, and joblib ship no py.typed marker
+# mypy recognises. The forecasting subsystem (Plan 0036) treats their output as
 # untrusted at the boundary — the model layer keeps the dynamic typing contained
-# to forecast/model.py (and forecast/validation.py for the statsmodels baseline).
-module = ["sklearn.*", "statsmodels.*", "threadpoolctl"]
+# to forecast/model.py and forecast/registry.py (joblib persistence).
+module = ["sklearn.*", "statsmodels.*", "threadpoolctl", "joblib"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
