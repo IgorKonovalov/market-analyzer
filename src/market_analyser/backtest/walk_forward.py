@@ -47,13 +47,18 @@ class WalkForwardConfigError(ValueError):
     """
 
 
-def _fold_bounds(n_bars: int, n_splits: int) -> list[tuple[int, int]]:
+def fold_bounds(n_bars: int, n_splits: int) -> list[tuple[int, int]]:
     """Return the `[start, end)` index bounds of each contiguous fold.
 
     `array_split` semantics: the first ``n_bars % n_splits`` folds get one
     extra bar. Bounds are contiguous (each `start` equals the previous
     `end`) and the window sizes sum to `n_bars`. The caller guarantees
     ``1 <= n_splits <= n_bars``, so every window has at least one bar.
+
+    Public seam: the forecasting validation harness (`forecast/validation.py`,
+    Plan 0036) reuses this exact partition so its train/test folds inherit the
+    same contiguous, non-overlapping, anti-lookahead semantics as the strategy
+    walk-forward — one source of truth for "how a bar series is split".
     """
 
     base, remainder = divmod(n_bars, n_splits)
@@ -109,7 +114,7 @@ def walk_forward(
     )
 
     folds: list[WalkForwardFold] = []
-    for fold_index, (start, end) in enumerate(_fold_bounds(len(bars), n_splits)):
+    for fold_index, (start, end) in enumerate(fold_bounds(len(bars), n_splits)):
         window = bars[start:end]
         result = run(
             strategy_module,
@@ -151,4 +156,4 @@ def walk_forward(
     )
 
 
-__all__ = ["WalkForwardConfigError", "walk_forward"]
+__all__ = ["WalkForwardConfigError", "fold_bounds", "walk_forward"]

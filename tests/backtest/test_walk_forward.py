@@ -2,7 +2,7 @@
 
 Done-when coverage:
 
-- Fold partitioning math (`_fold_bounds`): contiguous, non-overlapping,
+- Fold partitioning math (`fold_bounds`): contiguous, non-overlapping,
   bar counts sum to the series length.
 - Anti-lookahead across folds: fold k's first bar strictly follows fold
   k-1's last; each fold's metrics equal a direct `run()` on that window
@@ -32,7 +32,7 @@ from market_analyser.backtest import (
     run,
     walk_forward,
 )
-from market_analyser.backtest.walk_forward import _fold_bounds
+from market_analyser.backtest.walk_forward import fold_bounds
 from market_analyser.data.types import Bar
 from market_analyser.strategies import rsi as rsi_strategy
 
@@ -77,7 +77,7 @@ def _wf(bars: Sequence[Bar], n_splits: int) -> WalkForwardResult:
 
 
 def test_fold_bounds_even_division() -> None:
-    bounds = _fold_bounds(400, 4)
+    bounds = fold_bounds(400, 4)
     assert bounds == [(0, 100), (100, 200), (200, 300), (300, 400)]
     # Contiguous, non-overlapping, covers the whole series.
     assert bounds[0][0] == 0
@@ -89,7 +89,7 @@ def test_fold_bounds_even_division() -> None:
 
 def test_fold_bounds_uneven_division_front_loads_remainder() -> None:
     # 403 = 4 * 100 + 3 → first three folds get 101, last gets 100.
-    bounds = _fold_bounds(403, 4)
+    bounds = fold_bounds(403, 4)
     assert [end - start for start, end in bounds] == [101, 101, 101, 100]
     assert sum(end - start for start, end in bounds) == 403
     for prev, nxt in pairwise(bounds):
@@ -113,7 +113,7 @@ def test_folds_are_contiguous_and_strictly_increasing_in_time() -> None:
     for prev, nxt in pairwise(result.folds):
         assert nxt.range_start > prev.range_end
     # Window endpoints line up with the documented [0,100),[100,200),... math.
-    expected_bounds = _fold_bounds(len(bars), 4)
+    expected_bounds = fold_bounds(len(bars), 4)
     for fold, (start, end) in zip(result.folds, expected_bounds, strict=True):
         assert fold.range_start == bars[start].event_ts
         assert fold.range_end == bars[end - 1].event_ts
@@ -124,7 +124,7 @@ def test_each_fold_equals_direct_run_on_its_window_only() -> None:
 
     bars = _make_bars(400)
     result = _wf(bars, 4)
-    for fold, (start, end) in zip(result.folds, _fold_bounds(len(bars), 4), strict=True):
+    for fold, (start, end) in zip(result.folds, fold_bounds(len(bars), 4), strict=True):
         direct = run(rsi_strategy, bars[start:end], _RSI_PARAMS, timeframe="1d")
         assert fold.metrics.model_dump() == direct.metrics.model_dump()
         assert fold.trade_count == len(direct.trades)
