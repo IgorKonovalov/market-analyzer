@@ -1,6 +1,6 @@
 # ADR-0045 — Candlestick pattern delivery: span-bearing markers, derived not persisted
 
-> **Status:** proposed — accepts at Plan 0049 close
+> **Status:** accepted (2026-06-06, at Plan 0049 close)
 > **Date:** 2026-06-06
 > **Related plan(s):** [0049](../plans/0049-pattern-sweep-and-span-rendering.md); builds on [0047](../plans/0047-bar-upsert-mtf-degrade-and-chart-legend.md)
 
