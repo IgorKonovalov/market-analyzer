@@ -60,6 +60,34 @@
   color: var(--marker-bearish);
 }
 
+/* Stale-price affordance: a failing /quote poll keeps the last-known price on
+   screen, so dim it and flag it rather than letting a frozen number read as live. */
+.priceValue[data-stale='true'] {
+  opacity: 0.45;
+}
+
+.priceStale {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: center;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+}
+
+.priceStaleDot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--color-error);
+}
+
 /* Inline backfill indicator pinned to the toolbar's right edge (Plan 0013). */
 .backfillSpinner {
   margin-left: auto;

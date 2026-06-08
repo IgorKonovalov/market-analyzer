@@ -74,7 +74,9 @@ export function OhlcvView({
   const { enabled: agentModeEnabled, setEnabled: setAgentMode } = useAgentMode()
   // Live, symbol-level price — keyed on symbol only, so it is independent of the
   // selected timeframe and never derives from the last bar's close (Plan 0047).
-  const { quote } = useQuotePoll({ symbol })
+  // `quoteError` is set while the latest poll is failing (the hook keeps the
+  // last-known quote on screen) so the header can flag a possibly-stale price.
+  const { quote, error: quoteError } = useQuotePoll({ symbol })
 
   // A fresh backfill failure re-shows the toast even if a prior one was dismissed.
   const [toastDismissed, setToastDismissed] = useState(false)
@@ -98,7 +100,7 @@ export function OhlcvView({
           onTimeframeChange={onTimeframeChange}
           disabled={isLoading}
         />
-        <PriceHeader symbol={symbol} quote={quote} />
+        <PriceHeader symbol={symbol} quote={quote} disconnected={quoteError !== null} />
         <button type="button" className={styles.refresh} onClick={onRefresh} disabled={isLoading}>
           Refresh
         </button>
@@ -201,6 +203,10 @@ function formatPrice(price: number, currency: string): string {
 export interface PriceHeaderProps {
   symbol: string
   quote: QuoteResponse | null
+  /** True while the latest `/quote` poll is failing. The hook keeps the
+   * last-known quote on screen, so the displayed price may be stale — dim it and
+   * show a `disconnected` badge so the user isn't misled by a frozen number. */
+  disconnected?: boolean
 }
 
 /**
@@ -208,13 +214,23 @@ export interface PriceHeaderProps {
  * price fed by `useQuotePoll`, independent of the selected timeframe. Until the
  * first quote resolves (or if every poll has failed), it shows an em dash — it
  * never derives a price from the chart's last bar. The day change renders in the
- * bullish/bearish theme tokens.
+ * bullish/bearish theme tokens. When `disconnected`, the price is dimmed and a
+ * `disconnected` badge appears — the shown value is the last-known one and may be
+ * stale (e.g. upstream throttling), so this avoids a silently-frozen price.
  */
-export function PriceHeader({ symbol, quote }: PriceHeaderProps): JSX.Element {
+export function PriceHeader({
+  symbol,
+  quote,
+  disconnected = false,
+}: PriceHeaderProps): JSX.Element {
   const change = quote?.change_pct ?? null
   return (
     <div className={styles.priceHeader} aria-label={`Current price for ${symbol}`}>
-      <span className={styles.priceValue} data-testid="price-value">
+      <span
+        className={styles.priceValue}
+        data-testid="price-value"
+        data-stale={disconnected && quote ? 'true' : undefined}
+      >
         {quote ? formatPrice(quote.price, quote.currency) : '—'}
       </span>
       {change !== null && (
@@ -225,6 +241,17 @@ export function PriceHeader({ symbol, quote }: PriceHeaderProps): JSX.Element {
         >
           {change >= 0 ? '+' : ''}
           {change.toFixed(2)}%
+        </span>
+      )}
+      {disconnected && (
+        <span
+          className={styles.priceStale}
+          role="status"
+          data-testid="price-disconnected"
+          aria-label={`Live price for ${symbol} disconnected — showing last known value`}
+        >
+          <span className={styles.priceStaleDot} aria-hidden="true" />
+          disconnected
         </span>
       )}
     </div>

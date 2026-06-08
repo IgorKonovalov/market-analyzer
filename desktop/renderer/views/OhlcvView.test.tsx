@@ -262,6 +262,22 @@ describe('live price header (Plan 0047 phase 6)', () => {
     expect(screen.getByTestId('price-value')).toHaveTextContent('—')
     expect(screen.queryByTestId('price-change')).not.toBeInTheDocument()
   })
+
+  it('flags the price as disconnected and dims it when the poll is failing', () => {
+    mockUseQuotePoll.mockReturnValue({ quote: QUOTE, error: new Error('quote poll failed') })
+    renderView()
+    // Last-known price stays visible (not blanked) but is marked stale + flagged.
+    expect(screen.getByTestId('price-value')).toHaveTextContent('61,335.75 USD')
+    expect(screen.getByTestId('price-value')).toHaveAttribute('data-stale', 'true')
+    expect(screen.getByTestId('price-disconnected')).toBeInTheDocument()
+  })
+
+  it('shows no disconnected flag while polling succeeds', () => {
+    mockUseQuotePoll.mockReturnValue({ quote: QUOTE, error: null })
+    renderView()
+    expect(screen.getByTestId('price-value')).not.toHaveAttribute('data-stale')
+    expect(screen.queryByTestId('price-disconnected')).not.toBeInTheDocument()
+  })
 })
 
 describe('PriceHeader (unit)', () => {
@@ -274,5 +290,20 @@ describe('PriceHeader (unit)', () => {
   it('omits the change badge when change_pct is null', () => {
     render(<PriceHeader symbol="BTC-USD" quote={{ ...QUOTE, change_pct: null }} />)
     expect(screen.queryByTestId('price-change')).not.toBeInTheDocument()
+  })
+
+  it('renders the disconnected badge and marks the price stale when disconnected', () => {
+    render(<PriceHeader symbol="BTC-USD" quote={QUOTE} disconnected />)
+    expect(screen.getByTestId('price-disconnected')).toBeInTheDocument()
+    expect(screen.getByTestId('price-value')).toHaveAttribute('data-stale', 'true')
+  })
+
+  it('does not mark an em dash stale when disconnected with no quote yet', () => {
+    render(<PriceHeader symbol="BTC-USD" quote={null} disconnected />)
+    // The badge still informs the user why there is no price…
+    expect(screen.getByTestId('price-disconnected')).toBeInTheDocument()
+    // …but there is no last-known value to dim, so the dash isn't marked stale.
+    expect(screen.getByTestId('price-value')).toHaveTextContent('—')
+    expect(screen.getByTestId('price-value')).not.toHaveAttribute('data-stale')
   })
 })
