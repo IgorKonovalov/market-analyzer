@@ -16,7 +16,11 @@
 
 .chartContainer {
   flex: 1;
-  width: 100%;
+  /* Let the chart shrink within the `.chartArea` row so the fixed-width Layers
+   * panel beside it always fits on-screen. Without `min-width: 0` a flex item's
+   * default `min-width: auto` lets the lightweight-charts canvas hold the
+   * container at its content width, pushing the panel off the right edge. */
+  min-width: 0;
   min-height: 360px;
   border: 1px solid var(--color-border);
   border-radius: 4px;

@@ -63,9 +63,24 @@ export function useQuotePoll({
     void tick()
     const handle = setInterval(() => void tick(), intervalMs)
 
+    // Refetch the moment the viewer becomes visible again rather than waiting up
+    // to a full interval. Per ADR-0015 the user drives the app from the CLI with
+    // the Electron viewer often backgrounded/occluded — which suspends the poll
+    // above (the `visibilityState` guard) — so without this an on-glance price
+    // could sit stale for up to `intervalMs` after the window is brought forward.
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'visible') void tick()
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
+
     return () => {
       stopped = true
       clearInterval(handle)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
     }
   }, [symbol, intervalMs])
 

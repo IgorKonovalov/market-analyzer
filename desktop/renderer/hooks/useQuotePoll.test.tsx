@@ -65,6 +65,12 @@ function setVisibility(state: 'visible' | 'hidden'): void {
   })
 }
 
+/** Flip visibility and fire the `visibilitychange` event the hook listens for. */
+function emitVisibility(state: 'visible' | 'hidden'): void {
+  setVisibility(state)
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
 beforeEach(() => {
   jest.useFakeTimers()
   setupWindowApi()
@@ -113,6 +119,25 @@ it('suspends polling while the tab is hidden', async () => {
   })
   await Promise.resolve()
   expect(fetchState.count()).toBe(before)
+})
+
+it('refetches immediately when the viewer regains visibility (no wait for the next tick)', async () => {
+  const fetchState = setupFetch([{ body: quote(61_000) }, { body: quote(62_000) }])
+
+  const { result } = renderHook(() => useQuotePoll({ symbol: SYMBOL, intervalMs: 10_000 }))
+  await waitFor(() => expect(result.current.quote?.price).toBe(61_000))
+
+  // Hide (poll suspends), then come back before the next interval tick fires.
+  emitVisibility('hidden')
+  act(() => {
+    jest.advanceTimersByTime(3_000)
+  })
+  const before = fetchState.count()
+
+  emitVisibility('visible')
+  // A fresh fetch fired on the visibility flip, not on a 10s tick.
+  await waitFor(() => expect(fetchState.count()).toBe(before + 1))
+  await waitFor(() => expect(result.current.quote?.price).toBe(62_000))
 })
 
 it('keeps the last-known quote and surfaces error when a poll fails', async () => {
