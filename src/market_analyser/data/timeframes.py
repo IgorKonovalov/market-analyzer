@@ -50,6 +50,12 @@ _REGISTRY: dict[str, TimeframeSpec] = {
     "4h": TimeframeSpec("4h", timedelta(hours=4), None, "1h", timedelta(days=730)),
     "1d": TimeframeSpec("1d", _DAY, "1d", None, None),
     "1w": TimeframeSpec("1w", timedelta(days=7), "1wk", None, None),
+    # 1mo is fetched natively from Yahoo's `1mo` interval (no in-house monthly
+    # resampling — ADR-0047). It is the first variable-duration timeframe: a month
+    # is 28-31 days, so `bar_duration` is the *maximum* month length (31d), read by
+    # the coverage/gap math as an upper bound on adjacent-bar spacing, not an exact
+    # step. History is effectively unbounded (like 1d/1w).
+    "1mo": TimeframeSpec("1mo", timedelta(days=31), "1mo", None, None),
 }
 
 # Yahoo intervals whose bars carry an intraday timestamp (`%Y-%m-%d %H:%M`); the

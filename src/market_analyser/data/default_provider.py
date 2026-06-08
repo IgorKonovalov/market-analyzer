@@ -57,11 +57,29 @@ from market_analyser.persistence.repository import BarRepository
 # 2.5h lets an intraday hole surface that a flat 10-day floor would have masked.
 _GAP_THRESHOLD_BARS = 10
 
+# Timeframes at or above this bar duration (monthly and coarser) have NO
+# within-cadence market closures — every period reliably has exactly one bar — so
+# the x10 closure tolerance does not apply. 28 days is below the shortest month
+# (so it captures `1mo`) and above the longest sub-monthly cadence (`1w` = 7d), so
+# only month-scale timeframes take the tight branch.
+_MONTH_SCALE = timedelta(days=28)
+
 
 def _min_fetch_span(timeframe: str) -> timedelta:
     """The fetch/gap-detection threshold for `timeframe`, derived from its registry
-    bar duration (see `_GAP_THRESHOLD_BARS`)."""
-    return bar_duration(timeframe) * _GAP_THRESHOLD_BARS
+    bar duration.
+
+    Sub-monthly timeframes scale by `_GAP_THRESHOLD_BARS` to tolerate within-
+    cadence closures (weekends, holidays, overnight). Month-scale timeframes have
+    no such closures, so the x10 tolerance (310d for `1mo`) would mask a genuinely
+    missing month; they instead use a tight `1.5 * bar_duration` (~46.5d for
+    `1mo`), which reads `bar_duration` as the max adjacent spacing (ADR-0047): a
+    28-31d month-to-month step stays below it (no false February gap), while a
+    ~59d two-month hole exceeds it and is flagged as missing."""
+    dur = bar_duration(timeframe)
+    if dur >= _MONTH_SCALE:
+        return dur + dur // 2
+    return dur * _GAP_THRESHOLD_BARS
 
 
 def _exceeds_history_cap(timeframe: str, start: datetime, end: datetime) -> bool:

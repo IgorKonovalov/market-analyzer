@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # `data/timeframes.py` registry. The two views are kept honest by a parity test
 # (`tests/data/test_timeframes.py`) rather than a cross-layer import, so this
 # frozenset stays free of any `data` dependency. Widen both together.
-SUPPORTED_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h", "15m", "4h", "1w"})
+SUPPORTED_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1h", "15m", "4h", "1w", "1mo"})
 
 
 class AnnotationKind(StrEnum):

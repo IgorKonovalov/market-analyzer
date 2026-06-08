@@ -141,11 +141,19 @@ def test_bars_per_year_for_each_supported_timeframe(
     assert _TIMEFRAME_BARS_PER_YEAR[timeframe] == expected_bars_per_year
 
 
-def test_metrics_table_keys_match_data_registry() -> None:
-    """The annualization table covers exactly the supported timeframe set, no more."""
+def test_metrics_table_is_the_annualizable_registry_subset() -> None:
+    """The annualization table covers every backtestable timeframe and never names
+    one the data layer doesn't know. The only data timeframe it omits is `1mo`,
+    which is fetch/chart-only (ADR-0047) and deliberately not annualizable/
+    backtestable (Plan 0050 phase 4.5). This pins exactly which timeframes are
+    data-only, so adding a new one forces a decision: annualize it, or document it
+    here as data-only."""
     from market_analyser.data.timeframes import registry_timeframes
 
-    assert set(_TIMEFRAME_BARS_PER_YEAR) == set(registry_timeframes())
+    metrics_keys = set(_TIMEFRAME_BARS_PER_YEAR)
+    registry = set(registry_timeframes())
+    assert metrics_keys <= registry  # no orphan: every annualized tf is a real data tf
+    assert registry - metrics_keys == {"1mo"}  # the only data-only (non-annualizable) tf
 
 
 def test_added_timeframes_annualize_finite_and_correctly_scaled() -> None:

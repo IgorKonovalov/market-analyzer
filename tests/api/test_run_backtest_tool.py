@@ -492,16 +492,24 @@ def test_4h_timeframe_runs_end_to_end_with_finite_metrics(
     assert math.isfinite(float(summary["total_return"]))  # type: ignore[arg-type]
 
 
-def test_backtest_timeframe_enum_matches_data_registry() -> None:
-    """The backtest tools' accepted timeframe set equals the data registry's
-    SUPPORTED_TIMEFRAMES, so the two cannot drift (Plan 0050 phase 4). All three
-    tools share the BACKTEST_TIMEFRAME alias, so this one assertion guards them."""
+def test_backtest_timeframe_enum_is_the_annualizable_registry_subset() -> None:
+    """The backtest tools accept exactly the timeframes the metrics layer can
+    annualize, and that set is a subset of the data registry's SUPPORTED_TIMEFRAMES
+    (Plan 0050 phases 4 + 4.5). The two views cannot drift: a data timeframe that
+    is fetch/chart-only but not annualizable (e.g. `1mo` after phase 4.5) is
+    correctly excluded from backtests, since _calc_metrics would otherwise raise.
+    All three tools share the BACKTEST_TIMEFRAME alias, so this guards them all."""
     from typing import get_args
 
     from market_analyser.annotations.types import SUPPORTED_TIMEFRAMES
     from market_analyser.api.mcp_tools.run_backtest import BACKTEST_TIMEFRAME
+    from market_analyser.backtest.metrics import _TIMEFRAME_BARS_PER_YEAR
 
-    assert set(get_args(BACKTEST_TIMEFRAME)) == set(SUPPORTED_TIMEFRAMES)
+    backtest_set = set(get_args(BACKTEST_TIMEFRAME))
+    # Backtestable iff annualizable: the enum equals the metrics table's keys.
+    assert backtest_set == set(_TIMEFRAME_BARS_PER_YEAR)
+    # And every backtestable timeframe is a real data timeframe.
+    assert backtest_set <= set(SUPPORTED_TIMEFRAMES)
 
 
 def test_determinism_two_identical_calls_produce_identical_persisted_results(

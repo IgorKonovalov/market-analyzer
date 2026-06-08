@@ -39,7 +39,7 @@ def test_4h_is_resampled_from_1h_and_has_no_yahoo_interval() -> None:
 
 @pytest.mark.parametrize(
     ("timeframe", "expected_interval"),
-    [("15m", "15m"), ("1h", "1h"), ("1d", "1d"), ("1w", "1wk")],
+    [("15m", "15m"), ("1h", "1h"), ("1d", "1d"), ("1w", "1wk"), ("1mo", "1mo")],
 )
 def test_yahoo_interval_maps_canonical_to_upstream(timeframe: str, expected_interval: str) -> None:
     assert tf.yahoo_interval(timeframe) == expected_interval
@@ -55,6 +55,9 @@ def test_yahoo_interval_maps_canonical_to_upstream(timeframe: str, expected_inte
         ("4h", timedelta(hours=4)),
         ("1d", timedelta(days=1)),
         ("1w", timedelta(days=7)),
+        # 1mo's bar_duration is the MAX month length (31d), not an exact step —
+        # ADR-0047. The coverage/gap math reads it as an upper bound on spacing.
+        ("1mo", timedelta(days=31)),
     ],
 )
 def test_bar_duration_matches_cadence(timeframe: str, expected: timedelta) -> None:
@@ -68,11 +71,22 @@ def test_max_history_caps_intraday_and_unbounds_daily_weekly() -> None:
     assert tf.max_history("4h") == timedelta(days=730)
     assert tf.max_history("1d") is None
     assert tf.max_history("1w") is None
+    # 1mo is unbounded like 1d/1w.
+    assert tf.max_history("1mo") is None
+
+
+def test_monthly_is_native_unbounded_and_date_stamped() -> None:
+    # 1mo is fetched natively (not resampled) from Yahoo's 1mo interval (ADR-0047).
+    assert tf.resampled_from("1mo") is None
+    assert tf.require_native_interval("1mo") == "1mo"
+    assert "1mo" in tf.native_timeframes()
+    # Month bars carry a date-only timestamp (bar_duration >= 1 day).
+    assert tf.uses_intraday_timestamp("1mo") is False
 
 
 @pytest.mark.parametrize(
     ("timeframe", "intraday"),
-    [("15m", True), ("1h", True), ("4h", True), ("1d", False), ("1w", False)],
+    [("15m", True), ("1h", True), ("4h", True), ("1d", False), ("1w", False), ("1mo", False)],
 )
 def test_uses_intraday_timestamp_splits_sub_daily(timeframe: str, intraday: bool) -> None:
     assert tf.uses_intraday_timestamp(timeframe) is intraday
@@ -97,4 +111,4 @@ def test_unknown_timeframe_raises_value_error() -> None:
 
 def test_supported_label_is_cadence_ordered() -> None:
     # Sorted ascending by bar duration so the agent-facing tool docs read naturally.
-    assert tf.supported_timeframes_label() == "15m, 1h, 4h, 1d, 1w"
+    assert tf.supported_timeframes_label() == "15m, 1h, 4h, 1d, 1w, 1mo"

@@ -486,6 +486,55 @@ def test_coverage_1w_uses_weekly_threshold(repo: BarRepository) -> None:
     assert cov.gaps == [(datetime(2026, 2, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC))]
 
 
+# -- Plan 0050 phase 4.5: monthly is variable-duration; the gap threshold is tight --
+
+
+def _monthly_first_of_month(year_start: int, n_months: int) -> list[datetime]:
+    """First-of-month UTC timestamps for `n_months` consecutive months starting at
+    January of `year_start`."""
+    out: list[datetime] = []
+    y, m = year_start, 1
+    for _ in range(n_months):
+        out.append(datetime(y, m, 1, tzinfo=UTC))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return out
+
+
+def test_coverage_1mo_no_false_gap_across_a_full_year_including_february(
+    repo: BarRepository,
+) -> None:
+    # 1mo threshold = 1.5 * 31d = ~46.5d. Every month-to-month step is 28-31d
+    # (< 46.5d), INCLUDING the 28-day February steps — so a fully-present 24-month
+    # span reports NO gaps. Under the old 10x tolerance this was 310d (also no
+    # false gap), but the tight bound is what lets the NEXT test flag a real hole.
+    months = _monthly_first_of_month(2025, 24)  # spans Feb 2025 and Feb 2026
+    repo.upsert_bars([_tf_bar("1mo", ts) for ts in months])
+    provider = DefaultMarketDataProvider(bar_repository=repo)
+
+    cov = provider.coverage("AAPL", "1mo", months[0], months[-1])
+
+    assert cov.gaps == []
+
+
+def test_coverage_1mo_flags_a_single_omitted_month(repo: BarRepository) -> None:
+    # Drop one interior month (April 2025): the surrounding bars are then ~59-61d
+    # apart (Mar 1 -> May 1 = 61d), which exceeds the ~46.5d threshold and is
+    # flagged. The old 310d tolerance would have masked it entirely — this is the
+    # bug ADR-0047's tight-bound reading fixes.
+    months = _monthly_first_of_month(2025, 24)
+    omitted = datetime(2025, 4, 1, tzinfo=UTC)
+    kept = [ts for ts in months if ts != omitted]
+    repo.upsert_bars([_tf_bar("1mo", ts) for ts in kept])
+    provider = DefaultMarketDataProvider(bar_repository=repo)
+
+    cov = provider.coverage("AAPL", "1mo", months[0], months[-1])
+
+    assert cov.gaps == [(datetime(2025, 3, 1, tzinfo=UTC), datetime(2025, 5, 1, tzinfo=UTC))]
+
+
 # -- Plan 0025 phase 2: 4h is derived on read from a single 1h fetch ----------
 
 
