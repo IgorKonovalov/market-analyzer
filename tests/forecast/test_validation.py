@@ -22,7 +22,7 @@ import pytest
 from market_analyser.backtest.walk_forward import fold_bounds
 from market_analyser.data.types import Bar
 from market_analyser.forecast.features import FeatureRow, build_feature_rows
-from market_analyser.forecast.labels import LabelParams, build_labels
+from market_analyser.forecast.labels import Direction, LabelParams, build_labels
 from market_analyser.forecast.model import align_samples, predict_proba, train
 from market_analyser.forecast.validation import (
     ForecastValidationError,
@@ -154,10 +154,15 @@ def test_validate_purges_train_labels_by_horizon(monkeypatch: pytest.MonkeyPatch
     bars = synthetic_bars(400)
     n_splits = 5
 
-    real_align = val.align_samples
+    # Capture the real implementation from its definition site (forecast.model);
+    # `validate` imports the same object, so monkeypatching `val.align_samples`
+    # below still intercepts the calls `validate` makes.
+    real_align = align_samples
     captured: list[list[FeatureRow]] = []
 
-    def _spy(rows: list, labels: list) -> tuple[list, list]:
+    def _spy(
+        rows: list[FeatureRow | None], labels: list[Direction | None]
+    ) -> tuple[list[FeatureRow], list[Direction]]:
         kept_rows, kept_labels = real_align(rows, labels)
         captured.append(kept_rows)
         return kept_rows, kept_labels
