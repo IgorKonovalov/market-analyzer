@@ -34,10 +34,13 @@ from market_analyser.data.types import Quote
 
 _YF_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
 
-# Quotes are live: a short TTL collapses a burst of "what's X trading at" calls
-# into one upstream hit without serving a stale price. Distinct from the OHLCV
-# client (store-less — bars are cached cross-session in SQLite).
-_CACHE_TTL_SECONDS = 30.0
+# Quotes are live: a short TTL collapses a burst of near-simultaneous "what's X
+# trading at" calls into one upstream hit. Kept BELOW the renderer's 10s quote
+# poll (useQuotePoll QUOTE_POLL_INTERVAL_MS) so the live price header refreshes
+# each poll instead of freezing for the cache window — a 30s TTL made the live
+# price (e.g. BTC-USD) look static. Distinct from the OHLCV client (store-less —
+# bars are cached cross-session in SQLite).
+_CACHE_TTL_SECONDS = 5.0
 _REQUEST_TIMEOUT_SECONDS = 15.0
 _SOURCE = "yahoo"
 

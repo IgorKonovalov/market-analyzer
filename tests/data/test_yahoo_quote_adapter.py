@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from market_analyser.data._http import HttpResponse, ResilientHttpClient
-from market_analyser.data.adapters.yahoo_quote import YahooQuoteAdapter
+from market_analyser.data.adapters.yahoo_quote import _CACHE_TTL_SECONDS, YahooQuoteAdapter
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.errors import (
     RateLimitedError,
@@ -174,3 +174,43 @@ def test_provider_get_quote_rejects_as_of() -> None:
     provider = DefaultMarketDataProvider(yahoo_quote=_adapter_for("yahoo_quote_aapl.json"))
     with pytest.raises(ValueError, match="as_of"):
         provider.get_quote("AAPL", as_of=datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_quote_cache_collapses_bursts_but_refreshes_after_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The quote cache collapses a burst of near-simultaneous calls into ONE
+    upstream hit, but re-fetches once the TTL has elapsed. Built on the adapter's
+    real default client so it exercises the production TTL. A fake monotonic clock
+    makes the expiry deterministic; the transport seam counts physical hits."""
+    adapter = YahooQuoteAdapter()  # default client → production _CACHE_TTL_SECONDS
+    payload = (_FIXTURE_DIR / "yahoo_quote_btc.json").read_bytes()
+    calls = 0
+
+    def counting(method: str, url: str, body: Any, headers: Any, *, proxy: Any) -> HttpResponse:
+        nonlocal calls
+        calls += 1
+        return HttpResponse(status_code=200, headers={}, body=payload, elapsed_seconds=0.0)
+
+    adapter._client._perform_request = counting  # type: ignore[method-assign]
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("market_analyser.data._http.time.monotonic", lambda: clock["t"])
+
+    adapter.get_quote("BTC-USD")
+    assert calls == 1
+    # A second call within the TTL is served from cache (burst collapse).
+    clock["t"] += _CACHE_TTL_SECONDS / 2
+    adapter.get_quote("BTC-USD")
+    assert calls == 1
+    # Once the TTL has elapsed, the next poll re-fetches a fresh price.
+    clock["t"] += _CACHE_TTL_SECONDS
+    adapter.get_quote("BTC-USD")
+    assert calls == 2
+
+
+def test_quote_cache_ttl_stays_under_renderer_poll_cadence() -> None:
+    """Regression guard for the BTC-looks-static bug: the quote TTL must stay below
+    the renderer's 10s quote poll (useQuotePoll QUOTE_POLL_INTERVAL_MS = 10_000) so
+    the live header tracks the quote instead of a multi-poll-stale cached value."""
+    assert _CACHE_TTL_SECONDS < 10.0
