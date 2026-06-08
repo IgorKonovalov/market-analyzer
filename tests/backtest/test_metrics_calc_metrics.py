@@ -26,6 +26,7 @@ from market_analyser.backtest import (
     UnknownTimeframeError,
     _calc_metrics,
 )
+from market_analyser.backtest.metrics import _TIMEFRAME_BARS_PER_YEAR
 
 
 def _curve(equities: Sequence[float]) -> list[EquityPoint]:
@@ -121,6 +122,64 @@ def test_unknown_timeframe_raises() -> None:
             timeframe="5m",
         )
     assert "5m" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("timeframe", "expected_bars_per_year"),
+    [
+        ("15m", 252 * 24 * 4),  # 24192
+        ("1h", 252 * 24),  # 6048
+        ("4h", 252 * 6),  # 1512
+        ("1d", 252),
+        ("1w", 252 // 7),  # 36
+    ],
+)
+def test_bars_per_year_for_each_supported_timeframe(
+    timeframe: str, expected_bars_per_year: int
+) -> None:
+    """Every data-layer timeframe annualizes on the 252-day/24h basis (Plan 0050 ph1)."""
+    assert _TIMEFRAME_BARS_PER_YEAR[timeframe] == expected_bars_per_year
+
+
+def test_metrics_table_keys_match_data_registry() -> None:
+    """The annualization table covers exactly the supported timeframe set, no more."""
+    from market_analyser.data.timeframes import registry_timeframes
+
+    assert set(_TIMEFRAME_BARS_PER_YEAR) == set(registry_timeframes())
+
+
+def test_added_timeframes_annualize_finite_and_correctly_scaled() -> None:
+    """A 4h and a 1w run return finite Sharpe, scaled by sqrt(bars_per_year).
+
+    Same equity curve under two timeframes differs only by the annualization
+    factor, so the Sharpe ratio between them is sqrt(bpy_a / bpy_b) — this pins
+    'correctly-scaled' rather than merely 'finite, no UnknownTimeframeError'.
+    """
+    curve = _curve([10_000.0, 10_500.0, 11_000.0, 10_500.0, 11_000.0])
+
+    sharpe_1d = _calc_metrics(
+        trades=[], equity_curve=curve, initial_capital=10_000.0, timeframe="1d"
+    ).sharpe
+    sharpe_4h = _calc_metrics(
+        trades=[], equity_curve=curve, initial_capital=10_000.0, timeframe="4h"
+    ).sharpe
+    sharpe_1w = _calc_metrics(
+        trades=[], equity_curve=curve, initial_capital=10_000.0, timeframe="1w"
+    ).sharpe
+
+    for sharpe in (sharpe_4h, sharpe_1w):
+        assert math.isfinite(sharpe)
+
+    assert isclose(
+        sharpe_4h / sharpe_1d,
+        math.sqrt((252 * 6) / 252),
+        rel_tol=1e-9,
+    )
+    assert isclose(
+        sharpe_1w / sharpe_1d,
+        math.sqrt((252 // 7) / 252),
+        rel_tol=1e-9,
+    )
 
 
 def test_dangling_trade_does_not_count_toward_win_rate() -> None:

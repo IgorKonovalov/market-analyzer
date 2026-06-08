@@ -6,9 +6,10 @@ module-level state, no wall-clock reads, no unseeded randomness. The
 identical inputs.
 
 Sharpe annualization uses `_TIMEFRAME_BARS_PER_YEAR`, a hand-maintained
-dict. Adding a timeframe (e.g. `4h`) means appending to the dict; unknown
-timeframes raise rather than silently picking a wrong factor — the engine
-does not guess annualization.
+dict whose keys equal the data layer's `SUPPORTED_TIMEFRAMES`
+(`15m/1h/4h/1d/1w`). Adding a timeframe means appending to the dict;
+unknown timeframes raise rather than silently picking a wrong factor — the
+engine does not guess annualization.
 
 Long-only, fixed-fraction-at-100% sizing per
 [ADR-0018](../../../docs/architecture/adrs/0018-backtest-result-schema.md):
@@ -27,10 +28,19 @@ from market_analyser.backtest.result import BacktestMetrics, EquityPoint
 from market_analyser.backtest.types import Trade
 from market_analyser.data.types import Bar
 
+# Bars per year on the existing annualization basis: 252 trading days/year,
+# 24 hours/day. Every value is `252 * 24 * 60 / (minutes per bar)`, so the set
+# is internally consistent and re-derives uniformly:
+#   15m = 252*24*4, 1h = 252*24, 4h = 252*6, 1d = 252, 1w = 252/7.
+# Weekly is 252/7 = 36 (not the textbook 52) to stay consistent with this
+# table's own 7-day-week / 24h-day basis. Keys equal the data-layer
+# `SUPPORTED_TIMEFRAMES`; unknown timeframes raise rather than guess a factor.
 _TIMEFRAME_BARS_PER_YEAR: dict[str, int] = {
-    "1d": 252,
+    "15m": 252 * 24 * 4,
     "1h": 252 * 24,
-    "1m": 252 * 24 * 60,
+    "4h": 252 * 6,
+    "1d": 252,
+    "1w": 252 // 7,
 }
 
 
