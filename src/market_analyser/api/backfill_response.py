@@ -18,9 +18,18 @@ from market_analyser.events import GapWindow
 
 class GetOhlcvResponse(BaseModel):
     """`get_ohlcv` result. `partial_reason` is `None` on full success; a typed
-    failure reason when some gaps could not be fetched; or
-    `"backfill_async_pending"` when `backfill_async=true` scheduled a background
-    fetch and returned whatever was already cached."""
+    failure reason when some gaps could not be fetched; `"backfill_async_pending"`
+    when `backfill_async=true` scheduled a background fetch and returned whatever
+    was already cached; or `"too_large"` (ADR-0046) when the window holds more
+    bars than fit in one inline page and `bars` is a bounded slice of the whole.
+
+    `total_available`/`offset`/`returned` describe the paging window over the
+    full cached series: `total_available` is the bar count of the *whole* window
+    (never shrunk by paging — the cache itself always holds the full window),
+    `offset` echoes the requested page start, and `returned` is `len(bars)` in
+    this page. When `offset + returned < total_available` there are more bars to
+    page (`partial_reason="too_large"` unless a fetch-failure reason already
+    occupies the field, in which case `message` carries the paging hint)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -32,10 +41,14 @@ class GetOhlcvResponse(BaseModel):
             "unknown_symbol",
             "history_exceeded",
             "backfill_async_pending",
+            "too_large",
         ]
         | None
     ) = None
     message: str | None = None
+    total_available: int = 0
+    offset: int = 0
+    returned: int = 0
 
 
 class BackfillOhlcvResponse(BaseModel):
