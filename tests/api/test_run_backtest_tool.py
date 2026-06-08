@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import socket
 import threading
 import time
@@ -447,14 +448,18 @@ def test_invalid_params_returns_mcp_error_from_strategy_boundary(
     assert "period" in message.lower()
 
 
-def test_unknown_timeframe_returns_mcp_error_at_boundary(live_server: str, mcp_secret: str) -> None:
-    """timeframe='5m' is not in Literal['1d','1h','1m'] — pydantic rejects
-    at the MCP boundary."""
+@pytest.mark.parametrize("timeframe", ["5m", "1m"])
+def test_unsupported_timeframe_returns_mcp_error_at_boundary(
+    live_server: str, mcp_secret: str, timeframe: str
+) -> None:
+    """An unsupported timeframe is rejected at the MCP boundary by the
+    BACKTEST_TIMEFRAME enum. `1m` is in the set explicitly: it used to be allowed
+    (Plan 0050 phase 4 drops it — there is no 1-minute data timeframe)."""
 
     async def _run() -> bool:
         async with _mcp_session(live_server, mcp_secret) as session:
             params = _params_default()
-            params["timeframe"] = "5m"
+            params["timeframe"] = timeframe
             try:
                 result = await session.call_tool("run_backtest", params)
             except Exception:
@@ -462,7 +467,41 @@ def test_unknown_timeframe_returns_mcp_error_at_boundary(live_server: str, mcp_s
             return bool(result.isError)
 
     errored = asyncio.run(_run())
-    assert errored, "timeframe='5m' must surface an MCP error"
+    assert errored, f"timeframe={timeframe!r} must surface an MCP error"
+
+
+def test_4h_timeframe_runs_end_to_end_with_finite_metrics(
+    live_server: str, mcp_secret: str
+) -> None:
+    """A backtest on a Plan-0025 timeframe (`4h`) runs end-to-end and returns
+    finite metrics — the metrics table now annualizes it (Plan 0050 phase 1)."""
+
+    async def _run() -> dict[str, object]:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            params = _params_default()
+            params["timeframe"] = "4h"
+            result = await session.call_tool("run_backtest", params)
+            assert not result.isError, f"4h run errored: {result.content}"
+            assert result.structuredContent is not None
+            return dict(result.structuredContent)
+
+    payload = asyncio.run(_run())
+    summary = payload["summary"]
+    assert isinstance(summary, dict)
+    assert math.isfinite(float(summary["sharpe"]))  # type: ignore[arg-type]
+    assert math.isfinite(float(summary["total_return"]))  # type: ignore[arg-type]
+
+
+def test_backtest_timeframe_enum_matches_data_registry() -> None:
+    """The backtest tools' accepted timeframe set equals the data registry's
+    SUPPORTED_TIMEFRAMES, so the two cannot drift (Plan 0050 phase 4). All three
+    tools share the BACKTEST_TIMEFRAME alias, so this one assertion guards them."""
+    from typing import get_args
+
+    from market_analyser.annotations.types import SUPPORTED_TIMEFRAMES
+    from market_analyser.api.mcp_tools.run_backtest import BACKTEST_TIMEFRAME
+
+    assert set(get_args(BACKTEST_TIMEFRAME)) == set(SUPPORTED_TIMEFRAMES)
 
 
 def test_determinism_two_identical_calls_produce_identical_persisted_results(

@@ -36,10 +36,12 @@ from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_ordered_range,
 )
+from market_analyser.api.mcp_tools.run_backtest import BACKTEST_TIMEFRAME
 from market_analyser.backtest.engine import run as engine_run
 from market_analyser.backtest.result import BacktestMetrics
 from market_analyser.contracts.strategy import discover
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.data.timeframes import supported_timeframes_label
 
 RankBy = Literal["sharpe", "calmar", "total_return", "sortino"]
 
@@ -51,7 +53,8 @@ COMPARE_STRATEGIES_DESCRIPTION = (
     "reported as null) sort last, ties broken by strategy_id. Each row carries the "
     "strategy id/version and its full metric set (the extended ADR-0024 metrics "
     "included). Costs default to 0 bps / $10k capital. Comparison runs are NOT "
-    "persisted — the leaderboard is the result. Supported timeframes: 1d, 1h, 1m."
+    "persisted — the leaderboard is the result. Supported timeframes: "
+    f"{supported_timeframes_label()}."
 )
 
 
@@ -170,7 +173,7 @@ def register_compare_strategies(server: FastMCP, *, provider: MarketDataProvider
     @server.tool(description=COMPARE_STRATEGIES_DESCRIPTION)
     async def compare_strategies(
         symbol: str,
-        timeframe: Literal["1d", "1h", "1m"],
+        timeframe: BACKTEST_TIMEFRAME,
         range_start: datetime,
         range_end: datetime,
         rank_by: RankBy = "sharpe",

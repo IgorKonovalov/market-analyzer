@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -33,10 +33,12 @@ from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_ordered_range,
 )
+from market_analyser.api.mcp_tools.run_backtest import BACKTEST_TIMEFRAME
 from market_analyser.backtest.walk_forward import walk_forward
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
 from market_analyser.contracts.strategy import discover
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.data.timeframes import supported_timeframes_label
 
 WALK_FORWARD_BACKTEST_DESCRIPTION = (
     "Evaluate one strategy across n_splits rolling out-of-sample folds and return "
@@ -46,7 +48,8 @@ WALK_FORWARD_BACKTEST_DESCRIPTION = (
     "there is no lookahead. This is rolling out-of-sample EVALUATION, not "
     "walk-forward optimization: fixed params per fold, no re-fitting. params "
     "defaults to the strategy's own defaults. Not persisted. n_splits must be "
-    ">=1 and <= the number of bars. Supported timeframes: 1d, 1h, 1m."
+    ">=1 and <= the number of bars. Supported timeframes: "
+    f"{supported_timeframes_label()}."
 )
 
 
@@ -114,7 +117,7 @@ def register_walk_forward_backtest(server: FastMCP, *, provider: MarketDataProvi
     async def walk_forward_backtest(
         strategy_id: str,
         symbol: str,
-        timeframe: Literal["1d", "1h", "1m"],
+        timeframe: BACKTEST_TIMEFRAME,
         range_start: datetime,
         range_end: datetime,
         n_splits: int = 4,
