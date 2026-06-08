@@ -39,6 +39,7 @@ from market_analyser.api.mcp_tools.compare_strategies import register_compare_st
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.forecast import register_forecast
+from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
@@ -173,6 +174,14 @@ def create_mcp_components(
             provider=provider,
             repository=backtest_runs_repository,
             event_bus=event_bus,
+            runs_dir=runs_dir,
+        )
+        # `get_backtest` (Plan 0050 phase 3): the MCP path to a persisted run's
+        # full trades + metrics (equity opt-in/paged). Same disk+index deps as
+        # run_backtest, so it registers in the same conditional block.
+        register_get_backtest(
+            server,
+            repository=backtest_runs_repository,
             runs_dir=runs_dir,
         )
 
