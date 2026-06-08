@@ -38,7 +38,12 @@ from mcp.client.streamable_http import streamable_http_client
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.api.mcp_tools import forecast as forecast_tool
-from market_analyser.api.mcp_tools.forecast import _compute_forecast
+from market_analyser.api.mcp_tools.forecast import (
+    EDGE_MARGIN_THRESHOLD,
+    FORECAST_DESCRIPTION,
+    _classify_edge,
+    _compute_forecast,
+)
 from market_analyser.data.types import (
     Bar,
     MacroContext,
@@ -185,6 +190,129 @@ def test_provenance_lib_versions_are_scikit_learn_only() -> None:
     assert prov.feature_set_id == FEATURE_SET_ID
     assert set(prov.lib_versions) == {"scikit-learn"}  # statsmodels excluded (unused in prediction)
     assert result.as_of_bar_ts == BARS[-1].event_ts
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0050 phase 5: edge_margin + edge_strength qualifier.                    #
+# --------------------------------------------------------------------------- #
+
+
+def _validation(*, skill: float | None, baseline: float | None, beats: bool) -> ForecastValidation:
+    return ForecastValidation(
+        horizon_bars=1,
+        n_splits=5,
+        n_scored=120,
+        skill=skill,
+        baseline_skill=baseline,
+        persistence_skill=baseline,
+        majority_skill=baseline,
+        beats_baseline=beats,
+        folds=[],
+    )
+
+
+def test_classify_edge_splits_clear_marginal_no_edge_and_unscored() -> None:
+    from math import isclose
+
+    # Comfortable beat → clear.
+    margin, strength = _classify_edge(_validation(skill=0.61, baseline=0.40, beats=True))
+    assert strength == "clear"
+    assert isclose(margin or 0.0, 0.21)
+
+    # Thin beat (below threshold) → marginal; the 2026-06-08 incident shape.
+    margin, strength = _classify_edge(_validation(skill=0.490, baseline=0.488, beats=True))
+    assert strength == "marginal"
+    assert isclose(margin or 0.0, 0.002)
+
+    # Exactly at the threshold → clear (>= is the boundary).
+    margin, strength = _classify_edge(
+        _validation(skill=0.40 + EDGE_MARGIN_THRESHOLD, baseline=0.40, beats=True)
+    )
+    assert strength == "clear"
+
+    # No beat → no_edge, but the (non-positive) margin is still reported.
+    margin, strength = _classify_edge(_validation(skill=0.30, baseline=0.40, beats=False))
+    assert strength == "no_edge"
+    assert isclose(margin or 0.0, -0.10)
+
+    # Nothing scored → no_edge with a None margin (nothing to compare).
+    margin, strength = _classify_edge(_validation(skill=None, baseline=None, beats=False))
+    assert strength == "no_edge"
+    assert margin is None
+
+
+def test_marginal_beat_ships_probabilities_labelled_marginal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from math import isclose
+
+    monkeypatch.setattr(
+        forecast_tool,
+        "validate",
+        lambda bars, **kw: _validation(skill=0.490, baseline=0.488, beats=True),
+    )
+    result = _compute_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizon_bars=1,
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+    )
+    # prob_* still ship (it beat baseline) but the edge is flagged thin.
+    assert result.prob_up is not None
+    assert result.edge_strength == "marginal"
+    assert result.edge_margin is not None
+    assert isclose(result.edge_margin, 0.002)
+
+
+def test_clear_beat_labelled_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        forecast_tool,
+        "validate",
+        lambda bars, **kw: _validation(skill=0.61, baseline=0.40, beats=True),
+    )
+    result = _compute_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizon_bars=1,
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+    )
+    assert result.prob_up is not None
+    assert result.edge_strength == "clear"
+
+
+def test_no_edge_labelled_no_edge_with_null_probabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        forecast_tool,
+        "validate",
+        lambda bars, **kw: _validation(skill=0.30, baseline=0.40, beats=False),
+    )
+    result = _compute_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizon_bars=1,
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+    )
+    assert result.prob_up is None  # no-edge path unchanged
+    assert result.edge_strength == "no_edge"
+
+
+def test_description_documents_edge_strength() -> None:
+    assert "edge_strength" in FORECAST_DESCRIPTION
+    assert "edge_margin" in FORECAST_DESCRIPTION
 
 
 # --------------------------------------------------------------------------- #
