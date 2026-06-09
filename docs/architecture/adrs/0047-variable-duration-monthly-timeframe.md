@@ -1,8 +1,8 @@
 # ADR-0047 — Monthly is a native, variable-duration timeframe
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0050 close, 2026-06-09)
 > **Date:** 2026-06-08
-> **Related plan(s):** [0050-agent-surface-fixes](../plans/0050-agent-surface-fixes.md)
+> **Related plan(s):** [0050-agent-surface-fixes](../plans/done/0050-agent-surface-fixes.md)
 > **Related:** [ADR-0028](0028-timeframe-resampling-and-expansion.md) (the canonical timeframe registry this extends), [ADR-0007](0007-market-data-provider.md) (bars flow through the Provider), [ADR-0009](0009-rewrite-data-layer-in-house.md) (we own the data/resampling layer)
 
 ## Context

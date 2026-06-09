@@ -1,8 +1,8 @@
 # ADR-0046 — MCP large-result delivery: bounded pages, not unbounded dumps
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0050 close, 2026-06-09)
 > **Date:** 2026-06-08
-> **Related plan(s):** [0050-agent-surface-fixes](../plans/0050-agent-surface-fixes.md)
+> **Related plan(s):** [0050-agent-surface-fixes](../plans/done/0050-agent-surface-fixes.md)
 > **Related:** [ADR-0014](0014-mcp-as-second-sidecar-protocol.md) (MCP is the agent control surface), [ADR-0015](0015-claude-code-primary-control-surface.md) (the agent reads tool output into a finite context window), [ADR-0018](0018-backtest-result-schema.md) (the `BacktestResult` whose trades/equity this governs), [ADR-0013 §0013 cache-honest shape](../plans/done/0013-auto-backfill-on-cache-miss.md) (the `{bars, partial_reason, message}` precedent this extends)
 
 ## Context

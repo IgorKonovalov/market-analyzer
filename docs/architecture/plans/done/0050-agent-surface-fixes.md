@@ -1,7 +1,8 @@
 # 0050 — Agent-surface fixes: backtest fetch, OHLCV paging, monthly timeframe, forecast honesty, RSI stop
 
-> **Status:** approved
+> **Status:** done (closed 2026-06-09)
 > **Created:** 2026-06-08
+> **Close note:** All eight phases landed on `main` (`18fc3a4`→`41fc9d9`), no implementation branch. Clean Mode 4 — no blockers, no majors; every named test file read at the assertion level (bars-per-year calendar values + sqrt-scaled 4h/1w Sharpe; `get_ohlcv` cap=400 with fetch-before-slice + whole-window-cached proof + char-budget pin; `get_backtest` default-no-equity / paged-equity-`too_large` / typed not-found; the three backtest tools' shared `BACKTEST_TIMEFRAME` cross-checked against `_TIMEFRAME_BARS_PER_YEAR` ⊆ `SUPPORTED_TIMEFRAMES`; `1mo` registry row + `1.5×bar_duration` gap bound with both the no-false-February-gap and omitted-month-flagged cases; `forecast` `edge_margin`=skill−baseline with the 0.490/0.488 incident as the marginal fixture; `rsi_stop` close-fill stop at the breaching bar + wide-stop==plain-rsi + truncation-invariance no-lookahead guard; renderer `1mo` parity + month/year tick formatter). 127 phase-touched Python specs + 32 renderer specs green at close. **ADR-0046 + ADR-0047 accepted.** Two non-blocking test-coverage follow-ups carried below.
 > **Owner skill(s):** backtester, dev, strategy-author, ui-builder (one contiguous run each, in that order)
 > **Related ADRs:** [0046](../adrs/0046-mcp-large-result-delivery.md) (MCP large-result paging — accepts at this plan's close), [0047](../adrs/0047-variable-duration-monthly-timeframe.md) (monthly timeframe — accepts at close), [0018](../adrs/0018-backtest-result-schema.md) (BacktestResult), [0024](../adrs/0024-extended-backtest-metrics.md) (metrics annualization), [0028](../adrs/0028-timeframe-resampling-and-expansion.md) (timeframe registry), [0030](../adrs/0030-forecasting-subsystem.md) (forecast honest-uncertainty invariant), [0004](../adrs/0004-strategy-interface.md) (strategy contract)
 
@@ -161,4 +162,5 @@ edge_strength: Literal["marginal", "clear"]  # by a named threshold; "no-edge" s
 
 ## Followups (after this lands)
 
-- (none yet — fill as implementation surfaces them)
+- **(phase 7, `ui-builder`) `monthlyTickMarkFormatter` is untested.** The one genuinely `1mo`-specific piece of logic — `CandlestickChart.tsx:228`, the month/year axis ticks that satisfy the phase's "no duplicated day labels" done-when — has zero unit coverage. Add a unit test calling it with a known timestamp under `TickMarkType.Year` (→ `"2025"`) and a month tick (→ `"Jan"`). Minor; behavior is correct, the assertion is just missing.
+- **(phase 3, `dev`) `get_backtest` registration assertion is siloed.** The `assert "get_backtest" in names` check lives only in `tests/api/test_get_backtest_tool.py`, not in the comprehensive `tests/api/test_mcp_tools.py` alongside `scan_patterns`/`forecast`. The tool is registered and the live-transport check is real (not a stub) — this is test-organization only. Add one line to the central toolset test so a future wiring regression fails in the obvious place. (Overlaps the standing 0028-audit "no safety-net test that every MCP tool is registered" item — fixing that subsumes this.)
