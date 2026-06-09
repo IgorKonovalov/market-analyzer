@@ -1,6 +1,6 @@
 # 0056 — Binance derivatives data: funding rate + open interest
 
-> **Status:** draft
+> **Status:** approved (2026-06-09)
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0052](../adrs/0052-binance-exchange-data-source.md) (the venue decision; the derivatives half lands here), [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (storage), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (HTTP resilience)

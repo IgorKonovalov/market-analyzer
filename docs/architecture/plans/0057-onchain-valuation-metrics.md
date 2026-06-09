@@ -1,6 +1,6 @@
 # 0057 — On-chain valuation metrics: MVRV, SOPR, realized cap
 
-> **Status:** draft
+> **Status:** approved (2026-06-09)
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0053](../adrs/0053-onchain-valuation-source.md) (implements; accepts at close), [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (storage), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md)

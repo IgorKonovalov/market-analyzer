@@ -1,6 +1,6 @@
 # 0059 — Forecast feature-set v2: exogenous crypto features + multi-horizon
 
-> **Status:** draft
+> **Status:** approved (2026-06-09)
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, backtester
 > **Related ADRs:** [ADR-0054](../adrs/0054-exogenous-forecast-features-multi-horizon.md) (implements; accepts at close), [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (the `as_of` join it consumes), [ADR-0030](0030-forecasting-subsystem.md) / [ADR-0040](../adrs/0040-forecasting-model-artifacts.md) (invariants + versioning that carry over)

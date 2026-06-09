@@ -1,6 +1,6 @@
 # 0060 — Watchlist alerting loop
 
-> **Status:** draft
+> **Status:** approved (2026-06-09)
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, ui-builder
 > **Related ADRs:** [ADR-0055](../adrs/0055-in-sidecar-watch-scheduler.md) (implements; accepts at close), [ADR-0016](../adrs/0016-standalone-sidecar-mode.md), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md), [ADR-0021](../adrs/0021-renderer-to-agent-feedback.md), [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the boundary alerts must not cross)
