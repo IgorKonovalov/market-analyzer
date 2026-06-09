@@ -1,6 +1,6 @@
 # 0051 — First-class support/resistance levels
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-08
 > **Owner skill(s):** dev
 > **Related ADRs:** applies [0023](../adrs/0023-technical-analysis-surface.md) (analysis surface) and [0017](../adrs/0017-live-ui-updates-via-sse.md) (chart events); foundation consumed by [Plan 0052](0052-classical-chart-patterns.md)
