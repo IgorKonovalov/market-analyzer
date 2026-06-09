@@ -1,1 +1,1 @@
-pnpm --filter desktop exec lint-staged && pnpm --filter desktop typecheck && pnpm --filter desktop gen-types:check
+pnpm --filter desktop exec lint-staged && pnpm --filter desktop typecheck && pnpm --filter desktop gen-types:check && uv run ruff format --check
