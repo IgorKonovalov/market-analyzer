@@ -488,8 +488,8 @@ def test_4h_timeframe_runs_end_to_end_with_finite_metrics(
     payload = asyncio.run(_run())
     summary = payload["summary"]
     assert isinstance(summary, dict)
-    assert math.isfinite(float(summary["sharpe"]))  # type: ignore[arg-type]
-    assert math.isfinite(float(summary["total_return"]))  # type: ignore[arg-type]
+    assert math.isfinite(float(summary["sharpe"]))
+    assert math.isfinite(float(summary["total_return"]))
 
 
 def test_backtest_timeframe_enum_is_the_annualizable_registry_subset() -> None:

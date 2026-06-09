@@ -42,12 +42,30 @@ from market_analyser.persistence.secrets import SecretsStore
 # cooldown/pin policy just to verify five 4-byte constants.
 
 _KECCAK_RC = [
-    0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
-    0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
-    0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
-    0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
-    0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
-    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808A,
+    0x8000000080008000,
+    0x000000000000808B,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008A,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000A,
+    0x000000008000808B,
+    0x800000000000008B,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800A,
+    0x800000008000000A,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008,
 ]
 _KECCAK_ROT = [
     [0, 36, 3, 41, 18],
@@ -298,9 +316,7 @@ def test_keccak_helper_matches_known_selectors() -> None:
 
 def test_staked_cl_gauge_chain_decodes_range_and_in_range(tmp_path: Path) -> None:
     adapter = _adapter(tmp_path, _ok_responder(_staked_cl_responses()))
-    detail = adapter.fetch_lp_detail(
-        chain="base", pool_address=_GAUGE, token_id=_STAKED_TOKEN_ID
-    )
+    detail = adapter.fetch_lp_detail(chain="base", pool_address=_GAUGE, token_id=_STAKED_TOKEN_ID)
 
     assert detail.tick_lower == _TICK_LOWER
     assert detail.tick_upper == _TICK_UPPER
@@ -349,9 +365,7 @@ def test_staked_cl_scales_owed_fees_when_present(tmp_path: Path) -> None:
     owed_weth = 30_000_000_000_000_000  # 0.03 WETH (18 dec)
     owed_aero = 5_000_000_000_000_000_000  # 5 AERO (18 dec)
     adapter = _adapter(tmp_path, _ok_responder(_staked_cl_responses(owed_weth, owed_aero)))
-    detail = adapter.fetch_lp_detail(
-        chain="base", pool_address=_GAUGE, token_id=_STAKED_TOKEN_ID
-    )
+    detail = adapter.fetch_lp_detail(chain="base", pool_address=_GAUGE, token_id=_STAKED_TOKEN_ID)
     fees = {t.symbol: t for t in detail.uncollected_fees}
     assert set(fees) == {"WETH", "AERO"}
     assert fees["WETH"].amount == pytest.approx(0.03)

@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from market_analyser.api.backfill_response import GetOhlcvResponse
 from market_analyser.api.mcp_tools.get_ohlcv import (
     MAX_OHLCV_BARS,
     _get_ohlcv_response,
@@ -75,7 +76,9 @@ class _FullWindowProvider:
         return BackfillResult(bars=list(self._bars), partial_reason=None, message=None)
 
 
-def _call(coord: BackfillCoordinator, *, offset: int = 0, max_bars: int | None = None):
+def _call(
+    coord: BackfillCoordinator, *, offset: int = 0, max_bars: int | None = None
+) -> GetOhlcvResponse:
     return asyncio.run(
         _get_ohlcv_response(
             provider=None,  # type: ignore[arg-type]  # sync path uses the coordinator

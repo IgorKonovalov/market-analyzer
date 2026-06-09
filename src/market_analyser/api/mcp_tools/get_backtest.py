@@ -103,9 +103,7 @@ class GetBacktestResponse(BaseModel):
     equity: EquityPage | None = None
 
 
-def _page_equity(
-    curve: list[EquityPoint], *, offset: int, max_points: int | None
-) -> EquityPage:
+def _page_equity(curve: list[EquityPoint], *, offset: int, max_points: int | None) -> EquityPage:
     """Slice the equity curve to one inline page (ADR-0046). `total_available`
     is the full curve length — paging never shrinks the persisted curve."""
     page_size = MAX_EQUITY_POINTS if max_points is None else min(max_points, MAX_EQUITY_POINTS)
@@ -165,9 +163,7 @@ def _get_backtest_response(
         ) from exc
 
     equity = (
-        _page_equity(
-            list(result.equity_curve), offset=equity_offset, max_points=max_equity_points
-        )
+        _page_equity(list(result.equity_curve), offset=equity_offset, max_points=max_equity_points)
         if include_equity
         else None
     )

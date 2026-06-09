@@ -230,9 +230,7 @@ def test_include_equity_under_cap_returns_all_unflagged(
 # --------------------------------------------------------------------------- #
 
 
-def test_unknown_run_id_raises_not_found(
-    repo: BacktestRunsRepository, runs_dir: Path
-) -> None:
+def test_unknown_run_id_raises_not_found(repo: BacktestRunsRepository, runs_dir: Path) -> None:
     with pytest.raises(BacktestNotFoundError) as excinfo:
         _get_backtest_response(
             repository=repo,
@@ -476,9 +474,7 @@ def test_get_backtest_registered_and_returns_trades_over_mcp(
     assert payload["equity"] is None  # opt-in only
 
 
-def test_get_backtest_unknown_run_id_is_error_not_500(
-    live_server: str, mcp_secret: str
-) -> None:
+def test_get_backtest_unknown_run_id_is_error_not_500(live_server: str, mcp_secret: str) -> None:
     async def _run() -> bool:
         async with _mcp_session(live_server, mcp_secret) as session:
             result = await session.call_tool("get_backtest", {"run_id": "nope"})
