@@ -20,7 +20,7 @@ Nine skills under `.claude/skills/`. Each has its own SKILL.md + references. Tru
 | `market-analyst`   | Read-only TradFi analysis → `runs/analysis/`    | Candlestick scans, trend/momentum snapshots, screeners            |
 | `defi-analyst`     | Read-only DeFi analysis → `runs/defi/`          | Pool screens, LP positions, lending health, on-chain audits       |
 | `skill-creator`    | `.claude/skills/`                               | Creating, editing, or measuring skills (meta)                     |
-| `safe-commit`      | The commit ceremony (explicit-path staging, gates, message file) | Any imminent commit — "commit this", "commit the phase"  |
+| `safe-commit`      | The commit ceremony (explicit-path staging, gates, inline PowerShell here-string message) | Any imminent commit — "commit this", "commit the phase"  |
 
 **Hard splits to remember:**
 - **TradFi vs DeFi.** Stocks/indices/futures → `market-analyst`. Pools/LPs/lending → `defi-analyst`. Never both.
