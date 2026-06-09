@@ -154,8 +154,11 @@ def test_backtest_runs_table_has_expected_columns_and_indexes_after_upgrade() ->
 
 
 def test_backtest_runs_migration_is_reversible_single_step() -> None:
-    """`upgrade head -> downgrade -1 -> upgrade head` leaves the schema
-    identical to the first upgrade (Plan 0008 phase 3 done-when §163)."""
+    """`upgrade head -> downgrade below 0003 -> upgrade head` leaves the schema
+    identical to the first upgrade (Plan 0008 phase 3 done-when §163). The
+    downgrade targets the explicit pre-backtest_runs revision because later
+    plans extended the chain past 0003 (Plan 0055), so `-1` no longer lands
+    there."""
     engine = make_engine(":memory:")
     try:
         config = _alembic_config(engine)
@@ -175,10 +178,65 @@ def test_backtest_runs_migration_is_reversible_single_step() -> None:
 
         with engine.begin() as connection:
             config.attributes["connection"] = connection
-            command.downgrade(config, "-1")
+            command.downgrade(config, "0002_annotations_table")
         after_down = snapshot()
         assert "backtest_runs" not in after_down
         assert "annotations" in after_down  # other tables survive
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_second = snapshot()
+        assert head_first == head_second
+    finally:
+        engine.dispose()
+
+
+def test_metric_points_table_has_expected_columns_and_pk_after_upgrade() -> None:
+    """Plan 0055 phase 1: `metric_points` lands at head with the ADR-0051 shape —
+    (series_id, ts, value) and a composite (series_id, ts) primary key."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        inspector = inspect(engine)
+        assert "metric_points" in inspector.get_table_names()
+        columns = {c["name"] for c in inspector.get_columns("metric_points")}
+        assert columns == {"series_id", "ts", "value"}
+        pk = inspector.get_pk_constraint("metric_points")
+        assert pk["constrained_columns"] == ["series_id", "ts"]
+    finally:
+        engine.dispose()
+
+
+def test_metric_points_migration_is_reversible_single_step() -> None:
+    """`upgrade head -> downgrade -1 -> upgrade head` removes and restores
+    `metric_points` without disturbing the rest of the schema."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+
+        def snapshot() -> dict[str, set[str]]:
+            insp = inspect(engine)
+            return {
+                table: {c["name"] for c in insp.get_columns(table)}
+                for table in insp.get_table_names()
+            }
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_first = snapshot()
+        assert "metric_points" in head_first
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "-1")
+        after_down = snapshot()
+        assert "metric_points" not in after_down
+        assert "backtest_runs" in after_down  # other tables survive
 
         with engine.begin() as connection:
             config.attributes["connection"] = connection

@@ -28,6 +28,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from market_analyser.data.metric_series import MetricPoint
 from market_analyser.data.types import (
     Bar,
     MarketSentimentSample,
@@ -175,3 +176,23 @@ class LpPositionDetailSource(Protocol):
         A one-hop-only source returns `None`; the enrichment step calls this only
         for Uni-v3-class positions, then passes the id to `fetch_lp_detail`."""
         ...
+
+
+@runtime_checkable
+class MetricSeriesSource(Protocol):
+    """A source of historized scalar metric points for one or more registered
+    series ids (ADR-0051). Sources that expose history implement a real backfill
+    here; snapshot-only sources (e.g. CoinGecko dominance) accrue instead by
+    appending the current value at poll time and need not implement this.
+
+    `start` / `end` are UTC epoch seconds (the `MetricPoint.ts` currency),
+    inclusive on both ends. The returned points are sorted by `ts` ascending and
+    carry only registered series ids — the repository re-checks registration at
+    its own boundary, but a conforming source never produces an orphan id."""
+
+    def fetch_series(
+        self,
+        series_id: str,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> Sequence[MetricPoint]: ...
