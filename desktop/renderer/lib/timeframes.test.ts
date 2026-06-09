@@ -15,7 +15,13 @@ import {
 
 describe('timeframe vocabulary', () => {
   it('is exactly the backend-supported set, cadence-ascending', () => {
-    expect([...TIMEFRAMES]).toEqual(['15m', '1h', '4h', '1d', '1w'])
+    expect([...TIMEFRAMES]).toEqual(['15m', '1h', '4h', '1d', '1w', '1mo'])
+  })
+
+  it('includes the native monthly timeframe (Plan 0050 phase 7 / phase 4.5)', () => {
+    expect(TIMEFRAMES).toContain('1mo')
+    expect(KNOWN_TIMEFRAMES.has('1mo')).toBe(true)
+    expect(isTimeframe('1mo')).toBe(true)
   })
 
   it('drops the unfetchable cadences that used to leak into the dropdown', () => {
@@ -47,6 +53,7 @@ describe('timeframe vocabulary', () => {
     expect(timeframeDurationMs('4h')).toBe(4 * 60 * 60_000)
     expect(timeframeDurationMs('1d')).toBe(24 * 60 * 60_000)
     expect(timeframeDurationMs('1w')).toBe(7 * 24 * 60 * 60_000)
+    expect(timeframeDurationMs('1mo')).toBe(31 * 24 * 60 * 60_000)
     expect(timeframeDurationMs('5m')).toBeNull()
     expect(timeframeDurationMs(undefined)).toBeNull()
   })

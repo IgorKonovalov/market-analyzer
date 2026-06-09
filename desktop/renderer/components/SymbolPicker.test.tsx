@@ -146,12 +146,12 @@ it('dismisses the dropdown on Escape', async () => {
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
 })
 
-it('renders exactly the backend-supported timeframes (15m/1h/4h/1d/1w), not 5m/1m', () => {
+it('renders exactly the backend-supported timeframes (15m/1h/4h/1d/1w/1mo), not 5m/1m', () => {
   renderPicker()
   const select = screen.getByLabelText('Timeframe')
   const optionValues = Array.from(select.querySelectorAll('option')).map((o) => o.value)
   // Canonical set, cadence-ascending — sourced from lib/timeframes.
-  expect(optionValues).toEqual(['15m', '1h', '4h', '1d', '1w'])
+  expect(optionValues).toEqual(['15m', '1h', '4h', '1d', '1w', '1mo'])
   // The previously-offered-but-unfetchable cadences are gone.
   expect(optionValues).not.toContain('5m')
   expect(optionValues).not.toContain('1m')

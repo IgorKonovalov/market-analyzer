@@ -22,7 +22,7 @@
  * regression that loses a series cannot pass.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ColorType, createChart } from 'lightweight-charts'
+import { ColorType, TickMarkType, createChart } from 'lightweight-charts'
 import type {
   IChartApi,
   ISeriesApi,
@@ -223,6 +223,20 @@ function formatRangeLabel(startIso: string, endIso: string): string {
     return time === '00:00' ? date : `${date} ${time}`
   }
   return `${fmt(startIso)} → ${fmt(endIso)}`
+}
+
+/** Axis tick formatter for the monthly (`1mo`) timeframe (Plan 0050 phase 7).
+ * Month-spaced bars must read as month/year, never day-of-month or intraday
+ * labels (which lightweight-charts' default would emit for some zoom levels,
+ * producing repeated "1" day labels). Year boundaries show the year; every other
+ * tick shows the abbreviated month. UTC, matching the bar timestamps. */
+function monthlyTickMarkFormatter(time: Time, tickMarkType: TickMarkType, locale: string): string {
+  const ms = typeof time === 'number' ? time * 1000 : Date.parse(String(time))
+  const date = new Date(ms)
+  if (tickMarkType === TickMarkType.Year) {
+    return String(date.getUTCFullYear())
+  }
+  return date.toLocaleDateString(locale, { month: 'short', timeZone: 'UTC' })
 }
 
 interface OverlayEntry {
@@ -648,6 +662,23 @@ export function CandlestickChart({
       close: quote.price,
     })
   }, [quote, bars, timeframe])
+
+  // Monthly axis ticks (Plan 0050 phase 7): the `1mo` timeframe needs month/year
+  // tick marks, not the day-level labels lightweight-charts' default emits at some
+  // zooms (which read as repeated "1" day numbers on month-spaced bars). Scoped to
+  // `1mo` only — every other timeframe keeps the library default. The chart
+  // unmounts during the loading state on a timeframe change (OhlcvView gates it
+  // behind `!isLoading`), so each timeframe gets a fresh chart and this runs once
+  // per mount; the `else` branch is just belt-and-suspenders if that ever changes.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.applyOptions({
+      timeScale: {
+        tickMarkFormatter: timeframe === '1mo' ? monthlyTickMarkFormatter : undefined,
+      },
+    })
+  }, [timeframe])
 
   // Pointer-gesture state machine + agent-mode POSTs (Plan 0029 phase 1).
   // Called AFTER the chart-creation effect so its gesture effect sees a
