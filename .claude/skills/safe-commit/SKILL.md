@@ -63,6 +63,12 @@ Here-string rules:
 - Use `@'...'@` (single-quoted, literal), **not** `@"..."@` — `$` and backticks stay literal.
 - The closing `'@` must be at **column 0** (no indentation) on its own line, or it's a parse error.
 - It's one bare `git commit` — no `&&`, no `cd` prefix. (The repo's backdate hook wraps `git commit` automatically; don't add date env vars yourself.)
+- **Keep the message body plain ASCII**: straight hyphens (`-`), no em-dashes (`—`), no internal
+  double-quotes (`"`). Even inside a single-quoted here-string these can get split out and reach
+  `git` as separate pathspecs, aborting the commit with `pathspec '...' did not match any file`.
+  (This bit commit `db7f17b` on its first attempt — the body had `—` and `"..."` and git tried to
+  treat each word as a file.) Write `type(scope): subject` plainly; if you need to quote a token,
+  use single quotes or backticks, not `"`.
 
 Conventional-commit format: `type(scope): subject`, blank line, then the body.
 
