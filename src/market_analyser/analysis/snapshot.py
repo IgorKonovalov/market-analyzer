@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from market_analyser.analysis import indicators as ind
+from market_analyser.analysis.levels import swing_pivots
 from market_analyser.analysis.patterns import detect_patterns
 from market_analyser.analysis.types import (
     ConditionSnapshot,
@@ -91,24 +92,18 @@ def _classify_momentum(rsi_val: float | None, macd_hist: float | None) -> Moment
 
 
 def _support_resistance(bars: Sequence[Bar]) -> dict[str, list[float]]:
-    """Trailing swing pivots: a bar `j` is a resistance pivot when its high is the
-    max of the `2*window+1` bars centered on it, and a support pivot when its low
-    is the min. Only pivots with a full window on each side (all bars <= last) are
-    confirmed, so the levels read only `bars[0..=last]` — no lookahead relative to
-    the snapshot's as-of bar."""
+    """Trailing swing-pivot levels, delegating to the public `swing_pivots`
+    primitive (`analysis/levels.py`, Plan 0051). Only pivots with a full window
+    on each side (all bars <= last) are confirmed, so the levels read only
+    `bars[0..=last]` — no lookahead relative to the snapshot's as-of bar. Output
+    is unchanged by the extraction: the most recent `SR_MAX_LEVELS` pivot prices
+    per side, deduplicated and sorted ascending."""
 
-    w = SR_PIVOT_WINDOW
-    n = len(bars)
-    resistances: list[tuple[int, float]] = []
-    supports: list[tuple[int, float]] = []
-    for j in range(w, n - w):
-        neighbours = [*bars[j - w : j], *bars[j + 1 : j + w + 1]]
-        if bars[j].high > max(b.high for b in neighbours):  # strict local max
-            resistances.append((j, bars[j].high))
-        if bars[j].low < min(b.low for b in neighbours):  # strict local min
-            supports.append((j, bars[j].low))
-    recent_res = sorted({p for _, p in resistances[-SR_MAX_LEVELS:]})
-    recent_sup = sorted({p for _, p in supports[-SR_MAX_LEVELS:]})
+    pivots = swing_pivots(bars, left=SR_PIVOT_WINDOW, right=SR_PIVOT_WINDOW)
+    resistances = [p.price for p in pivots if p.kind == "high"]
+    supports = [p.price for p in pivots if p.kind == "low"]
+    recent_res = sorted(set(resistances[-SR_MAX_LEVELS:]))
+    recent_sup = sorted(set(supports[-SR_MAX_LEVELS:]))
     return {"support": recent_sup, "resistance": recent_res}
 
 

@@ -46,6 +46,26 @@ class PatternHit(BaseModel):
     span_bars: int = Field(ge=1, le=3)
 
 
+class Pivot(BaseModel):
+    """A confirmed swing pivot in a bar series (Plan 0051 phase 1).
+
+    A `high` pivot is a bar whose high strictly exceeds the highs of the `left`
+    bars before it and the `right` bars after it (a resistance pivot); a `low`
+    pivot is the mirror on lows (a support pivot). `bar_index` is the bar at
+    which the extreme PRINTED — but the pivot is only *confirmed* (and therefore
+    only returned by `swing_pivots`) once all `right` bars after it exist, so a
+    pivot at bar `j` is first knowable at bar `j + right`. No future bar beyond
+    the series end is ever read (anti-lookahead, ADR-0023).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bar_index: int
+    ts: datetime
+    price: float
+    kind: Literal["high", "low"]  # high -> resistance pivot, low -> support pivot
+
+
 class Trend(StrEnum):
     """Coarse trend classification from the EMA stack + ADX strength."""
 
@@ -220,6 +240,7 @@ __all__ = [
     "MomentumStance",
     "MultiTimeframeAlignment",
     "PatternHit",
+    "Pivot",
     "SmartVolumeHit",
     "TimeframeView",
     "Trend",
