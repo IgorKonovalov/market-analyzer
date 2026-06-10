@@ -196,9 +196,9 @@ def _match_head_shoulders(run: Sequence[Pivot], inverse: bool) -> _Formation | N
     if abs(t1.price - t2.price) / abs(neckline_mean) > NECKLINE_FLATNESS_TOL:
         return None
 
-    head_height = abs(head.price - _line_value(
-        t1.bar_index, t1.price, t2.bar_index, t2.price, head.bar_index
-    ))
+    head_height = abs(
+        head.price - _line_value(t1.bar_index, t1.price, t2.bar_index, t2.price, head.bar_index)
+    )
     return _Formation(
         pattern="inverse_head_shoulders" if inverse else "head_shoulders",
         direction="bullish" if inverse else "bearish",
@@ -266,9 +266,10 @@ def _pivot_matched_formations(pivots: Sequence[Pivot]) -> list[_Formation]:
         if kinds == ("high", "low", "high"):
             if (m := _match_double(triple, bottom=False)) is not None:
                 formations.append(m)
-        elif kinds == ("low", "high", "low") and (
-            m := _match_double(triple, bottom=True)
-        ) is not None:
+        elif (
+            kinds == ("low", "high", "low")
+            and (m := _match_double(triple, bottom=True)) is not None
+        ):
             formations.append(m)
     for i in range(len(pivots) - 4):
         run = pivots[i : i + 5]
@@ -276,9 +277,10 @@ def _pivot_matched_formations(pivots: Sequence[Pivot]) -> list[_Formation]:
         if kinds == ("high", "low", "high", "low", "high"):
             if (m := _match_head_shoulders(run, inverse=False)) is not None:
                 formations.append(m)
-        elif kinds == ("low", "high", "low", "high", "low") and (
-            m := _match_head_shoulders(run, inverse=True)
-        ) is not None:
+        elif (
+            kinds == ("low", "high", "low", "high", "low")
+            and (m := _match_head_shoulders(run, inverse=True)) is not None
+        ):
             formations.append(m)
     return formations
 
@@ -288,9 +290,7 @@ def _pivot_matched_formations(pivots: Sequence[Pivot]) -> list[_Formation]:
 # --------------------------------------------------------------------------- #
 
 
-def _classify_trendlines(
-    upper_rel: float, lower_rel: float
-) -> tuple[str, Direction, int] | None:
+def _classify_trendlines(upper_rel: float, lower_rel: float) -> tuple[str, Direction, int] | None:
     """Classify the two bounding lines by slope: returns
     `(pattern, forming_direction, break_direction)` or None when the slope
     combination matches no pattern (incl. the flat/trending dead zone)."""
@@ -329,9 +329,7 @@ def _trendline_strength(pattern: str, upper_rel: float, lower_rel: float) -> flo
     return min(1.0, (lower_rel - upper_rel) / TRENDLINE_STRENGTH_CONVERGENCE_REF)
 
 
-def _trendline_formation_at(
-    pivots: Sequence[Pivot], eval_bar: int
-) -> _Formation | None:
+def _trendline_formation_at(pivots: Sequence[Pivot], eval_bar: int) -> _Formation | None:
     """Connect-the-extremes at one evaluation bar: take the pivots confirmed by
     `eval_bar` inside the trailing window, anchor the upper line on the two
     highest highs and the lower line on the two lowest lows, classify."""
@@ -339,8 +337,7 @@ def _trendline_formation_at(
     window = [
         p
         for p in pivots
-        if p.bar_index + PIVOT_RIGHT <= eval_bar
-        and p.bar_index >= eval_bar - TRENDLINE_WINDOW_BARS
+        if p.bar_index + PIVOT_RIGHT <= eval_bar and p.bar_index >= eval_bar - TRENDLINE_WINDOW_BARS
     ]
     highs = [p for p in window if p.kind == "high"]
     lows = [p for p in window if p.kind == "low"]
@@ -348,10 +345,12 @@ def _trendline_formation_at(
         return None
     # Two highest highs / two lowest lows; price ties break by bar_index so the
     # anchor choice is deterministic.
-    upper = sorted(sorted(highs, key=lambda p: (-p.price, p.bar_index))[:2],
-                   key=lambda p: p.bar_index)
-    lower = sorted(sorted(lows, key=lambda p: (p.price, p.bar_index))[:2],
-                   key=lambda p: p.bar_index)
+    upper = sorted(
+        sorted(highs, key=lambda p: (-p.price, p.bar_index))[:2], key=lambda p: p.bar_index
+    )
+    lower = sorted(
+        sorted(lows, key=lambda p: (p.price, p.bar_index))[:2], key=lambda p: p.bar_index
+    )
     if upper[0].bar_index == upper[1].bar_index or lower[0].bar_index == lower[1].bar_index:
         return None
     anchors = sorted([*upper, *lower], key=lambda p: (p.bar_index, p.kind))
@@ -431,8 +430,13 @@ def _trendline_formations(pivots: Sequence[Pivot]) -> list[_Formation]:
 # --------------------------------------------------------------------------- #
 
 
-def _hit(formation: _Formation, state: PatternState, bar_index: int,
-         direction: Direction, target: float | None) -> ChartPatternHit:
+def _hit(
+    formation: _Formation,
+    state: PatternState,
+    bar_index: int,
+    direction: Direction,
+    target: float | None,
+) -> ChartPatternHit:
     return ChartPatternHit(
         pattern=formation.pattern,
         state=state,
@@ -539,15 +543,21 @@ def detect_chart_patterns(bars: Sequence[Bar]) -> list[ChartPatternHit]:
     for formation in formations:
         forming_target = _target_at(formation, formation.completion_bar, formation.direction)
         hits.append(
-            _hit(formation, "forming", formation.completion_bar,
-                 formation.direction, forming_target)
+            _hit(
+                formation, "forming", formation.completion_bar, formation.direction, forming_target
+            )
         )
         confirmed = _confirm_or_invalidate(formation, bars, atr_series)
         if confirmed is not None:
             confirm_bar, confirm_direction = confirmed
             hits.append(
-                _hit(formation, "confirmed", confirm_bar, confirm_direction,
-                     _target_at(formation, confirm_bar, confirm_direction))
+                _hit(
+                    formation,
+                    "confirmed",
+                    confirm_bar,
+                    confirm_direction,
+                    _target_at(formation, confirm_bar, confirm_direction),
+                )
             )
     hits.sort(key=lambda h: (h.bar_index, h.pattern, _STATE_ORDER[h.state]))
     return hits

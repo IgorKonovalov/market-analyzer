@@ -80,36 +80,84 @@ def _bars_from_path(anchors: list[tuple[int, float]]) -> list[Bar]:
 # Head & shoulders: peaks 111 @6 / 121 @14 / 111.5 @22 (highs = base + 1),
 # troughs 99 @10 / 100 @18; then a decline through the neckline.
 _HS_ANCHORS = [
-    (0, 100.0), (6, 110.0), (10, 100.0), (14, 120.0), (18, 101.0), (22, 110.5), (35, 78.0),
+    (0, 100.0),
+    (6, 110.0),
+    (10, 100.0),
+    (14, 120.0),
+    (18, 101.0),
+    (22, 110.5),
+    (35, 78.0),
 ]
 # Same formation, but the tail drifts sideways above the neckline forever.
 _HS_NO_BREAK_ANCHORS = [
-    (0, 100.0), (6, 110.0), (10, 100.0), (14, 120.0), (18, 101.0), (22, 110.5), (35, 104.0),
+    (0, 100.0),
+    (6, 110.0),
+    (10, 100.0),
+    (14, 120.0),
+    (18, 101.0),
+    (22, 110.5),
+    (35, 104.0),
 ]
 _INVERSE_HS_ANCHORS = [
-    (0, 120.0), (6, 110.0), (10, 120.0), (14, 100.0), (18, 119.0), (22, 109.5), (35, 142.0),
+    (0, 120.0),
+    (6, 110.0),
+    (10, 120.0),
+    (14, 100.0),
+    (18, 119.0),
+    (22, 109.5),
+    (35, 142.0),
 ]
 _DOUBLE_TOP_ANCHORS = [(0, 100.0), (6, 120.0), (12, 105.0), (18, 119.5), (33, 85.0)]
 _DOUBLE_BOTTOM_ANCHORS = [(0, 120.0), (6, 100.0), (12, 115.0), (18, 100.5), (33, 135.0)]
 # Symmetrical triangle: falling highs 121 @6 / 117 @14, rising lows 99 @10 /
 # 103 @18, then an upside breakout.
 _SYM_TRIANGLE_ANCHORS = [
-    (0, 110.0), (6, 120.0), (10, 100.0), (14, 116.0), (18, 104.0), (24, 110.0), (29, 126.0),
+    (0, 110.0),
+    (6, 120.0),
+    (10, 100.0),
+    (14, 116.0),
+    (18, 104.0),
+    (24, 110.0),
+    (29, 126.0),
 ]
 # Ascending triangle: flat top 111 @6 / 111.04 @14, rising lows 99 @10 / 103 @18.
 _ASC_TRIANGLE_ANCHORS = [
-    (0, 104.0), (6, 110.0), (10, 100.0), (14, 110.04), (18, 104.0), (24, 109.0), (29, 124.0),
+    (0, 104.0),
+    (6, 110.0),
+    (10, 100.0),
+    (14, 110.04),
+    (18, 104.0),
+    (24, 109.0),
+    (29, 124.0),
 ]
 _DESC_TRIANGLE_ANCHORS = [
-    (0, 116.0), (6, 110.0), (10, 120.0), (14, 109.96), (18, 116.0), (24, 111.0), (29, 96.0),
+    (0, 116.0),
+    (6, 110.0),
+    (10, 120.0),
+    (14, 109.96),
+    (18, 116.0),
+    (24, 111.0),
+    (29, 96.0),
 ]
 # Rising wedge: rising highs 111 @6 / 114 @14, faster-rising lows 103 @10 /
 # 110 @18 (converging), then the bearish break.
 _RISING_WEDGE_ANCHORS = [
-    (0, 106.0), (6, 110.0), (10, 104.0), (14, 113.0), (18, 111.0), (21, 111.6), (29, 95.6),
+    (0, 106.0),
+    (6, 110.0),
+    (10, 104.0),
+    (14, 113.0),
+    (18, 111.0),
+    (21, 111.6),
+    (29, 95.6),
 ]
 _FALLING_WEDGE_ANCHORS = [
-    (0, 114.0), (6, 110.0), (10, 116.0), (14, 107.0), (18, 109.0), (21, 108.4), (29, 124.4),
+    (0, 114.0),
+    (6, 110.0),
+    (10, 116.0),
+    (14, 107.0),
+    (18, 109.0),
+    (21, 108.4),
+    (29, 124.4),
 ]
 
 _ALL_FIXTURES: dict[str, list[tuple[int, float]]] = {
@@ -281,10 +329,7 @@ def test_hs_never_breaking_fixture_never_confirms() -> None:
     assert any(h.state == "forming" for h in hits)
     assert all(h.state != "confirmed" for h in hits)
     for k in range(len(bars)):
-        assert all(
-            h.state != "confirmed"
-            for h in _hits_for(bars[: k + 1], "head_shoulders")
-        )
+        assert all(h.state != "confirmed" for h in _hits_for(bars[: k + 1], "head_shoulders"))
 
 
 # --------------------------------------------------------------------------- #
@@ -375,7 +420,13 @@ def test_asymmetric_shoulders_do_not_fire() -> None:
     tolerance — no head_shoulders hit in any state."""
 
     anchors = [
-        (0, 100.0), (6, 110.0), (10, 100.0), (14, 120.0), (18, 101.0), (22, 103.0), (29, 92.0),
+        (0, 100.0),
+        (6, 110.0),
+        (10, 100.0),
+        (14, 120.0),
+        (18, 101.0),
+        (22, 103.0),
+        (29, 92.0),
     ]
     assert _hits_for(_bars_from_path(anchors), "head_shoulders") == []
 

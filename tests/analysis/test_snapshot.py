@@ -197,7 +197,13 @@ def _hs_bars() -> list[Bar]:
     100 @18, then a decline through the neckline (confirms at bar 27)."""
 
     anchors = [
-        (0, 100.0), (6, 110.0), (10, 100.0), (14, 120.0), (18, 101.0), (22, 110.5), (35, 78.0),
+        (0, 100.0),
+        (6, 110.0),
+        (10, 100.0),
+        (14, 120.0),
+        (18, 101.0),
+        (22, 110.5),
+        (35, 78.0),
     ]
     bases: list[float] = []
     for i in range(anchors[-1][0] + 1):
@@ -227,9 +233,7 @@ def test_active_patterns_forming_before_the_break() -> None:
     formation as forming — the snapshot read is trailing, no future bar leaks."""
 
     snap = condition_snapshot(_hs_bars()[:27], "1d")
-    assert [(h.pattern, h.state) for h in snap.active_patterns] == [
-        ("head_shoulders", "forming")
-    ]
+    assert [(h.pattern, h.state) for h in snap.active_patterns] == [("head_shoulders", "forming")]
 
 
 def test_active_patterns_empty_on_flat_fixture() -> None:

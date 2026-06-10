@@ -46,7 +46,13 @@ _RANGE_END = datetime(2025, 3, 1, tzinfo=UTC)
 # neckline. Forming completes at bar 25 (right shoulder + PIVOT_RIGHT);
 # the k*ATR break confirms at bar 27.
 _HS_ANCHORS = [
-    (0, 100.0), (6, 110.0), (10, 100.0), (14, 120.0), (18, 101.0), (22, 110.5), (35, 78.0),
+    (0, 100.0),
+    (6, 110.0),
+    (10, 100.0),
+    (14, 120.0),
+    (18, 101.0),
+    (22, 110.5),
+    (35, 78.0),
 ]
 
 
