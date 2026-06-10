@@ -69,6 +69,10 @@ class UnknownMetricSeriesError(ValueError):
 SERIES_FNG_VALUE = "fng.value"
 SERIES_COINGECKO_BTC_DOMINANCE = "coingecko.btc_dominance"
 SERIES_COINGECKO_TOTAL_MCAP_USD = "coingecko.total_mcap_usd"
+SERIES_BINANCE_FUNDING_RATE_BTCUSDT = "binance.funding_rate.BTCUSDT"
+SERIES_BINANCE_FUNDING_RATE_ETHUSDT = "binance.funding_rate.ETHUSDT"
+SERIES_BINANCE_OPEN_INTEREST_BTCUSDT = "binance.open_interest.BTCUSDT"
+SERIES_BINANCE_OPEN_INTEREST_ETHUSDT = "binance.open_interest.ETHUSDT"
 
 # The accrual series have no free historical source (CoinGecko's historical
 # /global is paid-only — Plan 0055 Decision), so they grow by write-through
@@ -79,9 +83,29 @@ _ACCRUAL_CADENCE = (
     "fetch; no free history upstream"
 )
 
+# Binance USDⓈ-M perpetual funding prints (Plan 0056 / ADR-0052): full history
+# since contract launch is backfillable by pagination; majors print every 8h,
+# but cadence is taken from the data, never hardcoded outside display hints.
+_BINANCE_FUNDING_CADENCE = (
+    "8h prints for majors (cadence read from the data, not assumed); full "
+    "history backfillable by pagination since contract launch"
+)
+
+# Binance USDⓈ-M open interest (Plan 0056 phase 3 / ADR-0052): upstream serves
+# only the latest ~1 month (`openInterestHist`), so the series is *recorded* —
+# seeded once from that window, then grown by hour-truncated snapshot accrual
+# (first write in an hour wins). History beyond the seed window is gone forever.
+_BINANCE_OPEN_INTEREST_CADENCE = (
+    "hourly: one-time seed from the ~30-day openInterestHist window, then "
+    "hour-truncated snapshot accrual (first write in an hour wins); no deeper "
+    "history exists upstream"
+)
+
 # The one module-level registry (ADR-0051). Adding an entry here in source is
 # how a plan registers a series — never at runtime. Plan 0055 phase 2 registers
-# `fng.value`; phase 3 the two CoinGecko macro series.
+# `fng.value`; phase 3 the two CoinGecko macro series. Plan 0056 phase 1
+# registers the two Binance funding-rate series; phase 3 the two open-interest
+# series.
 SERIES_REGISTRY: dict[str, MetricSeriesSpec] = {
     SERIES_FNG_VALUE: MetricSeriesSpec(
         series_id=SERIES_FNG_VALUE,
@@ -100,6 +124,44 @@ SERIES_REGISTRY: dict[str, MetricSeriesSpec] = {
         description="Total crypto market capitalization in USD",
         source="coingecko",
         cadence=_ACCRUAL_CADENCE,
+    ),
+    SERIES_BINANCE_FUNDING_RATE_BTCUSDT: MetricSeriesSpec(
+        series_id=SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
+        description=(
+            "Binance USDS-M perpetual funding rate for BTCUSDT, decimal per "
+            "funding interval (e.g. 0.0001 = 1bp); history since 2019-09"
+        ),
+        source="binance-futures",
+        cadence=_BINANCE_FUNDING_CADENCE,
+    ),
+    SERIES_BINANCE_FUNDING_RATE_ETHUSDT: MetricSeriesSpec(
+        series_id=SERIES_BINANCE_FUNDING_RATE_ETHUSDT,
+        description=(
+            "Binance USDS-M perpetual funding rate for ETHUSDT, decimal per "
+            "funding interval (e.g. 0.0001 = 1bp); history since 2019-11"
+        ),
+        source="binance-futures",
+        cadence=_BINANCE_FUNDING_CADENCE,
+    ),
+    SERIES_BINANCE_OPEN_INTEREST_BTCUSDT: MetricSeriesSpec(
+        series_id=SERIES_BINANCE_OPEN_INTEREST_BTCUSDT,
+        description=(
+            "Binance USDS-M perpetual open interest for BTCUSDT, in base-asset "
+            "units (BTC); recorded from deployment, seeded by the ~30-day "
+            "upstream window"
+        ),
+        source="binance-futures",
+        cadence=_BINANCE_OPEN_INTEREST_CADENCE,
+    ),
+    SERIES_BINANCE_OPEN_INTEREST_ETHUSDT: MetricSeriesSpec(
+        series_id=SERIES_BINANCE_OPEN_INTEREST_ETHUSDT,
+        description=(
+            "Binance USDS-M perpetual open interest for ETHUSDT, in base-asset "
+            "units (ETH); recorded from deployment, seeded by the ~30-day "
+            "upstream window"
+        ),
+        source="binance-futures",
+        cadence=_BINANCE_OPEN_INTEREST_CADENCE,
     ),
 }
 
@@ -128,6 +190,10 @@ def registered_series() -> tuple[str, ...]:
 
 
 __all__ = [
+    "SERIES_BINANCE_FUNDING_RATE_BTCUSDT",
+    "SERIES_BINANCE_FUNDING_RATE_ETHUSDT",
+    "SERIES_BINANCE_OPEN_INTEREST_BTCUSDT",
+    "SERIES_BINANCE_OPEN_INTEREST_ETHUSDT",
     "SERIES_COINGECKO_BTC_DOMINANCE",
     "SERIES_COINGECKO_TOTAL_MCAP_USD",
     "SERIES_FNG_VALUE",

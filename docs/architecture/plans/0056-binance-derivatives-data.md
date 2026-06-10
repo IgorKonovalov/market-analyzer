@@ -1,6 +1,6 @@
 # 0056 — Binance derivatives data: funding rate + open interest
 
-> **Status:** approved (2026-06-09)
+> **Status:** in-progress
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0052](../adrs/0052-binance-exchange-data-source.md) (the venue decision; the derivatives half lands here), [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (storage), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (HTTP resilience)
@@ -47,6 +47,7 @@ flowchart LR
 - **What:** From the user's actual network: run the funding backfill for BTCUSDT, confirm (or refute) geo access, confirm history depth reaches ~2019, eyeball a few known funding prints. **This phase gates the rest of the plan** — a 451 here stops the line and triggers ADR-0052's fallback decision instead of building further.
 - **Files touched:** none (run artifact under `runs/analysis/` optional).
 - **Done when:** The user reports the backfill completed with first-point date and row count, or reports 451 — either outcome recorded in the plan file as an honesty note.
+- **Honesty note (2026-06-10, phase 2 ran):** No 451 — geo access confirmed; phases 3–4 may proceed. The first run exposed a phase-1 bug: the backfill returned only the latest 200 points (first 2026-04-05) because **Binance treats `startTime=0` as absent** and falls into latest-window mode, which also ignores `limit`. A direct probe (`startTime=1568102400000&limit=5` → prints from 2019-09-10) proved upstream serves full history; fixed forward in `668fd20` (`_HISTORY_START_MS = 1` never-falsy cursor; the fake transport now reproduces the real latest-window quirk so the old bug fails offline too). Re-run after the fix: **7397 points, first at 2019-09-10T08:00:00+00:00** — the expected Sep-2019 contract launch at 3 prints/day.
 
 ### Phase 3 — Open interest: seed + accrual
 - **Owner skill:** `dev`
