@@ -67,16 +67,39 @@ class UnknownMetricSeriesError(ValueError):
 
 
 SERIES_FNG_VALUE = "fng.value"
+SERIES_COINGECKO_BTC_DOMINANCE = "coingecko.btc_dominance"
+SERIES_COINGECKO_TOTAL_MCAP_USD = "coingecko.total_mcap_usd"
+
+# The accrual series have no free historical source (CoinGecko's historical
+# /global is paid-only — Plan 0055 Decision), so they grow by write-through
+# sampling: at most one point per hour, keyed to the snapshot timestamp
+# truncated to the hour. Honest `None`s downstream until they warm up.
+_ACCRUAL_CADENCE = (
+    "accrual-only: hourly-truncated write-through on each successful macro "
+    "fetch; no free history upstream"
+)
 
 # The one module-level registry (ADR-0051). Adding an entry here in source is
 # how a plan registers a series — never at runtime. Plan 0055 phase 2 registers
-# `fng.value`; phase 3 registers the two CoinGecko macro series.
+# `fng.value`; phase 3 the two CoinGecko macro series.
 SERIES_REGISTRY: dict[str, MetricSeriesSpec] = {
     SERIES_FNG_VALUE: MetricSeriesSpec(
         series_id=SERIES_FNG_VALUE,
         description="Crypto Fear & Greed index (0-100), daily since 2018-02-01",
         source="alternative.me-fng",
         cadence="daily; full history backfillable in one keyless call (?limit=0)",
+    ),
+    SERIES_COINGECKO_BTC_DOMINANCE: MetricSeriesSpec(
+        series_id=SERIES_COINGECKO_BTC_DOMINANCE,
+        description="BTC dominance, percent of total crypto market cap (0-100)",
+        source="coingecko",
+        cadence=_ACCRUAL_CADENCE,
+    ),
+    SERIES_COINGECKO_TOTAL_MCAP_USD: MetricSeriesSpec(
+        series_id=SERIES_COINGECKO_TOTAL_MCAP_USD,
+        description="Total crypto market capitalization in USD",
+        source="coingecko",
+        cadence=_ACCRUAL_CADENCE,
     ),
 }
 
@@ -105,6 +128,8 @@ def registered_series() -> tuple[str, ...]:
 
 
 __all__ = [
+    "SERIES_COINGECKO_BTC_DOMINANCE",
+    "SERIES_COINGECKO_TOTAL_MCAP_USD",
     "SERIES_FNG_VALUE",
     "SERIES_REGISTRY",
     "MetricPoint",

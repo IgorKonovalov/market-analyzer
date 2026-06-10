@@ -26,12 +26,23 @@ the typed `UpstreamDataError` taxonomy (429 → rate-limited, else unavailable) 
 callers branch on a reason rather than a raw transport exception. A shape-broken
 2xx payload raises `CoinGeckoError`.
 
+Plan 0055 phase 3 (ADR-0051) adds the accrual side: dominance and total market
+cap have no free historical source (CoinGecko's historical `/global` is
+paid-only), so when a metric store is wired every successful macro fetch
+write-throughs both current values, keyed to the snapshot's UTC timestamp
+truncated to the hour. First write in an hour wins — at most one point per
+series per hour, so growth is bounded and a same-hour re-fetch is a no-op. The
+write-through is best-effort: a storage error is logged and the snapshot is
+still returned (persistence must never break the live read), and a failed
+upstream fetch raises before the accrual step, so nothing is ever fabricated.
+
 Package-internal per ADR-0007: downstream code reaches this through the
 `MarketDataProvider` Protocol, never by importing this class.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -41,7 +52,13 @@ from market_analyser.data.errors import (
     UpstreamDataError,
     UpstreamUnavailableError,
 )
+from market_analyser.data.metric_series import (
+    SERIES_COINGECKO_BTC_DOMINANCE,
+    SERIES_COINGECKO_TOTAL_MCAP_USD,
+    MetricPoint,
+)
 from market_analyser.data.types import CryptoRegime, MacroContext
+from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 
 _GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
 _SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
@@ -51,6 +68,12 @@ _SOURCE = "coingecko"
 # collapses a burst of "give me the crypto picture" calls into one upstream hit
 # per endpoint without ever serving a meaningfully stale read.
 _CACHE_TTL_SECONDS = 60.0
+
+# Accrual bucket width (Plan 0055 phase 3): snapshot timestamps truncate to the
+# hour, so each series grows by at most one point per hour.
+_ACCRUAL_BUCKET_SECONDS = 3600
+
+_logger = logging.getLogger(__name__)
 
 # --- Regime classification thresholds (ADR-0027; pinned here, confirmed at close) ---
 # Total market cap contracting by at least this many percent over 24h is a broad
@@ -97,7 +120,12 @@ class CoinGeckoError(ValueError):
 class CoinGeckoAdapter:
     """Fetches the current crypto macro context from CoinGecko's free public API."""
 
-    def __init__(self, http_client: ResilientHttpClient | None = None) -> None:
+    def __init__(
+        self,
+        http_client: ResilientHttpClient | None = None,
+        *,
+        metric_store: MetricPointsRepository | None = None,
+    ) -> None:
         self._http = (
             http_client
             if http_client is not None
@@ -106,6 +134,7 @@ class CoinGeckoAdapter:
                 cache_ttl_seconds=_CACHE_TTL_SECONDS,
             )
         )
+        self._metric_store = metric_store
 
     def fetch_macro_context(self) -> MacroContext:
         """Return the current crypto macro context.
@@ -113,6 +142,11 @@ class CoinGeckoAdapter:
         Raises a typed `UpstreamDataError` on upstream exhaustion, `CoinGeckoError`
         on a shape-broken payload, and `pydantic.ValidationError` on an
         out-of-range measurement (e.g. dominance outside ``[0, 100]``).
+
+        When a metric store is wired, the successful snapshot also accrues into
+        the `coingecko.btc_dominance` / `coingecko.total_mcap_usd` series, keyed
+        to the snapshot timestamp truncated to the hour (at most one point per
+        series per hour; best-effort — a storage failure is logged, never raised).
         """
         try:
             global_payload = self._http.get(_GLOBAL_URL, expect_json=True).json()
@@ -127,7 +161,35 @@ class CoinGeckoAdapter:
             ).json()
         except ResilientHttpError as err:
             raise _classify_error(err) from err
-        return self._parse(global_payload, price_payload)
+        context = self._parse(global_payload, price_payload)
+        if self._metric_store is not None:
+            self._accrue(self._metric_store, context)
+        return context
+
+    def _accrue(self, store: MetricPointsRepository, context: MacroContext) -> None:
+        """Write-through the snapshot's dominance + total-mcap into the metric
+        store, keyed to the hour bucket of the snapshot's own `as_of` (an
+        upstream-payload timestamp, not a wall-clock read — same inputs, same
+        point). First write in a bucket wins: a later same-hour snapshot with a
+        drifted value is skipped, never a conflict, so the accrual stays
+        idempotent within the hour (Plan 0055 phase 3)."""
+        bucket_ts = (
+            int(context.as_of.timestamp()) // _ACCRUAL_BUCKET_SECONDS * _ACCRUAL_BUCKET_SECONDS
+        )
+        try:
+            for series_id, value in (
+                (SERIES_COINGECKO_BTC_DOMINANCE, context.btc_dominance_pct),
+                (SERIES_COINGECKO_TOTAL_MCAP_USD, context.total_market_cap_usd),
+            ):
+                existing = store.as_of(series_id, bucket_ts)
+                if existing is not None and existing.ts == bucket_ts:
+                    continue
+                store.upsert_points([MetricPoint(series_id=series_id, ts=bucket_ts, value=value)])
+        except Exception:
+            _logger.warning(
+                "coingecko macro accrual write-through failed; returning the snapshot anyway",
+                exc_info=True,
+            )
 
     def _parse(self, global_payload: Any, price_payload: Any) -> MacroContext:
         data = global_payload.get("data") if isinstance(global_payload, dict) else None
