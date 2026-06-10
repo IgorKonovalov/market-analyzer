@@ -66,6 +66,30 @@ class Pivot(BaseModel):
     kind: Literal["high", "low"]  # high -> resistance pivot, low -> support pivot
 
 
+class Level(BaseModel):
+    """A clustered, strength-ranked support/resistance zone (Plan 0051 phase 3).
+
+    `price` is the representative price of the clustered pivot zone (the mean
+    of the clustered pivot prices); `touches` is how many pivots the cluster
+    absorbed; `volume_at_level` is the summed volume-by-price mass inside the
+    zone's price band (the phase-2 profile); `strength` is a 0..1 rank blending
+    touch count and volume-at-level (the documented formula and its named
+    weights live in `analysis/levels.py`). `first_ts`/`last_ts` bound the
+    pivots in the cluster. Conditions only — a level is chart geometry, never
+    a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    price: float
+    role: Literal["support", "resistance"]
+    touches: int
+    volume_at_level: float
+    strength: float
+    first_ts: datetime
+    last_ts: datetime
+
+
 class Trend(StrEnum):
     """Coarse trend classification from the EMA stack + ADX strength."""
 
@@ -237,6 +261,7 @@ class MultiTimeframeAlignment(BaseModel):
 __all__ = [
     "ConditionSnapshot",
     "Direction",
+    "Level",
     "MomentumStance",
     "MultiTimeframeAlignment",
     "PatternHit",

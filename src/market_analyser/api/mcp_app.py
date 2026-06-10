@@ -37,6 +37,7 @@ from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
+from market_analyser.api.mcp_tools.detect_levels import register_detect_levels
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
@@ -126,6 +127,10 @@ def create_mcp_components(
     # Pattern sweep (Plan 0049): detect every pattern in a range and publish them
     # all in one `chart.highlight` event. Derived, not persisted — no repo dep.
     register_scan_patterns(server, provider=provider, event_bus=event_bus)
+    # Support/resistance detection (Plan 0051): compute clustered volume-weighted
+    # levels and auto-draw them as `price_line` overlays in one `chart.show`.
+    # Derived, not persisted — no repo dep.
+    register_detect_levels(server, provider=provider, event_bus=event_bus)
 
     # Live-signal evaluator (Plan 0026): resolves a strategy, fetches fresh bars
     # to now (fetch-on-miss via the coordinator when present, else the plain
