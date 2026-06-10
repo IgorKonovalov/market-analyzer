@@ -1,6 +1,6 @@
 # ADR-0048 — Classical chart-pattern detection (swing-pivot foundation, two-state, trailing)
 
-> **Status:** proposed — accepts at the Plan 0052 close
+> **Status:** accepted (Plan 0052 close, 2026-06-10)
 > **Date:** 2026-06-08
 > **Related plan(s):** 0052-classical-chart-patterns (detection + rendering); foundation extracted in 0051-support-resistance-levels; first traded in 0054-chart-pattern-breakout-strategy
 > **Related ADRs:** amends the scope of [0023](0023-technical-analysis-surface.md) (candlestick-only); mirrors [0045](0045-candlestick-pattern-span-delivery.md) (derived, not persisted); paired with [0049](0049-chart-trendline-overlay-primitive.md)

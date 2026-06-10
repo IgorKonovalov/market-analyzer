@@ -1,6 +1,6 @@
 # ADR-0049 — Chart trendline overlay primitive (sloped multi-point geometry)
 
-> **Status:** proposed — accepts at the Plan 0052 close
+> **Status:** accepted (Plan 0052 close, 2026-06-10)
 > **Date:** 2026-06-08
 > **Related plan(s):** 0052-classical-chart-patterns
 > **Related ADRs:** extends the chart event schema of [0017](0017-live-ui-updates-via-sse.md); paired with [0048](0048-classical-chart-pattern-detection.md); follows the `ISeriesPrimitive` precedent set by [0045](0045-candlestick-pattern-span-delivery.md)
