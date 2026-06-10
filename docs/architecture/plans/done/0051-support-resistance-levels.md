@@ -1,6 +1,6 @@
 # 0051 — First-class support/resistance levels
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-06-10. Four `dev` phases on branch `plan-0051-support-resistance-levels` (`b75b2a5` swing_pivots extraction → `9b57982` volume profile → `c305087` clustered levels + `detect_levels` tool → `9346526` snapshot nearest-S/R), merged `--no-ff` to `main` as `1eb2abd` (one trivial `mcp_app.py` import-union conflict with Plan 0055's merge, as predicted at that close). Clean Mode 4 — no blockers, no majors; every named spec read at the assertion level (exact-equality truncation invariance at all three surfaces — pivots/profile/levels; snapshot delegation equivalence pinned; exactly-one-`chart.show` with full `(label, role, price)` overlay pin against a real bus; the analyst no-action field-set pin updated in place). Two nits carried (private `_detect_levels_response` exported in `__all__` — matches the `scan_patterns` house pattern; empty-result ack carries `type`/`version` for an unpublished event). 1309 tests + `mypy --strict` green on merged `main`. Unblocks [Plan 0052](0052-classical-chart-patterns.md).
 > **Created:** 2026-06-08
 > **Owner skill(s):** dev
 > **Related ADRs:** applies [0023](../adrs/0023-technical-analysis-surface.md) (analysis surface) and [0017](../adrs/0017-live-ui-updates-via-sse.md) (chart events); foundation consumed by [Plan 0052](0052-classical-chart-patterns.md)
