@@ -46,6 +46,8 @@ from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
+from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
 from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
@@ -58,6 +60,7 @@ from market_analyser.persistence.engine import apply_migrations, make_session_fa
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
+from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from market_analyser.persistence.repository import BarRepository
 from market_analyser.persistence.secrets import SecretsStore
 
@@ -112,11 +115,20 @@ def create_app(
     if not secret:
         raise ValueError("create_app requires a non-empty bearer secret")
 
+    metric_points_repository: MetricPointsRepository | None = None
     if engine is not None:
         apply_migrations(engine)
         session_factory = make_session_factory(engine)
+        # The metric store (Plan 0055, ADR-0051) backs the historized series:
+        # the F&G / dominance adapters write-through into it (composition-root
+        # wiring per ADR-0031), and the metric-series MCP tools read from it.
+        metric_points_repository = MetricPointsRepository(session_factory)
         if provider is None:
-            provider = DefaultMarketDataProvider(bar_repository=BarRepository(session_factory))
+            provider = DefaultMarketDataProvider(
+                bar_repository=BarRepository(session_factory),
+                crypto_fng=CryptoFearGreedAdapter(metric_store=metric_points_repository),
+                coingecko=CoinGeckoAdapter(metric_store=metric_points_repository),
+            )
         if annotations_repository is None:
             annotations_repository = AnnotationsRepository(session_factory)
         if backtest_runs_repository is None:
@@ -183,6 +195,7 @@ def create_app(
             runs_dir=runs_dir,
             wallet_positions_sources=effective_wallet_sources,
             lp_detail_sources=effective_lp_detail_sources,
+            metric_points_repository=metric_points_repository,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None
@@ -210,6 +223,9 @@ def create_app(
     app.state.provider = effective_provider
     app.state.annotations_repository = annotations_repository
     app.state.backtest_runs_repository = backtest_runs_repository
+    # The metric-points store (Plan 0055, ADR-0051) — None without an engine;
+    # the MCP metric-series tools receive it directly via create_mcp_components.
+    app.state.metric_points_repository = metric_points_repository
     # `runs_dir` is the directory the persist() layer writes artifacts to and
     # the GET /backtests/{run_id} route reads them from. Tests pass a tmp_path;
     # production wires `default_app_data_dir() / "runs"` from __main__.

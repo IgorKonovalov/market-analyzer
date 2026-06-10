@@ -37,6 +37,7 @@ from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
+from market_analyser.api.mcp_tools.cycle_snapshot import register_btc_cycle_snapshot
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
@@ -45,6 +46,7 @@ from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pen
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
 from market_analyser.api.mcp_tools.list_annotations import register_list_annotations
 from market_analyser.api.mcp_tools.market_snapshot import register_market_snapshot
+from market_analyser.api.mcp_tools.metric_series import register_get_metric_series
 from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     register_multi_timeframe_analysis,
 )
@@ -73,6 +75,7 @@ from market_analyser.persistence.annotations_repository import AnnotationsReposi
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
+from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 
 
 def create_mcp_components(
@@ -86,6 +89,7 @@ def create_mcp_components(
     runs_dir: Path | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
+    metric_points_repository: MetricPointsRepository | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -183,6 +187,23 @@ def create_mcp_components(
             server,
             repository=backtest_runs_repository,
             runs_dir=runs_dir,
+        )
+
+    # The metric-series toolset (Plan 0055, ADR-0051) is registered when the
+    # metric-points repository is wired (create_app builds it from the SQLite
+    # engine). `btc_cycle_snapshot` reads cached bars through the provider and
+    # F&G/dominance through the store; `get_metric_series` pages any registered
+    # series per ADR-0046. Legacy callers without persistence keep the smaller
+    # toolset; nothing silently degrades.
+    if metric_points_repository is not None:
+        register_btc_cycle_snapshot(
+            server,
+            provider=provider,
+            metric_points_repository=metric_points_repository,
+        )
+        register_get_metric_series(
+            server,
+            metric_points_repository=metric_points_repository,
         )
 
     # `scan_wallet` (Plan 0032) is registered only when a wallet-positions source
