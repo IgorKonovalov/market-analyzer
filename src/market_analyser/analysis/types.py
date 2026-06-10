@@ -278,7 +278,11 @@ class ConditionSnapshot(BaseModel):
     level sits on that side. `volume_stance` is the coarse volume reading
     (heavy/normal/light); the numeric volume measures (``volume``,
     ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``, ``obv_slope``,
-    ``vwap``) ride in `indicators` alongside the others.
+    ``vwap``) ride in `indicators` alongside the others. `active_patterns`
+    (Plan 0052 phase 3) carries the classical chart patterns still in play —
+    the latest-state `ChartPatternHit` per formation whose completing /
+    confirming bar falls inside the trailing activity window (the breakout
+    scan horizon) — empty when nothing is forming or freshly confirmed.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -294,6 +298,7 @@ class ConditionSnapshot(BaseModel):
     nearest_support: Level | None
     nearest_resistance: Level | None
     recent_patterns: list[PatternHit]
+    active_patterns: list[ChartPatternHit]
 
 
 class TimeframeView(BaseModel):

@@ -62,7 +62,9 @@ analyze_symbol(symbol="AAPL", timeframe="1d", lookback="6mo")
 #                    "support_resistance": {...},
 #                    "nearest_support": { "price": ..., "strength": ..., ... } | null,
 #                    "nearest_resistance": { ... } | null,   # Plan 0051: clustered
-#                    "recent_patterns": [...] },             # levels framing the close
+#                    "recent_patterns": [...],               # levels framing the close
+#                    "active_patterns": [...] },  # Plan 0052: classical chart patterns
+#                                                 # in play (forming/confirmed hits)
 #      "partial_reason": null, "message": null, "analyzed_at": "..." }
 # Empty cache -> { "snapshot": null, "partial_reason": "no_bars", "message": "..." }
 ```
