@@ -68,6 +68,15 @@ class UnknownSymbolError(UpstreamDataError):
         self.symbol = symbol
 
 
+class GeoRestrictedError(UpstreamDataError):
+    """Upstream returned HTTP 451: the endpoint is geo-blocked from this network
+    (Binance returns it from restricted locations even for public read-only
+    endpoints — ADR-0052). Never retried — the resilient client classifies 451
+    as permanent — and never improvised around in an adapter: the caller
+    surfaces it so the fallback decision (Bybit / binance.us / network posture)
+    is made as an ADR-0052 follow-up, by a human."""
+
+
 class HistoryExceededError(UpstreamDataError):
     """The requested window reaches further back than the timeframe's `max_history`
     cap (Yahoo serves intraday history for a bounded span only — ~60 days for 15m,
@@ -92,6 +101,7 @@ def failure_reason(err: UpstreamDataError) -> FailureReason:
 
 __all__ = [
     "FailureReason",
+    "GeoRestrictedError",
     "HistoryExceededError",
     "RateLimitedError",
     "UnknownSymbolError",
