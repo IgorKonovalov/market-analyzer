@@ -66,10 +66,19 @@ class UnknownMetricSeriesError(ValueError):
     boundary before any read or write touches the table (ADR-0051)."""
 
 
+SERIES_FNG_VALUE = "fng.value"
+
 # The one module-level registry (ADR-0051). Adding an entry here in source is
 # how a plan registers a series — never at runtime. Plan 0055 phase 2 registers
 # `fng.value`; phase 3 registers the two CoinGecko macro series.
-SERIES_REGISTRY: dict[str, MetricSeriesSpec] = {}
+SERIES_REGISTRY: dict[str, MetricSeriesSpec] = {
+    SERIES_FNG_VALUE: MetricSeriesSpec(
+        series_id=SERIES_FNG_VALUE,
+        description="Crypto Fear & Greed index (0-100), daily since 2018-02-01",
+        source="alternative.me-fng",
+        cadence="daily; full history backfillable in one keyless call (?limit=0)",
+    ),
+}
 
 
 def is_registered(series_id: str) -> bool:
@@ -96,6 +105,7 @@ def registered_series() -> tuple[str, ...]:
 
 
 __all__ = [
+    "SERIES_FNG_VALUE",
     "SERIES_REGISTRY",
     "MetricPoint",
     "MetricSeriesSpec",
