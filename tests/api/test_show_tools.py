@@ -55,6 +55,8 @@ from market_analyser.events import (
     EventBus,
     Marker,
     OverlaySpec,
+    TrendlineSpec,
+    TrendPoint,
 )
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (
@@ -792,3 +794,76 @@ def test_supertrend_overlay_rejects_price_line_fields() -> None:
     for bad in ({"price": 100.0}, {"label": "x"}, {"role": "support"}):
         with pytest.raises(ValidationError, match="does not accept price/label/role"):
             OverlaySpec(kind="supertrend", period=10, **bad)
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0052 ph2: TrendlineSpec + the additive `trendlines` field (ADR-0049)   #
+# Pure-pydantic round-trips — no live server needed.                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_chart_payloads_without_trendlines_wire_unchanged() -> None:
+    """Adding the optional `trendlines` field leaves a payload that doesn't set
+    it byte-identical on the wire — `exclude_none` drops the unset field, so
+    no `chart.show`/`chart.update` version bump (the Marker span precedent)."""
+    show = ChartShowPayloadV1(
+        symbol="AAPL",
+        timeframe="1d",
+        range_start=datetime(2026, 4, 20, tzinfo=UTC),
+        range_end=datetime(2026, 5, 20, tzinfo=UTC),
+        overlays=[OverlaySpec(kind="ema", period=20)],
+    )
+    assert show.model_dump(mode="json", exclude_none=True) == {
+        "symbol": "AAPL",
+        "timeframe": "1d",
+        "range_start": "2026-04-20T00:00:00Z",
+        "range_end": "2026-05-20T00:00:00Z",
+        "overlays": [{"kind": "ema", "period": 20}],
+    }
+    update = ChartUpdatePayloadV1(symbol="AAPL", timeframe="1d")
+    assert update.model_dump(mode="json", exclude_none=True) == {
+        "symbol": "AAPL",
+        "timeframe": "1d",
+    }
+
+
+def test_trendline_spec_round_trips_on_chart_show() -> None:
+    """A two-anchor dashed neckline rides `chart.show v1` intact and keeps a
+    clean wire (unset `label` dropped by `exclude_none`)."""
+    spec = TrendlineSpec(
+        points=[
+            TrendPoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=99.0),
+            TrendPoint(ts=datetime(2026, 5, 5, tzinfo=UTC), price=100.0),
+        ],
+        role="neckline",
+        style="dashed",
+        pattern="head_shoulders",
+    )
+    payload = ChartShowPayloadV1(
+        symbol="AAPL",
+        timeframe="1d",
+        range_start=datetime(2026, 4, 20, tzinfo=UTC),
+        range_end=datetime(2026, 5, 20, tzinfo=UTC),
+        trendlines=[spec],
+    )
+    reparsed = ChartShowPayloadV1.model_validate(payload.model_dump())
+    assert reparsed.trendlines is not None
+    assert reparsed.trendlines[0] == spec
+    assert spec.model_dump(mode="json", exclude_none=True) == {
+        "points": [
+            {"ts": "2026-04-25T00:00:00Z", "price": 99.0},
+            {"ts": "2026-05-05T00:00:00Z", "price": 100.0},
+        ],
+        "role": "neckline",
+        "style": "dashed",
+        "pattern": "head_shoulders",
+    }
+
+
+def test_trendline_spec_rejects_fewer_than_two_points() -> None:
+    """A one-anchor (or empty) 'line' is undrawable — the validator rejects it."""
+    single = [TrendPoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=99.0)]
+    with pytest.raises(ValidationError, match="at least 2 points"):
+        TrendlineSpec(points=single)
+    with pytest.raises(ValidationError, match="at least 2 points"):
+        TrendlineSpec(points=[])

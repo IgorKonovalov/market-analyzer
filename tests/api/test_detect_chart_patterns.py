@@ -1,0 +1,295 @@
+"""Plan 0052 phase 2: the `detect_chart_patterns` MCP tool.
+
+`detect_chart_patterns` runs classical-pattern detection over cached bars and
+publishes ONE `chart.show v1` event carrying one `TrendlineSpec` per hit line
+(anchored on the real pivot endpoints, `dashed` for forming / `solid` for
+confirmed) — detect and draw in a single call. It is *derived* data: nothing is
+persisted (the tool takes no repository at all).
+
+These exercise the factored `_detect_chart_patterns_response` body directly on
+a single event loop with a real `EventBus` and a stub provider — no live MCP
+server. The fixture is the phase-1 H&S path: forming hit at bar 25, confirmed
+at bar 27, one neckline through (bar 10, 99.0)-(bar 18, 100.0).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from itertools import pairwise
+
+import pytest
+
+from market_analyser.api.mcp_tools.detect_chart_patterns import (
+    _detect_chart_patterns_response,
+    register_detect_chart_patterns,
+)
+from market_analyser.data.types import (
+    Bar,
+    MacroContext,
+    MarketSentimentSample,
+    NewsItem,
+    Quote,
+    ScreenerRow,
+    SentimentSample,
+    SymbolInfo,
+)
+from market_analyser.events import Envelope, EventBus
+
+_START = datetime(2025, 1, 1, tzinfo=UTC)
+_RANGE_END = datetime(2025, 3, 1, tzinfo=UTC)
+
+# The phase-1 head & shoulders fixture: shoulders 111 @6 / 111.5 @22, head
+# 121 @14, neckline troughs 99 @10 / 100 @18, then a decline through the
+# neckline. Forming completes at bar 25 (right shoulder + PIVOT_RIGHT);
+# the k*ATR break confirms at bar 27.
+_HS_ANCHORS = [
+    (0, 100.0), (6, 110.0), (10, 100.0), (14, 120.0), (18, 101.0), (22, 110.5), (35, 78.0),
+]
+
+
+def _bars_from_path(anchors: list[tuple[int, float]]) -> list[Bar]:
+    """Sample a piecewise-linear base path into bars (high/low straddle the
+    base by 1.0) — the same construction as the phase-1 detector tests."""
+
+    n = anchors[-1][0] + 1
+    bases: list[float] = []
+    for i in range(n):
+        for (x1, p1), (x2, p2) in pairwise(anchors):
+            if x1 <= i <= x2:
+                bases.append(p1 + (p2 - p1) * (i - x1) / (x2 - x1))
+                break
+    return [
+        Bar(
+            symbol="AAPL",
+            timeframe="1d",
+            event_ts=_START + timedelta(days=i),
+            open=base,
+            high=base + 1.0,
+            low=base - 1.0,
+            close=base,
+            volume=1000.0,
+            source="test",
+        )
+        for i, base in enumerate(bases)
+    ]
+
+
+class _StubProvider:
+    """Returns a fixed bar list on get_ohlcv; everything else is unused."""
+
+    def __init__(self, bars: Sequence[Bar]) -> None:
+        self._bars = list(bars)
+
+    def get_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        as_of: datetime | None = None,
+    ) -> Sequence[Bar]:
+        return self._bars
+
+    def get_quote(self, symbol: str, as_of: datetime | None = None) -> Quote:
+        raise NotImplementedError
+
+    def search_symbols(self, query: str, as_of: datetime | None = None) -> Sequence[SymbolInfo]:
+        raise NotImplementedError
+
+    def get_screener(
+        self,
+        filters: dict[str, str | float | None],
+        market: str = "america",
+        exchange: str | None = None,
+        limit: int = 50,
+        as_of: datetime | None = None,
+    ) -> Sequence[ScreenerRow]:
+        raise NotImplementedError
+
+    def get_sentiment(
+        self, symbol: str, window: str, source: str = "rss-vader", as_of: datetime | None = None
+    ) -> SentimentSample:
+        raise NotImplementedError
+
+    def get_market_sentiment(
+        self, market: str, window: str = "current", as_of: datetime | None = None
+    ) -> MarketSentimentSample:
+        raise NotImplementedError
+
+    def get_macro_context(
+        self, market: str = "crypto", as_of: datetime | None = None
+    ) -> MacroContext:
+        raise NotImplementedError
+
+    def get_news(
+        self,
+        symbol: str | None = None,
+        window: str = "24h",
+        limit: int = 50,
+        with_sentiment: bool = False,
+        as_of: datetime | None = None,
+    ) -> Sequence[NewsItem]:
+        raise NotImplementedError
+
+
+def _drain(sub: object) -> list[Envelope]:
+    items: list[Envelope] = []
+    queue = sub.queue  # type: ignore[attr-defined]
+    while True:
+        try:
+            items.append(queue.get_nowait())
+        except asyncio.QueueEmpty:
+            break
+    return items
+
+
+def _run_detect(
+    bus: EventBus,
+    provider: _StubProvider,
+    *,
+    patterns: list[str] | None = None,
+    states: list[str] | None = None,
+) -> dict[str, object]:
+    return asyncio.run(
+        _detect_chart_patterns_response(
+            provider=provider,
+            event_bus=bus,
+            symbol="AAPL",
+            timeframe="1d",
+            range_start=_START,
+            range_end=_RANGE_END,
+            patterns=patterns,
+            states=states,
+        )
+    )
+
+
+def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_show() -> None:
+    """On the seeded H&S fixture: the typed hit list comes back as data AND
+    exactly one `chart.show v1` event lands on the bus, its trendlines carrying
+    the expected neckline anchor `(ts, price)` points with `style` matching
+    each hit's state (dashed=forming, solid=confirmed)."""
+
+    bus = EventBus()
+    sub = bus.subscribe()
+    bars = _bars_from_path(_HS_ANCHORS)
+    ack = _run_detect(bus, _StubProvider(bars))
+
+    # --- returned data: the forming + confirmed hits ------------------------- #
+    assert ack["event_published"] is True
+    assert ack["type"] == "chart.show"
+    hits = ack["hits"]
+    assert isinstance(hits, list)
+    assert ack["count"] == len(hits) == 2
+    assert [(h["pattern"], h["state"], h["bar_index"]) for h in hits] == [
+        ("head_shoulders", "forming", 25),
+        ("head_shoulders", "confirmed", 27),
+    ]
+    assert all(h["direction"] == "bearish" for h in hits)
+    assert all("action" not in h and "buy" not in h and "sell" not in h for h in hits)
+
+    # --- the bus: exactly one chart.show, trendline anchors + styles --------- #
+    events = _drain(sub)
+    assert len(events) == 1
+    env = events[0]
+    assert env.type == "chart.show"
+    assert env.payload["symbol"] == "AAPL"
+    assert env.payload["timeframe"] == "1d"
+    trendlines = env.payload["trendlines"]
+    assert isinstance(trendlines, list)
+    assert len(trendlines) == 2  # one neckline per hit (forming + confirmed)
+    neck_start_ts = bars[10].event_ts.isoformat().replace("+00:00", "Z")
+    neck_end_ts = bars[18].event_ts.isoformat().replace("+00:00", "Z")
+    for spec, style in zip(trendlines, ["dashed", "solid"], strict=True):
+        assert spec["role"] == "neckline"
+        assert spec["pattern"] == "head_shoulders"
+        assert spec["style"] == style
+        assert [(p["ts"], p["price"]) for p in spec["points"]] == [
+            (neck_start_ts, 99.0),
+            (neck_end_ts, 100.0),
+        ]
+    assert trendlines[0]["label"] == "head_shoulders (forming)"
+    assert trendlines[1]["label"] == "head_shoulders (confirmed)"
+
+
+def test_detect_chart_patterns_states_filter_narrows_hits_and_event() -> None:
+    """states=["confirmed"] drops the forming hit from both the data and the
+    published trendlines."""
+
+    bus = EventBus()
+    sub = bus.subscribe()
+    ack = _run_detect(bus, _StubProvider(_bars_from_path(_HS_ANCHORS)), states=["confirmed"])
+
+    hits = ack["hits"]
+    assert isinstance(hits, list)
+    assert [(h["state"], h["bar_index"]) for h in hits] == [("confirmed", 27)]
+    trendlines = _drain(sub)[0].payload["trendlines"]
+    assert [t["style"] for t in trendlines] == ["solid"]
+
+
+def test_detect_chart_patterns_pattern_filter_can_empty_the_result() -> None:
+    """patterns=["double_top"] on the H&S fixture matches nothing: no hits, no
+    event published."""
+
+    bus = EventBus()
+    sub = bus.subscribe()
+    ack = _run_detect(bus, _StubProvider(_bars_from_path(_HS_ANCHORS)), patterns=["double_top"])
+
+    assert ack["event_published"] is False
+    assert ack["count"] == 0
+    assert ack["hits"] == []
+    assert _drain(sub) == []
+
+
+def test_detect_chart_patterns_empty_cache_publishes_nothing() -> None:
+    bus = EventBus()
+    sub = bus.subscribe()
+    ack = _run_detect(bus, _StubProvider([]))
+
+    assert ack["event_published"] is False
+    assert ack["count"] == 0
+    assert ack["hits"] == []
+    assert _drain(sub) == []
+
+
+def test_detect_chart_patterns_rejects_bad_inputs() -> None:
+    bus = EventBus()
+    provider = _StubProvider(_bars_from_path(_HS_ANCHORS))
+    with pytest.raises(ValueError, match="unknown patterns"):
+        _run_detect(bus, provider, patterns=["cup_and_handle"])
+    with pytest.raises(ValueError, match="unknown states"):
+        _run_detect(bus, provider, states=["pending"])
+    with pytest.raises(ValueError):
+        asyncio.run(
+            _detect_chart_patterns_response(
+                provider=provider,
+                event_bus=bus,
+                symbol="",
+                timeframe="1d",
+                range_start=_START,
+                range_end=_RANGE_END,
+            )
+        )
+    with pytest.raises(ValueError):
+        asyncio.run(
+            _detect_chart_patterns_response(
+                provider=provider,
+                event_bus=bus,
+                symbol="AAPL",
+                timeframe="1d",
+                range_start=_RANGE_END,
+                range_end=_START,  # reversed
+            )
+        )
+
+
+def test_detect_chart_patterns_takes_no_repository() -> None:
+    """Hits are derived, not persisted: the tool's registration depends only on
+    the provider and event bus — never a repository."""
+
+    params = set(inspect.signature(register_detect_chart_patterns).parameters)
+    assert "annotations_repository" not in params
+    assert {"provider", "event_bus"} <= params
