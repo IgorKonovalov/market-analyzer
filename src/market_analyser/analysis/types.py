@@ -46,6 +46,50 @@ class PatternHit(BaseModel):
     span_bars: int = Field(ge=1, le=3)
 
 
+class Pivot(BaseModel):
+    """A confirmed swing pivot in a bar series (Plan 0051 phase 1).
+
+    A `high` pivot is a bar whose high strictly exceeds the highs of the `left`
+    bars before it and the `right` bars after it (a resistance pivot); a `low`
+    pivot is the mirror on lows (a support pivot). `bar_index` is the bar at
+    which the extreme PRINTED — but the pivot is only *confirmed* (and therefore
+    only returned by `swing_pivots`) once all `right` bars after it exist, so a
+    pivot at bar `j` is first knowable at bar `j + right`. No future bar beyond
+    the series end is ever read (anti-lookahead, ADR-0023).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bar_index: int
+    ts: datetime
+    price: float
+    kind: Literal["high", "low"]  # high -> resistance pivot, low -> support pivot
+
+
+class Level(BaseModel):
+    """A clustered, strength-ranked support/resistance zone (Plan 0051 phase 3).
+
+    `price` is the representative price of the clustered pivot zone (the mean
+    of the clustered pivot prices); `touches` is how many pivots the cluster
+    absorbed; `volume_at_level` is the summed volume-by-price mass inside the
+    zone's price band (the phase-2 profile); `strength` is a 0..1 rank blending
+    touch count and volume-at-level (the documented formula and its named
+    weights live in `analysis/levels.py`). `first_ts`/`last_ts` bound the
+    pivots in the cluster. Conditions only — a level is chart geometry, never
+    a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    price: float
+    role: Literal["support", "resistance"]
+    touches: int
+    volume_at_level: float
+    strength: float
+    first_ts: datetime
+    last_ts: datetime
+
+
 class Trend(StrEnum):
     """Coarse trend classification from the EMA stack + ADX strength."""
 
@@ -162,10 +206,14 @@ class ConditionSnapshot(BaseModel):
     ``bb_pct_b``, ``atr``, ``adx``, ``supertrend_direction``, plus the trailing
     percentile ranks ``rsi_pct90`` / ``atr_pct90``); a value is ``None`` when the
     indicator is undefined over the available bars. `support_resistance` maps
-    ``"support"`` / ``"resistance"`` to trailing swing levels. `volume_stance` is
-    the coarse volume reading (heavy/normal/light); the numeric volume measures
-    (``volume``, ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``,
-    ``obv_slope``, ``vwap``) ride in `indicators` alongside the others.
+    ``"support"`` / ``"resistance"`` to trailing swing levels. `nearest_support`
+    / `nearest_resistance` (Plan 0051 phase 4) are the structured clustered
+    `Level`s nearest the last close — the support at-or-below it and the
+    resistance at-or-above it, each carrying its strength — or ``None`` when no
+    level sits on that side. `volume_stance` is the coarse volume reading
+    (heavy/normal/light); the numeric volume measures (``volume``,
+    ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``, ``obv_slope``,
+    ``vwap``) ride in `indicators` alongside the others.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -178,6 +226,8 @@ class ConditionSnapshot(BaseModel):
     volume_stance: VolumeStance
     indicators: dict[str, float | None]
     support_resistance: dict[str, list[float]]
+    nearest_support: Level | None
+    nearest_resistance: Level | None
     recent_patterns: list[PatternHit]
 
 
@@ -217,9 +267,11 @@ class MultiTimeframeAlignment(BaseModel):
 __all__ = [
     "ConditionSnapshot",
     "Direction",
+    "Level",
     "MomentumStance",
     "MultiTimeframeAlignment",
     "PatternHit",
+    "Pivot",
     "SmartVolumeHit",
     "TimeframeView",
     "Trend",
