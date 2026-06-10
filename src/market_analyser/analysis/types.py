@@ -206,10 +206,14 @@ class ConditionSnapshot(BaseModel):
     ``bb_pct_b``, ``atr``, ``adx``, ``supertrend_direction``, plus the trailing
     percentile ranks ``rsi_pct90`` / ``atr_pct90``); a value is ``None`` when the
     indicator is undefined over the available bars. `support_resistance` maps
-    ``"support"`` / ``"resistance"`` to trailing swing levels. `volume_stance` is
-    the coarse volume reading (heavy/normal/light); the numeric volume measures
-    (``volume``, ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``,
-    ``obv_slope``, ``vwap``) ride in `indicators` alongside the others.
+    ``"support"`` / ``"resistance"`` to trailing swing levels. `nearest_support`
+    / `nearest_resistance` (Plan 0051 phase 4) are the structured clustered
+    `Level`s nearest the last close — the support at-or-below it and the
+    resistance at-or-above it, each carrying its strength — or ``None`` when no
+    level sits on that side. `volume_stance` is the coarse volume reading
+    (heavy/normal/light); the numeric volume measures (``volume``,
+    ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``, ``obv_slope``,
+    ``vwap``) ride in `indicators` alongside the others.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -222,6 +226,8 @@ class ConditionSnapshot(BaseModel):
     volume_stance: VolumeStance
     indicators: dict[str, float | None]
     support_resistance: dict[str, list[float]]
+    nearest_support: Level | None
+    nearest_resistance: Level | None
     recent_patterns: list[PatternHit]
 
 

@@ -85,7 +85,7 @@ Steps:
    - **Trend** — the snapshot's `trend` (`up`/`down`/`sideways`), grounded in `adx`/`plus_di`/`minus_di` (trend strength) and the Supertrend `supertrend_direction`.
    - **Momentum** — `momentum` stance, with `rsi` and its trailing percentile `rsi_pct90`; MACD stance from `macd`/`macd_signal`/`macd_hist`; Bollinger position from `bb_pct_b` (where the close sits in the band).
    - **Volatility** — `atr` and its trailing percentile `atr_pct90` (compressed vs. expanded).
-   - **S/R levels** — `support_resistance.support` / `.resistance` (trailing swing levels); note whether the close sits nearer support or resistance.
+   - **S/R levels** — `support_resistance.support` / `.resistance` (trailing swing levels), plus the structured `nearest_support` / `nearest_resistance` (Plan 0051): the clustered level framing the close on each side, with `price`, `touches`, `volume_at_level`, and a 0–1 `strength`; `null` when no level sits on that side (e.g. after a breakout). Lead with the nearest levels ("nearest resistance 150.0, strength 0.8"); fall back to the bare lists for the wider ladder.
    - **Recent patterns** — anything in `recent_patterns` worth flagging alongside the indicator read.
    - If the user wants something the snapshot doesn't carry (e.g. distance-from-EMA in ATRs, 20-bar average volume), pull the raw inputs from `get_ohlcv` and compute the framing — don't invent it.
 5. **Output** under `runs/analysis/snapshot/<UTC-timestamp>-<symbol>-<timeframe>/`:

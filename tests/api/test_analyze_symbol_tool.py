@@ -54,12 +54,15 @@ RENDERER_SECRET = "renderer-test-secret"
 
 def _seed_bars(symbol: str = "AAPL", n: int = 80) -> list[Bar]:
     """A rising-with-wobble daily series ending today, long enough that every
-    indicator (incl. ADX and the EMA-50 trend leg) is defined."""
+    indicator (incl. ADX and the EMA-50 trend leg) is defined. Bar 40 dips to a
+    deliberate swing low so the snapshot has a confirmed support level below the
+    final close (Plan 0051 phase 4 nearest-level assertions)."""
 
     end = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     bars: list[Bar] = []
     for i in range(n):
         base = 100.0 + 0.8 * i + (1.5 if i % 3 == 0 else -1.0)
+        low = base - 20.0 if i == 40 else base - 1.5
         bars.append(
             Bar(
                 symbol=symbol,
@@ -67,7 +70,7 @@ def _seed_bars(symbol: str = "AAPL", n: int = 80) -> list[Bar]:
                 event_ts=end - timedelta(days=n - 1 - i),
                 open=base,
                 high=base + 1.5,
-                low=base - 1.5,
+                low=low,
                 close=base + 0.6,
                 volume=1_000_000.0,
                 source="fixture",
@@ -167,7 +170,8 @@ def test_parse_lookback_malformed(text: str) -> None:
 
 
 def test_happy_path_returns_full_snapshot() -> None:
-    provider = _SeededProvider(_seed_bars())
+    seeded = _seed_bars()
+    provider = _SeededProvider(seeded)
 
     resp = asyncio.run(
         _analyze_symbol_response(
@@ -191,6 +195,13 @@ def test_happy_path_returns_full_snapshot() -> None:
         assert key in snap.indicators
         assert snap.indicators[key] is not None
     assert set(snap.support_resistance) == {"support", "resistance"}
+    # Plan 0051 phase 4: the tool surfaces the nearest structured levels. The
+    # rising fixture leaves its swing lows below the last close, so a nearest
+    # support must be present, framed below the close with a 0..1 strength.
+    assert snap.nearest_support is not None
+    assert snap.nearest_support.role == "support"
+    assert snap.nearest_support.price <= seeded[-1].close
+    assert 0.0 < snap.nearest_support.strength <= 1.0
     assert isinstance(snap.recent_patterns, list)
     assert resp.analyzed_at.tzinfo is not None  # UTC-aware provenance stamp
 
@@ -350,5 +361,13 @@ def test_analyze_symbol_via_mcp_returns_snapshot(live_server: str, mcp_secret: s
         "volume_stance",
         "indicators",
         "support_resistance",
+        "nearest_support",
+        "nearest_resistance",
         "recent_patterns",
     } <= set(snapshot)
+    # Plan 0051 phase 4: the structured nearest support rides the wire — the
+    # seeded fixture's bar-40 dip is a confirmed support below the last close.
+    nearest_support = snapshot["nearest_support"]
+    assert isinstance(nearest_support, dict)
+    assert nearest_support["role"] == "support"
+    assert 0.0 < nearest_support["strength"] <= 1.0

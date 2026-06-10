@@ -99,7 +99,10 @@ def test_momentum_oversold_on_strong_fall() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_support_resistance_includes_known_swings() -> None:
+def _swing_bars() -> list[Bar]:
+    """24 bars around 100 with one clear swing low (50 at bar 6) and one clear
+    swing high (150 at bar 14); the last close sits between them."""
+
     bars: list[Bar] = []
     for i in range(24):
         base = 100.0
@@ -114,9 +117,55 @@ def test_support_resistance_includes_known_swings() -> None:
         if i == 14:
             o = c = 140.0
         bars.append(_bar(i, o=o, h=h, low=low, c=c))
-    sr = condition_snapshot(bars, "1d").support_resistance
+    return bars
+
+
+def test_support_resistance_includes_known_swings() -> None:
+    sr = condition_snapshot(_swing_bars(), "1d").support_resistance
     assert any(abs(p - 50.0) < 1e-6 for p in sr["support"])
     assert any(abs(p - 150.0) < 1e-6 for p in sr["resistance"])
+
+
+def test_nearest_levels_frame_the_last_close_with_strength() -> None:
+    """Plan 0051 phase 4: the snapshot carries the nearest clustered support
+    below and resistance above the last close (100), as structured Levels with
+    their strength — not bare floats."""
+
+    snap = condition_snapshot(_swing_bars(), "1d")
+    assert snap.nearest_support is not None
+    assert snap.nearest_resistance is not None
+    assert snap.nearest_support.role == "support"
+    assert abs(snap.nearest_support.price - 50.0) < 1e-6
+    assert snap.nearest_support.price < 100.0  # below the last close
+    assert snap.nearest_resistance.role == "resistance"
+    assert abs(snap.nearest_resistance.price - 150.0) < 1e-6
+    assert snap.nearest_resistance.price > 100.0  # above the last close
+    for level in (snap.nearest_support, snap.nearest_resistance):
+        assert level.touches == 1
+        assert 0.0 < level.strength <= 1.0
+        assert level.volume_at_level >= 0.0
+
+
+def test_nearest_levels_exclude_wrong_side_of_close() -> None:
+    """After a breakdown the only support level sits ABOVE the close: it must
+    not be reported as the nearest support — both nearest fields are None when
+    no level frames the close on its own side."""
+
+    bars: list[Bar] = []
+    for i in range(24):
+        if i < 12:
+            h, low = 110.0, 108.0
+            if i == 5:  # a swing low at 100, later broken
+                h, low = 102.0, 100.0
+            bars.append(_bar(i, o=(h + low) / 2, h=h, low=low, c=(h + low) / 2))
+        else:  # the breakdown: flat trade far below the old support
+            bars.append(_bar(i, o=79.0, h=80.0, low=78.0, c=79.0))
+    snap = condition_snapshot(bars, "1d")
+    # The broken support is still listed among the trailing swing levels...
+    assert any(abs(p - 100.0) < 1e-6 for p in snap.support_resistance["support"])
+    # ...but it is above the 79 close, so it is not the nearest support.
+    assert snap.nearest_support is None
+    assert snap.nearest_resistance is None
 
 
 # --------------------------------------------------------------------------- #
@@ -152,6 +201,8 @@ def test_no_recommendation_field() -> None:
         "volume_stance",  # Plan 0027: additive condition field
         "indicators",
         "support_resistance",
+        "nearest_support",  # Plan 0051: structured nearest levels (price + strength)
+        "nearest_resistance",
         "recent_patterns",
     }
     # The analyst non-negotiable, pinned: no action/buy/sell field ever appears.

@@ -59,7 +59,10 @@ The TradFi/DeFi split is enforced by the skill descriptions. If the user is aski
 ```
 analyze_symbol(symbol="AAPL", timeframe="1d", lookback="6mo")
 # -> { "snapshot": { "trend": "...", "momentum": "...", "indicators": {...},
-#                    "support_resistance": {...}, "recent_patterns": [...] },
+#                    "support_resistance": {...},
+#                    "nearest_support": { "price": ..., "strength": ..., ... } | null,
+#                    "nearest_resistance": { ... } | null,   # Plan 0051: clustered
+#                    "recent_patterns": [...] },             # levels framing the close
 #      "partial_reason": null, "message": null, "analyzed_at": "..." }
 # Empty cache -> { "snapshot": null, "partial_reason": "no_bars", "message": "..." }
 ```

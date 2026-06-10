@@ -3,9 +3,11 @@
 `condition_snapshot(bars, timeframe)` composes the phase-1 indicators and phase-2
 patterns into a single trailing read: latest indicator values, a trend
 classification (EMA stack + ADX), a momentum stance (RSI zone refined by MACD),
-trailing support/resistance pivots, and the candlestick hits on the most recent
-bars. Pure and trailing — every input is `bars[0..=last]`, so a snapshot computed
-on a truncated series matches the full-series state as of the truncation bar.
+trailing support/resistance pivots plus the nearest clustered support/resistance
+`Level` framing the last close (Plan 0051 phase 4), and the candlestick hits on
+the most recent bars. Pure and trailing — every input is `bars[0..=last]`, so a
+snapshot computed on a truncated series matches the full-series state as of the
+truncation bar.
 
 Reports **conditions only** — never buy/sell (the analyst non-negotiable); the
 `ConditionSnapshot` model has no action field.
@@ -16,10 +18,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from market_analyser.analysis import indicators as ind
-from market_analyser.analysis.levels import swing_pivots
+from market_analyser.analysis.levels import support_resistance_levels, swing_pivots
 from market_analyser.analysis.patterns import detect_patterns
 from market_analyser.analysis.types import (
     ConditionSnapshot,
+    Level,
     MomentumStance,
     Trend,
 )
@@ -107,6 +110,20 @@ def _support_resistance(bars: Sequence[Bar]) -> dict[str, list[float]]:
     return {"support": recent_sup, "resistance": recent_res}
 
 
+def _nearest_levels(levels: Sequence[Level], close: float) -> tuple[Level | None, Level | None]:
+    """The clustered level framing the last close on each side (Plan 0051 phase 4):
+    nearest support at-or-below `close` and nearest resistance at-or-above it.
+    A level on the wrong side of the close (a support left above it after a
+    breakdown, a resistance left below after a breakout) is not "nearest" — it
+    is excluded, yielding ``None`` rather than a misleading frame."""
+
+    supports = [lv for lv in levels if lv.role == "support" and lv.price <= close]
+    resistances = [lv for lv in levels if lv.role == "resistance" and lv.price >= close]
+    nearest_support = max(supports, key=lambda lv: lv.price, default=None)
+    nearest_resistance = min(resistances, key=lambda lv: lv.price, default=None)
+    return nearest_support, nearest_resistance
+
+
 def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot:
     """Compose indicators + patterns into a single trailing condition read.
 
@@ -173,6 +190,10 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
     recent_cutoff = len(bars) - RECENT_PATTERN_BARS
     recent_patterns = [h for h in detect_patterns(bars) if h.bar_index >= recent_cutoff]
 
+    nearest_support, nearest_resistance = _nearest_levels(
+        support_resistance_levels(bars), closes[-1]
+    )
+
     return ConditionSnapshot(
         symbol=bars[-1].symbol,
         timeframe=timeframe,
@@ -182,6 +203,8 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         volume_stance=volume.stance,
         indicators=indicator_values,
         support_resistance=_support_resistance(bars),
+        nearest_support=nearest_support,
+        nearest_resistance=nearest_resistance,
         recent_patterns=recent_patterns,
     )
 
