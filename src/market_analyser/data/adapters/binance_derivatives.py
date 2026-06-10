@@ -26,6 +26,23 @@ implementing `MetricSeriesSource` per ADR-0051):
 - `backfill_series` upserts a series' full history into the wired metric store;
   re-runs are idempotent because a same-value re-upsert is a repository no-op.
 
+Phase 3 adds the open-interest family (`binance.open_interest.<SYMBOL>`), which
+is **recorded, not fetched** (ADR-0052): upstream's `openInterestHist` serves
+only the latest ~1 month, so:
+
+- `seed_open_interest` lands whatever that window holds (period `1h`,
+  paginated), hour-truncated; and
+- `accrue_open_interest` samples `GET /fapi/v1/openInterest` into the same
+  hour-truncated buckets on the Plan 0055 phase-3 write-through pattern: at
+  most one point per series per hour, **first write in a bucket wins** —
+  across seed, accrual, and re-seed alike, so an overlap never duplicates a
+  bucket and never trips the repository's conflict check. The bucket key is
+  the upstream payload's own timestamp, never a wall-clock read.
+
+OI values are stored in base-asset units (`sumOpenInterest` / `openInterest`,
+the raw observation — Plan 0056 open question resolved to the default; USD
+notional is derivable at read time with a bar join).
+
 Funding rates arrive as decimal strings (e.g. ``"0.00010000"``); they are
 parsed with `float(...)` and stored in the REAL (C double) `metric_points`
 column, so values round-trip at full precision. `fundingTime` arrives as UTC
@@ -62,10 +79,36 @@ from market_analyser.data.metric_series import MetricPoint, get_series_spec
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 
 _FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
+_OPEN_INTEREST_HIST_URL = "https://fapi.binance.com/futures/data/openInterestHist"
+_OPEN_INTEREST_URL = "https://fapi.binance.com/fapi/v1/openInterest"
 _SOURCE = "binance-futures"
 
 # Upstream page cap for /fapi/v1/fundingRate (ADR-0052 verified facts).
 _PAGE_LIMIT = 1000
+
+# /futures/data/openInterestHist contract (official docs, checked 2026-06-10):
+# period enum includes "1h"; `limit` default 30, max 500; only the latest
+# ~1 month is retained; with neither startTime nor endTime "the most recent
+# data is returned".
+_OI_HIST_PERIOD = "1h"
+_OI_HIST_PAGE_LIMIT = 500
+
+# Accrual bucket width (Plan 0055 phase-3 pattern): OI timestamps truncate to
+# the hour, so each series grows by at most one point per hour.
+_OI_BUCKET_SECONDS = 3600
+
+# How far before the latest observed print the seed starts walking: the
+# documented retention is "the latest 1 month", so 30 days bounds it from
+# below without a wall-clock read (the anchor is upstream's own latest
+# timestamp).
+_OI_SEED_WINDOW_MS = 30 * 86_400 * 1000
+
+# What a startTime *older than retention* returns is undocumented. A clamping
+# upstream (the live-verified /fapi/v1/fundingRate behavior) serves rows from
+# the earliest it has; an empty-answering upstream would silently end the walk
+# at the window's edge — so on an empty page that cannot be end-of-history the
+# cursor skips forward a day at a time until it re-enters the served window.
+_OI_SEED_SKIP_MS = 86_400 * 1000
 
 # First-page `startTime` floor: 1 ms after the epoch — at/before any contract
 # launch, and never zero. Binance treats `startTime=0` exactly like an absent
@@ -76,10 +119,11 @@ _PAGE_LIMIT = 1000
 # while `startTime=1&limit=5` returned the Sep-2019 launch prints.
 _HISTORY_START_MS = 1
 
-# The series-id family this adapter produces in phase 1; the symbol is the
-# suffix (`binance.funding_rate.BTCUSDT` → `BTCUSDT`). Registration is still
-# checked against the registry — the family prefix alone is not a license.
+# The series-id families this adapter produces; the symbol is the suffix
+# (`binance.funding_rate.BTCUSDT` → `BTCUSDT`). Registration is still checked
+# against the registry — the family prefix alone is not a license.
 _FUNDING_SERIES_PREFIX = "binance.funding_rate."
+_OI_SERIES_PREFIX = "binance.open_interest."
 
 
 class BinanceDerivativesError(ValueError):
@@ -196,19 +240,143 @@ class BinanceDerivativesAdapter:
         points = self.fetch_series(series_id)
         return self._metric_store.upsert_points(points)
 
+    def seed_open_interest(self, series_id: str) -> int:
+        """One-time open-interest seed (Plan 0056 phase 3): collect whatever
+        the upstream's ~30-day `openInterestHist` window holds (period `1h`),
+        truncate each timestamp to its hour bucket, and insert only the buckets
+        the wired store does not already have. First write in a bucket wins —
+        across seed, accrual, and re-seed alike — so a re-seed is idempotent
+        (inserts 0 over an already-seeded window) and a same-hour overlap with
+        the accrual path neither duplicates the bucket nor trips the
+        repository's conflict check.
+
+        The walk is anchored on upstream's own latest timestamp (a probe
+        without `startTime` returns "the most recent data" per the docs), never
+        a wall-clock read, then paginates forward from 30 days before it with a
+        never-falsy `startTime` cursor. Raises the same typed taxonomy as
+        `fetch_series`."""
+        if self._metric_store is None:
+            raise ValueError("seed_open_interest requires a wired metric store")
+        symbol = _oi_symbol(series_id)
+        # Probe: the latest served window, used only as the time anchor (and
+        # merged into the seed — its rows are real observations).
+        pairs = list(self._oi_hist_page(symbol, start_ms=None))
+        if not pairs:
+            return 0
+        latest_ms = max(ts_ms for ts_ms, _ in pairs)
+        cursor_ms = max(latest_ms - _OI_SEED_WINDOW_MS, 1)
+        while True:
+            page = self._oi_hist_page(symbol, start_ms=cursor_ms)
+            if not page:
+                if cursor_ms > latest_ms:
+                    break  # walked past everything upstream is known to hold
+                # Empty answer inside the known window: an upstream that does
+                # not clamp a too-early startTime (undocumented either way —
+                # see _OI_SEED_SKIP_MS). Skip forward until back in the window.
+                cursor_ms += _OI_SEED_SKIP_MS
+                continue
+            pairs.extend(page)
+            last_ms = page[-1][0]
+            if last_ms < cursor_ms:
+                raise BinanceDerivativesError(
+                    f"binance-futures: openInterestHist page for {symbol} did not advance "
+                    f"past startTime={cursor_ms} (last timestamp={last_ms}) — refusing to loop",
+                )
+            cursor_ms = last_ms + 1
+        # Hour-truncate; first observation in a bucket wins, deterministically
+        # by ascending raw timestamp (stable sort keeps probe-vs-page order for
+        # identical timestamps, which carry identical values anyway).
+        per_bucket: dict[int, float] = {}
+        for ts_ms, value in sorted(pairs, key=lambda pair: pair[0]):
+            bucket = ts_ms // 1000 // _OI_BUCKET_SECONDS * _OI_BUCKET_SECONDS
+            per_bucket.setdefault(bucket, value)
+        buckets = sorted(per_bucket)
+        existing = {
+            point.ts for point in self._metric_store.range(series_id, buckets[0], buckets[-1])
+        }
+        new_points = [
+            MetricPoint(series_id=series_id, ts=bucket, value=per_bucket[bucket])
+            for bucket in buckets
+            if bucket not in existing
+        ]
+        if not new_points:
+            return 0
+        return self._metric_store.upsert_points(new_points)
+
+    def accrue_open_interest(self, series_id: str) -> int:
+        """Sample the current open interest (`GET /fapi/v1/openInterest`) into
+        the wired store, hour-truncated on the Plan 0055 phase-3 write-through
+        pattern: the bucket key is the upstream payload's own `time` floored to
+        the hour, and the first write in a bucket wins — a later same-hour
+        sample (or a bucket the seed already landed) is skipped, never a
+        duplicate, never a conflict. Returns 1 when a point was written, 0 on
+        the same-hour no-op."""
+        if self._metric_store is None:
+            raise ValueError("accrue_open_interest requires a wired metric store")
+        symbol = _oi_symbol(series_id)
+        try:
+            payload = self._http.get(
+                _OPEN_INTEREST_URL, params={"symbol": symbol}, expect_json=True
+            ).json()
+        except ResilientHttpError as err:
+            raise _classify_error(err, symbol, what="open interest") from err
+        ts_ms, value = _parse_oi_snapshot(payload, symbol=symbol)
+        bucket = ts_ms // 1000 // _OI_BUCKET_SECONDS * _OI_BUCKET_SECONDS
+        existing = self._metric_store.as_of(series_id, bucket)
+        if existing is not None and existing.ts == bucket:
+            return 0  # first write in the hour wins
+        return self._metric_store.upsert_points(
+            [MetricPoint(series_id=series_id, ts=bucket, value=value)],
+        )
+
+    def _oi_hist_page(self, symbol: str, *, start_ms: int | None) -> list[tuple[int, float]]:
+        """One `/futures/data/openInterestHist` page as `(timestamp_ms, value)`
+        pairs in upstream order. `start_ms=None` deliberately omits `startTime`
+        (the documented latest-window probe); a supplied cursor is clamped to
+        the nonzero floor so a falsy `startTime` never reaches the wire (the
+        phase-2 fundingRate smoke finding, assumed shared)."""
+        params: dict[str, str | int | float] = {
+            "symbol": symbol,
+            "period": _OI_HIST_PERIOD,
+            "limit": _OI_HIST_PAGE_LIMIT,
+        }
+        if start_ms is not None:
+            params["startTime"] = max(start_ms, _HISTORY_START_MS)
+        try:
+            payload = self._http.get(
+                _OPEN_INTEREST_HIST_URL, params=params, expect_json=True
+            ).json()
+        except ResilientHttpError as err:
+            raise _classify_error(err, symbol, what="open interest history") from err
+        return _parse_oi_hist_page(payload, symbol=symbol)
+
 
 def _funding_symbol(series_id: str) -> str:
-    """Validate the series id against the family prefix and the registry, and
-    return the contract symbol it names. Both checks fail loudly: a foreign
-    family is a caller bug (`ValueError`), an unregistered Binance id trips the
-    registry boundary (`UnknownMetricSeriesError` — the registry is the schema)."""
+    """Validate the series id against the funding family prefix and the
+    registry, and return the contract symbol it names. Both checks fail loudly:
+    a foreign family is a caller bug (`ValueError`), an unregistered Binance id
+    trips the registry boundary (`UnknownMetricSeriesError` — the registry is
+    the schema)."""
     if not series_id.startswith(_FUNDING_SERIES_PREFIX):
         raise ValueError(
-            f"BinanceDerivativesAdapter produces only {_FUNDING_SERIES_PREFIX}* series, "
+            f"fetch_series serves only {_FUNDING_SERIES_PREFIX}* series "
+            f"(open interest goes through seed_open_interest / accrue_open_interest), "
             f"not {series_id!r}",
         )
     get_series_spec(series_id)
     return series_id.removeprefix(_FUNDING_SERIES_PREFIX)
+
+
+def _oi_symbol(series_id: str) -> str:
+    """`_funding_symbol`'s open-interest twin: family-prefix + registry checks,
+    returning the contract symbol."""
+    if not series_id.startswith(_OI_SERIES_PREFIX):
+        raise ValueError(
+            f"open-interest seed/accrual serves only {_OI_SERIES_PREFIX}* series, "
+            f"not {series_id!r}",
+        )
+    get_series_spec(series_id)
+    return series_id.removeprefix(_OI_SERIES_PREFIX)
 
 
 def _parse_page(
@@ -258,7 +426,86 @@ def _parse_page(
     return page
 
 
-def _classify_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:
+def _parse_oi_hist_page(payload: Any, *, symbol: str) -> list[tuple[int, float]]:
+    """Parse one `/futures/data/openInterestHist` page into `(timestamp_ms,
+    open_interest)` pairs, preserving upstream order (the cursor advances past
+    the page's last row). Only the fields the series needs are required —
+    extras (`sumOpenInterestValue`, `CMCCirculatingSupply`) are ignored, an
+    added field is not drift. Shape drift on the required fields raises."""
+    if not isinstance(payload, list):
+        raise BinanceDerivativesError(
+            f"binance-futures: openInterestHist payload for {symbol} is not a list",
+        )
+    page: list[tuple[int, float]] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            raise BinanceDerivativesError(
+                f"binance-futures: non-object openInterestHist entry for {symbol}",
+            )
+        entry_symbol = entry.get("symbol")
+        if entry_symbol != symbol:
+            raise BinanceDerivativesError(
+                f"binance-futures: openInterestHist entry symbol {entry_symbol!r} does not "
+                f"match requested {symbol!r}",
+            )
+        ts_ms = _epoch_ms(entry.get("timestamp"), field="timestamp", symbol=symbol)
+        value = _decimal_str(entry.get("sumOpenInterest"), field="sumOpenInterest", symbol=symbol)
+        page.append((ts_ms, value))
+    return page
+
+
+def _parse_oi_snapshot(payload: Any, *, symbol: str) -> tuple[int, float]:
+    """Parse the `/fapi/v1/openInterest` snapshot into `(time_ms, open_interest)`."""
+    if not isinstance(payload, dict):
+        raise BinanceDerivativesError(
+            f"binance-futures: openInterest payload for {symbol} is not an object",
+        )
+    entry_symbol = payload.get("symbol")
+    if entry_symbol != symbol:
+        raise BinanceDerivativesError(
+            f"binance-futures: openInterest snapshot symbol {entry_symbol!r} does not "
+            f"match requested {symbol!r}",
+        )
+    ts_ms = _epoch_ms(payload.get("time"), field="time", symbol=symbol)
+    value = _decimal_str(payload.get("openInterest"), field="openInterest", symbol=symbol)
+    return ts_ms, value
+
+
+def _epoch_ms(value: Any, *, field: str, symbol: str) -> int:
+    """Coerce an upstream epoch-millisecond field to `int`. The official docs
+    show `openInterestHist.timestamp` both as a JSON number and as a numeric
+    string across revisions, so both encodings are accepted; anything else is
+    drift."""
+    if isinstance(value, bool):
+        pass  # bool is an int subclass but never a timestamp — fall through to raise
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    raise BinanceDerivativesError(
+        f"binance-futures: openInterest entry for {symbol} missing epoch-ms {field!r}",
+    )
+
+
+def _decimal_str(value: Any, *, field: str, symbol: str) -> float:
+    """Parse an upstream string-encoded decimal (the wire encoding for rates
+    and open interest) to `float`."""
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            pass
+    raise BinanceDerivativesError(
+        f"binance-futures: openInterest entry for {symbol} missing decimal-string {field!r}",
+    )
+
+
+def _classify_error(
+    err: ResilientHttpError, symbol: str, *, what: str = "funding rates"
+) -> UpstreamDataError:
     """Translate an exhausted/permanent `ResilientHttpError` into the typed
     taxonomy. HTTP 451 → geo-restricted (ADR-0052: surfaced, never improvised
     around); 429 → rate-limited (carrying `Retry-After`); any other status or
@@ -266,12 +513,12 @@ def _classify_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:
     resp = err.last_response
     if resp is not None and resp.status_code == 451:
         return GeoRestrictedError(
-            f"binance-futures: geo-restricted (HTTP 451) fetching funding rates for "
+            f"binance-futures: geo-restricted (HTTP 451) fetching {what} for "
             f"{symbol} — fapi.binance.com is blocked from this network (ADR-0052)",
         )
     if resp is not None and resp.status_code == 429:
         return RateLimitedError(
-            f"binance-futures: rate limited (HTTP 429) fetching funding rates for {symbol}",
+            f"binance-futures: rate limited (HTTP 429) fetching {what} for {symbol}",
             retry_after_seconds=_parse_retry_after(_header(resp.headers, "Retry-After")),
         )
     if resp is not None:
@@ -279,7 +526,7 @@ def _classify_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:
     else:
         detail = type(err.last_exception).__name__ if err.last_exception is not None else "unknown"
     return UpstreamUnavailableError(
-        f"binance-futures: upstream unavailable ({detail}) fetching funding rates for {symbol}",
+        f"binance-futures: upstream unavailable ({detail}) fetching {what} for {symbol}",
     )
 
 

@@ -1,6 +1,7 @@
-"""Plan 0056 phase 1 — Binance derivatives adapter: funding-rate backfill.
+"""Plan 0056 phases 1 + 3 — Binance derivatives adapter: funding-rate backfill
+and open-interest seed/accrual.
 
-Done-when claims pinned here:
+Phase-1 done-when claims pinned here:
 (a) pagination is proven against a 3-page fixture (two data pages + the empty
     terminator): points are contiguous (exact 8h spacing), deduplicated, and
     the walk terminates on the empty page;
@@ -9,6 +10,15 @@ Done-when claims pinned here:
 (c) re-running the backfill is idempotent (row count unchanged);
 (d) funding values round-trip at full precision — exact equality between the
     stored values and the fixture's decimal strings.
+
+Phase-3 done-when claims pinned here (the OI section below):
+(a) the seed lands the fixture's window and a re-seed is idempotent (inserts 0,
+    row count unchanged);
+(b) accrual writes at most one point per hour — the Plan 0055 phase-3 dual
+    assertion: two same-hour samples produce one point (first write wins),
+    samples in different hours produce two;
+(c) a seed/accrual overlap (the same hour reached from both paths, either
+    order) neither duplicates the bucket nor raises a conflict.
 
 Fixture provenance: the pages below are built in-code in EXACTLY the
 documented `/fapi/v1/fundingRate` response shape (list of objects with
@@ -52,6 +62,8 @@ from market_analyser.data.errors import (
 from market_analyser.data.metric_series import (
     SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
     SERIES_BINANCE_FUNDING_RATE_ETHUSDT,
+    SERIES_BINANCE_OPEN_INTEREST_BTCUSDT,
+    SERIES_BINANCE_OPEN_INTEREST_ETHUSDT,
     UnknownMetricSeriesError,
     is_registered,
 )
@@ -450,6 +462,359 @@ def test_foreign_symbol_in_payload_raises(
 
     with pytest.raises(BinanceDerivativesError, match="ETHUSDT"):
         adapter.fetch_series(SERIES_BINANCE_FUNDING_RATE_BTCUSDT)
+
+
+# =================================================================================
+# Phase 3 — open interest: seed + accrual
+# =================================================================================
+
+# 2026-05-01T00:00:00Z — hour-aligned OI fixture anchor (the seed window is
+# whatever upstream retains, ~30 days; the fixture scales it down to hours).
+_OI_BASE_TS = int(datetime(2026, 5, 1, tzinfo=UTC).timestamp())
+_OI_HIST_HOURS = 14
+# The fake upstream serves at most this many hist rows per genuine-startTime
+# request — the 500-row page cap at fixture scale, forcing a multi-page walk.
+_OI_SERVER_PAGE_ROWS = 6
+# Latest-window mode at fixture scale (no/zero startTime): `limit` ignored,
+# only the most recent rows — the conservative reading of the fundingRate
+# smoke finding, assumed shared by the hist endpoint.
+_OI_LATEST_WINDOW_ROWS = 4
+
+
+def _oi_value_str(hour_index: int) -> str:
+    """Deterministic 8-decimal base-asset OI string (e.g. ``"20004.50000000"``)."""
+    return f"{20_000 + hour_index * 1.5:.8f}"
+
+
+def _oi_hist_entry(hour_index: int, *, symbol: str = "BTCUSDT") -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        "sumOpenInterest": _oi_value_str(hour_index),
+        "sumOpenInterestValue": "150570784.07809979",
+        "CMCCirculatingSupply": "165880.538",
+        "timestamp": (_OI_BASE_TS + hour_index * 3600) * 1000,
+    }
+
+
+def _oi_snapshot_body(*, ts_ms: int, value: str, symbol: str = "BTCUSDT") -> dict[str, Any]:
+    return {"openInterest": value, "symbol": symbol, "time": ts_ms}
+
+
+class _FakeOiTransport:
+    """Transport seam serving both OI endpoints.
+
+    `/futures/data/openInterestHist`: a genuine (nonzero) `startTime` serves
+    rows from that instant honoring `limit` up to the server page cap; a
+    missing or zero `startTime` falls into latest-window mode (`limit`
+    ignored, most recent rows) — the same parameter contract the fundingRate
+    smoke verified, conservatively assumed shared. With
+    `clamp_early_start=False` the fake instead answers a startTime older than
+    its earliest retained row with an EMPTY page (the undocumented
+    non-clamping alternative the seed must survive).
+
+    `/fapi/v1/openInterest`: returns `snapshot_holder["body"]` (mutable
+    between calls so a test can steer the sample's timestamp/value).
+    """
+
+    def __init__(
+        self,
+        entries: list[dict[str, Any]],
+        snapshot_holder: dict[str, dict[str, Any]] | None = None,
+        *,
+        clamp_early_start: bool = True,
+    ) -> None:
+        self._entries = entries
+        self._snapshot_holder = snapshot_holder if snapshot_holder is not None else {}
+        self._clamp_early_start = clamp_early_start
+        self.hist_requests: list[dict[str, str]] = []
+        self.snapshot_requests: list[dict[str, str]] = []
+
+    def __call__(
+        self, method: str, url: str, body: Any, headers: Any, *, proxy: Any
+    ) -> HttpResponse:
+        raw_query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        query = {k: v[0] for k, v in raw_query.items()}
+        if "openInterestHist" in url:
+            self.hist_requests.append(query)
+            payload: Any = self._hist_page(query)
+        else:
+            self.snapshot_requests.append(query)
+            payload = self._snapshot_holder["body"]
+        return HttpResponse(
+            status_code=200,
+            headers={},
+            body=json.dumps(payload).encode("utf-8"),
+            elapsed_seconds=0.0,
+        )
+
+    def _hist_page(self, query: dict[str, str]) -> list[dict[str, Any]]:
+        start_ms = int(query.get("startTime", "0"))
+        if start_ms == 0:
+            return self._entries[-_OI_LATEST_WINDOW_ROWS:]
+        if not self._clamp_early_start and self._entries:
+            earliest = int(str(self._entries[0]["timestamp"]))
+            if start_ms < earliest:
+                return []
+        limit = int(query.get("limit", "30"))
+        page = [e for e in self._entries if int(str(e["timestamp"])) >= start_ms]
+        return page[: min(limit, _OI_SERVER_PAGE_ROWS)]
+
+
+def _oi_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    store: MetricPointsRepository | None,
+    *,
+    transport: Any | None = None,
+) -> tuple[BinanceDerivativesAdapter, Any]:
+    client = BinanceFuturesHttpClient(
+        source_name="binance-test", cache_ttl_seconds=0.0, max_retries=0
+    )
+    fake = (
+        transport
+        if transport is not None
+        else _FakeOiTransport([_oi_hist_entry(i) for i in range(_OI_HIST_HOURS)])
+    )
+    monkeypatch.setattr(client, "_perform_request", fake)
+    return BinanceDerivativesAdapter(http_client=client, metric_store=store), fake
+
+
+_OI_ALL = (0, 4_000_000_000)
+
+
+def test_both_open_interest_series_are_registered() -> None:
+    assert is_registered(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    assert is_registered(SERIES_BINANCE_OPEN_INTEREST_ETHUSDT)
+
+
+# --- (a) seed lands the window; re-seed idempotent --------------------------------
+
+
+def test_oi_seed_lands_the_fixture_window(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    adapter, fake = _oi_adapter(monkeypatch, store)
+
+    inserted = adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    assert inserted == _OI_HIST_HOURS
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert [p.ts for p in stored] == [_OI_BASE_TS + i * 3600 for i in range(_OI_HIST_HOURS)]
+    # Hour-truncated buckets, values in base-asset units straight from the wire.
+    assert all(p.ts % 3600 == 0 for p in stored)
+    assert [p.value for p in stored] == [float(_oi_value_str(i)) for i in range(_OI_HIST_HOURS)]
+    # The probe deliberately omits startTime (the documented latest-window
+    # read); every paginated request carries a nonzero startTime — a falsy one
+    # would flip upstream into latest-window mode (the phase-2 smoke finding).
+    assert "startTime" not in fake.hist_requests[0]
+    assert all("startTime" in req for req in fake.hist_requests[1:])
+    assert all(int(req["startTime"]) >= 1 for req in fake.hist_requests[1:])
+    assert all(req["period"] == "1h" for req in fake.hist_requests)
+    assert all(req["limit"] == "500" for req in fake.hist_requests)
+    assert all(req["symbol"] == "BTCUSDT" for req in fake.hist_requests)
+
+
+def test_oi_reseed_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    adapter, _ = _oi_adapter(monkeypatch, store)
+
+    first = adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    second = adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    assert first == _OI_HIST_HOURS
+    assert second == 0  # nothing new on the re-seed
+    assert len(store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)) == _OI_HIST_HOURS
+
+
+def test_oi_seed_survives_a_non_clamping_upstream(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    """What a startTime older than retention returns is undocumented: a
+    clamping upstream serves from its earliest row, a non-clamping one answers
+    empty. Against the empty-answering variant the seed must still terminate
+    and land at least the latest served window (skip-forward recovery), never
+    loop or crash."""
+    transport = _FakeOiTransport(
+        [_oi_hist_entry(i) for i in range(_OI_HIST_HOURS)], clamp_early_start=False
+    )
+    adapter, fake = _oi_adapter(monkeypatch, store, transport=transport)
+
+    inserted = adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert inserted == len(stored) >= _OI_LATEST_WINDOW_ROWS
+    assert stored[-1].ts == _OI_BASE_TS + (_OI_HIST_HOURS - 1) * 3600
+    # Bounded walk: the day-sized skip covers the 30-day window in ~30 probes.
+    assert len(fake.hist_requests) < 40
+
+
+def test_oi_seed_with_empty_upstream_window_is_a_noop(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    adapter, fake = _oi_adapter(monkeypatch, store, transport=_FakeOiTransport([]))
+
+    assert adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT) == 0
+    assert store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL) == []
+    assert len(fake.hist_requests) == 1  # the probe alone decides emptiness
+
+
+def test_oi_hist_timestamp_string_encoding_accepted(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    """The official docs show `timestamp` both as a JSON number and as a
+    numeric string across revisions — both must parse."""
+    entries = [_oi_hist_entry(i) for i in range(3)]
+    for entry in entries:
+        entry["timestamp"] = str(entry["timestamp"])
+    adapter, _ = _oi_adapter(monkeypatch, store, transport=_FakeOiTransport(entries))
+
+    assert adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT) == 3
+
+
+# --- (b) accrual: at most one point per hour (the 0055 dual assertion) ------------
+
+
+def test_oi_accrual_two_same_hour_samples_produce_one_point(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    sample_ts = _OI_BASE_TS + 100 * 3600 + 37 * 60  # hh:37, off the hour boundary
+    bucket = sample_ts // 3600 * 3600
+    holder = {"body": _oi_snapshot_body(ts_ms=sample_ts * 1000, value="20100.50000000")}
+    adapter, _ = _oi_adapter(monkeypatch, store, transport=_FakeOiTransport([], holder))
+
+    first = adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    # 10 minutes later, same hour, drifted value: a no-op, not a second point
+    # and not a conflict.
+    holder["body"] = _oi_snapshot_body(ts_ms=(sample_ts + 600) * 1000, value="20999.00000000")
+    second = adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    assert (first, second) == (1, 0)
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert [p.ts for p in stored] == [bucket]
+    assert stored[0].value == 20100.5  # first write in the hour wins
+
+
+def test_oi_accrual_samples_in_different_hours_produce_two_points(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    sample_ts = _OI_BASE_TS + 100 * 3600 + 37 * 60
+    bucket = sample_ts // 3600 * 3600
+    holder = {"body": _oi_snapshot_body(ts_ms=sample_ts * 1000, value="20100.50000000")}
+    adapter, _ = _oi_adapter(monkeypatch, store, transport=_FakeOiTransport([], holder))
+
+    adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    holder["body"] = _oi_snapshot_body(ts_ms=(sample_ts + 3600) * 1000, value="20999.00000000")
+    adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert [p.ts for p in stored] == [bucket, bucket + 3600]
+    assert [p.value for p in stored] == [20100.5, 20999.0]
+
+
+# --- (c) seed/accrual same-hour overlap: no duplicate, no conflict ----------------
+
+
+def test_oi_seed_then_accrual_same_hour_is_a_noop(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    last_hour_ts = _OI_BASE_TS + (_OI_HIST_HOURS - 1) * 3600
+    holder = {
+        # A snapshot 30 minutes into the seed's last hour, with a different value.
+        "body": _oi_snapshot_body(ts_ms=(last_hour_ts + 1800) * 1000, value="99999.00000000"),
+    }
+    adapter, _ = _oi_adapter(
+        monkeypatch,
+        store,
+        transport=_FakeOiTransport([_oi_hist_entry(i) for i in range(_OI_HIST_HOURS)], holder),
+    )
+
+    adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    accrued = adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    assert accrued == 0
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert len(stored) == _OI_HIST_HOURS  # no duplicate bucket
+    assert stored[-1].value == float(_oi_value_str(_OI_HIST_HOURS - 1))  # seed's write wins
+
+
+def test_oi_accrual_then_seed_same_hour_is_skipped_not_conflicted(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    last_hour_ts = _OI_BASE_TS + (_OI_HIST_HOURS - 1) * 3600
+    holder = {
+        "body": _oi_snapshot_body(ts_ms=(last_hour_ts + 1800) * 1000, value="99999.00000000"),
+    }
+    adapter, _ = _oi_adapter(
+        monkeypatch,
+        store,
+        transport=_FakeOiTransport([_oi_hist_entry(i) for i in range(_OI_HIST_HOURS)], holder),
+    )
+
+    adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    seeded = adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    assert seeded == _OI_HIST_HOURS - 1  # everything except the accrual-owned bucket
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert len(stored) == _OI_HIST_HOURS
+    assert stored[-1].ts == last_hour_ts
+    assert stored[-1].value == 99999.0  # the accrual's first write survives the seed
+
+
+# --- typed errors + boundary checks on the OI paths -------------------------------
+
+
+def test_oi_451_raises_geo_restricted_error(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    fake = _static_response(451, _BODY_451)
+    adapter, _ = _oi_adapter(monkeypatch, store, transport=fake)
+
+    with pytest.raises(GeoRestrictedError, match="451"):
+        adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    with pytest.raises(GeoRestrictedError, match="451"):
+        adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+
+def test_oi_hist_shape_drift_raises_typed_error(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    drifted = [_oi_hist_entry(0)]
+    del drifted[0]["sumOpenInterest"]
+    adapter, _ = _oi_adapter(monkeypatch, store, transport=_FakeOiTransport(drifted))
+
+    with pytest.raises(BinanceDerivativesError, match="sumOpenInterest"):
+        adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+
+def test_oi_snapshot_foreign_symbol_raises(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    holder = {"body": _oi_snapshot_body(ts_ms=_OI_BASE_TS * 1000, value="1.0", symbol="ETHUSDT")}
+    adapter, _ = _oi_adapter(monkeypatch, store, transport=_FakeOiTransport([], holder))
+
+    with pytest.raises(BinanceDerivativesError, match="ETHUSDT"):
+        adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+
+def test_oi_paths_reject_foreign_and_unregistered_series_ids(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    adapter, fake = _oi_adapter(monkeypatch, store)
+
+    with pytest.raises(ValueError, match=r"binance\.open_interest\."):
+        adapter.accrue_open_interest(SERIES_BINANCE_FUNDING_RATE_BTCUSDT)
+    with pytest.raises(UnknownMetricSeriesError, match="DOGEUSDT"):
+        adapter.seed_open_interest("binance.open_interest.DOGEUSDT")
+    assert fake.hist_requests == [] and fake.snapshot_requests == []  # rejected pre-fetch
+
+
+def test_oi_paths_without_store_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter, _ = _oi_adapter(monkeypatch, store=None)
+
+    with pytest.raises(ValueError, match="metric store"):
+        adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+    with pytest.raises(ValueError, match="metric store"):
+        adapter.accrue_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
 
 
 # --- live verification (phase 2 smoke; `uv run pytest -m network`) --------------
