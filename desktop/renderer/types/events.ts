@@ -54,18 +54,48 @@ export interface Marker {
   strength?: number | null
 }
 
+/** Mirror of the pydantic `TrendPoint` (ADR-0049 / Plan 0052): one `(time, price)`
+ * anchor of a trendline. `ts` is an ISO timestamp, not a bar index — consistent
+ * with `Marker.event_ts`, so the renderer maps it the same way. */
+export interface TrendPoint {
+  ts: string
+  price: number
+}
+
+export type TrendlineRole = 'neckline' | 'upper_trendline' | 'lower_trendline'
+
+export type TrendlineStyle = 'solid' | 'dashed'
+
+/** Mirror of the pydantic `TrendlineSpec` (ADR-0049 / Plan 0052): a sloped
+ * multi-point line (a head-and-shoulders neckline, one bounding trendline of a
+ * triangle/wedge). `points` carries ≥2 anchors (validated sidecar-side). `style`
+ * is the forming-vs-confirmed cue (`dashed` = forming, `solid` = confirmed); it
+ * has a pydantic default of `"solid"` (so it is not in the schema's `required`
+ * set) but is never `None`, so under the bus's `exclude_none` dump it is ALWAYS
+ * present on the wire — hence required here. `role`/`label`/`pattern` default to
+ * `None` and are absent when unset. */
+export interface TrendlineSpec {
+  points: TrendPoint[]
+  role?: TrendlineRole | null
+  style: TrendlineStyle
+  label?: string | null
+  pattern?: string | null
+}
+
 export interface ChartShowPayloadV1 {
   symbol: string
   timeframe: string
   range_start: string
   range_end: string
   overlays?: OverlaySpec[] | null
+  trendlines?: TrendlineSpec[] | null
 }
 
 export interface ChartUpdatePayloadV1 {
   symbol: string
   timeframe: string
   overlays?: OverlaySpec[] | null
+  trendlines?: TrendlineSpec[] | null
   range_start?: string | null
   range_end?: string | null
   focus_bar?: string | null

@@ -27,6 +27,7 @@ import type {
   ChartUpdatePayloadV1,
   Marker,
   OverlaySpec,
+  TrendlineSpec,
 } from '../types/events'
 
 export interface ChartState {
@@ -37,6 +38,11 @@ export interface ChartState {
   /** ISO 8601 UTC end of the visible range, inclusive. */
   range_end: string
   overlays: OverlaySpec[]
+  /** Sloped trendlines from `chart.show`/`chart.update` (Plan 0052, ADR-0049).
+   * Same merge rule as `overlays`: a missing key on an update means "leave
+   * unchanged"; cleared on a symbol/timeframe switch (the geometry belongs to
+   * the chart it was computed for). */
+  trendlines: TrendlineSpec[]
   /** Live markers from `chart.highlight` envelopes. Deduplicated by
    * `(event_ts, pattern, kind)` (Plan 0049) so distinct same-bar patterns
    * survive. Merged with the polled annotation list at render time — duplicates
@@ -84,6 +90,7 @@ export function applyChartShow(_prev: ChartState, payload: ChartShowPayloadV1): 
     range_start: payload.range_start,
     range_end: payload.range_end,
     overlays: payload.overlays ?? [],
+    trendlines: payload.trendlines ?? [],
     liveHighlights: [],
   }
 }
@@ -102,6 +109,7 @@ export function applyChartUpdate(prev: ChartState, payload: ChartUpdatePayloadV1
       range_start: payload.range_start ?? prev.range_start,
       range_end: payload.range_end ?? prev.range_end,
       overlays: payload.overlays ?? [],
+      trendlines: payload.trendlines ?? [],
       liveHighlights: [],
     }
   }
@@ -109,6 +117,7 @@ export function applyChartUpdate(prev: ChartState, payload: ChartUpdatePayloadV1
   return {
     ...prev,
     overlays: payload.overlays ?? prev.overlays,
+    trendlines: payload.trendlines ?? prev.trendlines,
     range_start: payload.range_start ?? prev.range_start,
     range_end: payload.range_end ?? prev.range_end,
   }
@@ -138,10 +147,10 @@ export function chartReducer(state: ChartState, action: ChartAction): ChartState
       return applyChartHighlight(state, action.payload)
     case 'ui/set-symbol':
       if (state.symbol === action.symbol) return state
-      return { ...state, symbol: action.symbol, liveHighlights: [] }
+      return { ...state, symbol: action.symbol, liveHighlights: [], trendlines: [] }
     case 'ui/set-timeframe':
       if (state.timeframe === action.timeframe) return state
-      return { ...state, timeframe: action.timeframe, liveHighlights: [] }
+      return { ...state, timeframe: action.timeframe, liveHighlights: [], trendlines: [] }
     case 'ui/refresh': {
       const endMs = Date.parse(action.nowIso)
       const startMs = endMs - action.lookbackDays * 24 * 60 * 60 * 1000
@@ -165,6 +174,7 @@ export function initialChartState(nowIso: string = new Date().toISOString()): Ch
     range_start: new Date(startMs).toISOString(),
     range_end: nowIso,
     overlays: [],
+    trendlines: [],
     liveHighlights: [],
   }
 }

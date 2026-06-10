@@ -10,8 +10,19 @@ import {
   chartReducer,
   initialChartState,
 } from './chartHandlers'
+import type { TrendlineSpec } from '../types/events'
 
 const NOW_ISO = '2026-05-20T12:00:00.000Z'
+
+const NECKLINE: TrendlineSpec = {
+  points: [
+    { ts: '2026-05-01T00:00:00Z', price: 100 },
+    { ts: '2026-05-10T00:00:00Z', price: 104 },
+  ],
+  role: 'neckline',
+  style: 'dashed',
+  pattern: 'head_shoulders',
+}
 
 function baseState() {
   return initialChartState(NOW_ISO)
@@ -47,6 +58,26 @@ describe('applyChartShow', () => {
       range_end: '2026-05-20T00:00:00+00:00',
     })
     expect(next.overlays).toEqual([])
+  })
+
+  it('carries trendlines from the payload; missing trendlines reset to [] (Plan 0052)', () => {
+    const prev = { ...baseState(), trendlines: [{ ...NECKLINE, pattern: 'stale' }] }
+    const withLines = applyChartShow(prev, {
+      symbol: 'ES=F',
+      timeframe: '1d',
+      range_start: '2026-04-20T00:00:00+00:00',
+      range_end: '2026-05-20T00:00:00+00:00',
+      trendlines: [NECKLINE],
+    })
+    expect(withLines.trendlines).toEqual([NECKLINE])
+
+    const withoutLines = applyChartShow(prev, {
+      symbol: 'ES=F',
+      timeframe: '1d',
+      range_start: '2026-04-20T00:00:00+00:00',
+      range_end: '2026-05-20T00:00:00+00:00',
+    })
+    expect(withoutLines.trendlines).toEqual([])
   })
 
   it.each(['15m', '4h', '1w'])(
@@ -114,6 +145,25 @@ describe('applyChartUpdate', () => {
     })
     expect(next.range_start).toBe('2026-05-10T00:00:00+00:00')
     expect(next.range_end).toBe('2026-05-20T00:00:00+00:00')
+  })
+
+  it('leaves trendlines unchanged when the payload omits them; replaces when supplied (Plan 0052)', () => {
+    const prev = { ...baseState(), trendlines: [NECKLINE] }
+    const omitted = applyChartUpdate(prev, {
+      symbol: prev.symbol,
+      timeframe: prev.timeframe,
+      overlays: [{ kind: 'ema', period: 50 }],
+    })
+    // Missing key means "leave unchanged" (exclude_none wire rule).
+    expect(omitted.trendlines).toEqual([NECKLINE])
+
+    const confirmed: TrendlineSpec = { ...NECKLINE, style: 'solid' }
+    const replaced = applyChartUpdate(prev, {
+      symbol: prev.symbol,
+      timeframe: prev.timeframe,
+      trendlines: [confirmed],
+    })
+    expect(replaced.trendlines).toEqual([confirmed])
   })
 
   it('out-of-order: update for a different symbol falls back to chart.show semantics', () => {
@@ -204,14 +254,24 @@ describe('applyChartHighlight', () => {
 })
 
 describe('chartReducer ui actions', () => {
-  it('ui/set-symbol clears the live-highlights buffer', () => {
+  it('ui/set-symbol clears the live-highlights buffer and the trendlines', () => {
     const prev = {
       ...baseState(),
       liveHighlights: [{ event_ts: '2026-05-15T00:00:00Z', kind: 'bullish_marker' as const }],
+      trendlines: [NECKLINE],
     }
     const next = chartReducer(prev, { kind: 'ui/set-symbol', symbol: 'MSFT' })
     expect(next.symbol).toBe('MSFT')
     expect(next.liveHighlights).toEqual([])
+    // Trendline geometry belongs to the chart it was computed for.
+    expect(next.trendlines).toEqual([])
+  })
+
+  it('ui/set-timeframe clears the trendlines (geometry is per symbol+timeframe)', () => {
+    const prev = { ...baseState(), trendlines: [NECKLINE] }
+    const next = chartReducer(prev, { kind: 'ui/set-timeframe', timeframe: '1h' })
+    expect(next.timeframe).toBe('1h')
+    expect(next.trendlines).toEqual([])
   })
 
   it('ui/refresh recomputes range_start = nowIso - lookbackDays', () => {

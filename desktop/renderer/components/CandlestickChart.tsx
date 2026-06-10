@@ -64,6 +64,8 @@ import {
   supertrendBands,
 } from '../lib/overlays'
 import { PatternSpanPrimitive, SPAN_LAYER_ID, SPAN_LAYER_LABEL, markersToSpans } from '../lib/spans'
+import { TRENDLINE_LAYER_ID, TRENDLINE_LAYER_LABEL } from '../lib/trendlines'
+import { useTrendlines } from '../hooks/useTrendlines'
 import {
   getStoredTheme,
   resolveEffective,
@@ -79,7 +81,7 @@ import {
   computeVwap,
 } from '../lib/volume'
 import type { Bar } from '../types/sidecar/bar'
-import type { OverlaySpec } from '../types/events'
+import type { OverlaySpec, TrendlineSpec } from '../types/events'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
 import { timeframeDurationMs } from '../lib/timeframes'
 import styles from './CandlestickChart.module.css'
@@ -179,10 +181,18 @@ declare global {
   }
 }
 
+// Stable empty list for the trendlines default — a fresh `[]` per render would
+// re-run the useTrendlines effect every time.
+const NO_TRENDLINES: ReadonlyArray<TrendlineSpec> = []
+
 interface Props {
   bars: Bar[]
   annotations?: ChartMarker[]
   overlays?: ReadonlyArray<OverlaySpec>
+  /** Plan 0052 phase 4 (ADR-0049): sloped trendlines (necklines, triangle/wedge
+   * bounds) from `chart.show`/`chart.update`, drawn by the trendline primitive
+   * via `useTrendlines`. Dashed = forming, solid = confirmed. */
+  trendlines?: ReadonlyArray<TrendlineSpec>
   ariaLabel?: string
   /** Plan 0014: when true, chart gestures (range-select, bar-click) are
    * forwarded to the agent via `POST /ui_events`. Default false — the
@@ -272,6 +282,7 @@ export function CandlestickChart({
   bars,
   annotations,
   overlays,
+  trendlines = NO_TRENDLINES,
   ariaLabel,
   agentModeEnabled = false,
   symbol,
@@ -700,6 +711,12 @@ export function CandlestickChart({
     onReachLeftEdge: onReachLeftEdge ?? NOOP,
   })
 
+  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049). The reconcile
+  // lives in the hook — not inline — per the god-component mitigation; like the
+  // sibling hooks above, called after the chart-creation effect so `seriesRef`
+  // is populated on mount.
+  useTrendlines(containerRef, seriesRef, { trendlines, hidden, effectiveTheme })
+
   // Markers (annotation markers + the clicked-bar affordance) are themed: their
   // colors resolve from the DOM tokens, so they recolor when `effectiveTheme`
   // changes. Built in an effect (not useMemo) so the container is mounted and
@@ -854,8 +871,21 @@ export function CandlestickChart({
         visible: !hidden.has(SPAN_LAYER_ID),
       })
     }
+    // One row for ALL trendlines (Plan 0052 phase 4), mirroring the span row;
+    // only present when at least one trendline exists. Unchecking it hides
+    // every line and leaves the other layers untouched (useTrendlines reads
+    // `hidden`). Neutral swatch — the row governs lines of mixed role colours.
+    if (trendlines.length > 0) {
+      next.push({
+        id: TRENDLINE_LAYER_ID,
+        label: TRENDLINE_LAYER_LABEL,
+        color: colors.markerNeutral,
+        kind: 'trendline',
+        visible: !hidden.has(TRENDLINE_LAYER_ID),
+      })
+    }
     setLayers(next)
-  }, [overlays, annotations, hidden, effectiveTheme])
+  }, [overlays, annotations, trendlines, hidden, effectiveTheme])
 
   // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a labelled
   // marker's text and/or each overlay line's name + value at that bar. Reads only

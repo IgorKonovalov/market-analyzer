@@ -24,7 +24,7 @@ import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useBackfillState } from '../hooks/useBackfillState'
 import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
 import { useQuotePoll } from '../hooks/useQuotePoll'
-import type { Marker, OverlaySpec } from '../types/events'
+import type { Marker, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
 import styles from './OhlcvView.module.css'
@@ -41,6 +41,9 @@ export interface OhlcvViewProps {
    * series. The chart renders supported kinds (ema, sma) and logs-and-skips
    * unsupported ones (rsi, macd, bbands). */
   overlays: ReadonlyArray<OverlaySpec>
+  /** Plan 0052 phase 4 (ADR-0049): sloped trendlines (necklines, triangle/
+   * wedge bounds) the agent pushed via `chart.show`/`chart.update`. */
+  trendlines?: ReadonlyArray<TrendlineSpec>
   onSymbolChange: (symbol: string) => void
   onTimeframeChange: (timeframe: Timeframe) => void
   onRefresh: () => void
@@ -53,6 +56,7 @@ export function OhlcvView({
   range_end,
   liveHighlights,
   overlays,
+  trendlines,
   onSymbolChange,
   onTimeframeChange,
   onRefresh,
@@ -148,6 +152,7 @@ export function OhlcvView({
             bars={bars}
             annotations={mergedAnnotations}
             overlays={overlays}
+            trendlines={trendlines}
             agentModeEnabled={agentModeEnabled}
             symbol={symbol}
             timeframe={timeframe}
