@@ -1,6 +1,6 @@
 # ADR-0051 — Historized external metric series: one contract, one table
 
-> **Status:** proposed (accepts at Plan 0055's close)
+> **Status:** accepted (2026-06-10, at Plan 0055's close)
 > **Date:** 2026-06-09
 > **Related plan(s):** 0055-cycle-macro-series-spine (lands the contract), 0056-binance-derivatives-data, 0057-onchain-valuation-metrics (both historize through it), 0059-forecast-feature-set-v2 (consumes the as-of join)
 > **Related ADRs:** [ADR-0006](0006-persistence-layout.md) (the SQLite cache this extends), [ADR-0027](0027-crypto-macro-regime-classification.md) (the snapshot-only macro read this historizes), [ADR-0031](0031-data-source-adapter-contract.md) (the per-capability source Protocol pattern this follows), [ADR-0030](0030-forecasting-subsystem.md) (the causality rule the as-of read enforces)

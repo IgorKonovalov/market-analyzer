@@ -1,6 +1,6 @@
 # 0055 — Cycle & macro time-series spine
 
-> **Status:** in-progress
+> **Status:** done (2026-06-10) — all 4 phases on branch `plan-0055-cycle-macro-series-spine` (`f00f848` contract → `2aecfe7` F&G backfill → `81a17c8` accrual → `5e85cf6` tools), merged `--no-ff` to `main`. Clean Mode 4: no blockers, no majors; every done-when criterion read at the assertion level (as_of probed at bound+1s, refused-batch-writes-nothing, hour-bucket accrual with drifted same-hour value, exact Mayer/phase fixtures, `too_large` flipped at cap+1, future-point invisibility unit + e2e). 1267 tests + ruff + mypy --strict green on the worktree (one pre-existing Yahoo network-smoke failure reproduced on `main`, unrelated). ADR-0051 accepted at this close. Two minors: phase-2 history fixture is synthetic-in-captured-shape (disclosed; compensated by a `network`-marked live test — run `uv run pytest -m network` once before relying on the backfill), and `mcp_app.py` overlaps the in-flight plan-0051 branch (merge-order note).
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev
 > **Related ADRs:** [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (implements; accepts at close), [ADR-0027](../adrs/0027-crypto-macro-regime-classification.md) (the snapshot this historizes), [ADR-0046](../adrs/0046-mcp-large-result-delivery.md) (paging for the series tool)
