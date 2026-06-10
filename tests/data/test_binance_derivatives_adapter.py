@@ -10,13 +10,18 @@ Done-when claims pinned here:
 (d) funding values round-trip at full precision — exact equality between the
     stored values and the fixture's decimal strings.
 
-Fixture provenance: a verbatim capture could not be taken in this environment
-(no raw network access), so the pages below are built in-code in EXACTLY the
+Fixture provenance: the pages below are built in-code in EXACTLY the
 documented `/fapi/v1/fundingRate` response shape (list of objects with
 `symbol`, string-encoded 8-decimal `fundingRate`, integer epoch-millisecond
 `fundingTime`, string `markPrice`), and the 451 body mirrors Binance's real
-restricted-location response. The `network`-marked test at the bottom verifies
-the same claims against the live endpoint when run from the user's network
+restricted-location response. The fake transport reproduces the
+**live-verified parameter contract** (probed 2026-06-10, the plan 0056
+phase 2 smoke finding): a genuine (nonzero) `startTime` serves rows from that
+instant honoring `limit`; a missing OR zero `startTime` falls into the
+latest-window mode that ignores `limit` and serves only recent prints — so a
+backfill that lets a falsy `startTime` reach the wire fails these fixtures the
+same way it fails live. The `network`-marked test at the bottom verifies the
+same claims against the live endpoint when run from the user's network
 (`uv run pytest tests/data/test_binance_derivatives_adapter.py -m network -s`)
 — that run is Plan 0056 phase 2's smoke.
 """
@@ -66,6 +71,11 @@ _HISTORY_PRINTS = 10
 # The fake upstream serves at most this many rows per request — the 1000-row
 # page cap at fixture scale, so the walk needs two data pages plus the empty one.
 _SERVER_PAGE_ROWS = 6
+# Latest-window mode at fixture scale: when `startTime` is absent OR zero,
+# Binance ignores `limit` and serves only the most recent prints (live probe
+# 2026-06-10: `startTime=0&limit=1000` returned the same ~200 recent rows as
+# no params at all — never the launch-anchored history).
+_LATEST_WINDOW_ROWS = 4
 
 # Binance's real restricted-location response body (HTTP 451).
 _BODY_451 = json.dumps(
@@ -108,9 +118,13 @@ def _history_entries() -> list[dict[str, Any]]:
 
 
 class _FakeTransport:
-    """Replaces `ResilientHttpClient._perform_request` (the transport seam):
-    serves the entry list page-by-page from the request's `startTime`, capped
-    at `_SERVER_PAGE_ROWS` rows, and records every request's query params."""
+    """Replaces `ResilientHttpClient._perform_request` (the transport seam),
+    reproducing the live-verified `/fapi/v1/fundingRate` parameter contract
+    (plan 0056 phase 2 smoke finding): a genuine (nonzero) `startTime` serves
+    rows from that instant, honoring `limit` up to the server page cap; a
+    missing or **zero** `startTime` is treated as "not sent" and falls into
+    latest-window mode — the most recent `_LATEST_WINDOW_ROWS`, `limit`
+    ignored. Records every request's query params."""
 
     def __init__(self, entries: list[dict[str, Any]]) -> None:
         self._entries = entries
@@ -122,9 +136,13 @@ class _FakeTransport:
         raw_query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
         query = {k: v[0] for k, v in raw_query.items()}
         self.requests.append(query)
-        start_ms = int(query["startTime"])
-        page = [e for e in self._entries if int(e["fundingTime"]) >= start_ms]
-        page = page[:_SERVER_PAGE_ROWS]
+        start_ms = int(query.get("startTime", "0"))
+        if start_ms == 0:
+            page = self._entries[-_LATEST_WINDOW_ROWS:]
+        else:
+            limit = int(query.get("limit", "100"))
+            page = [e for e in self._entries if int(e["fundingTime"]) >= start_ms]
+            page = page[: min(limit, _SERVER_PAGE_ROWS)]
         return HttpResponse(
             status_code=200,
             headers={},
@@ -216,9 +234,13 @@ def test_pagination_walks_pages_dedupes_and_terminates_on_empty_page(
     assert len(fake.requests) == 3
     assert all(req["symbol"] == "BTCUSDT" for req in fake.requests)
     assert all(req["limit"] == "1000" for req in fake.requests)
-    # The cursor starts at contract launch (0) and advances past each page's
-    # last print; the final request starts beyond the last known print.
-    assert fake.requests[0]["startTime"] == "0"
+    # The cursor starts at the nonzero epoch floor — Binance treats
+    # `startTime=0` as absent and would serve only the latest window (the
+    # phase-2 smoke finding) — and advances past each page's last print; the
+    # final request starts beyond the last known print. No request ever
+    # carries a falsy startTime.
+    assert fake.requests[0]["startTime"] == "1"
+    assert all(int(req["startTime"]) >= 1 for req in fake.requests)
     assert int(fake.requests[-1]["startTime"]) == _print_ts(_HISTORY_PRINTS - 1) * 1000 + 1
 
 
@@ -236,6 +258,21 @@ def test_fetch_series_clips_to_inclusive_window(
     assert [p.ts for p in points] == [_print_ts(2), _print_ts(3), _print_ts(4), _print_ts(5)]
     assert fake.requests[0]["startTime"] == str(_print_ts(2) * 1000)
     assert all(req["endTime"] == str(_print_ts(5) * 1000) for req in fake.requests)
+
+
+def test_fetch_series_start_zero_never_sends_falsy_start_time(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    """`start=0` means "from the epoch" — full history — but a literal
+    `startTime=0` on the wire would flip Binance into latest-window mode and
+    silently truncate the backfill. The cursor must clamp to the nonzero floor."""
+    adapter, fake = _adapter(monkeypatch, store)
+
+    points = adapter.fetch_series(SERIES_BINANCE_FUNDING_RATE_BTCUSDT, start=0)
+
+    assert len(points) == _HISTORY_PRINTS
+    assert points[0].ts == _LAUNCH_TS
+    assert fake.requests[0]["startTime"] == "1"
 
 
 def test_eth_series_requests_eth_symbol(

@@ -13,6 +13,10 @@ implementing `MetricSeriesSource` per ADR-0051):
 
 - `fetch_series` paginates `GET /fapi/v1/fundingRate` (max 1000 rows/page) from
   contract launch, advancing a `startTime` cursor past each page's last print.
+  The cursor floor is a **nonzero** epoch-millisecond (`_HISTORY_START_MS`):
+  Binance treats `startTime=0` as "parameter not sent" and falls back to a
+  latest-window mode that ignores the page `limit` — verified live 2026-06-10
+  (plan 0056 phase 2 smoke finding), so a falsy cursor never reaches the wire.
   **An empty page is end-of-history, not an error** — full-history-by-pagination
   is confirmed in practice but not doc-guaranteed (ADR-0052 Notes), so the
   terminator is the upstream running out of rows. Points are deduplicated by
@@ -62,6 +66,15 @@ _SOURCE = "binance-futures"
 
 # Upstream page cap for /fapi/v1/fundingRate (ADR-0052 verified facts).
 _PAGE_LIMIT = 1000
+
+# First-page `startTime` floor: 1 ms after the epoch — at/before any contract
+# launch, and never zero. Binance treats `startTime=0` exactly like an absent
+# parameter and serves only the most recent window (ignoring `limit`), which
+# silently truncates the backfill to ~200 recent prints. Verified live
+# 2026-06-10 against /fapi/v1/fundingRate (plan 0056 phase 2 smoke finding):
+# `startTime=0&limit=1000` returned the same 200 rows as no params at all,
+# while `startTime=1&limit=5` returned the Sep-2019 launch prints.
+_HISTORY_START_MS = 1
 
 # The series-id family this adapter produces in phase 1; the symbol is the
 # suffix (`binance.funding_rate.BTCUSDT` → `BTCUSDT`). Registration is still
@@ -131,7 +144,9 @@ class BinanceDerivativesAdapter:
         does not produce."""
         symbol = _funding_symbol(series_id)
         points_by_ts: dict[int, MetricPoint] = {}
-        cursor_ms = start * 1000 if start is not None else 0
+        # Clamp to the nonzero floor: Binance discards a falsy startTime and
+        # would silently serve the latest window instead of contract launch.
+        cursor_ms = _HISTORY_START_MS if start is None else max(start * 1000, _HISTORY_START_MS)
         while True:
             params: dict[str, str | int | float] = {
                 "symbol": symbol,
