@@ -38,6 +38,10 @@ from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.cycle_snapshot import register_btc_cycle_snapshot
+from market_analyser.api.mcp_tools.derivatives_snapshot import (
+    DerivativesSource,
+    register_derivatives_snapshot,
+)
 from market_analyser.api.mcp_tools.detect_levels import register_detect_levels
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.forecast import register_forecast
@@ -68,6 +72,7 @@ from market_analyser.api.mcp_tools.volume_confirmation import register_volume_co
 from market_analyser.api.mcp_tools.walk_forward_backtest import register_walk_forward_backtest
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
 from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
@@ -91,6 +96,7 @@ def create_mcp_components(
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
     metric_points_repository: MetricPointsRepository | None = None,
+    derivatives_source: DerivativesSource | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -209,6 +215,21 @@ def create_mcp_components(
         register_get_metric_series(
             server,
             metric_points_repository=metric_points_repository,
+        )
+        # `derivatives_snapshot` (Plan 0056) reads funding/OI from the same
+        # store and is offline by default — only an explicit `refresh=true`
+        # touches the network, so the real Binance adapter is a safe default
+        # to construct here when the caller (tests inject spies) supplies
+        # none. The adapter stays package-internal: this assembly hub is the
+        # MCP side of the composition root (ADR-0007/ADR-0031).
+        register_derivatives_snapshot(
+            server,
+            metric_points_repository=metric_points_repository,
+            derivatives_source=(
+                derivatives_source
+                if derivatives_source is not None
+                else BinanceDerivativesAdapter(metric_store=metric_points_repository)
+            ),
         )
 
     # `scan_wallet` (Plan 0032) is registered only when a wallet-positions source
