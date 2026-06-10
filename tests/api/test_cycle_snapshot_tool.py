@@ -1,0 +1,325 @@
+"""Plan 0055 phase 4 — the `btc_cycle_snapshot` MCP tool.
+
+Done-when claims pinned here:
+(a) cycle math arrives in the snapshot exactly as the fixture predicts (Mayer
+    from a known SMA200; the halving clock from a pinned `now`);
+(b) `dist_200w_ma` is `None` (not a number) when fewer than 1400 daily bars
+    exist;
+(d) the full-toolset registration grows `btc_cycle_snapshot` (and its sibling
+    `get_metric_series`) when the metric store is wired — and omits them
+    without one;
+(e) trailing-only: the store reads go through `as_of`, so an injected
+    future-timestamped point never appears in the snapshot.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
+
+import anyio
+import pytest
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ListToolsRequest, ListToolsResult
+from sqlalchemy.orm import Session, sessionmaker
+
+from market_analyser.api.mcp_app import create_mcp_components
+from market_analyser.api.mcp_tools.cycle_snapshot import (
+    _build_snapshot,
+    register_btc_cycle_snapshot,
+)
+from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.data.metric_series import (
+    SERIES_COINGECKO_BTC_DOMINANCE,
+    SERIES_FNG_VALUE,
+    MetricPoint,
+)
+from market_analyser.data.types import (
+    Bar,
+    MacroContext,
+    MarketSentimentSample,
+    NewsItem,
+    Quote,
+    ScreenerRow,
+    SentimentSample,
+    SymbolInfo,
+)
+from market_analyser.events import EventBus
+from market_analyser.persistence.annotations_repository import AnnotationsRepository
+from market_analyser.persistence.engine import (
+    apply_migrations,
+    make_engine,
+    make_session_factory,
+)
+from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
+
+_DAY = 86_400
+
+# Pinned snapshot instant: 781 days after the 2024-04-19 halving.
+_NOW = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+_NOW_TS = int(_NOW.timestamp())
+
+
+def _bars(closes: Sequence[float], end: datetime) -> list[Bar]:
+    """Daily BTC-USD bars whose closes are `closes`, ending at `end`."""
+    n = len(closes)
+    return [
+        Bar(
+            symbol="BTC-USD",
+            timeframe="1d",
+            event_ts=end - timedelta(days=n - 1 - i),
+            open=close,
+            high=close + 1.0,
+            low=close - 1.0 if close > 1.0 else close * 0.5,
+            close=close,
+            volume=1_000.0,
+            source="yahoo",
+        )
+        for i, close in enumerate(closes)
+    ]
+
+
+class _FakeProvider:
+    """Minimal MarketDataProvider conformer serving a fixed daily-bar series."""
+
+    def __init__(self, bars: Sequence[Bar]) -> None:
+        self._bars = list(bars)
+        self.calls: list[tuple[str, str]] = []
+
+    def get_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        as_of: datetime | None = None,
+    ) -> Sequence[Bar]:
+        self.calls.append((symbol, timeframe))
+        return list(self._bars)
+
+    def get_quote(self, symbol: str, as_of: datetime | None = None) -> Quote:
+        raise NotImplementedError
+
+    def search_symbols(self, query: str, as_of: datetime | None = None) -> Sequence[SymbolInfo]:
+        raise NotImplementedError
+
+    def get_screener(
+        self,
+        filters: dict[str, Any],
+        market: str = "america",
+        exchange: str | None = None,
+        limit: int = 50,
+        as_of: datetime | None = None,
+    ) -> Sequence[ScreenerRow]:
+        raise NotImplementedError
+
+    def get_sentiment(
+        self,
+        symbol: str,
+        window: str,
+        source: str = "rss-vader",
+        as_of: datetime | None = None,
+    ) -> SentimentSample:
+        raise NotImplementedError
+
+    def get_news(
+        self,
+        symbol: str | None = None,
+        window: str = "24h",
+        limit: int = 50,
+        with_sentiment: bool = False,
+        as_of: datetime | None = None,
+    ) -> Sequence[NewsItem]:
+        raise NotImplementedError
+
+    def get_market_sentiment(
+        self, market: str, window: str = "current", as_of: datetime | None = None
+    ) -> MarketSentimentSample:
+        raise NotImplementedError
+
+    def get_macro_context(
+        self, market: str = "crypto", as_of: datetime | None = None
+    ) -> MacroContext:
+        raise NotImplementedError
+
+
+@pytest.fixture
+def session_factory() -> Iterator[sessionmaker[Session]]:
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    yield make_session_factory(engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def store(session_factory: sessionmaker[Session]) -> MetricPointsRepository:
+    return MetricPointsRepository(session_factory)
+
+
+# --- (a) + (b): the snapshot carries the exact cycle math -------------------------
+
+
+def test_snapshot_pins_cycle_math_from_known_fixture(store: MetricPointsRepository) -> None:
+    # closes 1..200: SMA200 = 100.5 -> Mayer exactly 200/100.5; only 200 daily
+    # bars exist, so dist_200w_ma is None (not a number).
+    closes = [float(i) for i in range(1, 201)]
+    provider = _FakeProvider(_bars(closes, end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.as_of == _NOW
+    assert snapshot.mayer_multiple == 200.0 / 100.5
+    assert snapshot.dist_200w_ma is None
+    assert snapshot.bars_available == 200
+    # Halving clock at the pinned instant: 781 days into the open cycle.
+    assert snapshot.days_since_halving == 781
+    assert snapshot.days_to_next_halving_est == 1387 - 781
+    assert snapshot.halving_phase == 781 / 1387
+    assert snapshot.next_halving_date_est == "2028-02-05"
+    assert provider.calls == [("BTC-USD", "1d")]
+
+
+def test_snapshot_dist_200w_present_with_full_history(store: MetricPointsRepository) -> None:
+    closes = [100.0] * 1399 + [130.0]
+    provider = _FakeProvider(_bars(closes, end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    sma = (1399 * 100.0 + 130.0) / 1400
+    assert snapshot.dist_200w_ma == 130.0 / sma - 1.0
+
+
+def test_snapshot_with_no_bars_is_honest_nones(store: MetricPointsRepository) -> None:
+    provider = _FakeProvider([])
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.mayer_multiple is None
+    assert snapshot.dist_200w_ma is None
+    assert snapshot.bars_available == 0
+
+
+# --- store reads: latest values, deltas, warm-up honesty --------------------------
+
+
+def test_snapshot_reads_latest_fng_with_7_and_30_day_deltas(
+    store: MetricPointsRepository,
+) -> None:
+    store.upsert_points(
+        [
+            MetricPoint(series_id=SERIES_FNG_VALUE, ts=_NOW_TS - 31 * _DAY, value=25.0),
+            MetricPoint(series_id=SERIES_FNG_VALUE, ts=_NOW_TS - 8 * _DAY, value=30.0),
+            MetricPoint(series_id=SERIES_FNG_VALUE, ts=_NOW_TS - _DAY, value=40.0),
+        ],
+    )
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.fng == 40.0
+    assert snapshot.fng_delta_7d == 10.0  # 40 - 30 (the point 7d before the latest)
+    assert snapshot.fng_delta_30d == 15.0  # 40 - 25
+    # Dominance accrual is cold: honest Nones, not fabricated values.
+    assert snapshot.btc_dominance is None
+    assert snapshot.dominance_delta_7d is None
+    assert snapshot.dominance_delta_30d is None
+
+
+def test_dominance_delta_none_until_accrual_warms_up(store: MetricPointsRepository) -> None:
+    # One lone dominance point: a latest value exists but no 7d-earlier point.
+    store.upsert_points(
+        [MetricPoint(series_id=SERIES_COINGECKO_BTC_DOMINANCE, ts=_NOW_TS - _DAY, value=52.3)],
+    )
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.btc_dominance == 52.3
+    assert snapshot.dominance_delta_7d is None
+    assert snapshot.dominance_delta_30d is None
+
+
+# --- (e) trailing-only: an injected future point must not appear ------------------
+
+
+def test_injected_future_point_never_appears(store: MetricPointsRepository) -> None:
+    store.upsert_points(
+        [
+            MetricPoint(series_id=SERIES_FNG_VALUE, ts=_NOW_TS - _DAY, value=40.0),
+            # One second past the snapshot instant — must be invisible.
+            MetricPoint(series_id=SERIES_FNG_VALUE, ts=_NOW_TS + 1, value=99.0),
+        ],
+    )
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.fng == 40.0  # not 99.0
+
+
+def test_tool_call_through_the_real_server_excludes_future_points(
+    store: MetricPointsRepository,
+) -> None:
+    """The registered tool end-to-end: a future-timestamped point (relative to
+    the tool's own wall-clock `now`) is injected and must not appear."""
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    store.upsert_points(
+        [
+            MetricPoint(series_id=SERIES_FNG_VALUE, ts=now_ts - _DAY, value=40.0),
+            MetricPoint(series_id=SERIES_FNG_VALUE, ts=now_ts + _DAY, value=99.0),
+        ],
+    )
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=datetime.now(tz=UTC)))
+    server = FastMCP(name="test", stateless_http=True, json_response=True)
+    register_btc_cycle_snapshot(server, provider=provider, metric_points_repository=store)
+
+    result = anyio.run(server.call_tool, "btc_cycle_snapshot", {"params": {}})
+    _content, structured = cast("tuple[Any, dict[str, Any]]", result)
+
+    assert structured["fng"] == 40.0
+    assert structured["mayer_multiple"] == 200.0 / 100.5
+    assert structured["dist_200w_ma"] is None
+    assert 0.0 <= structured["halving_phase"] <= 1.0
+
+
+# --- (d) full-toolset registration ------------------------------------------------
+
+
+@pytest.fixture
+def annotations_repo(session_factory: sessionmaker[Session]) -> AnnotationsRepository:
+    return AnnotationsRepository(session_factory)
+
+
+def _full_server_tool_names(
+    annotations_repo: AnnotationsRepository,
+    metric_points_repository: MetricPointsRepository | None,
+) -> set[str]:
+    session_manager, _asgi = create_mcp_components(
+        provider=_FakeProvider([]),
+        annotations_repository=annotations_repo,
+        event_bus=EventBus(),
+        ui_event_buffer=UIEventBuffer(),
+        metric_points_repository=metric_points_repository,
+    )
+    handler = session_manager.app.request_handlers[ListToolsRequest]
+    result = anyio.run(handler, ListToolsRequest(method="tools/list"))
+    tools_result = result.root
+    assert isinstance(tools_result, ListToolsResult)
+    return {tool.name for tool in tools_result.tools}
+
+
+def test_full_toolset_grows_both_metric_tools_with_a_store(
+    annotations_repo: AnnotationsRepository, store: MetricPointsRepository
+) -> None:
+    names = _full_server_tool_names(annotations_repo, store)
+    assert "btc_cycle_snapshot" in names
+    assert "get_metric_series" in names
+
+
+def test_full_toolset_omits_metric_tools_without_a_store(
+    annotations_repo: AnnotationsRepository,
+) -> None:
+    names = _full_server_tool_names(annotations_repo, None)
+    assert "btc_cycle_snapshot" not in names
+    assert "get_metric_series" not in names

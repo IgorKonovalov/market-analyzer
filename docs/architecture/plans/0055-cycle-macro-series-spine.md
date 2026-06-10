@@ -1,6 +1,6 @@
 # 0055 — Cycle & macro time-series spine
 
-> **Status:** approved (2026-06-09)
+> **Status:** in-progress
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev
 > **Related ADRs:** [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (implements; accepts at close), [ADR-0027](../adrs/0027-crypto-macro-regime-classification.md) (the snapshot this historizes), [ADR-0046](../adrs/0046-mcp-large-result-delivery.md) (paging for the series tool)
