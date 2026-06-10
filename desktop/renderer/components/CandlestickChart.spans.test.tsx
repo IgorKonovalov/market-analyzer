@@ -29,8 +29,12 @@ jest.mock('lightweight-charts', () => {
       setMarkersCalls.push(m)
     }),
     applyOptions: jest.fn(),
+    // Two primitives attach now (the span band + the Plan 0052 trendline
+    // primitive); capture only the SPAN one — identified by its `setSpans`.
     attachPrimitive: jest.fn((p: PatternSpanPrimitive) => {
-      mockAttachedPrimitive = p
+      if (typeof (p as { setSpans?: unknown }).setSpans === 'function') {
+        mockAttachedPrimitive = p
+      }
     }),
     detachPrimitive: jest.fn(),
   }

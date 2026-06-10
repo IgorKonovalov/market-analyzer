@@ -14,7 +14,7 @@ export interface ChartLayer {
   label: string
   /** Resolved colour — equals the colour the chart drew the layer with. */
   color: string
-  kind: 'overlay' | 'marker' | 'price_line' | 'span'
+  kind: 'overlay' | 'marker' | 'price_line' | 'span' | 'trendline'
   /** Per-item toggle; defaults true; never persisted. */
   visible: boolean
 }

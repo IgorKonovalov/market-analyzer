@@ -122,6 +122,46 @@ class Marker(BaseModel):
         return self
 
 
+class TrendPoint(BaseModel):
+    """A single `(time, price)` anchor of a chart trendline (ADR-0049).
+
+    `ts` is a timestamp, not a bar index — consistent with `Marker.event_ts` /
+    `span_*_ts`, so the renderer maps it the same way and the line survives a
+    bar-set change as long as the anchor times stay in range."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ts: datetime
+    price: float
+
+
+class TrendlineSpec(BaseModel):
+    """A sloped multi-point line on the chart (ADR-0049, Plan 0052): a
+    head-and-shoulders neckline or one bounding trendline of a triangle/wedge.
+
+    Carried as the optional `trendlines` field on `chart.show`/`chart.update`
+    payloads — additive and `exclude_none`'d, so payloads without trendlines
+    are byte-unchanged on the wire and the payload version does not bump
+    (exactly how the `Marker` span fields landed). `style` is the
+    forming-vs-confirmed cue (`dashed` = forming, `solid` = confirmed);
+    `role`/`pattern` give the renderer theming and identity."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    points: list[TrendPoint]
+    role: Literal["neckline", "upper_trendline", "lower_trendline"] | None = None
+    style: Literal["solid", "dashed"] = "solid"
+    label: str | None = None
+    pattern: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_points(self) -> TrendlineSpec:
+        """A line needs at least two anchors — a one-point 'line' is undrawable."""
+        if len(self.points) < 2:
+            raise ValueError("trendline requires at least 2 points")
+        return self
+
+
 class ChartShowPayloadV1(BaseModel):
     """`chart.show v1` payload: render this chart fresh."""
 
@@ -133,6 +173,7 @@ class ChartShowPayloadV1(BaseModel):
     range_start: datetime
     range_end: datetime
     overlays: list[OverlaySpec] | None = None
+    trendlines: list[TrendlineSpec] | None = None
 
 
 class ChartUpdatePayloadV1(BaseModel):
@@ -144,6 +185,7 @@ class ChartUpdatePayloadV1(BaseModel):
     symbol: str
     timeframe: str
     overlays: list[OverlaySpec] | None = None
+    trendlines: list[TrendlineSpec] | None = None
     range_start: datetime | None = None
     range_end: datetime | None = None
     focus_bar: datetime | None = None

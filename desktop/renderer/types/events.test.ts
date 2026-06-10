@@ -32,6 +32,8 @@ interface JsonSchema {
 interface DumpedSchemas {
   OverlaySpec: JsonSchema
   Marker: JsonSchema
+  TrendPoint: JsonSchema
+  TrendlineSpec: JsonSchema
   ChartShowPayloadV1: JsonSchema
   ChartUpdatePayloadV1: JsonSchema
   ChartHighlightPayloadV1: JsonSchema
@@ -52,6 +54,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     'import json',
     'from market_analyser.events import (',
     '    OverlaySpec, Marker,',
+    '    TrendPoint, TrendlineSpec,',
     '    ChartShowPayloadV1, ChartUpdatePayloadV1,',
     '    ChartHighlightPayloadV1, RunCompletedPayloadV1,',
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
@@ -62,6 +65,8 @@ function dumpPydanticSchemas(): DumpedSchemas {
     'print(json.dumps({',
     '    "OverlaySpec": OverlaySpec.model_json_schema(),',
     '    "Marker": Marker.model_json_schema(),',
+    '    "TrendPoint": TrendPoint.model_json_schema(),',
+    '    "TrendlineSpec": TrendlineSpec.model_json_schema(),',
     '    "ChartShowPayloadV1": ChartShowPayloadV1.model_json_schema(),',
     '    "ChartUpdatePayloadV1": ChartUpdatePayloadV1.model_json_schema(),',
     '    "ChartHighlightPayloadV1": ChartHighlightPayloadV1.model_json_schema(),',
@@ -164,13 +169,37 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     )
   })
 
-  it('ChartShowPayloadV1 fields match', () => {
+  it('TrendPoint fields match (both anchors required)', () => {
+    expect(propertyNames(dumped.TrendPoint)).toEqual(['price', 'ts'])
+    expect(requiredNames(dumped.TrendPoint)).toEqual(['price', 'ts'])
+  })
+
+  it('TrendlineSpec fields match (points required; style is a closed solid/dashed set)', () => {
+    expect(propertyNames(dumped.TrendlineSpec)).toEqual([
+      'label',
+      'pattern',
+      'points',
+      'role',
+      'style',
+    ])
+    // `style` has a non-None default ("solid") → not in `required`, but it is
+    // never None so `exclude_none` keeps it on the wire — the TS marks it
+    // required. role/label/pattern default to None → optional both sides.
+    expect(requiredNames(dumped.TrendlineSpec)).toEqual(['points'])
+    expect(literalValues(dumped.TrendlineSpec, 'style')).toEqual(['dashed', 'solid'])
+    // `role` is an optional Literal (`| None`), emitted as `anyOf` rather than a
+    // top-level `enum` (same shape as OverlaySpec.role) — presence/optionality
+    // are pinned by the property-name + required checks above.
+  })
+
+  it('ChartShowPayloadV1 fields match (trendlines additive, Plan 0052)', () => {
     expect(propertyNames(dumped.ChartShowPayloadV1)).toEqual([
       'overlays',
       'range_end',
       'range_start',
       'symbol',
       'timeframe',
+      'trendlines',
     ])
     expect(requiredNames(dumped.ChartShowPayloadV1)).toEqual([
       'range_end',
@@ -188,6 +217,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'range_start',
       'symbol',
       'timeframe',
+      'trendlines',
     ])
     expect(requiredNames(dumped.ChartUpdatePayloadV1)).toEqual(['symbol', 'timeframe'])
   })

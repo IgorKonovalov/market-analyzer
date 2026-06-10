@@ -90,6 +90,71 @@ class Level(BaseModel):
     last_ts: datetime
 
 
+PatternState = Literal["forming", "confirmed"]
+
+
+class PivotPoint(BaseModel):
+    """A `(time, price)` anchor of a classical chart pattern (Plan 0052).
+
+    Unlike `Pivot` this is pure geometry — no `bar_index`, no high/low kind —
+    because it doubles as the anchor shape the chart's trendline primitive
+    consumes (ADR-0049 maps `ts` through the time scale, `price` through the
+    candle series' price scale).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ts: datetime
+    price: float
+
+
+class LineSeg(BaseModel):
+    """A defining line segment of a classical chart pattern (Plan 0052).
+
+    `role` names what the segment is in the formation: the neckline of an
+    H&S / double top-bottom, or one of the two bounding trendlines of a
+    triangle / wedge. The segment's endpoints sit on real pivot anchors
+    (connect-the-extremes, ADR-0048) — never on a fitted line off the prices.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    start: PivotPoint
+    end: PivotPoint
+    role: Literal["neckline", "upper_trendline", "lower_trendline"]
+
+
+class ChartPatternHit(BaseModel):
+    """A classical chart pattern detected over confirmed swing pivots
+    (Plan 0052, ADR-0048).
+
+    `state` is the two-state trailing lifecycle: `forming` is emitted at the
+    bar where the geometry first completes (every defining pivot confirmed),
+    `confirmed` at the bar whose close breaks the neckline / breakout
+    trendline by the volatility-scaled margin (`k * ATR`). `bar_index` is that
+    completing / confirming bar — the bar at which the hit is first knowable,
+    so a hit reported at bar `i` is byte-identical on `bars[0..=i]` (the
+    anti-lookahead invariant pinned in `tests/analysis/test_chart_patterns.py`).
+
+    `pivots` are the ordered defining anchors; `lines` the neckline or the two
+    bounding trendlines; `target` the textbook measured-move projection (a
+    geometry fact, never advice — there is no action/buy/sell field, the
+    analyst non-negotiable); `strength` a detector-defined 0..1 relative
+    conviction, not a probability.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pattern: str
+    state: PatternState
+    direction: Direction
+    bar_index: int
+    pivots: list[PivotPoint]
+    lines: list[LineSeg]
+    target: float | None
+    strength: float
+
+
 class Trend(StrEnum):
     """Coarse trend classification from the EMA stack + ADX strength."""
 
@@ -213,7 +278,11 @@ class ConditionSnapshot(BaseModel):
     level sits on that side. `volume_stance` is the coarse volume reading
     (heavy/normal/light); the numeric volume measures (``volume``,
     ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``, ``obv_slope``,
-    ``vwap``) ride in `indicators` alongside the others.
+    ``vwap``) ride in `indicators` alongside the others. `active_patterns`
+    (Plan 0052 phase 3) carries the classical chart patterns still in play —
+    the latest-state `ChartPatternHit` per formation whose completing /
+    confirming bar falls inside the trailing activity window (the breakout
+    scan horizon) — empty when nothing is forming or freshly confirmed.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -229,6 +298,7 @@ class ConditionSnapshot(BaseModel):
     nearest_support: Level | None
     nearest_resistance: Level | None
     recent_patterns: list[PatternHit]
+    active_patterns: list[ChartPatternHit]
 
 
 class TimeframeView(BaseModel):
@@ -265,13 +335,17 @@ class MultiTimeframeAlignment(BaseModel):
 
 
 __all__ = [
+    "ChartPatternHit",
     "ConditionSnapshot",
     "Direction",
     "Level",
+    "LineSeg",
     "MomentumStance",
     "MultiTimeframeAlignment",
     "PatternHit",
+    "PatternState",
     "Pivot",
+    "PivotPoint",
     "SmartVolumeHit",
     "TimeframeView",
     "Trend",

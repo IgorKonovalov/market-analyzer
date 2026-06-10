@@ -1,6 +1,6 @@
 # 0052 — Classical chart patterns: detection, rendering, analytics
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-08
 > **Owner skill(s):** dev, ui-builder
 > **Related ADRs:** [0048](../adrs/0048-classical-chart-pattern-detection.md) (detection model — **accepts at this plan's close**), [0049](../adrs/0049-chart-trendline-overlay-primitive.md) (trendline primitive — **accepts at this plan's close**); amends scope of [0023](../adrs/0023-technical-analysis-surface.md); builds on [Plan 0051](0051-support-resistance-levels.md); traded by [Plan 0054](0054-chart-pattern-breakout-strategy.md)

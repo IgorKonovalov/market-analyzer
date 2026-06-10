@@ -4,9 +4,10 @@
 patterns into a single trailing read: latest indicator values, a trend
 classification (EMA stack + ADX), a momentum stance (RSI zone refined by MACD),
 trailing support/resistance pivots plus the nearest clustered support/resistance
-`Level` framing the last close (Plan 0051 phase 4), and the candlestick hits on
-the most recent bars. Pure and trailing — every input is `bars[0..=last]`, so a
-snapshot computed on a truncated series matches the full-series state as of the
+`Level` framing the last close (Plan 0051 phase 4), the candlestick hits on
+the most recent bars, and the classical chart patterns still in play (Plan 0052
+phase 3). Pure and trailing — every input is `bars[0..=last]`, so a snapshot
+computed on a truncated series matches the full-series state as of the
 truncation bar.
 
 Reports **conditions only** — never buy/sell (the analyst non-negotiable); the
@@ -16,11 +17,17 @@ Reports **conditions only** — never buy/sell (the analyst non-negotiable); the
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from market_analyser.analysis import indicators as ind
+from market_analyser.analysis.chart_patterns import (
+    BREAKOUT_SCAN_MAX_BARS,
+    detect_chart_patterns,
+)
 from market_analyser.analysis.levels import support_resistance_levels, swing_pivots
 from market_analyser.analysis.patterns import detect_patterns
 from market_analyser.analysis.types import (
+    ChartPatternHit,
     ConditionSnapshot,
     Level,
     MomentumStance,
@@ -36,6 +43,10 @@ ADX_TREND_MIN = 20.0  # ADX below this -> no decisive trend (sideways)
 RSI_OVERBOUGHT = 70.0
 RSI_OVERSOLD = 30.0
 RECENT_PATTERN_BARS = 5  # patterns on the last N bars are "recent"
+# A classical chart pattern is "active" while its completing/confirming bar is
+# within the detector's breakout scan horizon of the snapshot bar — the window
+# in which a forming pattern can still confirm (Plan 0052, ADR-0048).
+ACTIVE_PATTERN_BARS = BREAKOUT_SCAN_MAX_BARS
 PERCENTILE_WINDOW = 90  # trailing window for rsi/atr percentile rank
 SR_PIVOT_WINDOW = 3  # bars on each side of a confirmed swing pivot
 SR_MAX_LEVELS = 5  # keep at most this many of the most recent levels per side
@@ -108,6 +119,29 @@ def _support_resistance(bars: Sequence[Bar]) -> dict[str, list[float]]:
     recent_res = sorted(set(resistances[-SR_MAX_LEVELS:]))
     recent_sup = sorted(set(supports[-SR_MAX_LEVELS:]))
     return {"support": recent_sup, "resistance": recent_res}
+
+
+def _active_patterns(bars: Sequence[Bar]) -> list[ChartPatternHit]:
+    """Classical chart patterns still in play at the snapshot bar (Plan 0052):
+    hits whose completing/confirming `bar_index` falls within the trailing
+    `ACTIVE_PATTERN_BARS` window, reduced to the latest-state hit per formation
+    (a formation's `confirmed` hit supersedes its earlier `forming` one). A
+    `forming` hit can later vanish when the window slides past or a pivot
+    invalidates it — correct trailing behavior (ADR-0048), read as provisional.
+    Order is the detector's deterministic `(bar_index, pattern, state)`."""
+
+    cutoff = len(bars) - 1 - ACTIVE_PATTERN_BARS
+    recent = [h for h in detect_chart_patterns(bars) if h.bar_index >= cutoff]
+    latest: dict[tuple[str, tuple[tuple[datetime, float], ...]], ChartPatternHit] = {}
+    order: list[tuple[str, tuple[tuple[datetime, float], ...]]] = []
+    for hit in recent:
+        key = (hit.pattern, tuple((p.ts, p.price) for p in hit.pivots))
+        if key not in latest:
+            order.append(key)
+        # Detector order is bar_index-ascending with forming before confirmed,
+        # so the last hit per formation is its latest state.
+        latest[key] = hit
+    return [latest[key] for key in order]
 
 
 def _nearest_levels(levels: Sequence[Level], close: float) -> tuple[Level | None, Level | None]:
@@ -206,6 +240,7 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         nearest_support=nearest_support,
         nearest_resistance=nearest_resistance,
         recent_patterns=recent_patterns,
+        active_patterns=_active_patterns(bars),
     )
 
 

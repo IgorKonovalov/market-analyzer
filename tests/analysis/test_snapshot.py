@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 
 from market_analyser.analysis import indicators as ind
 from market_analyser.analysis.snapshot import condition_snapshot
@@ -186,6 +187,63 @@ def test_recent_patterns_surface_bullish_engulfing_on_last_bar() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Active classical chart patterns (Plan 0052 phase 3)                          #
+# --------------------------------------------------------------------------- #
+
+
+def _hs_bars() -> list[Bar]:
+    """The Plan 0052 head & shoulders fixture: a piecewise-linear path with
+    shoulders 111 @6 / 111.5 @22, head 121 @14, neckline troughs 99 @10 /
+    100 @18, then a decline through the neckline (confirms at bar 27)."""
+
+    anchors = [
+        (0, 100.0),
+        (6, 110.0),
+        (10, 100.0),
+        (14, 120.0),
+        (18, 101.0),
+        (22, 110.5),
+        (35, 78.0),
+    ]
+    bases: list[float] = []
+    for i in range(anchors[-1][0] + 1):
+        for (x1, p1), (x2, p2) in pairwise(anchors):
+            if x1 <= i <= x2:
+                bases.append(p1 + (p2 - p1) * (i - x1) / (x2 - x1))
+                break
+    return [_bar(i, o=base, h=base + 1.0, low=base - 1.0, c=base) for i, base in enumerate(bases)]
+
+
+def test_active_patterns_list_head_shoulders_on_hs_fixture() -> None:
+    """The snapshot lists the active head_shoulders hit with its pattern, state,
+    direction, and strength — one entry per formation, latest state (the
+    confirmed hit supersedes the earlier forming one)."""
+
+    snap = condition_snapshot(_hs_bars(), "1d")
+    assert [h.pattern for h in snap.active_patterns] == ["head_shoulders"]
+    hit = snap.active_patterns[0]
+    assert hit.state == "confirmed"  # broke the neckline at bar 27
+    assert hit.direction == "bearish"
+    assert 0.0 < hit.strength <= 1.0
+    assert hit.lines[0].role == "neckline"
+
+
+def test_active_patterns_forming_before_the_break() -> None:
+    """Truncated just before the confirming close, the same fixture reports the
+    formation as forming — the snapshot read is trailing, no future bar leaks."""
+
+    snap = condition_snapshot(_hs_bars()[:27], "1d")
+    assert [(h.pattern, h.state) for h in snap.active_patterns] == [("head_shoulders", "forming")]
+
+
+def test_active_patterns_empty_on_flat_fixture() -> None:
+    """A flat series has no swing structure: the list is empty, not fabricated."""
+
+    flat = [_bar(i, o=100.0, h=101.0, low=99.0, c=100.0) for i in range(40)]
+    assert condition_snapshot(flat, "1d").active_patterns == []
+
+
+# --------------------------------------------------------------------------- #
 # No-recommendation-leak (analyst non-negotiable at the type level)           #
 # --------------------------------------------------------------------------- #
 
@@ -204,6 +262,7 @@ def test_no_recommendation_field() -> None:
         "nearest_support",  # Plan 0051: structured nearest levels (price + strength)
         "nearest_resistance",
         "recent_patterns",
+        "active_patterns",  # Plan 0052: classical chart patterns in play
     }
     # The analyst non-negotiable, pinned: no action/buy/sell field ever appears.
     assert not (fields & {"action", "signal", "recommendation", "buy", "sell"})

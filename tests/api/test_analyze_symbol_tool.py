@@ -203,6 +203,10 @@ def test_happy_path_returns_full_snapshot() -> None:
     assert snap.nearest_support.price <= seeded[-1].close
     assert 0.0 < snap.nearest_support.strength <= 1.0
     assert isinstance(snap.recent_patterns, list)
+    # Plan 0052 phase 3: the snapshot carries the active classical chart
+    # patterns (empty is fine on this fixture — the field must exist and be a
+    # list of typed hits, never an action/recommendation).
+    assert isinstance(snap.active_patterns, list)
     assert resp.analyzed_at.tzinfo is not None  # UTC-aware provenance stamp
 
 
@@ -364,7 +368,9 @@ def test_analyze_symbol_via_mcp_returns_snapshot(live_server: str, mcp_secret: s
         "nearest_support",
         "nearest_resistance",
         "recent_patterns",
+        "active_patterns",  # Plan 0052: classical chart patterns in play
     } <= set(snapshot)
+    assert isinstance(snapshot["active_patterns"], list)
     # Plan 0051 phase 4: the structured nearest support rides the wire — the
     # seeded fixture's bar-40 dip is a confirmed support below the last close.
     nearest_support = snapshot["nearest_support"]
