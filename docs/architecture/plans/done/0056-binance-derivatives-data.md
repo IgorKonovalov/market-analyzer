@@ -1,6 +1,6 @@
 # 0056 — Binance derivatives data: funding rate + open interest
 
-> **Status:** in-progress
+> **Status:** done (2026-06-10 — phases 1–4 as `7611c63`/`668fd20`/`3f3a5a0`/`cacfd42`/`5746049` on `plan-0056-binance-derivatives-data`, merged `--no-ff` to `main` as `799dc9e` with the anticipated `mcp_app.py` import-union conflict resolved by keeping both registrations. Clean Mode 4: no blockers, no majors; every done-when read at the assertion level — 451→`GeoRestrictedError` proven one-attempt with retries available, exact-equality funding round-trip against wire literals, OI seed/accrual overlap tested in both orders, spy-asserted zero network calls on the default snapshot path, None-never-zero warm-up matrix, cadence-from-data (4h fixture). Phase 2 geo verdict GREEN: 7397 BTCUSDT funding points to 2019-09-10; the smoke's `startTime=0` finding fixed forward and pinned offline by the fake transport. Merged tree: 1395 passed / 7 skipped + ruff + format + `mypy --strict` green. ADR-0052 stays `proposed` by design — it accepts at Plan 0058's close.)
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0052](../adrs/0052-binance-exchange-data-source.md) (the venue decision; the derivatives half lands here), [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (storage), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (HTTP resilience)
