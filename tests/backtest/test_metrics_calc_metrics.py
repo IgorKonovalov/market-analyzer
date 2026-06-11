@@ -388,6 +388,45 @@ def test_calmar_none_when_curve_never_dips() -> None:
     assert metrics.sortino == 0.0
 
 
+def test_short_trade_win_and_return_are_direction_aware() -> None:
+    """Plan 0053 phase 2 (ADR-0050): a short that covers LOWER is a win, and its
+    per-trade return is `(entry - exit) / entry` — the negation of the long
+    formula on the same prices."""
+
+    metrics = _calc_metrics(
+        trades=[
+            Trade(
+                entry_bar_index=1,
+                exit_bar_index=2,
+                entry_price=100.0,
+                exit_price=90.0,
+                kind="short",
+            ),
+            Trade(
+                entry_bar_index=3,
+                exit_bar_index=4,
+                entry_price=100.0,
+                exit_price=110.0,
+                kind="short",
+            ),
+        ],
+        equity_curve=_curve([10_000.0, 11_000.0, 10_500.0, 10_000.0]),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+    assert metrics.trade_count == 2
+    # Covered at 90: +10%. Covered at 110: -10%. One win of two.
+    assert isclose(metrics.win_rate, 0.5, abs_tol=1e-9)
+    assert metrics.best_trade_return is not None
+    assert isclose(metrics.best_trade_return, 0.10, abs_tol=1e-9)
+    assert metrics.worst_trade_return is not None
+    assert isclose(metrics.worst_trade_return, -0.10, abs_tol=1e-9)
+    assert metrics.expectancy is not None
+    assert isclose(metrics.expectancy, 0.0, abs_tol=1e-9)
+    assert metrics.profit_factor is not None
+    assert isclose(metrics.profit_factor, 1.0, abs_tol=1e-9)
+
+
 def test_no_extended_metric_is_ever_nan() -> None:
     """Across both a normal and a degenerate run, no float metric is NaN."""
 

@@ -186,6 +186,85 @@ def test_accepts_baseparams_instance_directly() -> None:
     assert result.params == {"period": 14, "oversold": 30.0, "overbought": 70.0}
 
 
+def _short_strategy(enter_at: int, exit_at: int) -> ModuleType:
+    """A minimal contract-shaped module that shorts from `enter_at` to `exit_at`."""
+
+    from market_analyser.contracts import BaseParams, Signal, SignalKind, StrategyMeta
+
+    class _NoParams(BaseParams):
+        pass
+
+    def generate_signals(bars: Sequence[Bar], params: BaseParams) -> Sequence[Signal]:
+        return [
+            Signal(bar_index=enter_at, kind=SignalKind.ENTER_SHORT),
+            Signal(bar_index=exit_at, kind=SignalKind.EXIT_SHORT),
+        ]
+
+    # `setattr` (not attribute assignment) keeps mypy quiet about dynamic
+    # module attributes — same pattern as tests/backtest/test_live_signal.py.
+    mod = ModuleType("fake_short_strategy")
+    setattr(
+        mod,
+        "META",
+        StrategyMeta(
+            id="fake_short",
+            name="Fake short",
+            description="test double",
+            version="1.0.0",
+            timeframes=("1d",),
+        ),
+    )
+    setattr(mod, "Params", _NoParams)
+    setattr(mod, "generate_signals", generate_signals)
+    return mod
+
+
+def test_short_run_on_falling_prices_profits_net_of_long_equivalent_costs() -> None:
+    """Plan 0053 phase 2 done-when: `enter_short` at bar i / `exit_short` at bar j
+    produces a trade whose P&L is `entry - exit` net of the same per-side bps a
+    long pays, and a falling-price fixture yields a rising equity curve."""
+
+    closes = [100.0, 98.0, 96.0, 94.0, 92.0, 90.0, 88.0, 86.0]
+    bars = _bars(closes)
+    result = run(
+        _short_strategy(enter_at=1, exit_at=5),
+        bars,
+        {},
+        timeframe="1d",
+        commission_bps=10.0,
+        slippage_bps=5.0,
+    )
+
+    factor = 15.0 / 10_000.0
+    [trade] = result.trades
+    assert trade.kind == "short"
+    assert trade.entry_bar_index == 2  # signal at 1 fills at bars[2].open = 98
+    assert trade.exit_bar_index == 6  # signal at 5 fills at bars[6].open = 90
+    expected_entry = 98.0 * (1.0 - factor)  # short entry receives less
+    expected_exit = 90.0 * (1.0 + factor)  # short exit pays more
+    assert trade.exit_price is not None
+    assert trade.entry_price == pytest.approx(expected_entry, abs=1e-9)
+    assert trade.exit_price == pytest.approx(expected_exit, abs=1e-9)
+
+    # P&L = entry - exit per unit, units fixed at the cost-adjusted entry.
+    units = 10_000.0 / expected_entry
+    expected_final = 10_000.0 + units * (expected_entry - expected_exit)
+    assert result.equity_curve[-1].equity == pytest.approx(expected_final, abs=1e-9)
+    assert expected_final > 10_000.0  # price fell -> the short profited
+    assert result.metrics.total_return == pytest.approx(expected_final / 10_000.0 - 1.0, abs=1e-12)
+    assert result.metrics.trade_count == 1
+    assert result.metrics.win_rate == 1.0
+
+    # Falling prices -> rising equity while the short is marked to market
+    # (bars 2..5; bar 6 realizes the exit, which pays the exit-side cost).
+    equities = [p.equity for p in result.equity_curve]
+    in_position = equities[2:6]
+    assert in_position == sorted(in_position)
+    assert in_position[-1] > in_position[0]
+    # And buy-and-hold lost over the same window — the short is the inverse view.
+    assert result.metrics.buy_and_hold_return < 0.0
+
+
 def test_purity_no_filesystem_or_network_io(monkeypatch: pytest.MonkeyPatch) -> None:
     """`run()` does no I/O — `open`/`Path.write_*`/`httpx`/`requests` calls fail loudly."""
 

@@ -14,6 +14,6 @@ golden test and force a deliberate fixture regen + version bump.
 
 from __future__ import annotations
 
-ENGINE_VERSION = "0.2.0"
+ENGINE_VERSION = "0.3.0"
 
 __all__ = ["ENGINE_VERSION"]
