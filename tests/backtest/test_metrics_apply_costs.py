@@ -68,6 +68,52 @@ def test_zero_costs_passthrough_preserves_prices() -> None:
     assert adjusted.exit_price == 110.0
 
 
+def test_closed_short_trade_costs_always_hurt() -> None:
+    # Plan 0053 phase 2 (ADR-0050): a short pays the SAME per-side bps a long
+    # does, mirrored so it always hurts — the entry sell receives less, the
+    # exit buy fills higher.
+    trade = Trade(
+        entry_bar_index=5,
+        exit_bar_index=10,
+        entry_price=100.0,
+        exit_price=110.0,
+        kind="short",
+    )
+    [adjusted] = _apply_costs([trade], commission_bps=10.0, slippage_bps=5.0)
+    assert isclose(adjusted.entry_price, 99.85, abs_tol=1e-9)  # 100 * (1 - 15/10_000)
+    assert adjusted.exit_price is not None
+    assert isclose(adjusted.exit_price, 110.165, abs_tol=1e-9)  # 110 * (1 + 15/10_000)
+    assert adjusted.kind == "short"
+    # Same magnitude of cost a long pays on the same prices, opposite sign.
+    long_twin = Trade(
+        entry_bar_index=5,
+        exit_bar_index=10,
+        entry_price=100.0,
+        exit_price=110.0,
+        kind="long",
+    )
+    [long_adjusted] = _apply_costs([long_twin], commission_bps=10.0, slippage_bps=5.0)
+    assert isclose(
+        adjusted.entry_price - trade.entry_price,
+        -(long_adjusted.entry_price - long_twin.entry_price),
+        abs_tol=1e-12,
+    )
+
+
+def test_dangling_short_adjusts_entry_only() -> None:
+    trade = Trade(
+        entry_bar_index=5,
+        exit_bar_index=None,
+        entry_price=200.0,
+        exit_price=None,
+        kind="short",
+    )
+    [adjusted] = _apply_costs([trade], commission_bps=10.0, slippage_bps=5.0)
+    assert isclose(adjusted.entry_price, 200.0 * (1.0 - 15.0 / 10_000.0), abs_tol=1e-9)
+    assert adjusted.exit_price is None
+    assert adjusted.exit_bar_index is None
+
+
 def test_multiple_trades_each_adjusted_independently() -> None:
     trades = [
         Trade(

@@ -1,5 +1,5 @@
 {
-  "engine_version": "0.2.0",
+  "engine_version": "0.3.0",
   "strategy_id": "rsi",
   "strategy_version": "1.0.0",
   "symbol": "AAPL",

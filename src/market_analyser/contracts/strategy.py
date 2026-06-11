@@ -27,10 +27,19 @@ from market_analyser.data.types import Bar
 
 
 class SignalKind(StrEnum):
-    """The vocabulary of strategy decisions. Short signals reserved, not implemented."""
+    """The vocabulary of strategy decisions.
+
+    Four kinds per [ADR-0050](../../docs/architecture/adrs/0050-short-selling-strategy-backtest.md)
+    (amends ADR-0004): a strategy may open/close a long *or* a short. The
+    position model is single-direction at a time — flat → long *or* short →
+    flat; no simultaneous long+short, no pyramiding. The backtest engine
+    enforces those invariants; the contract only supplies the vocabulary.
+    """
 
     ENTER_LONG = "enter_long"
     EXIT_LONG = "exit_long"
+    ENTER_SHORT = "enter_short"
+    EXIT_SHORT = "exit_short"
 
 
 class Signal(BaseModel):

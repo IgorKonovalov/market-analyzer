@@ -11,11 +11,15 @@ dict whose keys equal the data layer's `SUPPORTED_TIMEFRAMES`
 unknown timeframes raise rather than silently picking a wrong factor — the
 engine does not guess annualization.
 
-Long-only, fixed-fraction-at-100% sizing per
-[ADR-0018](../../../docs/architecture/adrs/0018-backtest-result-schema.md):
+Fixed-fraction-at-100% sizing per
+[ADR-0018](../../../docs/architecture/adrs/0018-backtest-result-schema.md),
+generalized to flat/long/short per
+[ADR-0050](../../../docs/architecture/adrs/0050-short-selling-strategy-backtest.md):
 while flat, equity equals cash; while in a long position, equity equals
 `units * bar.close` where `units = entry_cash / entry_price` was fixed at
-the trade's entry-bar open.
+the trade's entry-bar open; while in a short position, equity equals
+`entry_cash + units * (entry_price - bar.close)` — the exact mirror, with
+no borrow or financing cost (frictionless v1).
 """
 
 from __future__ import annotations
@@ -56,18 +60,26 @@ def _apply_costs(
 ) -> list[Trade]:
     """Adjust each trade's entry/exit prices by the per-side bps cost.
 
-    Long convention: entries pay (move price up), exits give back (move
-    price down). Dangling trades (`exit_price is None`) keep `exit_price`
-    untouched — they have not yet executed an exit, so no exit cost
-    applies.
+    Costs always hurt, in either direction. Long: the entry buy fills
+    higher (`* (1 + f)`), the exit sell receives less (`* (1 - f)`).
+    Short: the entry sell receives less (`* (1 - f)`), the exit buy fills
+    higher (`* (1 + f)`) — the same per-side bps a long pays (ADR-0050).
+    One signed code path: `sign` is `+1` for long, `-1` for short, and
+    multiplying by `+1.0` is exact in IEEE 754, so the long path is
+    bit-identical to the pre-short engine. Dangling trades
+    (`exit_price is None`) keep `exit_price` untouched — they have not yet
+    executed an exit, so no exit cost applies.
     """
 
     total_bps = commission_bps + slippage_bps
     factor = total_bps / 10_000.0
     out: list[Trade] = []
     for trade in trades:
-        adjusted_entry = trade.entry_price * (1.0 + factor)
-        adjusted_exit = trade.exit_price * (1.0 - factor) if trade.exit_price is not None else None
+        sign = 1.0 if trade.kind == "long" else -1.0
+        adjusted_entry = trade.entry_price * (1.0 + sign * factor)
+        adjusted_exit = (
+            trade.exit_price * (1.0 - sign * factor) if trade.exit_price is not None else None
+        )
         out.append(
             Trade(
                 entry_bar_index=trade.entry_bar_index,
@@ -80,21 +92,39 @@ def _apply_costs(
     return out
 
 
+def _position_value(trade: Trade, units: float, entry_cash: float, price: float) -> float:
+    """Value an open position at `price`, signed by the trade's direction.
+
+    Long: `units * price` — kept in this exact form (not the algebraically
+    equal `entry_cash + units * (price - entry)`) so the long path stays
+    bit-identical to the pre-short engine; IEEE 754 would not guarantee
+    that for the rearranged expression. Short: the mirror,
+    `entry_cash + units * (entry - price)` — equity rises as price falls,
+    no borrow cost (frictionless v1 per ADR-0050).
+    """
+
+    if trade.kind == "long":
+        return units * price
+    return entry_cash + units * (trade.entry_price - price)
+
+
 def _build_equity_curve(
     bars: Sequence[Bar],
     trades: Sequence[Trade],
     initial_capital: float,
 ) -> list[EquityPoint]:
-    """Per-bar mark-to-market equity curve.
+    """Per-bar mark-to-market equity curve, direction-aware via
+    `_position_value` (one state machine for long and short).
 
     Trades are consumed in input order; the adapter emits them in entry
     order, so callers may rely on that. At each bar, exits are processed
-    before entries (so a same-bar close-then-open chain works, even though
-    `signals_to_trades` does not produce one in v1).
+    before entries (so a same-bar close-then-open chain — e.g. ADR-0050's
+    exit-long-then-enter-short at the same next open — works).
     """
 
     cash = initial_capital
     units = 0.0
+    entry_cash = 0.0
     in_position = False
     trade_iter = iter(trades)
     current_trade: Trade | None = next(trade_iter, None)
@@ -103,17 +133,22 @@ def _build_equity_curve(
     for i, bar in enumerate(bars):
         if current_trade is not None and in_position and current_trade.exit_bar_index == i:
             assert current_trade.exit_price is not None
-            cash = units * current_trade.exit_price
+            cash = _position_value(current_trade, units, entry_cash, current_trade.exit_price)
             units = 0.0
             in_position = False
             current_trade = next(trade_iter, None)
 
         if current_trade is not None and not in_position and current_trade.entry_bar_index == i:
+            entry_cash = cash
             units = cash / current_trade.entry_price
             cash = 0.0
             in_position = True
 
-        equity = units * bar.close if in_position else cash
+        if in_position:
+            assert current_trade is not None
+            equity = _position_value(current_trade, units, entry_cash, bar.close)
+        else:
+            equity = cash
         equity_curve.append(EquityPoint(ts=bar.event_ts, equity=equity))
 
     return equity_curve
@@ -199,11 +234,16 @@ def _calmar(
     `annualized_total_return = (1 + total_return) ** (bars_per_year / n_bars) - 1`.
     `n_bars` is the bar count of the equity series. When the curve never
     dipped (`max_drawdown == 0.0`) Calmar is undefined (division by zero)
-    and returns `None`, not `0.0`. Long-only positive-price equity keeps
-    `1 + total_return > 0`, so the fractional power is always real.
+    and returns `None`, not `0.0`. Long positions keep equity (and so
+    `1 + total_return`) positive, but a frictionless short whose price more
+    than doubles can drive equity to or below zero (ADR-0050 models no
+    margin call); the geometric annualization is then undefined, so Calmar
+    is `None` rather than a complex-valued power.
     """
 
     if max_drawdown == 0.0:
+        return None
+    if 1.0 + total_return <= 0.0:
         return None
     # `float ** float` is typed `Any` (it can go complex for a negative base);
     # pin it back to float — the base is always positive here.
@@ -251,7 +291,8 @@ def _calc_metrics(
     genuinely-undefined ratio / per-trade metrics are `None`, except
     Sortino, which is Sharpe-family and keeps the `0.0` collapse. Per-trade
     returns are computed on the cost-adjusted trade prices this helper
-    receives (`exit_price / entry_price - 1` for each closed long trade).
+    receives (`exit_price / entry_price - 1` for each closed long trade,
+    negated for a short — ADR-0050).
 
     `buy_and_hold_return` is passed through from `_buy_and_hold_return`;
     the engine computes it from the same `bars` `_build_equity_curve` saw
@@ -290,16 +331,22 @@ def _calc_metrics(
 
     closed_trades = [t for t in trades if t.exit_price is not None]
     trade_count = len(closed_trades)
-    win_count = sum(
-        1 for t in closed_trades if t.exit_price is not None and t.exit_price > t.entry_price
-    )
-    win_rate = win_count / trade_count if trade_count > 0 else 0.0
 
-    # Per-trade fractional returns on the cost-adjusted prices (ADR-0024).
+    # Per-trade fractional returns on the cost-adjusted prices (ADR-0024),
+    # signed by direction (ADR-0050): a short's return on capital under
+    # fixed-fraction sizing is `(entry - exit) / entry`, the exact negation
+    # of the long formula, so negating keeps one code path. The long branch
+    # is untouched (bit-identical to the pre-short engine).
     per_trade_returns: list[float] = []
     for t in closed_trades:
         assert t.exit_price is not None  # closed by construction; narrows for mypy
-        per_trade_returns.append(t.exit_price / t.entry_price - 1.0)
+        long_return = t.exit_price / t.entry_price - 1.0
+        per_trade_returns.append(long_return if t.kind == "long" else -long_return)
+
+    # A win is a positive return in the trade's own direction. For longs this
+    # is the same `exit > entry` predicate the long-only engine used.
+    win_count = sum(1 for r in per_trade_returns if r > 0.0)
+    win_rate = win_count / trade_count if trade_count > 0 else 0.0
 
     profit_factor = _profit_factor(per_trade_returns)
     expectancy = statistics.fmean(per_trade_returns) if per_trade_returns else None

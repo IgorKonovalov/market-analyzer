@@ -34,6 +34,7 @@ from datetime import datetime
 from types import ModuleType
 from typing import Literal
 
+from market_analyser.backtest.adapter import _ordering_key
 from market_analyser.backtest.engine import _validate_strategy_module
 from market_analyser.backtest.types import EvaluatedSignal, SignalEvaluation
 from market_analyser.contracts.strategy import BaseParams, Signal, SignalKind
@@ -90,7 +91,13 @@ def evaluate_signals(
     last_closed_index = len(closed_bars) - 1
 
     params_instance: BaseParams = params if params is not None else strategy_module.Params()
-    signals: Sequence[Signal] = strategy_module.generate_signals(closed_bars, params_instance)
+    raw_signals: Sequence[Signal] = strategy_module.generate_signals(closed_bars, params_instance)
+
+    # Same ordering the engine's adapter applies (ADR-0050): ascending bar,
+    # exits before entries within a bar. This keeps the implied position — and
+    # the reported `last_signal` — consistent with how a backtest would execute
+    # a same-bar exit+enter flip, regardless of the strategy's emission order.
+    signals = sorted(raw_signals, key=_ordering_key)
 
     current_position = _fold_position(signals)
     last_signal = signals[-1] if signals else None
@@ -126,20 +133,28 @@ def evaluate_signals(
     )
 
 
-def _fold_position(signals: Sequence[Signal]) -> Literal["flat", "long"]:
-    """Replay the signal stream into the implied flat/long position.
+def _fold_position(signals: Sequence[Signal]) -> Literal["flat", "long", "short"]:
+    """Replay the (ordered) signal stream into the implied flat/long/short position.
 
     Mirrors the `signals_to_trades` state machine *minus* the execution offset
-    and the last-bar drop: `enter_long` while flat → long; `exit_long` while
-    long → flat; everything else is a no-op (no pyramiding, no closing a flat
-    position). Long-only today (`SignalKind` has no short).
+    and the last-bar drop: `enter_long`/`enter_short` while flat opens the
+    matching direction; `exit_long` while long and `exit_short` while short
+    return to flat; everything else is a no-op (no pyramiding, no simultaneous
+    long+short, no closing a position of the other direction — ADR-0050).
+    Callers pass the adapter-ordered stream so same-bar exit+enter flips fold
+    exit-first, exactly as the engine executes them.
     """
 
-    position: Literal["flat", "long"] = "flat"
+    position: Literal["flat", "long", "short"] = "flat"
     for signal in signals:
-        if signal.kind is SignalKind.ENTER_LONG and position == "flat":
-            position = "long"
-        elif signal.kind is SignalKind.EXIT_LONG and position == "long":
+        if position == "flat":
+            if signal.kind is SignalKind.ENTER_LONG:
+                position = "long"
+            elif signal.kind is SignalKind.ENTER_SHORT:
+                position = "short"
+        elif (position == "long" and signal.kind is SignalKind.EXIT_LONG) or (
+            position == "short" and signal.kind is SignalKind.EXIT_SHORT
+        ):
             position = "flat"
     return position
 

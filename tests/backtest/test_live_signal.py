@@ -285,3 +285,74 @@ def test_all_forming_is_rejected() -> None:
     too_early = bars[0].event_ts
     with pytest.raises(ValueError, match="still forming"):
         evaluate_signals(_enter_on_last(), bars, now=too_early)
+
+
+# --- Plan 0053 phase 3: short states (ADR-0050) --------------------------------
+
+
+def test_fresh_enter_short_reports_short_position() -> None:
+    # Phase 3 done-when: a strategy currently emitting `enter_short` reports a
+    # `short` live state, with the signal itself surfaced as fresh.
+    bars = _bars([10.0] * 8)
+    last = len(bars) - 1
+    strat = _fixed([Signal(bar_index=last, kind=SignalKind.ENTER_SHORT)])
+    ev = evaluate_signals(strat, bars, now=_FAR_FUTURE)
+
+    assert ev.current_position == "short"
+    assert ev.last_signal is not None
+    assert ev.last_signal.kind is SignalKind.ENTER_SHORT
+    assert ev.last_signal.bar_index == last
+    assert ev.fresh_signal is True
+    assert ev.bars_since_last_signal == 0
+
+
+def test_short_round_trip_folds_to_flat() -> None:
+    bars = _bars([10.0] * 10)
+    strat = _fixed(
+        [
+            Signal(bar_index=2, kind=SignalKind.ENTER_SHORT),
+            Signal(bar_index=5, kind=SignalKind.EXIT_SHORT),
+        ]
+    )
+    ev = evaluate_signals(strat, bars, now=_FAR_FUTURE)
+
+    assert ev.current_position == "flat"
+    assert ev.last_signal is not None
+    assert ev.last_signal.kind is SignalKind.EXIT_SHORT
+    assert ev.bars_since_last_signal == 4
+
+
+def test_fold_honours_single_direction_invariants() -> None:
+    # `enter_long` while short and `exit_long` while short are no-ops — the
+    # short survives both (mirrors the engine adapter's state machine).
+    bars = _bars([10.0] * 10)
+    strat = _fixed(
+        [
+            Signal(bar_index=1, kind=SignalKind.ENTER_SHORT),
+            Signal(bar_index=3, kind=SignalKind.ENTER_LONG),
+            Signal(bar_index=5, kind=SignalKind.EXIT_LONG),
+        ]
+    )
+    ev = evaluate_signals(strat, bars, now=_FAR_FUTURE)
+    assert ev.current_position == "short"
+
+
+def test_same_bar_flip_folds_exit_first_like_the_engine() -> None:
+    # A same-bar exit_long + enter_short flip must fold to SHORT regardless of
+    # emission order — the evaluator applies the adapter's ADR-0050 ordering
+    # (exits before entries within one bar).
+    bars = _bars([10.0] * 10)
+    emitted_enter_first = _fixed(
+        [
+            Signal(bar_index=2, kind=SignalKind.ENTER_LONG),
+            Signal(bar_index=6, kind=SignalKind.ENTER_SHORT),
+            Signal(bar_index=6, kind=SignalKind.EXIT_LONG),
+        ]
+    )
+    ev = evaluate_signals(emitted_enter_first, bars, now=_FAR_FUTURE)
+    assert ev.current_position == "short"
+    # The reported last signal is the one that ends up last in execution
+    # order: the short entry, not the long exit.
+    assert ev.last_signal is not None
+    assert ev.last_signal.kind is SignalKind.ENTER_SHORT
+    assert ev.last_signal.bar_index == 6

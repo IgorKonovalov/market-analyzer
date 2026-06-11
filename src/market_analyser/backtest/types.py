@@ -7,8 +7,10 @@ metrics, and its `BacktestResult` envelope all move to a dedicated follow-up
 plan (see the 2026-05-19 reframe note in Plan 0002).
 
 `Trade` describes one round-trip position: an entry that may or may not have
-yet closed. Short trades are reserved (`kind` is `Literal["long"]` for now) and
-will land alongside `ENTER_SHORT`/`EXIT_SHORT` in their own plan.
+yet closed. `kind` carries the direction (`"long"` or `"short"`) per
+[ADR-0050](../../../docs/architecture/adrs/0050-short-selling-strategy-backtest.md):
+a short's realized P&L is `entry - exit` (the inverse of a long), charged the
+same transaction cost a long pays. Positions are single-direction at a time.
 """
 
 from __future__ import annotations
@@ -22,12 +24,14 @@ from market_analyser.contracts.strategy import SignalKind
 
 
 class Trade(BaseModel):
-    """A long-only round-trip trade produced by `signals_to_trades`.
+    """A round-trip trade produced by `signals_to_trades`.
 
     `entry_bar_index` is the bar at whose OPEN the position was opened — i.e.
-    one bar after the `ENTER_LONG` signal's `bar_index`. `exit_bar_index` /
-    `exit_price` are `None` when the position is still open at the end of the
-    bar series (dangling entry).
+    one bar after the `ENTER_LONG` / `ENTER_SHORT` signal's `bar_index`.
+    `exit_bar_index` / `exit_price` are `None` when the position is still open
+    at the end of the bar series (dangling entry). `kind` is the position
+    direction: a long profits when `exit > entry`, a short when `exit < entry`
+    (P&L = `entry - exit`).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -36,7 +40,7 @@ class Trade(BaseModel):
     exit_bar_index: int | None
     entry_price: float
     exit_price: float | None
-    kind: Literal["long"]
+    kind: Literal["long", "short"]
 
 
 class EvaluatedSignal(BaseModel):
@@ -47,7 +51,8 @@ class EvaluatedSignal(BaseModel):
     into the CLOSED-bar series (any still-forming latest bar is excluded before
     indexing), so they are stable across an intrabar re-call until a new bar
     closes. `kind` carries the strategy contract's `SignalKind` directly (it
-    serialises to `"enter_long"` / `"exit_long"`).
+    serialises to `"enter_long"` / `"exit_long"` / `"enter_short"` /
+    `"exit_short"`).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -81,7 +86,7 @@ class SignalEvaluation(BaseModel):
     evaluated_through_ts: datetime  # event_ts of the last CLOSED bar fed to the strategy
     closed_bar_count: int  # bars actually passed to generate_signals
     latest_bar_excluded_as_forming: bool  # True iff a still-forming latest bar was dropped
-    current_position: Literal["flat", "long"]  # implied by folding the signal stream
+    current_position: Literal["flat", "long", "short"]  # implied by folding the signal stream
     # `= None` defaults so the SSE bus's `exclude_none` dump omits these when
     # absent and the schema marks them optional — see EvaluatedSignal.reason.
     last_signal: EvaluatedSignal | None = None  # most recent signal, or None if none fired

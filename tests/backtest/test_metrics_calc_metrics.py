@@ -388,6 +388,111 @@ def test_calmar_none_when_curve_never_dips() -> None:
     assert metrics.sortino == 0.0
 
 
+def test_short_trade_win_and_return_are_direction_aware() -> None:
+    """Plan 0053 phase 2 (ADR-0050): a short that covers LOWER is a win, and its
+    per-trade return is `(entry - exit) / entry` — the negation of the long
+    formula on the same prices."""
+
+    metrics = _calc_metrics(
+        trades=[
+            Trade(
+                entry_bar_index=1,
+                exit_bar_index=2,
+                entry_price=100.0,
+                exit_price=90.0,
+                kind="short",
+            ),
+            Trade(
+                entry_bar_index=3,
+                exit_bar_index=4,
+                entry_price=100.0,
+                exit_price=110.0,
+                kind="short",
+            ),
+        ],
+        equity_curve=_curve([10_000.0, 11_000.0, 10_500.0, 10_000.0]),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+    assert metrics.trade_count == 2
+    # Covered at 90: +10%. Covered at 110: -10%. One win of two.
+    assert isclose(metrics.win_rate, 0.5, abs_tol=1e-9)
+    assert metrics.best_trade_return is not None
+    assert isclose(metrics.best_trade_return, 0.10, abs_tol=1e-9)
+    assert metrics.worst_trade_return is not None
+    assert isclose(metrics.worst_trade_return, -0.10, abs_tol=1e-9)
+    assert metrics.expectancy is not None
+    assert isclose(metrics.expectancy, 0.0, abs_tol=1e-9)
+    assert metrics.profit_factor is not None
+    assert isclose(metrics.profit_factor, 1.0, abs_tol=1e-9)
+
+
+def test_full_metric_set_on_short_bearing_run_is_direction_agnostic() -> None:
+    """Plan 0053 phase 3 done-when: Sharpe/Sortino/Calmar/profit factor/
+    expectancy compute correctly on a short-bearing equity curve, value-asserted
+    against a hand-checked fixture.
+
+    The curve [10000, 10500, 11000, 10800, 11300] is produced by shorts (it
+    rises as the underlying falls, with one pullback); the curve-derived
+    metrics must depend only on the equity values, and the per-trade metrics
+    only on the direction-signed returns [+0.10, -0.05].
+    """
+
+    equities = [10_000.0, 10_500.0, 11_000.0, 10_800.0, 11_300.0]
+    trades = [
+        Trade(
+            entry_bar_index=1,
+            exit_bar_index=2,
+            entry_price=100.0,
+            exit_price=90.0,  # covered 10% lower -> +0.10
+            kind="short",
+        ),
+        Trade(
+            entry_bar_index=3,
+            exit_bar_index=4,
+            entry_price=110.0,
+            exit_price=115.5,  # covered 5% higher -> -0.05
+            kind="short",
+        ),
+    ]
+    metrics = _calc_metrics(
+        trades=trades,
+        equity_curve=_curve(equities),
+        initial_capital=10_000.0,
+        timeframe="1d",
+    )
+
+    # Curve metrics — identical to what the same curve yields long-side.
+    assert isclose(metrics.total_return, 0.13, abs_tol=1e-9)
+    returns = [equities[i] / equities[i - 1] - 1.0 for i in range(1, len(equities))]
+    expected_sharpe = statistics.fmean(returns) / statistics.stdev(returns) * math.sqrt(252)
+    assert isclose(metrics.sharpe, expected_sharpe, abs_tol=1e-9)
+    downside = [min(r, 0.0) for r in returns]
+    expected_sortino = statistics.fmean(returns) / statistics.stdev(downside) * math.sqrt(252)
+    assert isclose(metrics.sortino, expected_sortino, abs_tol=1e-9)
+    # Drawdown: 11_000 peak -> 10_800 trough, recovered by the last bar.
+    assert isclose(metrics.max_drawdown, (10_800.0 - 11_000.0) / 11_000.0, abs_tol=1e-9)
+    assert metrics.max_drawdown_duration_bars == 1
+    annualized = 1.13 ** (252 / len(equities)) - 1.0
+    assert metrics.calmar is not None
+    assert isclose(metrics.calmar, annualized / (200.0 / 11_000.0), rel_tol=1e-9)
+
+    # Per-trade metrics — hand-worked from the signed short returns.
+    assert metrics.trade_count == 2
+    assert isclose(metrics.win_rate, 0.5, abs_tol=1e-9)
+    assert metrics.profit_factor is not None
+    assert isclose(metrics.profit_factor, 0.10 / 0.05, abs_tol=1e-9)  # = 2.0
+    assert metrics.expectancy is not None
+    assert isclose(metrics.expectancy, (0.10 - 0.05) / 2.0, abs_tol=1e-9)  # = 0.025
+    assert metrics.best_trade_return is not None
+    assert isclose(metrics.best_trade_return, 0.10, abs_tol=1e-9)
+    assert metrics.worst_trade_return is not None
+    assert isclose(metrics.worst_trade_return, -0.05, abs_tol=1e-9)
+    # None of the metric floats degenerate to NaN on a short-bearing run.
+    for value in (metrics.sharpe, metrics.sortino, metrics.calmar):
+        assert value is not None and math.isfinite(value)
+
+
 def test_no_extended_metric_is_ever_nan() -> None:
     """Across both a normal and a degenerate run, no float metric is NaN."""
 
