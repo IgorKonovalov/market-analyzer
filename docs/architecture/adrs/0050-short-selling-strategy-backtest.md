@@ -1,6 +1,6 @@
 # ADR-0050 — Short-selling in the strategy + backtest contract
 
-> **Status:** proposed — accepts at the Plan 0053 close
+> **Status:** accepted (Plan 0053 close 2026-06-11)
 > **Date:** 2026-06-08
 > **Related plan(s):** 0053-short-selling-support (implements); 0054-chart-pattern-breakout-strategy (first consumer)
 > **Related ADRs:** amends [0004](0004-strategy-interface.md) (strategy interface — long-only `SignalKind`); extends [0018](0018-backtest-result-schema.md) (engine semantics + determinism golden); relates [0024](0024-extended-backtest-metrics.md) (metrics) and [0025](0025-trade-execution-feasibility.md) (no-real-money posture)
