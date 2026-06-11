@@ -51,7 +51,8 @@ class EvaluatedSignal(BaseModel):
     into the CLOSED-bar series (any still-forming latest bar is excluded before
     indexing), so they are stable across an intrabar re-call until a new bar
     closes. `kind` carries the strategy contract's `SignalKind` directly (it
-    serialises to `"enter_long"` / `"exit_long"`).
+    serialises to `"enter_long"` / `"exit_long"` / `"enter_short"` /
+    `"exit_short"`).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -85,7 +86,7 @@ class SignalEvaluation(BaseModel):
     evaluated_through_ts: datetime  # event_ts of the last CLOSED bar fed to the strategy
     closed_bar_count: int  # bars actually passed to generate_signals
     latest_bar_excluded_as_forming: bool  # True iff a still-forming latest bar was dropped
-    current_position: Literal["flat", "long"]  # implied by folding the signal stream
+    current_position: Literal["flat", "long", "short"]  # implied by folding the signal stream
     # `= None` defaults so the SSE bus's `exclude_none` dump omits these when
     # absent and the schema marks them optional — see EvaluatedSignal.reason.
     last_signal: EvaluatedSignal | None = None  # most recent signal, or None if none fired
