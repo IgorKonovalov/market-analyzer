@@ -28,6 +28,31 @@ def test_signal_kind_values_are_stable() -> None:
     # would silently invalidate old trade logs.
     assert SignalKind.ENTER_LONG.value == "enter_long"
     assert SignalKind.EXIT_LONG.value == "exit_long"
+    assert SignalKind.ENTER_SHORT.value == "enter_short"
+    assert SignalKind.EXIT_SHORT.value == "exit_short"
+
+
+def test_signal_kind_set_is_exactly_four() -> None:
+    # Plan 0053 phase 1 done-when: the contract pins the FULL kind set. A new
+    # kind (or a dropped one) must be a deliberate contract change, not drift.
+    assert {kind.value for kind in SignalKind} == {
+        "enter_long",
+        "exit_long",
+        "enter_short",
+        "exit_short",
+    }
+
+
+def test_signal_validates_with_short_kinds() -> None:
+    # Plan 0053 phase 1 done-when: a strategy can emit an `enter_short` Signal
+    # and it validates (and round-trips through the wire format).
+    entered = Signal(bar_index=7, kind=SignalKind.ENTER_SHORT, reason="bearish pattern")
+    assert entered.kind is SignalKind.ENTER_SHORT
+    assert entered.model_dump(mode="json")["kind"] == "enter_short"
+
+    exited = Signal(bar_index=9, kind=SignalKind.EXIT_SHORT)
+    assert exited.kind is SignalKind.EXIT_SHORT
+    assert Signal.model_validate({"bar_index": 9, "kind": "exit_short"}) == exited
 
 
 def test_signal_is_frozen() -> None:

@@ -1,6 +1,6 @@
 # 0053 — Short-selling support in the strategy + backtest contract
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-06-08
 > **Owner skill(s):** dev, backtester
 > **Related ADRs:** [0050](../adrs/0050-short-selling-strategy-backtest.md) (**accepts at this plan's close**); amends [0004](../adrs/0004-strategy-interface.md); extends [0018](../adrs/0018-backtest-result-schema.md); relates [0024](../adrs/0024-extended-backtest-metrics.md), [0026 live-signal evaluator]
