@@ -18,8 +18,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Literal
 
 _DAY = timedelta(days=1)
+
+# The OHLCV source vocabulary for the per-source seams below (Plan 0058 phase 2
+# / ADR-0052 membership routing). The registry's `TimeframeSpec` fields describe
+# the Yahoo view (the historical default); Binance serves every canonical
+# timeframe natively (incl. 4h) with history to listing date, so its view is
+# derived, not tabulated.
+OhlcvSourceName = Literal["yahoo", "binance"]
 
 
 @dataclass(frozen=True)
@@ -101,6 +109,29 @@ def max_history(tf: str) -> timedelta | None:
     return timeframe_spec(tf).max_history
 
 
+def source_resampled_from(tf: str, source: OhlcvSourceName) -> str | None:
+    """The base timeframe `tf` is resampled from *for `source`*, or `None` when
+    `source` serves it natively. The per-source seam of Plan 0058 phase 2:
+    Yahoo has no 4h interval so 4h derives from 1h (ADR-0028); Binance serves
+    every canonical timeframe natively (ADR-0052), so for Binance-routed
+    symbols nothing is ever resampled."""
+    spec = timeframe_spec(tf)
+    if source == "binance":
+        return None
+    return spec.resampled_from
+
+
+def source_max_history(tf: str, source: OhlcvSourceName) -> timedelta | None:
+    """The furthest back `tf` bars are available *from `source`*, or `None`
+    when unbounded. Yahoo's intraday caps (60d for 15m, 730d for 1h/4h) come
+    from the registry; Binance history reaches the listing date for every
+    timeframe (ADR-0052), so Binance-routed symbols are never clamped."""
+    spec = timeframe_spec(tf)
+    if source == "binance":
+        return None
+    return spec.max_history
+
+
 def registry_timeframes() -> frozenset[str]:
     """Every registered canonical timeframe — must equal `SUPPORTED_TIMEFRAMES`."""
     return frozenset(_REGISTRY)
@@ -148,6 +179,7 @@ def supported_timeframes_label() -> str:
 
 
 __all__ = [
+    "OhlcvSourceName",
     "TimeframeSpec",
     "bar_duration",
     "max_history",
@@ -155,6 +187,8 @@ __all__ = [
     "registry_timeframes",
     "require_native_interval",
     "resampled_from",
+    "source_max_history",
+    "source_resampled_from",
     "supported_timeframes_label",
     "timeframe_spec",
     "uses_intraday_timestamp",

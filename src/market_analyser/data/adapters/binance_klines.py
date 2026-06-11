@@ -46,8 +46,13 @@ Package-internal per ADR-0007: downstream code reaches this through the
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import UTC, datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict
 
 from market_analyser.data._http import (
     ErrorKind,
@@ -65,7 +70,10 @@ from market_analyser.data.errors import (
 from market_analyser.data.timeframes import bar_duration, timeframe_spec
 from market_analyser.data.types import Bar
 
+_logger = logging.getLogger(__name__)
+
 _KLINES_URL = "https://api.binance.com/api/v3/klines"
+_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
 _SOURCE = "binance"
 
 # Upstream page cap for /api/v3/klines (ADR-0052 verified facts: max 1000
@@ -99,6 +107,20 @@ _HISTORY_START_MS = 1
 _KLINE_MIN_FIELDS = 6
 
 
+class ExchangeSymbolSet(BaseModel):
+    """The cached `exchangeInfo` symbol universe driving provider dispatch
+    (Plan 0058 phase 2 / ADR-0052: a symbol routes to Binance iff it is in this
+    set — no prefixes, no format heuristics). `fetched_at` is the upstream's
+    own `serverTime` (never a local wall-clock read), so staleness is visible
+    and refresh stays explicit."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source: Literal["binance"]
+    symbols: frozenset[str]
+    fetched_at: datetime
+
+
 class BinanceKlinesError(ValueError):
     """The upstream 2xx payload broke shape (non-list body, malformed kline
     array, non-numeric field, a zero/negative price, or a non-advancing page
@@ -123,9 +145,24 @@ class BinanceSpotHttpClient(ResilientHttpClient):
 
 
 class BinanceKlinesAdapter:
-    """Fetches Binance spot OHLCV bars (`OhlcvSource`, ADR-0031)."""
+    """Fetches Binance spot OHLCV bars (`OhlcvSource`, ADR-0031) and owns the
+    cached `exchangeInfo` symbol set that drives provider dispatch (ADR-0052
+    membership routing).
 
-    def __init__(self, http_client: ResilientHttpClient | None = None) -> None:
+    `symbol_cache_path` is where the symbol set persists across sessions
+    (wired by the composition root — `<data-dir>/binance_exchange_info.json`);
+    `None` keeps the set process-memoized only. **Stale-but-present beats
+    absent**: a cached set is used as-is with no TTL and no auto-refresh —
+    only `refresh_symbols()` (or a missing cache) reaches the network, so a
+    newly-listed pair misroutes to Yahoo (loud 404) until an explicit refresh,
+    the accepted Plan 0058 trade."""
+
+    def __init__(
+        self,
+        http_client: ResilientHttpClient | None = None,
+        *,
+        symbol_cache_path: Path | None = None,
+    ) -> None:
         self._http = (
             http_client
             if http_client is not None
@@ -135,6 +172,88 @@ class BinanceKlinesAdapter:
                 # cache; an in-memory TTL cache buys nothing.
                 cache_ttl_seconds=0.0,
             )
+        )
+        self._symbol_cache_path = symbol_cache_path
+        self._symbols: frozenset[str] | None = None
+
+    def is_known_symbol(self, symbol: str) -> bool:
+        """Whether `symbol` is in the cached Binance symbol universe — the
+        ADR-0052 membership test the provider routes OHLCV by."""
+        return symbol.strip().upper() in self.known_symbols()
+
+    def known_symbols(self) -> frozenset[str]:
+        """The cached `exchangeInfo` symbol set: process memo, else the cache
+        file (used as-is however stale — stale-but-present beats absent), else
+        one lazy fetch-and-persist. If that lazy fetch fails, the failure is
+        memoized as an **empty set for this process** (a warning is logged):
+        routing degrades to Yahoo-for-everything — loud 404s for
+        Binance-only symbols, the same failure shape as the plan's accepted
+        stale-set misroute — rather than failing every non-Binance request or
+        re-probing a dead upstream per call. `refresh_symbols()` (or a process
+        restart) recovers."""
+        if self._symbols is not None:
+            return self._symbols
+        cached = self._load_cached_symbols()
+        if cached is not None:
+            self._symbols = cached
+            return cached
+        try:
+            return self.refresh_symbols()
+        except UpstreamDataError as err:
+            _logger.warning(
+                "binance: exchangeInfo unavailable (%s) — no symbols will route to "
+                "Binance until refresh_symbols() succeeds or the process restarts",
+                type(err).__name__,
+            )
+            self._symbols = frozenset()
+            return self._symbols
+
+    def refresh_symbols(self) -> frozenset[str]:
+        """Explicitly re-fetch `GET /api/v3/exchangeInfo`, update the process
+        memo, and persist the set to the cache file (when one is wired). The
+        one refresh path of the Plan 0058 risk note. Raises the same typed
+        taxonomy as `fetch_ohlcv` (451 → `GeoRestrictedError`, never retried)
+        and `BinanceKlinesError` on a shape-broken payload."""
+        try:
+            payload = self._http.get(_EXCHANGE_INFO_URL, expect_json=True).json()
+        except ResilientHttpError as err:
+            raise _classify_error(err, what="the exchangeInfo symbol set") from err
+        symbol_set = _parse_exchange_info(payload)
+        self._symbols = symbol_set.symbols
+        self._persist_symbols(symbol_set)
+        return symbol_set.symbols
+
+    def _load_cached_symbols(self) -> frozenset[str] | None:
+        """The persisted symbol set, or `None` when there is no cache file. A
+        corrupt file is treated as absent (warned, then re-fetched) — it is
+        not "present" in the stale-but-present sense."""
+        path = self._symbol_cache_path
+        if path is None or not path.exists():
+            return None
+        try:
+            cached = ExchangeSymbolSet.model_validate_json(path.read_text(encoding="utf-8"))
+        except ValueError:
+            _logger.warning("binance: unreadable exchangeInfo cache at %s — refetching", path.name)
+            return None
+        return cached.symbols
+
+    def _persist_symbols(self, symbol_set: ExchangeSymbolSet) -> None:
+        path = self._symbol_cache_path
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Hand-rolled dump so the symbol list is sorted on disk (deterministic
+        # file content; pydantic would serialize the frozenset in hash order).
+        path.write_text(
+            json.dumps(
+                {
+                    "source": symbol_set.source,
+                    "symbols": sorted(symbol_set.symbols),
+                    "fetched_at": symbol_set.fetched_at.isoformat(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
         )
 
     def fetch_ohlcv(
@@ -185,7 +304,7 @@ class BinanceKlinesAdapter:
             try:
                 payload = self._http.get(_KLINES_URL, params=params, expect_json=True).json()
             except ResilientHttpError as err:
-                raise _classify_error(err, symbol) from err
+                raise _classify_error(err, what=f"klines for {symbol}") from err
             page = _parse_page(payload, symbol=symbol, timeframe=timeframe)
             if not page:
                 break  # empty page = end-of-history, not an error (ADR-0052)
@@ -320,7 +439,37 @@ def _decimal_str(value: Any, *, field: str, symbol: str) -> float:
     )
 
 
-def _classify_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:
+def _parse_exchange_info(payload: Any) -> ExchangeSymbolSet:
+    """Parse the `/api/v3/exchangeInfo` payload into the cached symbol set.
+    Every listed pair is included regardless of trading status — a delisted
+    pair still has historical klines, and Binance stays authoritative for its
+    own names either way. `fetched_at` comes from the payload's `serverTime`
+    (upstream's own clock). Shape drift raises `BinanceKlinesError`."""
+    if not isinstance(payload, dict):
+        raise BinanceKlinesError("binance: exchangeInfo payload is not an object")
+    server_time = payload.get("serverTime")
+    if isinstance(server_time, bool) or not isinstance(server_time, int):
+        raise BinanceKlinesError(
+            "binance: exchangeInfo payload missing integer 'serverTime'",
+        )
+    entries = payload.get("symbols")
+    if not isinstance(entries, list):
+        raise BinanceKlinesError("binance: exchangeInfo payload missing 'symbols' list")
+    symbols: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("symbol"), str):
+            raise BinanceKlinesError(
+                "binance: exchangeInfo entry missing string 'symbol'",
+            )
+        symbols.add(entry["symbol"])
+    return ExchangeSymbolSet(
+        source="binance",
+        symbols=frozenset(symbols),
+        fetched_at=datetime.fromtimestamp(server_time / 1000, tz=UTC),
+    )
+
+
+def _classify_error(err: ResilientHttpError, *, what: str) -> UpstreamDataError:
     """Translate an exhausted/permanent `ResilientHttpError` into the typed
     taxonomy. HTTP 451 → geo-restricted (ADR-0052: surfaced, never improvised
     around); 429 → rate-limited (carrying `Retry-After`); any other status or
@@ -328,12 +477,12 @@ def _classify_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:
     resp = err.last_response
     if resp is not None and resp.status_code == 451:
         return GeoRestrictedError(
-            f"binance: geo-restricted (HTTP 451) fetching klines for {symbol} — "
+            f"binance: geo-restricted (HTTP 451) fetching {what} — "
             f"api.binance.com is blocked from this network (ADR-0052)",
         )
     if resp is not None and resp.status_code == 429:
         return RateLimitedError(
-            f"binance: rate limited (HTTP 429) fetching klines for {symbol}",
+            f"binance: rate limited (HTTP 429) fetching {what}",
             retry_after_seconds=_parse_retry_after(_header(resp.headers, "Retry-After")),
         )
     if resp is not None:
@@ -341,7 +490,7 @@ def _classify_error(err: ResilientHttpError, symbol: str) -> UpstreamDataError:
     else:
         detail = type(err.last_exception).__name__ if err.last_exception is not None else "unknown"
     return UpstreamUnavailableError(
-        f"binance: upstream unavailable ({detail}) fetching klines for {symbol}",
+        f"binance: upstream unavailable ({detail}) fetching {what}",
     )
 
 
@@ -366,4 +515,5 @@ __all__ = [
     "BinanceKlinesAdapter",
     "BinanceKlinesError",
     "BinanceSpotHttpClient",
+    "ExchangeSymbolSet",
 ]
