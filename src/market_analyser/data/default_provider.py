@@ -369,15 +369,23 @@ class DefaultMarketDataProvider:
         # Symbol search is a live, wall-clock lookup against Yahoo's search
         # endpoint — there is no replayable historical source to honour `as_of`
         # against, so reject it at the boundary (Plan 0024 / ADR-0026; mirrors
-        # the screener/quote/sentiment as_of rejections in this file). Results
-        # are in Yahoo's native namespace, so every hit is fetchable by
-        # get_ohlcv (the chartable-suggestion invariant of ADR-0026).
+        # the screener/quote/sentiment as_of rejections in this file). Every
+        # hit is fetchable by get_ohlcv (the chartable-suggestion invariant of
+        # ADR-0026): Yahoo results are in Yahoo's native namespace, and Binance
+        # matches (Plan 0058 phase 3) come from the same exchangeInfo
+        # membership set the OHLCV dispatch routes by, merged after Yahoo's
+        # with their source labeled so `BTCUSDT` and `BTC-USD` are never
+        # presented as interchangeable (ADR-0052).
         if as_of is not None:
             raise ValueError(
                 "as_of is not supported for symbol search — search is a live "
                 "lookup (Plan 0024 / ADR-0026)",
             )
-        return self._yahoo.search(query)
+        results = list(self._yahoo.search(query))
+        if self._binance is not None:
+            seen = {info.symbol for info in results}
+            results.extend(info for info in self._binance.search(query) if info.symbol not in seen)
+        return results
 
     def get_screener(
         self,

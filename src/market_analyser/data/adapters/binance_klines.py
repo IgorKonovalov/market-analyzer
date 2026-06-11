@@ -68,7 +68,7 @@ from market_analyser.data.errors import (
     UpstreamUnavailableError,
 )
 from market_analyser.data.timeframes import bar_duration, timeframe_spec
-from market_analyser.data.types import Bar
+from market_analyser.data.types import Bar, SymbolInfo
 
 _logger = logging.getLogger(__name__)
 
@@ -105,6 +105,17 @@ _HISTORY_START_MS = 1
 # [0] open time (ms), [1] open, [2] high, [3] low, [4] close, [5] volume —
 # the rest (close time, quote volume, trades, taker volumes) are unused here.
 _KLINE_MIN_FIELDS = 6
+
+# Result cap for symbol search, mirroring the Yahoo adapter's quotes count: the
+# picker only ever shows a handful of suggestions (Plan 0024 precedent).
+_MAX_SEARCH_RESULTS = 10
+
+# The source label search results carry (`SymbolInfo.exchange`) so the picker
+# can tell `BTCUSDT` (Binance) from `BTC-USD` (Yahoo's synthetic composite) —
+# the two are different series and are never presented as interchangeable
+# (ADR-0052 / Plan 0058 phase 3).
+_SEARCH_EXCHANGE_LABEL = "Binance"
+_SEARCH_QUOTE_TYPE = "Cryptocurrency"
 
 
 class ExchangeSymbolSet(BaseModel):
@@ -222,6 +233,38 @@ class BinanceKlinesAdapter:
         self._symbols = symbol_set.symbols
         self._persist_symbols(symbol_set)
         return symbol_set.symbols
+
+    def search(self, query: str) -> list[SymbolInfo]:
+        """`SymbolSearchSource` (ADR-0031) over the cached exchangeInfo set
+        (Plan 0058 phase 3): case-insensitive substring match against the pair
+        names, exact match first, then prefix matches, then the rest — each
+        group alphabetical, capped at `_MAX_SEARCH_RESULTS` so the
+        thousands-strong universe never floods the picker. Results carry the
+        Binance source label (`exchange`) so the picker never presents
+        `BTCUSDT` and `BTC-USD` as interchangeable (ADR-0052). Every hit is
+        fetchable by `get_ohlcv` by construction — it is in the same membership
+        set the provider routes by (the ADR-0026 chartable invariant).
+
+        An empty/whitespace query short-circuits to `[]`; a zero-match query
+        also returns `[]` (not an error). Deterministic: pure sorts over the
+        set, no set-iteration order leaks into the result."""
+        query = query.strip().upper()
+        if not query:
+            return []
+        matches = sorted(s for s in self.known_symbols() if query in s)
+        exact = [s for s in matches if s == query]
+        prefixed = [s for s in matches if s != query and s.startswith(query)]
+        rest = [s for s in matches if s != query and not s.startswith(query)]
+        ranked = (exact + prefixed + rest)[:_MAX_SEARCH_RESULTS]
+        return [
+            SymbolInfo(
+                symbol=s,
+                name=s,
+                exchange=_SEARCH_EXCHANGE_LABEL,
+                quote_type=_SEARCH_QUOTE_TYPE,
+            )
+            for s in ranked
+        ]
 
     def _load_cached_symbols(self) -> frozenset[str] | None:
         """The persisted symbol set, or `None` when there is no cache file. A
