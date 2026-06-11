@@ -1,6 +1,6 @@
 # 0058 — Binance klines as a second OHLCV source
 
-> **Status:** approved (2026-06-09)
+> **Status:** in-progress
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0052](../adrs/0052-binance-exchange-data-source.md) (implements the klines half; accepts at close), [ADR-0007](../adrs/0007-market-data-provider.md) (the Protocol this slots into), [ADR-0031](../adrs/0031-data-source-adapter-contract.md) (OhlcvSource), [ADR-0028](../adrs/0028-timeframe-resampling-and-expansion.md) (timeframe registry), [ADR-0033](../adrs/0033-empty-ohlcv-response-by-recency.md) (empty-window semantics carry over)
