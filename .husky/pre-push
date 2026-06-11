@@ -1,9 +1,13 @@
-# Python static gates mirror CI's `test` job so a ruff/format/mypy failure
-# is caught here, not after a push. (Coverage + pip-audit stay CI-only:
-# coverage is slow under instrumentation and pip-audit can fail on a freshly
-# published CVE independent of the push — handled via the CLAUDE.md CVE bump.)
+# Python static gates mirror CI's `test` job so a ruff/format/mypy/pip-audit
+# failure is caught here, not after a push. (Coverage stays CI-only — slow
+# under instrumentation.) pip-audit promoted from CI-only 2026-06-10 (user
+# decision, after PYSEC-2026-196 reached CI first): it needs the network and
+# can go red on a freshly published CVE independent of the push — when that
+# happens, fix forward with the CLAUDE.md CVE-driven cutoff bump rather than
+# pushing around the gate.
 uv run ruff check &&
   uv run ruff format --check &&
   uv run mypy --strict src tests &&
+  uv run pip-audit &&
   pnpm --filter desktop test:all &&
   uv run pytest -m "not network"
