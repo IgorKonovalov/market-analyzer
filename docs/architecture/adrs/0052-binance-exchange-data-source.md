@@ -1,6 +1,6 @@
 # ADR-0052 — Binance public API as the crypto exchange data source; exchange pairs are distinct symbols
 
-> **Status:** proposed (accepts at Plan 0058's close; Plan 0056 exercises the derivatives half)
+> **Status:** accepted (2026-06-13, at Plan 0058's close; Plan 0056 exercised the derivatives half)
 > **Date:** 2026-06-09
 > **Related plan(s):** 0056-binance-derivatives-data (funding/OI), 0058-binance-klines-ohlcv (klines)
 > **Related ADRs:** [ADR-0007](0007-market-data-provider.md) (the provider contract the klines adapter slots into), [ADR-0031](0031-data-source-adapter-contract.md) (per-capability Protocol + selector registry), [ADR-0019](0019-external-http-adapter-resilience.md) (ResilientHttpClient), [ADR-0051](0051-historized-metric-series-contract.md) (where funding/OI series land), [ADR-0028](0028-timeframe-resampling-and-expansion.md) (canonical timeframe registry)

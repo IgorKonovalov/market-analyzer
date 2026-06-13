@@ -1,6 +1,6 @@
 # 0058 — Binance klines as a second OHLCV source
 
-> **Status:** in-progress
+> **Status:** done (2026-06-13) — phases 1–3 on branch `plan-0058-binance-klines-ohlcv` (`4b0526b` adapter+pagination, `6c5779b` membership routing, `ac4d3d3` search), merged `--no-ff` as `0260c5d`; Mode 4 clean (no blockers); phase-4 live smoke GREEN (recorded below). Post-merge `main` green (1476 passed / 7 skipped, `mypy --strict` clean). ADR-0052 accepted at this close. One follow-up surfaced (live-quote path not Binance-aware) — see Followups.
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0052](../adrs/0052-binance-exchange-data-source.md) (implements the klines half; accepts at close), [ADR-0007](../adrs/0007-market-data-provider.md) (the Protocol this slots into), [ADR-0031](../adrs/0031-data-source-adapter-contract.md) (OhlcvSource), [ADR-0028](../adrs/0028-timeframe-resampling-and-expansion.md) (timeframe registry), [ADR-0033](../adrs/0033-empty-ohlcv-response-by-recency.md) (empty-window semantics carry over)
@@ -61,6 +61,7 @@ flowchart LR
 - **What:** From the user's network: backfill `BTCUSDT 1h` over a multi-year window, confirm depth (expected to reach ~2017), open it in the viewer chart, run `analyze_symbol` on it. Shares the geo verdict with Plan 0056 phase 2 — whichever runs first answers for both.
 - **Files touched:** none.
 - **Done when:** Bar count + earliest ts reported and recorded in this plan file; chart and snapshot render/compute without special-casing.
+- **Result (smoke ran 2026-06-13, on merged `main`):** GREEN. Backfilled `BTCUSDT 1h` 2017→now: **77,197 bars**, earliest **2017-08-17T04:00:00Z** (Binance spot listing, C=$4308.83), latest 2026-06-13 — ~9 years deep, far past Yahoo's 730-day 1h cap (per-source uncapped behavior confirmed live; the full ~77-page paginated walk to end-of-history in ~50s, no 451). Binance spot reachable from the user's network, **no geo block** (shared GREEN verdict with Plan 0056). Asserted live: routing (`BTCUSDT`→Binance `src=binance`, `AAPL`→Yahoo); cache round-trip (sub-window re-read in 0.05s, no refetch); native `4h` served `tf=4h src=binance` (not resampled); `search_symbols("BTCUSDT")` → `BTCUSDT`/`WBTCUSDT` labeled `exchange="Binance"`; `analyze_symbol` snapshot computes on Binance bars (full indicator set + classical chart patterns); the chart renders BTCUSDT candles in the viewer. **Finding (logged as a follow-up):** `get_quote` is not membership-routed (always `YahooQuoteAdapter`), so the live price header shows "disconnected" for Binance-only symbols — out of this plan's stated scope (no UI work; Yahoo stays the quote source).
 
 ## Data shapes
 
@@ -91,4 +92,4 @@ class ExchangeSymbolSet(BaseModel):
 
 ## Followups (after this lands)
 
-- (fill as discovered)
+- **Live-quote path is not Binance-aware** (`dev`; → `architect` if it warrants an ADR). `DefaultMarketDataProvider.get_quote` (`default_provider.py:362`) unconditionally calls `YahooQuoteAdapter.get_quote`, bypassing the `_ohlcv_route` membership dispatch — so a Binance-only symbol (`BTCUSDT`) has no live quote and the renderer's `PriceHeader` shows the "disconnected" badge. `BinanceKlinesAdapter` is an `OhlcvSource`/`SymbolSearchSource` only (no quote capability). Fix: route `get_quote` by membership and give the Binance adapter a quote source (derive from the latest 1h/1m kline, or a dedicated `/api/v3/ticker/price` call). Surfaced by the phase-4 smoke (2026-06-13); mirrored to the plans-README Open follow-ups.
