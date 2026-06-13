@@ -42,6 +42,16 @@ export function SymbolPicker({
   const { results } = useSymbolSearch(draft)
   const showDropdown = isOpen && results.length > 0
 
+  // Follow an EXTERNAL symbol change: an agent `chart.show` updates App's
+  // committed symbol (the `symbol` prop), and the input must reflect it, not
+  // just the chart. Safe against clobbering in-progress typing — user input
+  // only calls `setDraft`, never `onSymbolChange`, so the `symbol` prop is
+  // unchanged mid-type and this effect doesn't fire; on the user's own commit
+  // it re-sets `draft` to a value it already holds (a no-op).
+  useEffect(() => {
+    setDraft(symbol)
+  }, [symbol])
+
   // Outside-click dismissal. Blur and Escape also close, but a click elsewhere
   // in the window (that doesn't blur a focused control) needs this listener.
   useEffect(() => {

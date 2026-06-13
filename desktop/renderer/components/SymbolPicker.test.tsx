@@ -146,6 +146,60 @@ it('dismisses the dropdown on Escape', async () => {
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
 })
 
+it('syncs the input to an external symbol change (agent chart.show)', () => {
+  const onSymbolChange = jest.fn()
+  const onTimeframeChange = jest.fn()
+  const { rerender } = render(
+    <SymbolPicker
+      symbol="AAPL"
+      timeframe="1d"
+      onSymbolChange={onSymbolChange}
+      onTimeframeChange={onTimeframeChange}
+    />,
+  )
+  expect(screen.getByLabelText('Symbol')).toHaveValue('AAPL')
+
+  // The committed symbol changes from outside (App's ChartState, driven by an
+  // agent chart.show) — the input must follow, not stay on the mount-time value.
+  rerender(
+    <SymbolPicker
+      symbol="BTCUSDT"
+      timeframe="1d"
+      onSymbolChange={onSymbolChange}
+      onTimeframeChange={onTimeframeChange}
+    />,
+  )
+  expect(screen.getByLabelText('Symbol')).toHaveValue('BTCUSDT')
+})
+
+it('preserves an in-progress draft across a re-render with an unchanged symbol', () => {
+  const onSymbolChange = jest.fn()
+  const onTimeframeChange = jest.fn()
+  const { rerender } = render(
+    <SymbolPicker
+      symbol="AAPL"
+      timeframe="1d"
+      onSymbolChange={onSymbolChange}
+      onTimeframeChange={onTimeframeChange}
+    />,
+  )
+  const input = screen.getByLabelText('Symbol')
+  fireEvent.change(input, { target: { value: 'TSL' } })
+  expect(input).toHaveValue('TSL')
+
+  // An unrelated parent re-render (timeframe changed; committed symbol did NOT)
+  // must not clobber the user's half-typed draft.
+  rerender(
+    <SymbolPicker
+      symbol="AAPL"
+      timeframe="1h"
+      onSymbolChange={onSymbolChange}
+      onTimeframeChange={onTimeframeChange}
+    />,
+  )
+  expect(input).toHaveValue('TSL')
+})
+
 it('renders exactly the backend-supported timeframes (15m/1h/4h/1d/1w/1mo), not 5m/1m', () => {
   renderPicker()
   const select = screen.getByLabelText('Timeframe')
