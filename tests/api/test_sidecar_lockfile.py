@@ -25,6 +25,7 @@ Done-when items (each defended below):
 from __future__ import annotations
 
 import contextlib
+import datetime
 import json
 import os
 import signal
@@ -40,7 +41,13 @@ from typing import Any
 import psutil
 import pytest
 
-from market_analyser.api.lockfile import LockfileRecord, write_lockfile
+from market_analyser.api.__main__ import _probe_and_prepare_lockfile
+from market_analyser.api.lockfile import (
+    LockfileRecord,
+    _atomic_replace,
+    build_self_record,
+    write_lockfile,
+)
 
 PORT_LINE_TIMEOUT_S = 15.0
 SIGTERM_WAIT_S = 5.0
@@ -425,3 +432,111 @@ def test_renderer_secret_rotates_per_sidecar_boot(tmp_path: Path) -> None:
         assert secret1 != secret2, "two consecutive cold starts must produce different secrets"
     finally:
         _force_kill(proc2)
+
+
+# ----------------------------------------------------------------------------- #
+# Unit-level: Windows stale-lock takeover regression                            #
+#   On Windows a sidecar killed via TerminateProcess skips the lifespan/finally #
+#   lockfile removal (the `:279` skip above), so the next boot ALWAYS meets a   #
+#   stale lock. Takeover must claim it without the replace-existing path that   #
+#   hit ERROR_ACCESS_DENIED when a handle was briefly held on the file.         #
+# ----------------------------------------------------------------------------- #
+
+
+def _stale_record(*, pid: int, port: int, secret: str, version: str) -> LockfileRecord:
+    """A lockfile record with a deliberately mismatched create_time so
+    `is_owner_alive` classifies it stale regardless of the live PID set."""
+    return LockfileRecord(
+        pid=pid,
+        port=port,
+        renderer_secret=secret,
+        started_at=datetime.datetime.now(tz=datetime.UTC),
+        process_create_time=0.0,
+        sidecar_version=version,
+    )
+
+
+def test_write_lockfile_replaces_existing_destination(tmp_path: Path) -> None:
+    """A write onto an already-present lockfile succeeds — the replace-existing
+    path that raised ERROR_ACCESS_DENIED on Windows when a handle was held."""
+    lockfile = tmp_path / "sidecar.lock"
+    write_lockfile(lockfile, _stale_record(pid=111, port=1, secret="a" * 64, version="old"))
+    write_lockfile(lockfile, _stale_record(pid=222, port=2, secret="b" * 64, version="new"))
+
+    got = LockfileRecord.model_validate_json(lockfile.read_bytes())
+    assert got.pid == 222
+    assert got.port == 2
+    assert got.sidecar_version == "new"
+
+
+def test_probe_takeover_removes_stale_lockfile(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Takeover claims the lock by removing the prior owner's file before any
+    write, so the subsequent write_lockfile is a create, not a replace."""
+    lockfile = tmp_path / "sidecar.lock"
+    pid = os.getpid()
+    bogus_create_time = psutil.Process(pid).create_time() + 3600.0  # 1h ahead → mismatch
+    stale = LockfileRecord(
+        pid=pid,
+        port=12345,
+        renderer_secret="f" * 64,
+        started_at=datetime.datetime.now(tz=datetime.UTC),
+        process_create_time=bogus_create_time,
+        sidecar_version="stale",
+    )
+    write_lockfile(lockfile, stale)
+    assert lockfile.exists()
+
+    _probe_and_prepare_lockfile(lockfile)
+
+    assert not lockfile.exists()
+    err = capsys.readouterr().err
+    assert "taking over" in err
+    assert str(pid) in err
+
+
+def test_probe_refuses_when_owner_is_alive(tmp_path: Path) -> None:
+    """A lockfile whose PID + create_time match a live process is NOT taken
+    over — the probe exits non-zero and leaves the lockfile intact."""
+    lockfile = tmp_path / "sidecar.lock"
+    live = build_self_record(port=999, renderer_secret="e" * 64, sidecar_version="live")
+    write_lockfile(lockfile, live)
+
+    with pytest.raises(SystemExit) as excinfo:
+        _probe_and_prepare_lockfile(lockfile)
+
+    assert excinfo.value.code == 1
+    assert lockfile.exists()
+
+
+def test_atomic_replace_retries_on_windows_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On Windows a transient handle denies the replace-existing; the bounded
+    retry rides it out and completes the rename rather than crashing boot."""
+    src = tmp_path / "payload.tmp"
+    src.write_text("payload", encoding="utf-8")
+    dst = tmp_path / "sidecar.lock"
+    dst.write_text("stale", encoding="utf-8")
+
+    # lockfile.py reaches the stdlib via these same module objects, so patching
+    # the globals here drives its branch + retry. Force the win32 path and make
+    # the bounded sleep instant.
+    real_replace = os.replace
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+    calls = {"n": 0}
+
+    def flaky_replace(a: Any, b: Any) -> None:
+        calls["n"] += 1
+        if calls["n"] <= 2:  # deny the first try + the first retry
+            raise PermissionError(5, "Access is denied")
+        real_replace(a, b)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+
+    _atomic_replace(str(src), dst)
+
+    assert dst.read_text(encoding="utf-8") == "payload"
+    assert calls["n"] == 3  # first try + 2 retries; the third succeeds

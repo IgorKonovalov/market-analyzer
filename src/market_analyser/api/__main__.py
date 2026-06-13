@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import re
 import secrets
@@ -179,6 +180,14 @@ def _probe_and_prepare_lockfile(lockfile_path: Path) -> None:
         f"stale lockfile from prior PID {existing.pid} (no longer alive); taking over\n",
     )
     sys.stderr.flush()
+    # Claim the lock by removing the prior owner's file now, so the subsequent
+    # write is a create (rename onto an absent path) rather than a
+    # replace-existing — the operation that hit ERROR_ACCESS_DENIED on Windows
+    # when something briefly held the stale file open. A PermissionError here is
+    # that same transient-handle race; tolerate it (write_lockfile's bounded
+    # retry is the backstop) instead of crashing the takeover.
+    with contextlib.suppress(PermissionError):
+        remove_lockfile(lockfile_path)
 
 
 async def _serve(

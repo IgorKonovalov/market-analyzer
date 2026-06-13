@@ -28,6 +28,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,12 @@ from pydantic import BaseModel
 DEFAULT_LOCKFILE_NAME = "sidecar.lock"
 POSIX_FILE_MODE = 0o600
 CREATE_TIME_TOLERANCE_S = 5.0
+# Windows-only: a transient handle on the destination lockfile (Electron
+# reading it for its attach-or-spawn decision, an AV scan) can deny
+# MoveFileEx's replace-existing with ERROR_ACCESS_DENIED. Retry briefly — the
+# handle is held only for the read — before the delete-then-rename fallback.
+_REPLACE_RETRY_ATTEMPTS = 5
+_REPLACE_RETRY_SLEEP_S = 0.1
 
 
 class LockfileRecord(BaseModel):
@@ -65,11 +72,44 @@ def read_lockfile(path: Path) -> LockfileRecord | None:
     return LockfileRecord.model_validate(raw)
 
 
+def _atomic_replace(tmp_name: str, path: Path) -> None:
+    """Rename `tmp_name` onto `path`, replacing any existing file.
+
+    POSIX keeps the single atomic `os.replace`. On Windows a transient handle
+    on the destination can deny the replace-existing with a `PermissionError`
+    (ERROR_ACCESS_DENIED); retry briefly (the handle is held only for a read),
+    then fall back to delete-then-rename. Stays loud — re-raises if the
+    destination is genuinely unwritable after the bounded retry.
+    """
+    try:
+        os.replace(tmp_name, path)
+        return
+    except PermissionError:
+        if sys.platform != "win32":
+            raise
+    last_error: PermissionError | None = None
+    for _ in range(_REPLACE_RETRY_ATTEMPTS):
+        time.sleep(_REPLACE_RETRY_SLEEP_S)
+        try:
+            os.replace(tmp_name, path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+    # Last resort: drop the destination, then a plain (create-new) rename.
+    with contextlib.suppress(FileNotFoundError, PermissionError):
+        os.unlink(path)
+    try:
+        os.replace(tmp_name, path)
+    except PermissionError as exc:
+        raise exc from last_error
+
+
 def write_lockfile(path: Path, record: LockfileRecord) -> None:
     """Atomic-write the lockfile + reassert 0600 on POSIX.
 
-    The temp file shares the lockfile's parent dir so `os.replace` is a rename
-    on the same filesystem (atomic on POSIX and on Windows for files <4 GB).
+    The temp file shares the lockfile's parent dir so the rename is on the same
+    filesystem (atomic on POSIX and on Windows for files <4 GB). The replace is
+    Windows-resilient — see `_atomic_replace`.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = record.model_dump(mode="json")
@@ -81,7 +121,7 @@ def write_lockfile(path: Path, record: LockfileRecord) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(payload, f)
-        os.replace(tmp_name, path)
+        _atomic_replace(tmp_name, path)
     except BaseException:
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
