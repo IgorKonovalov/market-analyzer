@@ -359,6 +359,12 @@ class DefaultMarketDataProvider:
                 "as_of is not supported for live quotes — a quote is wall-clock-"
                 "sensitive; use get_ohlcv for historical price (Plan 0019)",
             )
+        # Membership-routed, mirroring `_ohlcv_route` (ADR-0052 / Plan 0058
+        # follow-up): a Binance-only pair (e.g. BTCUSDT) quotes from Binance —
+        # the Yahoo quote endpoint 404s on it. An unwired `self._binance`
+        # (offline tests) keeps everything on Yahoo, exactly as before.
+        if self._binance is not None and self._binance.is_known_symbol(symbol):
+            return self._binance.get_quote(symbol)
         return self._yahoo_quote.get_quote(symbol)
 
     def search_symbols(

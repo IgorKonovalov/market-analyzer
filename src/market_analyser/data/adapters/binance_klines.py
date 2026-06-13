@@ -68,12 +68,13 @@ from market_analyser.data.errors import (
     UpstreamUnavailableError,
 )
 from market_analyser.data.timeframes import bar_duration, timeframe_spec
-from market_analyser.data.types import Bar, SymbolInfo
+from market_analyser.data.types import Bar, Quote, SymbolInfo
 
 _logger = logging.getLogger(__name__)
 
 _KLINES_URL = "https://api.binance.com/api/v3/klines"
 _EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
+_TICKER_24HR_URL = "https://api.binance.com/api/v3/ticker/24hr"
 _SOURCE = "binance"
 
 # Upstream page cap for /api/v3/klines (ADR-0052 verified facts: max 1000
@@ -156,9 +157,13 @@ class BinanceSpotHttpClient(ResilientHttpClient):
 
 
 class BinanceKlinesAdapter:
-    """Fetches Binance spot OHLCV bars (`OhlcvSource`, ADR-0031) and owns the
-    cached `exchangeInfo` symbol set that drives provider dispatch (ADR-0052
-    membership routing).
+    """Fetches Binance spot OHLCV bars (`OhlcvSource`, ADR-0031), resolves the
+    symbol search (`SymbolSearchSource`), serves live quotes (`QuoteSource`,
+    the Plan 0058 follow-up — see `get_quote`), and owns the cached
+    `exchangeInfo` symbol set that drives provider dispatch (ADR-0052
+    membership routing). The capability breadth is deliberate: this class
+    already owns the spot HTTP client and the membership set, so a separate
+    per-capability adapter would only duplicate both.
 
     `symbol_cache_path` is where the symbol set persists across sessions
     (wired by the composition root — `<data-dir>/binance_exchange_info.json`);
@@ -388,6 +393,28 @@ class BinanceKlinesAdapter:
             return []
         return bars
 
+    def get_quote(self, symbol: str) -> Quote:
+        """`QuoteSource` (ADR-0031): a live single-symbol quote from
+        `GET /api/v3/ticker/24hr`. The membership-routed quote half of the
+        Plan 0058 follow-up — the Yahoo quote endpoint 404s on Binance pairs,
+        so a Binance-only symbol (e.g. `BTCUSDT`) had no live price before this.
+
+        Raises the same typed taxonomy as `fetch_ohlcv` (451 →
+        `GeoRestrictedError`, never retried; 429 → `RateLimitedError`; other
+        upstream exhaustion → `UpstreamUnavailableError`) and
+        `BinanceKlinesError` on a shape-broken payload; `ValueError` for an
+        empty symbol."""
+        symbol = symbol.strip().upper()
+        if not symbol:
+            raise ValueError("symbol must be non-empty")
+        try:
+            payload = self._http.get(
+                _TICKER_24HR_URL, params={"symbol": symbol}, expect_json=True
+            ).json()
+        except ResilientHttpError as err:
+            raise _classify_error(err, what=f"the 24h quote for {symbol}") from err
+        return _ticker_to_quote(symbol, payload)
+
 
 def _binance_interval(timeframe: str) -> str:
     """The Binance spot `interval` for a canonical timeframe. Validates against
@@ -480,6 +507,57 @@ def _decimal_str(value: Any, *, field: str, symbol: str) -> float:
     raise BinanceKlinesError(
         f"binance: kline for {symbol} missing decimal-string {field!r}",
     )
+
+
+def _ticker_to_quote(symbol: str, payload: Any) -> Quote:
+    """Map a `/api/v3/ticker/24hr` payload onto a validated `Quote`. `lastPrice`
+    → price (enforced positive, the `fetch_ohlcv` rule); `priceChangePercent`
+    → `change_pct`, already a percent (never scaled; may be negative);
+    `closeTime` (epoch ms) → `as_of`. Day high/low + prev close + base-asset
+    volume carry over when present (lenient — a missing optional field stays
+    `None`, never sinks the quote); the 52-week range has no 24h-ticker
+    analogue and stays `None`, and `market_state` stays "" (crypto has no
+    Yahoo-style session phases). Currency is set only when unambiguous from the
+    pair name (`*USDT`) — the ticker payload does not carry the quote asset, so
+    a non-USDT pair is left "" rather than mislabelled. A non-object payload, a
+    missing/non-positive `lastPrice`, a non-numeric `priceChangePercent`, or a
+    missing `closeTime` is shape drift → `BinanceKlinesError`."""
+    if not isinstance(payload, dict):
+        raise BinanceKlinesError(f"binance: 24h ticker payload for {symbol} is not an object")
+    price = _price(payload.get("lastPrice"), field="lastPrice", symbol=symbol)
+    change_pct = _decimal_str(
+        payload.get("priceChangePercent"), field="priceChangePercent", symbol=symbol
+    )
+    close_time = payload.get("closeTime")
+    if isinstance(close_time, bool) or not isinstance(close_time, int):
+        raise BinanceKlinesError(
+            f"binance: 24h ticker for {symbol} missing integer 'closeTime'",
+        )
+    return Quote(
+        symbol=symbol,
+        price=price,
+        as_of=datetime.fromtimestamp(close_time / 1000, tz=UTC),
+        source=_SOURCE,
+        change_pct=change_pct,
+        previous_close=_optional_decimal(payload.get("prevClosePrice")),
+        day_high=_optional_decimal(payload.get("highPrice")),
+        day_low=_optional_decimal(payload.get("lowPrice")),
+        currency="USDT" if symbol.endswith("USDT") else "",
+        volume=_optional_decimal(payload.get("volume")),
+    )
+
+
+def _optional_decimal(value: Any) -> float | None:
+    """Parse an optional upstream decimal-string field to `float`, or `None`
+    when absent or unparseable. Unlike `_decimal_str` this never raises — for
+    the quote's non-load-bearing fields (day range, prev close, volume), where
+    a single odd field should not sink the whole quote."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def _parse_exchange_info(payload: Any) -> ExchangeSymbolSet:
