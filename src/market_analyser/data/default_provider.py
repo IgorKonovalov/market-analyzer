@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from typing import Any, Literal
 
+from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
@@ -30,8 +31,18 @@ from market_analyser.data.errors import (
     failure_reason,
 )
 from market_analyser.data.resample import resample_ohlcv
-from market_analyser.data.sources import MarketSentimentSource, SentimentSource
-from market_analyser.data.timeframes import bar_duration, max_history, resampled_from
+from market_analyser.data.sources import (
+    MarketSentimentSource,
+    OhlcvSource,
+    SentimentSource,
+)
+from market_analyser.data.timeframes import (
+    OhlcvSourceName,
+    bar_duration,
+    max_history,
+    source_max_history,
+    source_resampled_from,
+)
 from market_analyser.data.types import (
     BackfillResult,
     Bar,
@@ -82,11 +93,14 @@ def _min_fetch_span(timeframe: str) -> timedelta:
     return dur * _GAP_THRESHOLD_BARS
 
 
-def _exceeds_history_cap(timeframe: str, start: datetime, end: datetime) -> bool:
-    """Whether `[start, end]` reaches further back than `timeframe`'s registry
-    `max_history` cap. Span-based and deterministic (no wall-clock): timeframes
-    with no cap (1d, 1w) never exceed."""
-    cap = max_history(timeframe)
+def _exceeds_history_cap(
+    timeframe: str, start: datetime, end: datetime, source: OhlcvSourceName
+) -> bool:
+    """Whether `[start, end]` reaches further back than `timeframe`'s
+    `max_history` cap *for the routed source* (Plan 0058 phase 2: Yahoo's
+    intraday caps come from the registry; Binance is uncapped — history to
+    listing date). Span-based and deterministic (no wall-clock)."""
+    cap = source_max_history(timeframe, source)
     return cap is not None and (end - start) > cap
 
 
@@ -113,9 +127,16 @@ class DefaultMarketDataProvider:
         crypto_fng: CryptoFearGreedAdapter | None = None,
         coingecko: CoinGeckoAdapter | None = None,
         stocktwits: StockTwitsAdapter | None = None,
+        binance: BinanceKlinesAdapter | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
+        # Deliberately NOT default-constructed (unlike the adapters above):
+        # the membership check may lazily fetch exchangeInfo over the network,
+        # so only the composition root (api/app.py) wires the real adapter —
+        # an unwired provider routes everything to Yahoo, exactly as before
+        # Plan 0058, and offline tests never reach api.binance.com.
+        self._binance = binance
         self._yahoo_quote = yahoo_quote if yahoo_quote is not None else YahooQuoteAdapter()
         self._screener = screener if screener is not None else TradingViewScreenerAdapter()
         self._news = news if news is not None else RssNewsAdapter()
@@ -139,6 +160,16 @@ class DefaultMarketDataProvider:
             "crypto": self._crypto_fng,
         }
 
+    def _ohlcv_route(self, symbol: str) -> tuple[OhlcvSourceName, OhlcvSource]:
+        """ADR-0052 membership routing: a symbol goes to Binance iff it is in
+        the cached `exchangeInfo` symbol set (no prefixes, no format
+        heuristics); everything else goes to Yahoo, exactly as before Plan
+        0058. A symbol therefore resolves to one source for its whole life and
+        cached bars stay single-provenance by construction."""
+        if self._binance is not None and self._binance.is_known_symbol(symbol):
+            return "binance", self._binance
+        return "yahoo", self._yahoo
+
     def get_ohlcv(
         self,
         symbol: str,
@@ -147,21 +178,26 @@ class DefaultMarketDataProvider:
         end: datetime,
         as_of: datetime | None = None,
     ) -> Sequence[Bar]:
-        # Derived timeframe (e.g. 4h): fetch the native base (1h) over the same
-        # window through the normal cache/gap/as_of path, then resample on read.
-        # 4h is never cached or fetched directly (ADR-0028 derive-on-read); the
-        # base call inherits the anti-lookahead `as_of` guard, and the resample is
-        # trailing, so historical replay stays leak-free.
-        base = resampled_from(timeframe)
+        source, adapter = self._ohlcv_route(symbol)
+
+        # Source-derived timeframe (Yahoo 4h): fetch the native base (1h) over
+        # the same window through the normal cache/gap/as_of path, then resample
+        # on read (ADR-0028 derive-on-read); the base call inherits the
+        # anti-lookahead `as_of` guard, and the resample is trailing, so
+        # historical replay stays leak-free. Binance serves 4h natively
+        # (Plan 0058 phase 2), so Binance-routed symbols never take this branch
+        # — their 4h bars are fetched and cached as 4h.
+        base = source_resampled_from(timeframe, source)
         if base is not None:
             base_bars = self.get_ohlcv(symbol, base, start, end, as_of)
             return resample_ohlcv(list(base_bars), target=timeframe)
 
-        # History cap: a window beyond what Yahoo serves for this timeframe is a
-        # typed, non-retryable failure here (the fail-loud path); get_ohlcv_with_status
-        # surfaces it as a partial_reason instead. Checked before the cache so a
-        # doomed fetch is never attempted (Plan 0025 ph3 / ADR-0028).
-        if _exceeds_history_cap(timeframe, start, end):
+        # History cap (per source): a window beyond what the routed source
+        # serves for this timeframe is a typed, non-retryable failure here (the
+        # fail-loud path); get_ohlcv_with_status surfaces it as a partial_reason
+        # instead. Checked before the cache so a doomed fetch is never attempted
+        # (Plan 0025 ph3 / ADR-0028). Binance is uncapped (Plan 0058 phase 2).
+        if _exceeds_history_cap(timeframe, start, end, source):
             raise HistoryExceededError(_history_cap_message(timeframe, start, end))
 
         # No cache wired: live-only (phase-2 fallback for tests that don't need persistence).
@@ -170,7 +206,7 @@ class DefaultMarketDataProvider:
                 raise ValueError(
                     "as_of requires a configured BarRepository — no remote fetch when as_of is set",
                 )
-            return self._yahoo.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
+            return adapter.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
 
         if as_of is not None:
             cached = self._repo.get_bars(symbol, timeframe, start, end, as_of=as_of)
@@ -189,10 +225,10 @@ class DefaultMarketDataProvider:
             return cached
         merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
         for gap_start, gap_end in gaps:
-            fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end, now=_now())
+            fetched = adapter.fetch_ohlcv(symbol, timeframe, gap_start, gap_end, now=_now())
             if not fetched:
                 continue
-            self._repo.upsert_bars(fetched)
+            self._repo.upsert_bars(list(fetched))
             for bar in fetched:
                 if start <= bar.event_ts <= end:
                     merged[bar.event_ts] = bar
@@ -212,10 +248,13 @@ class DefaultMarketDataProvider:
         `get_ohlcv` but never reaches the adapter. With no cache wired, the whole
         window is one gap (and nothing is cached).
 
-        For a derived timeframe (4h) coverage is reported against its native base
-        (1h): 4h is never cached, so its cache state IS the base's. Scheduling a
-        4h backfill therefore fills the 1h base, which the 4h read resamples."""
-        base = resampled_from(timeframe)
+        For a source-derived timeframe (Yahoo 4h) coverage is reported against
+        its native base (1h): 4h is never cached for Yahoo symbols, so its cache
+        state IS the base's. Scheduling a 4h backfill therefore fills the 1h
+        base, which the 4h read resamples. Binance-routed symbols cache 4h
+        natively (Plan 0058 phase 2), so their 4h coverage is their own."""
+        source, _ = self._ohlcv_route(symbol)
+        base = source_resampled_from(timeframe, source)
         if base is not None:
             return self.coverage(symbol, base, start, end)
         if self._repo is None:
@@ -242,10 +281,13 @@ class DefaultMarketDataProvider:
         Live-mode only — backfill never runs under `as_of` (ADR-0007), so this
         method has no `as_of` parameter. The plain `get_ohlcv` keeps raising on
         any gap failure for the HTTP route + backtests that want loud failure."""
-        # Derived timeframe (4h): run the partial-surfacing fetch against the
-        # native base (1h), then resample the result — carrying the base's
-        # partial_reason/message through so the agent still sees gap failures.
-        base = resampled_from(timeframe)
+        source, adapter = self._ohlcv_route(symbol)
+
+        # Source-derived timeframe (Yahoo 4h): run the partial-surfacing fetch
+        # against the native base (1h), then resample the result — carrying the
+        # base's partial_reason/message through so the agent still sees gap
+        # failures. Binance-routed symbols never take this branch (native 4h).
+        base = source_resampled_from(timeframe, source)
         if base is not None:
             base_result = self.get_ohlcv_with_status(symbol, base, start, end)
             return BackfillResult(
@@ -254,10 +296,11 @@ class DefaultMarketDataProvider:
                 message=base_result.message,
             )
 
-        # History cap: surface the cache-honest shape (cached bars in-window +
-        # the typed reason + a human message) rather than a doomed fetch that
-        # would return a misleading empty success (Plan 0025 ph3 / ADR-0028).
-        if _exceeds_history_cap(timeframe, start, end):
+        # History cap (per source): surface the cache-honest shape (cached bars
+        # in-window + the typed reason + a human message) rather than a doomed
+        # fetch that would return a misleading empty success (Plan 0025 ph3 /
+        # ADR-0028). Binance is uncapped (Plan 0058 phase 2).
+        if _exceeds_history_cap(timeframe, start, end, source):
             cached = list(self._repo.get_bars(symbol, timeframe, start, end)) if self._repo else []
             return BackfillResult(
                 bars=cached,
@@ -266,7 +309,7 @@ class DefaultMarketDataProvider:
             )
 
         if self._repo is None:
-            bars = self._yahoo.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
+            bars = adapter.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
             return BackfillResult(bars=list(bars), partial_reason=None, message=None)
 
         cached = self._repo.get_bars(symbol, timeframe, start, end)
@@ -278,13 +321,13 @@ class DefaultMarketDataProvider:
         failures: list[UpstreamDataError] = []
         for gap_start, gap_end in gaps:
             try:
-                fetched = self._yahoo.fetch_ohlcv(symbol, timeframe, gap_start, gap_end, now=_now())
+                fetched = adapter.fetch_ohlcv(symbol, timeframe, gap_start, gap_end, now=_now())
             except UpstreamDataError as err:
                 failures.append(err)
                 continue
             if not fetched:
                 continue
-            self._repo.upsert_bars(fetched)
+            self._repo.upsert_bars(list(fetched))
             for bar in fetched:
                 if start <= bar.event_ts <= end:
                     merged[bar.event_ts] = bar
@@ -326,15 +369,23 @@ class DefaultMarketDataProvider:
         # Symbol search is a live, wall-clock lookup against Yahoo's search
         # endpoint — there is no replayable historical source to honour `as_of`
         # against, so reject it at the boundary (Plan 0024 / ADR-0026; mirrors
-        # the screener/quote/sentiment as_of rejections in this file). Results
-        # are in Yahoo's native namespace, so every hit is fetchable by
-        # get_ohlcv (the chartable-suggestion invariant of ADR-0026).
+        # the screener/quote/sentiment as_of rejections in this file). Every
+        # hit is fetchable by get_ohlcv (the chartable-suggestion invariant of
+        # ADR-0026): Yahoo results are in Yahoo's native namespace, and Binance
+        # matches (Plan 0058 phase 3) come from the same exchangeInfo
+        # membership set the OHLCV dispatch routes by, merged after Yahoo's
+        # with their source labeled so `BTCUSDT` and `BTC-USD` are never
+        # presented as interchangeable (ADR-0052).
         if as_of is not None:
             raise ValueError(
                 "as_of is not supported for symbol search — search is a live "
                 "lookup (Plan 0024 / ADR-0026)",
             )
-        return self._yahoo.search(query)
+        results = list(self._yahoo.search(query))
+        if self._binance is not None:
+            seen = {info.symbol for info in results}
+            results.extend(info for info in self._binance.search(query) if info.symbol not in seen)
+        return results
 
     def get_screener(
         self,

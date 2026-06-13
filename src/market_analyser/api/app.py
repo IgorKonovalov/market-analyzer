@@ -46,6 +46,7 @@ from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
@@ -128,6 +129,14 @@ def create_app(
                 bar_repository=BarRepository(session_factory),
                 crypto_fng=CryptoFearGreedAdapter(metric_store=metric_points_repository),
                 coingecko=CoinGeckoAdapter(metric_store=metric_points_repository),
+                # Binance klines (Plan 0058 / ADR-0052): wired only here, in the
+                # composition root (ADR-0031) — the membership check may lazily
+                # fetch exchangeInfo, so an unwired provider (tests) never
+                # reaches the network. The symbol-set cache persists alongside
+                # the other app data.
+                binance=BinanceKlinesAdapter(
+                    symbol_cache_path=default_app_data_dir() / "binance_exchange_info.json",
+                ),
             )
         if annotations_repository is None:
             annotations_repository = AnnotationsRepository(session_factory)
