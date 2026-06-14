@@ -1,7 +1,8 @@
 """Smoke test for the `market-analyser strategies list` CLI (Plan 0002 followup).
 
 Plan 0002 phase 5's done-when ("six rows, identical across runs") was verified by
-hand at close; Plan 0050 phase 6 adds rsi_stop, so the roster is now seven. This
+hand at close; Plan 0050 phase 6 adds rsi_stop and Plan 0054 adds
+chart_pattern_breakout, so the roster is now eight. This
 locks it in: it pins the strategy count (a stray extra module or a discovery
 regression fails here), the sorted-by-id ordering the CLI
 promises in its docstring, and the run-twice byte-equality both output modes
@@ -27,14 +28,15 @@ def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
     return capsys.readouterr().out
 
 
-def test_strategies_list_json_has_seven_sorted_ids(capsys: pytest.CaptureFixture[str]) -> None:
+def test_strategies_list_json_has_eight_sorted_ids(capsys: pytest.CaptureFixture[str]) -> None:
     rows = json.loads(_run(capsys, "strategies", "list", "--json"))
     ids = [row["id"] for row in rows]
 
-    # Seven is the roster: the Plan 0002 six (rsi + bollinger/macd/ema_cross/
-    # supertrend/donchian) plus rsi_stop (Plan 0050 phase 6). A stray eighth
-    # module or a missing one trips this.
-    assert len(ids) == 7
+    # Eight is the roster: the Plan 0002 six (rsi + bollinger/macd/ema_cross/
+    # supertrend/donchian), rsi_stop (Plan 0050 phase 6), and
+    # chart_pattern_breakout (Plan 0054). A stray ninth module or a missing one
+    # trips this.
+    assert len(ids) == 8
     assert ids == sorted(ids)
     # The CLI must surface exactly what discovery finds, in the same order.
     assert ids == list(discover().keys())
@@ -54,6 +56,6 @@ def test_strategies_list_text_is_byte_identical_across_runs(
     first = _run(capsys, "strategies", "list")
     second = _run(capsys, "strategies", "list")
     assert first == second
-    # One header line per strategy (` - ` separates id from name); seven rows.
+    # One header line per strategy (` - ` separates id from name); eight rows.
     header_lines = [line for line in first.splitlines() if " - " in line]
-    assert len(header_lines) == 7
+    assert len(header_lines) == 8
