@@ -43,6 +43,14 @@ flowchart LR
 - **Files touched:** fixture files under `tests/`.
 - **Done when:** Both raw responses are saved; the metric coverage verdict (SOPR present or absent) is recorded in this plan file as an honesty note, and — if `CapMVRVCur` itself is absent — the plan stops and goes back to architect per ADR-0053's reversion clause.
 
+> **Phase-1 probe verdict (2026-06-14, run from the user's network):**
+> - **MVRV (`CapMVRVCur`): AVAILABLE keyless**, full daily history back to **2011-12-29** (verified: `0.85308817` on that date; current ~1.20). Ascending order when the window is bounded by `end_time`; descending-from-latest otherwise.
+> - **Realized cap (`CapRealUSD`): `forbidden`** without paid credentials — NOT available on the community tier.
+> - **SOPR: `forbidden`** without paid credentials — NOT available on the community tier.
+> - **blockchain.com MVRV cross-check** (`charts/mvrv` and `charts/market-value-to-realized-value`): both return `not-found` — the phase-3 source named in ADR-0053 appears removed.
+>
+> `CapMVRVCur` is present, so the plan does **not** hit ADR-0053's hard-revert clause. But two of the three series and the cross-check source are gone, which exceeds the contingency ADR-0053 anticipated (SOPR-only absence). **Reshape decision (user, 2026-06-14): research free alternatives for SOPR + realized cap before reshaping** (a `dev`/architect research pass; candidates: bitcoin-data.com / bgeometrics, blockchain.com's surviving charts, others). Outcome pending; until it lands, 0057 is **not dev-ready** and its phases 2–4 stay blocked. Note: Plan 0059's named exogenous feature list includes **MVRV** but not SOPR/realized-cap, so a worst-case MVRV-only reshape still unblocks 0059.
+
 ### Phase 2 — Adapter + backfill
 - **Owner skill:** `dev`
 - **What:** `CoinMetricsCommunityAdapter` (ResilientHttpClient subclass; paced under the documented 10 req/6s; typed errors), `fetch_series` over paged `asset-metrics`, daily cadence; register the confirmed series; full backfill + idempotent incremental.
