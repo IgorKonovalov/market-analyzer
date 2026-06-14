@@ -1,6 +1,6 @@
 # 0054 — Chart-pattern breakout strategy + backtest
 
-> **Status:** approved
+> **Status:** implementation complete — pending architect close review (both phases on `main` 2026-06-14: phase 1 `f87f62d`, phase 2 `48eaa64`; full suite 1498 pass / 7 Win-skips, `mypy --strict` clean, ruff clean)
 > **Created:** 2026-06-08
 > **Owner skill(s):** strategy-author, backtester
 > **Related ADRs:** consumes [0048](../adrs/0048-classical-chart-pattern-detection.md) (detection) and [0050](../adrs/0050-short-selling-strategy-backtest.md) (shorts); applies [0004](../adrs/0004-strategy-interface.md) (strategy contract), [0018](../adrs/0018-backtest-result-schema.md)/[0024](../adrs/0024-extended-backtest-metrics.md) (engine/metrics)
