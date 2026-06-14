@@ -66,6 +66,18 @@ flowchart LR
 - **Files touched:** `api/mcp_tools/cycle_snapshot.py`, tests.
 - **Done when:** (a) percentile is trailing-only — asserted by injecting a future point that must not shift it; (b) absent series yield `None` fields, and the tool's output model documents which fields are conditional; (c) snapshot values match hand-computed fixture values exactly.
 
+### Phase 5 — Wire MVRV population (refresh path) — added 2026-06-14 (Mode 4 review)
+- **Owner skill:** `dev`
+- **Why:** The Mode 4 close review found that phases 2 + 4 land a correct adapter and a correct read surface, but **nothing populates `coinmetrics.btc.mvrv` in the running app** — the adapter is constructed nowhere in the composition root and `backfill_series` is reachable only from tests, so `mvrv`/`mvrv_percentile` are permanently `None` in production. Unlike its siblings (F&G/dominance write through the provider; funding/OI populate via `derivatives_snapshot`'s `refresh=true`), MVRV had no trigger. This phase closes that gap so the TL;DR's "first user-visible behavior" is actually reachable. The diagram's `AD --backfill+incremental--> REPO` edge gets its implementing phase.
+- **What:** Mirror the established `derivatives_snapshot` refresh precedent (`api/mcp_tools/derivatives_snapshot.py` `_refresh`):
+  1. Add `refresh: bool = False` to `BtcCycleSnapshotInput` (keep `frozen`/`extra="forbid"`). The tool is no longer argument-free; the field defaults to the offline read.
+  2. Inject an optional MVRV source (the existing `MetricSeriesSource` protocol — `CoinMetricsCommunityAdapter` already satisfies it) into `register_btc_cycle_snapshot`; default `None` (unwired → no refresh, no network).
+  3. On `refresh=true` **and** a wired source: before building the snapshot, do an incremental backfill in the tool wrapper (not in `_build_snapshot`, so its trailing-only purity is untouched) — `latest = store.as_of(SERIES_COINMETRICS_BTC_MVRV, as_of_ts)`; `fetched = source.fetch_series(SERIES_…, start=latest.ts if latest else None)`; `store.upsert_points(fetched)`. First refresh on an empty series does the full 2011-12-29→ backfill; a re-fetched same-value point is a repository no-op (ADR-0051).
+  4. In the `mcp_app.py` composition root, construct `CoinMetricsCommunityAdapter(metric_store=metric_points_repository)` as the default `mvrv_source`, exactly as `BinanceDerivativesAdapter` is wired (`mcp_app.py:230-237`) — so a test that injects a spy supplies its own, and an unwired construction never reaches the network.
+  5. Update `BTC_CYCLE_SNAPSHOT_DESCRIPTION` and the module docstring: the tool is offline by default; `refresh=true` backfills/updates the MVRV series then reads. Drop the "takes no arguments" wording.
+- **Files touched:** `api/mcp_tools/cycle_snapshot.py`, `api/mcp_app.py`, `tests/api/test_cycle_snapshot_tool.py`.
+- **Done when:** (a) `refresh=false` touches no network — a spy source's `fetch_series` is never called; (b) `refresh=true` against an empty series triggers a full backfill — a spy source returning a fixture history lands those points in the store and they surface in the snapshot's `mvrv`/`mvrv_percentile`; (c) `refresh=true` against a warm series fetches incrementally — the spy is called with `start == latest stored ts`, not from scratch; (d) the default composition root wires `CoinMetricsCommunityAdapter` without reaching the network at construction time (the existing `mcp_app` registration test still passes offline); (e) the existing trailing-only and exact-value tests on `_build_snapshot` pass unchanged (refresh lives in the wrapper, not the builder).
+
 ## Data shapes
 
 ```python
@@ -78,6 +90,7 @@ mvrv_percentile: float | None     # trailing percentile over full stored history
 
 - **SOPR + realized cap turned out paywalled keyless** (phase-1 probe) — resolved by reducing scope to MVRV-only; Plan 0059 is unaffected (it names MVRV, not the others). Re-adding them is a future plan if a paid budget or a credible free source appears.
 - **No MVRV cross-check** (blockchain.com endpoint removed) — v1 trusts CoinMetrics' single published, versioned computation; phase 3 cut accordingly.
+- **Population path was missing in the original phasing** — the Mode 4 close review (2026-06-14) caught that phases 2 + 4 leave the series unpopulated in production; **Phase 5 (added at review) closes it** and gates the plan's close. Until phase 5 lands, `mvrv`/`mvrv_percentile` are `None` in the running app.
 - **Community-tier revocability:** accrued points are ours even if the source trims later (ADR-0051); incremental updates would stop, surfaced as typed upstream errors, never silent staleness.
 - Sequencing: migration-free by design (rides 0055's table); independent of other in-flight plans.
 
