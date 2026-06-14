@@ -1,4 +1,4 @@
-"""Plan 0055 phase 4 — the `btc_cycle_snapshot` MCP tool.
+"""Plan 0055 phase 4 — the `btc_cycle_snapshot` MCP tool; MVRV added by Plan 0057.
 
 Done-when claims pinned here:
 (a) cycle math arrives in the snapshot exactly as the fixture predicts (Mayer
@@ -10,6 +10,12 @@ Done-when claims pinned here:
     without one;
 (e) trailing-only: the store reads go through `as_of`, so an injected
     future-timestamped point never appears in the snapshot.
+
+Plan 0057 done-when pinned in the MVRV section below:
+(a) the MVRV percentile is trailing-only — an injected future point shifts
+    neither `mvrv` nor `mvrv_percentile`;
+(b) absent series yield `None` for both MVRV fields;
+(c) `mvrv` and `mvrv_percentile` match hand-computed fixture values exactly.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from market_analyser.api.mcp_tools.cycle_snapshot import (
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.metric_series import (
     SERIES_COINGECKO_BTC_DOMINANCE,
+    SERIES_COINMETRICS_BTC_MVRV,
     SERIES_FNG_VALUE,
     MetricPoint,
 )
@@ -281,6 +288,62 @@ def test_tool_call_through_the_real_server_excludes_future_points(
     assert structured["mayer_multiple"] == 200.0 / 100.5
     assert structured["dist_200w_ma"] is None
     assert 0.0 <= structured["halving_phase"] <= 1.0
+
+
+# --- MVRV (Plan 0057): hand-computed percentile, absent-series Nones, trailing ----
+
+
+def test_mvrv_and_percentile_match_hand_computed_fixture(store: MetricPointsRepository) -> None:
+    # Five trailing daily MVRV points; the latest (yesterday) is 1.0. Three of
+    # the five values are at or below 1.0 (0.5, 0.8, 1.0) -> percentile 60.0.
+    values_by_offset = {5: 0.5, 4: 3.0, 3: 2.0, 2: 0.8, 1: 1.0}
+    store.upsert_points(
+        [
+            MetricPoint(
+                series_id=SERIES_COINMETRICS_BTC_MVRV,
+                ts=_NOW_TS - offset * _DAY,
+                value=value,
+            )
+            for offset, value in values_by_offset.items()
+        ],
+    )
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.mvrv == 1.0  # the latest trailing observation
+    assert snapshot.mvrv_percentile == 60.0  # 100 * 3/5, rank-inclusive
+
+
+def test_mvrv_fields_none_when_series_absent(store: MetricPointsRepository) -> None:
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.mvrv is None
+    assert snapshot.mvrv_percentile is None
+
+
+def test_mvrv_percentile_is_trailing_only(store: MetricPointsRepository) -> None:
+    """An injected future point (a fresh all-time high one day past the snapshot
+    instant) must shift neither `mvrv` nor `mvrv_percentile`: both reads are
+    bounded at the snapshot's own `as_of`, so the future high is invisible."""
+    store.upsert_points(
+        [
+            MetricPoint(series_id=SERIES_COINMETRICS_BTC_MVRV, ts=_NOW_TS - 2 * _DAY, value=0.5),
+            MetricPoint(series_id=SERIES_COINMETRICS_BTC_MVRV, ts=_NOW_TS - _DAY, value=1.0),
+            # One day past the snapshot instant — a record high that must not leak.
+            MetricPoint(series_id=SERIES_COINMETRICS_BTC_MVRV, ts=_NOW_TS + _DAY, value=99.0),
+        ],
+    )
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=_NOW))
+
+    snapshot = _build_snapshot(provider, store, _NOW)
+
+    assert snapshot.mvrv == 1.0  # the trailing latest, not 99.0
+    # Two trailing points, both <= 1.0 -> 100.0; the future high does not enter
+    # the denominator or shift the rank.
+    assert snapshot.mvrv_percentile == 100.0
 
 
 # --- (d) full-toolset registration ------------------------------------------------

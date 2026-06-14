@@ -1,10 +1,12 @@
-"""`btc_cycle_snapshot` MCP tool — Plan 0055 phase 4.
+"""`btc_cycle_snapshot` MCP tool — Plan 0055 phase 4; MVRV added by Plan 0057.
 
 One call answering "where are we in the BTC cycle": the halving clock
 (`days_since_halving`, estimated days to the next, phase fraction), Mayer
 Multiple and 200-week-MA distance computed from cached daily BTC-USD bars
-(`analysis/cycles.py` — pure, trailing math), plus the latest Fear & Greed and
-BTC dominance from the metric store with 7/30-day deltas.
+(`analysis/cycles.py` — pure, trailing math), the latest Fear & Greed and
+BTC dominance from the metric store with 7/30-day deltas, plus on-chain MVRV
+(market value / realized value) with its trailing full-history percentile — the
+deep cost-basis lens alongside the price-only Mayer/200W reads (ADR-0053).
 
 Trailing-only by construction: every store read goes through `as_of`/`range`
 bounded at the snapshot's own `as_of` instant, so a point timestamped in the
@@ -38,6 +40,7 @@ from market_analyser.analysis.cycles import (
 )
 from market_analyser.data.metric_series import (
     SERIES_COINGECKO_BTC_DOMINANCE,
+    SERIES_COINMETRICS_BTC_MVRV,
     SERIES_FNG_VALUE,
 )
 from market_analyser.data.provider import MarketDataProvider
@@ -60,10 +63,13 @@ BTC_CYCLE_SNAPSHOT_DESCRIPTION = (
     "1.0 at the estimated next), Mayer Multiple (close / 200-day SMA) and "
     "distance to the 200-week MA (close / SMA1400 - 1) from cached daily "
     "BTC-USD bars, plus the latest Fear & Greed and BTC dominance with 7/30-day "
-    "deltas from the stored metric series. Takes no arguments. Fields are null "
-    "when history is insufficient (fewer than 200 / 1400 daily bars for the "
-    "moving averages; the dominance series accrues from deployment, so its "
-    "deltas stay null until it warms up). Conditions, not advice."
+    "deltas from the stored metric series, plus on-chain MVRV (market value / "
+    "realized value) with its trailing full-history percentile. Takes no "
+    "arguments. Fields are null when history is insufficient (fewer than "
+    "200 / 1400 daily bars for the moving averages; the dominance series "
+    "accrues from deployment, so its deltas stay null until it warms up; "
+    "mvrv and mvrv_percentile are null until the MVRV series is backfilled). "
+    "Conditions, not advice."
 )
 
 
@@ -75,8 +81,15 @@ class BtcCycleSnapshotInput(BaseModel):
 
 
 class BtcCycleSnapshot(BaseModel):
-    """The snapshot payload (Plan 0055 data shape). `*_est` fields are labeled
-    estimates; `None` means insufficient history, never zero."""
+    """The snapshot payload (Plan 0055 data shape; Plan 0057 adds the MVRV
+    fields). `*_est` fields are labeled estimates; `None` means insufficient
+    history, never zero.
+
+    Conditional fields (null until their backing series has data):
+    `mayer_multiple` (< 200 daily bars), `dist_200w_ma` (< 1400 daily bars),
+    the `*_delta_*` deltas (until the series spans the lookback), and
+    `mvrv` / `mvrv_percentile` (until the `coinmetrics.btc.mvrv` series is
+    backfilled)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -94,6 +107,8 @@ class BtcCycleSnapshot(BaseModel):
     btc_dominance: float | None
     dominance_delta_7d: float | None
     dominance_delta_30d: float | None
+    mvrv: float | None
+    mvrv_percentile: float | None
 
 
 def _latest_and_deltas(
@@ -114,6 +129,28 @@ def _latest_and_deltas(
     return latest.value, deltas[0], deltas[1]
 
 
+def _mvrv_and_percentile(
+    store: MetricPointsRepository,
+    as_of_ts: int,
+) -> tuple[float | None, float | None]:
+    """The latest MVRV at or before `as_of_ts` and its trailing percentile rank
+    over the full stored history up to that instant.
+
+    The percentile is rank-inclusive (0-100): the share of stored observations
+    with `ts <= as_of_ts` whose value is at or below the current MVRV — a
+    cycle-position read (a fresh all-time high reads ~100, a deep trough reads
+    near 0). Trailing-only by construction: both reads are bounded at `as_of_ts`
+    (`as_of` never returns a later point; `range` stops at it), so a
+    future-timestamped point cannot shift either field (ADR-0051 anti-lookahead).
+    `None` when the series has no point at or before the bound."""
+    latest = store.as_of(SERIES_COINMETRICS_BTC_MVRV, as_of_ts)
+    if latest is None:
+        return None, None
+    history = store.range(SERIES_COINMETRICS_BTC_MVRV, 0, as_of_ts)
+    at_or_below = sum(1 for point in history if point.value <= latest.value)
+    return latest.value, 100.0 * at_or_below / len(history)
+
+
 def _build_snapshot(
     provider: MarketDataProvider,
     store: MetricPointsRepository,
@@ -126,6 +163,7 @@ def _build_snapshot(
     as_of_ts = int(now.timestamp())
     fng, fng_7d, fng_30d = _latest_and_deltas(store, SERIES_FNG_VALUE, as_of_ts)
     dom, dom_7d, dom_30d = _latest_and_deltas(store, SERIES_COINGECKO_BTC_DOMINANCE, as_of_ts)
+    mvrv, mvrv_percentile = _mvrv_and_percentile(store, as_of_ts)
     today = now.date()
     return BtcCycleSnapshot(
         as_of=now,
@@ -142,6 +180,8 @@ def _build_snapshot(
         btc_dominance=dom,
         dominance_delta_7d=dom_7d,
         dominance_delta_30d=dom_30d,
+        mvrv=mvrv,
+        mvrv_percentile=mvrv_percentile,
     )
 
 
