@@ -11,7 +11,7 @@
  * `(event_ts, kind)` so a live `chart.highlight` event followed by the
  * polled annotation row ~1 s later does not produce a duplicate marker.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { AgentModeToggle } from '../components/AgentModeToggle'
 import { CandlestickChart } from '../components/CandlestickChart'
@@ -64,8 +64,17 @@ export function OhlcvView({
   const start = useMemo(() => new Date(range_start), [range_start])
   const end = useMemo(() => new Date(range_end), [range_end])
 
-  const { bars, isLoading, error, refetch, loadOlder, isLoadingOlder, olderError, reachedStart } =
-    useOhlcvHistory({ symbol, timeframe, start, end })
+  const {
+    bars,
+    isLoading,
+    isRefetching,
+    error,
+    refetch,
+    loadOlder,
+    isLoadingOlder,
+    olderError,
+    reachedStart,
+  } = useOhlcvHistory({ symbol, timeframe, start, end })
   // Lazy paging prepends bars older than the initial window; widen the
   // annotation poll to the buffer's earliest so markers cover prepended bars
   // (Plan 0030 phase 1). End stays the prop window; we never page right.
@@ -89,6 +98,32 @@ export function OhlcvView({
   }, [backfillError])
   const showToast = backfillError !== null && !toastDismissed
 
+  // Refresh = advance the window end to "now" (via the parent) AND force a
+  // genuine reload of the series. Window-advance alone often takes the cheap
+  // overlapping-edge path, which is a no-op when there are no newer bars (market
+  // closed, same session) — so the button felt dead. The `refetch()` makes every
+  // click a real, observable load that drives the in-flight/confirmation states.
+  const handleRefresh = useCallback(() => {
+    onRefresh()
+    refetch()
+  }, [onRefresh, refetch])
+
+  // Brief "Updated ✓" confirmation on a successful refresh. A cached reload can
+  // settle faster than the eye catches the spinner, so a short post-completion
+  // flash is what actually makes the action feel like it did something.
+  const [justRefreshed, setJustRefreshed] = useState(false)
+  const wasRefetchingRef = useRef(false)
+  useEffect(() => {
+    const was = wasRefetchingRef.current
+    wasRefetchingRef.current = isRefetching
+    if (was && !isRefetching && !error) {
+      setJustRefreshed(true)
+      const timer = setTimeout(() => setJustRefreshed(false), 1400)
+      return () => clearTimeout(timer)
+    }
+    return undefined
+  }, [isRefetching, error])
+
   const mergedAnnotations = useMemo(
     () => mergePolledAndLive(annotations, liveHighlights, symbol, timeframe),
     [annotations, liveHighlights, symbol, timeframe],
@@ -105,8 +140,29 @@ export function OhlcvView({
           disabled={isLoading}
         />
         <PriceHeader symbol={symbol} quote={quote} disconnected={quoteError !== null} />
-        <button type="button" className={styles.refresh} onClick={onRefresh} disabled={isLoading}>
-          Refresh
+        <button
+          type="button"
+          className={styles.refresh}
+          onClick={handleRefresh}
+          disabled={isLoading || isRefetching}
+          // Stable accessible name across the visual states below, so assistive
+          // tech (and the e2e role lookup) always see the button as "Refresh".
+          // `aria-busy` carries the in-flight state to screen readers.
+          aria-label="Refresh"
+          aria-busy={isRefetching}
+          data-testid="ohlcv-refresh"
+          data-state={isRefetching ? 'refreshing' : justRefreshed ? 'updated' : 'idle'}
+        >
+          {isRefetching ? (
+            <>
+              <span className={styles.spinnerDot} aria-hidden="true" />
+              Refreshing…
+            </>
+          ) : justRefreshed ? (
+            'Updated ✓'
+          ) : (
+            'Refresh'
+          )}
         </button>
         {isBackfilling && (
           <span

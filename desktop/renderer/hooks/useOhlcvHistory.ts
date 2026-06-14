@@ -35,6 +35,11 @@ export interface UseOhlcvHistoryResult {
   bars: Bar[] | null
   /** Initial-window load (parity with `useOhlcv`). */
   isLoading: boolean
+  /** A user-triggered `refetch()` of the SAME series is in flight. Distinct from
+   * `isLoading`: the existing bars stay on screen (the chart updates in place
+   * rather than blanking to a skeleton), so the UI can show a lightweight inline
+   * "refreshing" affordance instead. */
+  isRefetching: boolean
   /** Initial-window error (parity with `useOhlcv`). */
   error: Error | null
   /** Reload the initial `[start, end]` window from scratch. */
@@ -75,6 +80,7 @@ export function useOhlcvHistory({
 }: UseOhlcvHistoryParams): UseOhlcvHistoryResult {
   const [bars, setBars] = useState<Bar[] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefetching, setIsRefetching] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const [olderError, setOlderError] = useState<Error | null>(null)
@@ -134,10 +140,15 @@ export function useOhlcvHistory({
       chunkSpanMsRef.current = Math.min(Math.max(reqEndMs - reqStartMs, 0), MAX_OLDER_CHUNK_MS)
       reachedStartRef.current = false
       setReachedStart(false)
-      // Different series / disjoint window: drop the old bars so they can't
-      // flash under the new symbol. A same-window refetch keeps them on screen.
-      if (keyChanged || (!refetched && existing && existing.length > 0)) setBuffer(null)
-      setIsLoading(true)
+      // A user-triggered `refetch()` of the SAME series keeps the existing bars
+      // on screen and surfaces the lightweight `isRefetching` flag, so the chart
+      // updates in place instead of blanking to the loading skeleton. A symbol
+      // switch or a disjoint-window jump still clears the buffer and shows the
+      // skeleton — there's nothing valid left to keep showing.
+      const keepBuffer = refetched && !keyChanged && !!existing && existing.length > 0
+      if (!keepBuffer) setBuffer(null)
+      if (keepBuffer) setIsRefetching(true)
+      else setIsLoading(true)
       setError(null)
       // A pending older fetch from the previous buffer is now irrelevant.
       loadingOlderRef.current = false
@@ -150,11 +161,13 @@ export function useOhlcvHistory({
           if (cancelled) return
           setBuffer(mergeBars([], result))
           setIsLoading(false)
+          setIsRefetching(false)
         })
         .catch((err: unknown) => {
           if (cancelled) return
           setError(err instanceof Error ? err : new Error(String(err)))
           setIsLoading(false)
+          setIsRefetching(false)
         })
       return () => {
         cancelled = true
@@ -267,5 +280,15 @@ export function useOhlcvHistory({
     }
   }, [])
 
-  return { bars, isLoading, error, refetch, loadOlder, isLoadingOlder, olderError, reachedStart }
+  return {
+    bars,
+    isLoading,
+    isRefetching,
+    error,
+    refetch,
+    loadOlder,
+    isLoadingOlder,
+    olderError,
+    reachedStart,
+  }
 }

@@ -25,6 +25,7 @@ jest.mock('../hooks/useOhlcvHistory', () => ({
   useOhlcvHistory: jest.fn(() => ({
     bars: [],
     isLoading: false,
+    isRefetching: false,
     error: null,
     refetch: jest.fn(),
     loadOlder: jest.fn(),
@@ -66,6 +67,7 @@ function baseHook(): ReturnType<typeof useOhlcvHistory> {
   return {
     bars: [],
     isLoading: false,
+    isRefetching: false,
     error: null,
     refetch: jest.fn(),
     loadOlder: jest.fn(),
@@ -172,6 +174,78 @@ it('hides the toast when dismissed', () => {
 
   fireEvent.click(screen.getByLabelText('Dismiss notification'))
   expect(screen.queryByTestId('toast')).not.toBeInTheDocument()
+})
+
+describe('Refresh button (visual feedback)', () => {
+  it('clicking Refresh advances the window (onRefresh) AND forces a reload (refetch)', () => {
+    const onRefresh = jest.fn()
+    const refetch = jest.fn()
+    mockUseOhlcvHistory.mockReturnValue({ ...baseHook(), refetch })
+    render(
+      <OhlcvView
+        symbol={SYMBOL}
+        timeframe={TF}
+        range_start="2026-04-01T00:00:00Z"
+        range_end="2026-05-01T00:00:00Z"
+        liveHighlights={[]}
+        overlays={[]}
+        onSymbolChange={() => {}}
+        onTimeframeChange={() => {}}
+        onRefresh={onRefresh}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('ohlcv-refresh'))
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+    expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a "Refreshing…" spinner and disables the button while isRefetching', () => {
+    mockUseOhlcvHistory.mockReturnValue({ ...baseHook(), isRefetching: true })
+    renderView()
+    const button = screen.getByTestId('ohlcv-refresh')
+    expect(button).toHaveTextContent('Refreshing…')
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('aria-busy', 'true')
+    // Accessible name stays stable so screen readers / the e2e role lookup
+    // always find a "Refresh" button regardless of the transient label.
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBe(button)
+  })
+
+  it('flashes "Updated ✓" after a refresh settles, then reverts to "Refresh"', () => {
+    jest.useFakeTimers()
+    try {
+      mockUseOhlcvHistory.mockReturnValue({ ...baseHook(), isRefetching: true })
+      const { rerender } = renderView()
+      expect(screen.getByTestId('ohlcv-refresh')).toHaveTextContent('Refreshing…')
+
+      // The refetch settles: isRefetching falls true→false with no error.
+      mockUseOhlcvHistory.mockReturnValue({ ...baseHook(), isRefetching: false })
+      act(() => {
+        rerender(
+          <OhlcvView
+            symbol={SYMBOL}
+            timeframe={TF}
+            range_start="2026-04-01T00:00:00Z"
+            range_end="2026-05-01T00:00:00Z"
+            liveHighlights={[]}
+            overlays={[]}
+            onSymbolChange={() => {}}
+            onTimeframeChange={() => {}}
+            onRefresh={() => {}}
+          />,
+        )
+      })
+      expect(screen.getByTestId('ohlcv-refresh')).toHaveTextContent('Updated')
+
+      act(() => {
+        jest.advanceTimersByTime(1400)
+      })
+      expect(screen.getByTestId('ohlcv-refresh')).toHaveTextContent('Refresh')
+      expect(screen.getByTestId('ohlcv-refresh')).not.toHaveTextContent('Updated')
+    } finally {
+      jest.useRealTimers()
+    }
+  })
 })
 
 describe('lazy-history affordances (Plan 0030 phase 2)', () => {

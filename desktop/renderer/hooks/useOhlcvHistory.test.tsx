@@ -275,6 +275,37 @@ it('502 surfacing: a non-422 error sets olderError and does NOT set reachedStart
   expect(getOhlcv).toHaveBeenCalledTimes(2) // no retry for a non-422
 })
 
+it('refetch: reloads the same window via isRefetching (not isLoading), keeping bars on screen', async () => {
+  const first = dailyBars(START, 5)
+  const second = dailyBars(START, 7)
+  getOhlcv.mockResolvedValueOnce(first)
+  const refetchDef = deferred<Bar[]>()
+  getOhlcv.mockReturnValueOnce(refetchDef.promise)
+
+  const { result } = renderHistory()
+  await waitFor(() => expect(result.current.bars).toHaveLength(5))
+
+  act(() => result.current.refetch())
+
+  // The chart stays populated; the in-flight reload surfaces via isRefetching,
+  // NOT the full-screen isLoading skeleton.
+  await waitFor(() => expect(result.current.isRefetching).toBe(true))
+  expect(result.current.isLoading).toBe(false)
+  expect(result.current.bars).toHaveLength(5)
+
+  // It re-fetches the SAME [start, end] window.
+  const refetchCall = getOhlcv.mock.calls[1][0]
+  expect(refetchCall.start.toISOString()).toBe(START.toISOString())
+  expect(refetchCall.end.toISOString()).toBe(END.toISOString())
+
+  await act(async () => {
+    refetchDef.resolve(second)
+    await refetchDef.promise
+  })
+  await waitFor(() => expect(result.current.isRefetching).toBe(false))
+  expect(result.current.bars).toHaveLength(7)
+})
+
 it('re-anchor — symbol change resets the buffer and fetches the new series fresh', async () => {
   const aapl = dailyBars(START, 3)
   const msft = dailyBars(START, 4)
