@@ -73,6 +73,7 @@ SERIES_BINANCE_FUNDING_RATE_BTCUSDT = "binance.funding_rate.BTCUSDT"
 SERIES_BINANCE_FUNDING_RATE_ETHUSDT = "binance.funding_rate.ETHUSDT"
 SERIES_BINANCE_OPEN_INTEREST_BTCUSDT = "binance.open_interest.BTCUSDT"
 SERIES_BINANCE_OPEN_INTEREST_ETHUSDT = "binance.open_interest.ETHUSDT"
+SERIES_COINMETRICS_BTC_MVRV = "coinmetrics.btc.mvrv"
 
 # The accrual series have no free historical source (CoinGecko's historical
 # /global is paid-only — Plan 0055 Decision), so they grow by write-through
@@ -101,11 +102,22 @@ _BINANCE_OPEN_INTEREST_CADENCE = (
     "history exists upstream"
 )
 
+# CoinMetrics community MVRV (Plan 0057 / ADR-0053): full daily history is
+# backfillable keyless from `community-api.coinmetrics.io` back to 2011-12-29
+# (phase-1 probe, 2026-06-14). Realized cap and SOPR turned out paywalled on the
+# community tier, so MVRV is the one series this source produces (ADR-0053 probe
+# outcome). `CapMVRVCur` is the published, versioned market-cap/realized-cap
+# ratio — a cycle-valuation lens alongside Mayer/200W in `btc_cycle_snapshot`.
+_COINMETRICS_MVRV_CADENCE = (
+    "daily (CoinMetrics CapMVRVCur), full history back to 2011-12-29; "
+    "backfillable keyless by pagination, then incremental"
+)
+
 # The one module-level registry (ADR-0051). Adding an entry here in source is
 # how a plan registers a series — never at runtime. Plan 0055 phase 2 registers
 # `fng.value`; phase 3 the two CoinGecko macro series. Plan 0056 phase 1
 # registers the two Binance funding-rate series; phase 3 the two open-interest
-# series.
+# series. Plan 0057 registers `coinmetrics.btc.mvrv`.
 SERIES_REGISTRY: dict[str, MetricSeriesSpec] = {
     SERIES_FNG_VALUE: MetricSeriesSpec(
         series_id=SERIES_FNG_VALUE,
@@ -163,6 +175,15 @@ SERIES_REGISTRY: dict[str, MetricSeriesSpec] = {
         source="binance-futures",
         cadence=_BINANCE_OPEN_INTEREST_CADENCE,
     ),
+    SERIES_COINMETRICS_BTC_MVRV: MetricSeriesSpec(
+        series_id=SERIES_COINMETRICS_BTC_MVRV,
+        description=(
+            "Bitcoin MVRV (market value / realized value), CoinMetrics "
+            "CapMVRVCur; daily, full history since 2011-12-29"
+        ),
+        source="coinmetrics-community",
+        cadence=_COINMETRICS_MVRV_CADENCE,
+    ),
 }
 
 
@@ -196,6 +217,7 @@ __all__ = [
     "SERIES_BINANCE_OPEN_INTEREST_ETHUSDT",
     "SERIES_COINGECKO_BTC_DOMINANCE",
     "SERIES_COINGECKO_TOTAL_MCAP_USD",
+    "SERIES_COINMETRICS_BTC_MVRV",
     "SERIES_FNG_VALUE",
     "SERIES_REGISTRY",
     "MetricPoint",
