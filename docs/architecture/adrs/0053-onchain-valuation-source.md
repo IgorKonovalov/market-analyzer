@@ -46,3 +46,15 @@ Maximum sovereignty, zero vendor risk. Rejected without hesitation: requires a f
 ## Notes
 - Pre-implementation probes (Plan 0057 phase 1, ~minutes): `community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur,CapRealUSD,SOPR` (coverage + earliest ts), `api.blockchain.info/charts/mvrv?timespan=all&sampled=false&format=json` (depth + cadence).
 - Rate pacing: full-history daily backfill for 3 metrics fits in a handful of paged requests — one-time cost, well inside 10/6s.
+
+## Probe outcome (2026-06-14) — reduced to MVRV-only
+
+Plan 0057 phase 1 ran both probes live from the user's network. The result reshapes this ADR to **MVRV-only** — the "ADR gains a note, not a rewrite" path the Decision anticipated:
+
+- **MVRV (`CapMVRVCur`): available keyless**, full daily history to **2011-12-29** — confirmed. CoinMetrics stays primary.
+- **Realized cap (`CapRealUSD`): `forbidden`** without paid credentials — NOT on the community tier (the Context above assumed it was; the live probe overturned that).
+- **SOPR: `forbidden`** without paid credentials — absent from community, as the Negative consequence flagged was possible.
+- **blockchain.com cross-check** (`charts/mvrv`, `charts/market-value-to-realized-value`): both `not-found` — the endpoint named in Alternative A / Notes is gone.
+- Free-source sweep for the two paywalled metrics: the only keyless SOPR is **bgeometrics** `/v1/sopr` (4-year window, 10 req/hr, single small vendor); no keyless realized cap exists. The user declined bgeometrics for a metric Plan 0059 does not consume.
+
+**Net decision (primary source unchanged, scope reduced):** implement **one series, `coinmetrics.btc.mvrv`**. Realized-cap and SOPR series are dropped; the blockchain.com cross-check is cut (no working free MVRV cross-check remains). This still satisfies the consumer — [ADR-0054](0054-exogenous-forecast-features-multi-horizon.md) / Plan 0059's exogenous feature list names MVRV, not SOPR/realized-cap. Status stays `proposed`; accepts at Plan 0057's (MVRV-only) close.
