@@ -93,6 +93,15 @@
   text-transform: capitalize;
 }
 
+.pos_short {
+  color: var(--color-bear);
+  background: var(--color-bear-bg);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
 .kind_enter_long {
   color: var(--color-bull);
   font-weight: 600;
@@ -100,6 +109,18 @@
 
 .kind_exit_long {
   color: var(--color-bear);
+  font-weight: 600;
+}
+
+/* Short is the mirror of long: entering a short is the bearish action, exiting
+ * (buying back) the bullish one — so the colours swap relative to the long kinds. */
+.kind_enter_short {
+  color: var(--color-bear);
+  font-weight: 600;
+}
+
+.kind_exit_short {
+  color: var(--color-bull);
   font-weight: 600;
 }
 

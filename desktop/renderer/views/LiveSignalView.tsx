@@ -25,6 +25,8 @@ interface Props {
 const KIND_LABEL: Record<EvaluatedSignal['kind'], string> = {
   enter_long: 'enter long',
   exit_long: 'exit long',
+  enter_short: 'enter short',
+  exit_short: 'exit short',
 }
 
 export function LiveSignalView({ evaluation }: Props): JSX.Element {

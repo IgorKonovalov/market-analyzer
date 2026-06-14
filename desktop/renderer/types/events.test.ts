@@ -326,7 +326,11 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'symbol',
       'timeframe',
     ])
-    expect(literalValues(dumped.SignalEvaluation, 'current_position')).toEqual(['flat', 'long'])
+    expect(literalValues(dumped.SignalEvaluation, 'current_position')).toEqual([
+      'flat',
+      'long',
+      'short',
+    ])
   })
 
   it('EvaluatedSignal fields match (reason optional; kind is a closed literal set)', () => {
@@ -339,7 +343,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     // reason has a `= None` default → not required.
     expect(requiredNames(dumped.EvaluatedSignal)).toEqual(['bar_index', 'event_ts', 'kind'])
     expect(literalValues(dumped.EvaluatedSignal, 'kind')).toEqual(
-      ['enter_long', 'exit_long'].sort(),
+      ['enter_long', 'exit_long', 'enter_short', 'exit_short'].sort(),
     )
   })
 })

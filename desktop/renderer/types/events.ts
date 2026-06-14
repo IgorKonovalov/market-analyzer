@@ -114,11 +114,11 @@ export interface RunCompletedPayloadV1 {
 }
 
 /** The most-recent signal in a live evaluation (Plan 0026). `kind` mirrors the
- * pydantic `SignalKind` StrEnum. `reason` is optional on the wire — the SSE bus
- * dumps with `exclude_none`, so it is absent (not `null`) when the strategy
- * emitted no reason. */
+ * pydantic `SignalKind` StrEnum — flat/long/short since Plan 0053. `reason` is
+ * optional on the wire — the SSE bus dumps with `exclude_none`, so it is absent
+ * (not `null`) when the strategy emitted no reason. */
 export interface EvaluatedSignal {
-  kind: 'enter_long' | 'exit_long'
+  kind: 'enter_long' | 'exit_long' | 'enter_short' | 'exit_short'
   bar_index: number
   /** ISO 8601 UTC timestamp. */
   event_ts: string
@@ -138,7 +138,7 @@ export interface SignalEvaluation {
   evaluated_through_ts: string
   closed_bar_count: number
   latest_bar_excluded_as_forming: boolean
-  current_position: 'flat' | 'long'
+  current_position: 'flat' | 'long' | 'short'
   last_signal?: EvaluatedSignal | null
   bars_since_last_signal?: number | null
   fresh_signal: boolean
