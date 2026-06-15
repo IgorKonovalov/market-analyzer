@@ -1,6 +1,6 @@
 # ADR-0053 — On-chain valuation metrics: CoinMetrics community primary, blockchain.com as MVRV cross-check
 
-> **Status:** proposed (accepts at Plan 0057's close)
+> **Status:** accepted (Plan 0057 close, 2026-06-15) — reshaped to MVRV-only per the probe outcome below; CoinMetrics-community-primary decision unchanged
 > **Date:** 2026-06-09
 > **Related plan(s):** 0057-onchain-valuation-metrics (implements)
 > **Related ADRs:** [ADR-0051](0051-historized-metric-series-contract.md) (the store these series land in), [ADR-0031](0031-data-source-adapter-contract.md) (adapter contract), [ADR-0019](0019-external-http-adapter-resilience.md) (HTTP resilience), [ADR-0054](0054-exogenous-forecast-features-multi-horizon.md) (the consumer)
