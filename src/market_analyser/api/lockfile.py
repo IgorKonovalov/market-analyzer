@@ -80,28 +80,36 @@ def _atomic_replace(tmp_name: str, path: Path) -> None:
     (ERROR_ACCESS_DENIED); retry briefly (the handle is held only for a read),
     then fall back to delete-then-rename. Stays loud — re-raises if the
     destination is genuinely unwritable after the bounded retry.
+
+    The whole Windows retry path sits inside an `if sys.platform == "win32"`
+    block so mypy's platform narrowing skips its contents on Linux (and the
+    POSIX `else` on Windows) without `--strict`'s `--warn-unreachable` firing.
+    The earlier catch-and-re-raise-on-POSIX form left that path as dead code on
+    Linux — green on Windows, red on the Linux CI runner.
     """
-    try:
-        os.replace(tmp_name, path)
-        return
-    except PermissionError:
-        if sys.platform != "win32":
-            raise
-    last_error: PermissionError | None = None
-    for _ in range(_REPLACE_RETRY_ATTEMPTS):
-        time.sleep(_REPLACE_RETRY_SLEEP_S)
+    if sys.platform == "win32":
         try:
             os.replace(tmp_name, path)
             return
+        except PermissionError:
+            pass
+        last_error: PermissionError | None = None
+        for _ in range(_REPLACE_RETRY_ATTEMPTS):
+            time.sleep(_REPLACE_RETRY_SLEEP_S)
+            try:
+                os.replace(tmp_name, path)
+                return
+            except PermissionError as exc:
+                last_error = exc
+        # Last resort: drop the destination, then a plain (create-new) rename.
+        with contextlib.suppress(FileNotFoundError, PermissionError):
+            os.unlink(path)
+        try:
+            os.replace(tmp_name, path)
         except PermissionError as exc:
-            last_error = exc
-    # Last resort: drop the destination, then a plain (create-new) rename.
-    with contextlib.suppress(FileNotFoundError, PermissionError):
-        os.unlink(path)
-    try:
-        os.replace(tmp_name, path)
-    except PermissionError as exc:
-        raise exc from last_error
+            raise exc from last_error
+    else:
+        os.replace(tmp_name, path)  # POSIX: one atomic rename; errors propagate.
 
 
 def write_lockfile(path: Path, record: LockfileRecord) -> None:
