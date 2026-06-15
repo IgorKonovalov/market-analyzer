@@ -346,6 +346,93 @@ def test_mvrv_percentile_is_trailing_only(store: MetricPointsRepository) -> None
     assert snapshot.mvrv_percentile == 100.0
 
 
+# --- (Plan 0057 phase 5) MVRV refresh path: offline default, full + incremental ---
+
+
+class _SpyMvrvSource:
+    """A `MetricSeriesSource` spy: records every `fetch_series` call and returns
+    a preset MVRV history. The offline default path must never call it."""
+
+    def __init__(self, points: Sequence[MetricPoint] = ()) -> None:
+        self._points = list(points)
+        self.calls: list[dict[str, Any]] = []
+
+    def fetch_series(
+        self, series_id: str, start: int | None = None, end: int | None = None
+    ) -> Sequence[MetricPoint]:
+        self.calls.append({"series_id": series_id, "start": start, "end": end})
+        return list(self._points)
+
+
+def _call_snapshot_with_source(
+    store: MetricPointsRepository, spy: _SpyMvrvSource, *, refresh: bool
+) -> dict[str, Any]:
+    """Invoke the registered tool end-to-end with a wired MVRV source, returning
+    the structured payload. End-to-end (not `_build_snapshot`) because refresh
+    lives in the tool wrapper, not the builder."""
+    provider = _FakeProvider(_bars([float(i) for i in range(1, 201)], end=datetime.now(tz=UTC)))
+    server = FastMCP(name="test", stateless_http=True, json_response=True)
+    register_btc_cycle_snapshot(
+        server, provider=provider, metric_points_repository=store, mvrv_source=spy
+    )
+    result = anyio.run(server.call_tool, "btc_cycle_snapshot", {"params": {"refresh": refresh}})
+    _content, structured = cast("tuple[Any, dict[str, Any]]", result)
+    return structured
+
+
+def test_refresh_false_never_touches_the_source(store: MetricPointsRepository) -> None:
+    """The default offline read: a wired source's `fetch_series` is never
+    called, so no network is touched."""
+    spy = _SpyMvrvSource()
+
+    _call_snapshot_with_source(store, spy, refresh=False)
+
+    assert spy.calls == []
+
+
+def test_refresh_true_empty_series_does_full_backfill_that_surfaces(
+    store: MetricPointsRepository,
+) -> None:
+    """First refresh against an empty series fetches from the start (full
+    backfill) and the fetched points land in the store and surface in the
+    snapshot's MVRV fields."""
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    history = [
+        MetricPoint(series_id=SERIES_COINMETRICS_BTC_MVRV, ts=now_ts - 2 * _DAY, value=0.5),
+        MetricPoint(series_id=SERIES_COINMETRICS_BTC_MVRV, ts=now_ts - _DAY, value=1.0),
+    ]
+    spy = _SpyMvrvSource(history)
+
+    structured = _call_snapshot_with_source(store, spy, refresh=True)
+
+    # Empty series -> fetched from the start (no `start` bound = full history).
+    assert spy.calls == [{"series_id": SERIES_COINMETRICS_BTC_MVRV, "start": None, "end": None}]
+    # The fetched history persisted...
+    stored = store.range(SERIES_COINMETRICS_BTC_MVRV, 0, now_ts)
+    assert [p.value for p in stored] == [0.5, 1.0]
+    # ...and surfaces in the snapshot (latest 1.0; both points <= 1.0 -> 100.0).
+    assert structured["mvrv"] == 1.0
+    assert structured["mvrv_percentile"] == 100.0
+
+
+def test_refresh_true_warm_series_fetches_incrementally(store: MetricPointsRepository) -> None:
+    """Against a warm series, refresh fetches incrementally from the latest
+    stored ts forward — not from scratch."""
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    seeded_ts = now_ts - 5 * _DAY
+    store.upsert_points(
+        [MetricPoint(series_id=SERIES_COINMETRICS_BTC_MVRV, ts=seeded_ts, value=0.7)],
+    )
+    spy = _SpyMvrvSource(
+        [MetricPoint(series_id=SERIES_COINMETRICS_BTC_MVRV, ts=now_ts - _DAY, value=1.0)],
+    )
+
+    _call_snapshot_with_source(store, spy, refresh=True)
+
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["start"] == seeded_ts  # incremental from the latest stored ts, not None
+
+
 # --- (d) full-toolset registration ------------------------------------------------
 
 

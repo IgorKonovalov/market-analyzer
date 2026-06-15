@@ -18,6 +18,11 @@ accrual warms up — never a fabricated or silently-shortened value.
 The bar read goes through the provider Protocol (`get_ohlcv`, live mode), so it
 serves cached bars and fills gaps through the normal cache path (ADR-0007); the
 cycle math itself adds no external source.
+
+Offline by default (Plan 0057 phase 5): the snapshot reads only stored data.
+Passing `refresh=true` first backfills/updates the `coinmetrics.btc.mvrv` series
+from the wired MVRV source (the `derivatives_snapshot` refresh precedent) — the
+one path that touches the network, and only when explicitly asked.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from market_analyser.analysis.cycles import (
     NEXT_HALVING_DATE_EST,
@@ -44,6 +49,7 @@ from market_analyser.data.metric_series import (
     SERIES_FNG_VALUE,
 )
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.data.sources import MetricSeriesSource
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 
 _SYMBOL = "BTC-USD"
@@ -64,20 +70,30 @@ BTC_CYCLE_SNAPSHOT_DESCRIPTION = (
     "distance to the 200-week MA (close / SMA1400 - 1) from cached daily "
     "BTC-USD bars, plus the latest Fear & Greed and BTC dominance with 7/30-day "
     "deltas from the stored metric series, plus on-chain MVRV (market value / "
-    "realized value) with its trailing full-history percentile. Takes no "
-    "arguments. Fields are null when history is insufficient (fewer than "
-    "200 / 1400 daily bars for the moving averages; the dominance series "
-    "accrues from deployment, so its deltas stay null until it warms up; "
-    "mvrv and mvrv_percentile are null until the MVRV series is backfilled). "
-    "Conditions, not advice."
+    "realized value) with its trailing full-history percentile. Reads are "
+    "local-only by default; pass refresh=true to first backfill/update the MVRV "
+    "series from the network, then read. Fields are null when history is "
+    "insufficient (fewer than 200 / 1400 daily bars for the moving averages; "
+    "the dominance series accrues from deployment, so its deltas stay null "
+    "until it warms up; mvrv and mvrv_percentile are null until the MVRV series "
+    "is backfilled). Conditions, not advice."
 )
 
 
 class BtcCycleSnapshotInput(BaseModel):
-    """MCP-boundary input. Empty by design — BTC-only in v1, and
-    `extra="forbid"` rejects any argument an agent supplies by mistake."""
+    """MCP-boundary input. BTC-only in v1; `extra="forbid"` rejects any
+    argument an agent supplies by mistake. The lone field is the opt-in
+    `refresh` flag — default-off keeps the snapshot an offline read."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    refresh: bool = Field(
+        default=False,
+        description=(
+            "When true, backfill/update the MVRV series from the network before "
+            "reading; default is offline (local store only)"
+        ),
+    )
 
 
 class BtcCycleSnapshot(BaseModel):
@@ -151,6 +167,25 @@ def _mvrv_and_percentile(
     return latest.value, 100.0 * at_or_below / len(history)
 
 
+def _refresh_mvrv(
+    source: MetricSeriesSource,
+    store: MetricPointsRepository,
+    as_of_ts: int,
+) -> None:
+    """The explicit network path (the `derivatives_snapshot` `_refresh`
+    precedent): fetch MVRV from the latest stored point forward — the full
+    2011-12-29→ history when the series is empty (first refresh doubles as the
+    backfill), an incremental tail otherwise — and upsert. A re-fetched
+    same-value point is a repository no-op; one that *changed* upstream raises
+    `MetricPointConflictError` (ADR-0051 immutability), surfaced not absorbed."""
+    latest = store.as_of(SERIES_COINMETRICS_BTC_MVRV, as_of_ts)
+    fetched = source.fetch_series(
+        SERIES_COINMETRICS_BTC_MVRV, start=latest.ts if latest is not None else None
+    )
+    if fetched:
+        store.upsert_points(list(fetched))
+
+
 def _build_snapshot(
     provider: MarketDataProvider,
     store: MetricPointsRepository,
@@ -190,15 +225,22 @@ def register_btc_cycle_snapshot(
     *,
     provider: MarketDataProvider,
     metric_points_repository: MetricPointsRepository,
+    mvrv_source: MetricSeriesSource | None = None,
 ) -> None:
-    """Bind the `btc_cycle_snapshot` tool to `server`. Provider and store are
-    captured by closure; the empty `params` model is what FastMCP introspects
-    to build the (argument-rejecting) input schema."""
+    """Bind the `btc_cycle_snapshot` tool to `server`. Provider, store, and the
+    optional MVRV source are captured by closure. The default path is offline;
+    `refresh=true` touches the network only when `mvrv_source` is wired —
+    unwired (the legacy/test default), `refresh=true` is a harmless no-op."""
 
     @server.tool(description=BTC_CYCLE_SNAPSHOT_DESCRIPTION)
     async def btc_cycle_snapshot(params: BtcCycleSnapshotInput) -> dict[str, Any]:
-        now = datetime.now(tz=UTC)
-        snapshot = await asyncio.to_thread(_build_snapshot, provider, metric_points_repository, now)
+        def _run() -> BtcCycleSnapshot:
+            now = datetime.now(tz=UTC)
+            if params.refresh and mvrv_source is not None:
+                _refresh_mvrv(mvrv_source, metric_points_repository, int(now.timestamp()))
+            return _build_snapshot(provider, metric_points_repository, now)
+
+        snapshot = await asyncio.to_thread(_run)
         return snapshot.model_dump(mode="json")
 
 

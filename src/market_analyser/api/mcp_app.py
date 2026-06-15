@@ -74,9 +74,14 @@ from market_analyser.api.mcp_tools.walk_forward_backtest import register_walk_fo
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
+from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
-from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
+from market_analyser.data.sources import (
+    LpPositionDetailSource,
+    MetricSeriesSource,
+    WalletPositionsSource,
+)
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.repositories.backtest_runs import (
@@ -98,6 +103,7 @@ def create_mcp_components(
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
     metric_points_repository: MetricPointsRepository | None = None,
     derivatives_source: DerivativesSource | None = None,
+    mvrv_source: MetricSeriesSource | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -212,10 +218,20 @@ def create_mcp_components(
     # series per ADR-0046. Legacy callers without persistence keep the smaller
     # toolset; nothing silently degrades.
     if metric_points_repository is not None:
+        # MVRV refresh path (Plan 0057 phase 5): like `derivatives_snapshot`'s
+        # source, the snapshot reads MVRV from the store offline and only touches
+        # the network on `refresh=true`. Default-construct the keyless
+        # CoinMetrics adapter when the caller injects none (tests inject a spy);
+        # construction is network-free, so an unwired build never reaches out.
         register_btc_cycle_snapshot(
             server,
             provider=provider,
             metric_points_repository=metric_points_repository,
+            mvrv_source=(
+                mvrv_source
+                if mvrv_source is not None
+                else CoinMetricsCommunityAdapter(metric_store=metric_points_repository)
+            ),
         )
         register_get_metric_series(
             server,
