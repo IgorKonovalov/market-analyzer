@@ -36,7 +36,7 @@ This index is the one-minute entrypoint: what exists, each one's status, and how
 | [0026](0026-symbol-search-bound-to-ohlcv-provider.md) | Symbol search bound to the OHLCV provider | accepted (Plan 0024 close 2026-05-29) | relates 0007 | 0024 |
 | [0027](0027-crypto-macro-regime-classification.md) | Crypto macro regime as an in-house neutral structural classification | accepted (Plan 0022 close 2026-06-03) | relates 0007/0009 | 0022 |
 | [0028](0028-timeframe-resampling-and-expansion.md) | Canonical timeframe registry + in-house 4h resampling + per-timeframe history caps | accepted (Plan 0025 close 2026-05-30) | relates 0007/0009/0019 | 0025 |
-| [0029](0029-advisory-recommendation-boundary.md) | Advisory recommendation boundary (the app may recommend, not act) | proposed — accepts at first advisor plan close | carves out of 0015; below 0025 | none yet |
+| [0029](0029-advisory-recommendation-boundary.md) | Advisory recommendation boundary (the app may recommend, not act) | accepted (Plan 0038 close 2026-07-02) | carves out of 0015; below 0025 | 0038 |
 | [0030](0030-forecasting-subsystem.md) | Forecasting subsystem (causal, validated, direction-as-probability) | accepted (Plan 0036 close, 2026-06-07) | mirrors 0018; reuses 0024 | 0036 |
 | [0031](0031-data-source-adapter-contract.md) | Per-capability data-source Protocols + selector-registry dispatch | accepted (Plan 0028 close 2026-06-02) | relates 0007/0009 | 0028 |
 | [0032](0032-data-layer-no-api-dependency.md) | Data layer imports no `api` modules (event bus in neutral `events/` core) | accepted (Plan 0028 close 2026-06-02) | relates 0007 | 0028 |

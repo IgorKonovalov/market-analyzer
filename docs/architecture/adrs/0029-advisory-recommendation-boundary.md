@@ -1,8 +1,8 @@
 # ADR-0029 — Advisory recommendation boundary: the app may recommend, not act
 
-> **Status:** proposed (accepts when the first advisor plan closes — see Notes)
+> **Status:** accepted (2026-07-02 — at [Plan 0038](../plans/done/0038-advisor-layer.md)'s close, per the Notes' condition)
 > **Date:** 2026-05-30
-> **Related plan(s):** none yet — a future plan + a new `advisor` skill are prerequisites to any implementation (see Notes)
+> **Related plan(s):** [Plan 0038](../plans/done/0038-advisor-layer.md) (the advisor layer — implements this ADR; closed 2026-07-02), [Plan 0039](../plans/0039-advisor-ui-surface.md) (the advisory UI surface)
 > **Related ADRs:** [ADR-0015](0015-claude-code-primary-control-surface.md) (the conditions-are-facts framing this carves out from), [ADR-0025](0025-trade-execution-feasibility.md) (execution — the layer *above* this one), [ADR-0004](0004-strategy-interface.md) (strategy signals the advisor fuses), [ADR-0023](0023-technical-analysis-surface.md) (the condition surface the advisor reads), [ADR-0024](0024-extended-backtest-metrics.md) (the backtested basis a recommendation carries), [ADR-0030](0030-forecasting-subsystem.md) (forecasts the advisor consumes as a conviction input)
 
 ## Context
