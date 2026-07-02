@@ -33,10 +33,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, ConfigDict
 
 from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
@@ -60,6 +58,14 @@ from market_analyser.forecast.registry import (
     model_exists,
     save_model,
 )
+
+# Re-exported for existing importers: the result models are domain shapes and
+# live in `forecast/result.py`; this tool module is just their wire surface.
+from market_analyser.forecast.result import (
+    EdgeStrength,
+    ForecastProvenance,
+    ForecastResult,
+)
 from market_analyser.forecast.validation import ForecastValidation, validate
 
 # How far the out-of-sample model skill must exceed the baseline skill for the
@@ -69,11 +75,6 @@ from market_analyser.forecast.validation import ForecastValidation, validate
 # judgment-call default (ADR-0030 invariant 4 refinement) — a single named knob,
 # not a no-edge gate (that stays `beats_baseline` / `prob_*=None`).
 EDGE_MARGIN_THRESHOLD = 0.02
-
-# The edge-strength label travelling with every forecast. "no_edge" means the
-# model did not beat baseline out-of-sample (prob_* are null); "marginal" / "clear"
-# split a real beat by EDGE_MARGIN_THRESHOLD so a thin beat reads as thin.
-EdgeStrength = Literal["no_edge", "marginal", "clear"]
 
 
 def _classify_edge(validation: ForecastValidation) -> tuple[float | None, EdgeStrength]:
@@ -114,46 +115,6 @@ FORECAST_DESCRIPTION = (
     "level. Requires bars already cached for the window (backfill via get_ohlcv "
     "first). Supported timeframes: 1d, 1h, 15m, 4h, 1w."
 )
-
-
-class ForecastProvenance(BaseModel):
-    """The audit trail that makes a forecast reproducible and traceable to its
-    exact model (ADR-0040 §4)."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    model_version: str
-    feature_set_id: str
-    training_cutoff: datetime
-    seed: int
-    lib_versions: dict[str, str]
-
-
-class ForecastResult(BaseModel):
-    """A direction forecast. ``prob_*`` are ``None`` when the model did not beat
-    baseline out-of-sample (the honest no-edge verdict); the ``validation`` basis
-    and ``provenance`` are always present.
-
-    ``edge_margin`` (out-of-sample ``skill - baseline_skill``) and ``edge_strength``
-    (``no_edge`` / ``marginal`` / ``clear``) make a thin beat read as thin: a high
-    ``prob_*`` riding a barely-above-baseline edge is labelled ``marginal`` so it is
-    not mistaken for near-certainty (ADR-0030 invariant 4 refinement)."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    symbol: str
-    timeframe: str
-    as_of_bar_ts: datetime
-    horizon_bars: int
-    prob_up: float | None
-    prob_down: float | None
-    prob_flat: float | None
-    validation: ForecastValidation
-    provenance: ForecastProvenance
-    # Appended after provenance to keep the wire-stable field order (ADR-0040
-    # determinism contract: model_dump order is part of the byte-identical result).
-    edge_margin: float | None
-    edge_strength: EdgeStrength
 
 
 def _compute_forecast(

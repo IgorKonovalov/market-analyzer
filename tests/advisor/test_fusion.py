@@ -26,14 +26,14 @@ from market_analyser.analysis.types import (
     Trend,
     VolumeStance,
 )
-from market_analyser.api.mcp_tools.forecast import (
+from market_analyser.backtest.result import BacktestMetrics
+from market_analyser.backtest.types import SignalEvaluation
+from market_analyser.backtest.walk_forward_types import WalkForwardResult
+from market_analyser.forecast.result import (
     EdgeStrength,
     ForecastProvenance,
     ForecastResult,
 )
-from market_analyser.backtest.result import BacktestMetrics
-from market_analyser.backtest.types import SignalEvaluation
-from market_analyser.backtest.walk_forward_types import WalkForwardResult
 from market_analyser.forecast.validation import ForecastValidation
 
 SYMBOL = "BTC-USD"
@@ -392,9 +392,9 @@ def test_advisor_imports_only_analyst_outputs() -> None:
         "pydantic",
         "market_analyser.advisor",
         "market_analyser.analysis.types",
-        "market_analyser.api.mcp_tools.forecast",
         "market_analyser.backtest.types",
         "market_analyser.backtest.walk_forward_types",
+        "market_analyser.forecast",
     )
     package_file = market_analyser.advisor.__file__
     assert package_file is not None

@@ -42,9 +42,9 @@ from typing import Literal
 
 from market_analyser.advisor.models import BasisValue, Recommendation, RecommendationBasis
 from market_analyser.analysis.types import ConditionSnapshot
-from market_analyser.api.mcp_tools.forecast import ForecastResult
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
+from market_analyser.forecast.result import ForecastResult
 
 # The walk-forward sharpe_mean at (or above) which the backtested edge earns
 # full credit in the conviction mapping. Below it, credit scales linearly;

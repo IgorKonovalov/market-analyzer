@@ -32,11 +32,6 @@ import pytest
 
 import market_analyser.advisor
 from market_analyser.api.mcp_tools import recommend as recommend_tool
-from market_analyser.api.mcp_tools.forecast import (
-    EdgeStrength,
-    ForecastProvenance,
-    ForecastResult,
-)
 from market_analyser.api.mcp_tools.recommend import (
     RECOMMEND_DESCRIPTION,
     _recommend_response,
@@ -45,6 +40,11 @@ from market_analyser.backtest.result import BacktestMetrics
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
 from market_analyser.data.types import Bar
+from market_analyser.forecast.result import (
+    EdgeStrength,
+    ForecastProvenance,
+    ForecastResult,
+)
 from market_analyser.forecast.validation import ForecastValidation
 from tests.forecast._synthetic import synthetic_bars
 
