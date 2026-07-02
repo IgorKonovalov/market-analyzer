@@ -34,6 +34,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api, subscribeToConfigChanges } from '../api/client'
+import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
 import type {
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
@@ -42,6 +43,7 @@ import type {
   OhlcvBackfilledPayloadV1,
   OhlcvBackfillFailedPayloadV1,
   OhlcvBackfillStartedPayloadV1,
+  RecommendationCompletedPayloadV1,
   RunCompletedPayloadV1,
   SignalEvaluatedPayloadV1,
 } from '../types/events'
@@ -54,6 +56,7 @@ export interface EventStreamHandlers {
   onChartHighlight?: (payload: ChartHighlightPayloadV1) => void
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
   onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
+  onRecommendationCompleted?: (payload: RecommendationCompletedPayloadV1) => void
   onOhlcvBackfillStarted?: (payload: OhlcvBackfillStartedPayloadV1) => void
   onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
@@ -73,6 +76,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'chart.highlight': 1,
   'run.completed': 1,
   'signal.evaluated': 1,
+  'recommendation.completed': 1,
   'chart.update_dropped': 1,
   'ohlcv.backfill_started': 1,
   'ohlcv.backfilled': 1,
@@ -230,6 +234,21 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
     case 'signal.evaluated':
       handlers.onSignalEvaluated?.(envelope.payload as SignalEvaluatedPayloadV1)
       return
+    case 'recommendation.completed': {
+      // Zod-validated before it reaches any state (Plan 0039 phase 2 done-when):
+      // a recommendation renders levels the user may act on outside the app, so
+      // a malformed payload is dropped loudly, never rendered half-parsed.
+      const parsed = recommendationCompletedPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed recommendation.completed payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onRecommendationCompleted?.(parsed.data)
+      return
+    }
     case 'ohlcv.backfill_started':
       handlers.onOhlcvBackfillStarted?.(envelope.payload as OhlcvBackfillStartedPayloadV1)
       return
