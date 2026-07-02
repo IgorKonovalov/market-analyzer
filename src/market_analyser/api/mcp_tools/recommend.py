@@ -11,6 +11,7 @@ single labeled advisory `Recommendation`. The flow:
         -> condition snapshot (ADR-0023)  + live signal (Plan 0026)
          + walk-forward edge (ADR-0024)   + forecast (Plan 0036)
         -> fuse() -> Recommendation | honest "no actionable edge"
+        -> bus.publish("recommendation.completed v1", {recommendation})
 
 All four inputs are computed from the SAME closed-bar series, so the
 recommendation's `as_of_bar_ts` is the one bar the whole basis saw last —
@@ -25,6 +26,10 @@ paths and fails if any appear.
 The CPU-bound assembly (walk-forward + forecast training) is offloaded with
 `asyncio.to_thread`; the body is factored into `_recommend_response` with an
 injectable `now` so tests run on a fixed instant without a live MCP server.
+
+The `recommendation.completed v1` envelope (Plan 0039) is published exactly
+once on success and not at all on failure — any raise above the publish
+leaves the bus untouched, the same discipline as `signal.evaluated`.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.timeframes import supported_timeframes_label, timeframe_spec
 from market_analyser.data.types import Bar
+from market_analyser.events import EventBus, RecommendationCompletedPayloadV1
 from market_analyser.forecast.model import DEFAULT_SEED
 
 RECOMMEND_DESCRIPTION = (
@@ -67,7 +73,9 @@ RECOMMEND_DESCRIPTION = (
     "x backtested edge), never invented, so a marginal edge reads as low "
     "conviction. Every result is labeled 'advisory': the app recommends, the "
     "user decides and acts. This tool holds no trade key, places no order, and "
-    "moves no money. `range_start` is the warm-up lookback — request enough "
+    "moves no money. Publishes a `recommendation.completed v1` event so a "
+    "connected viewer renders the advisory call live. "
+    "`range_start` is the warm-up lookback — request enough "
     "history for indicator warm-up, walk-forward folds, and forecast training "
     "(several hundred bars). Bars are fetched on miss where the data layer "
     f"supports it. Supported timeframes: {supported_timeframes_label()}."
@@ -124,6 +132,7 @@ async def _recommend_response(
     *,
     provider: MarketDataProvider,
     coordinator: BackfillCoordinator | None,
+    event_bus: EventBus,
     models_dir: Path | None,
     strategy_id: str,
     symbol: str,
@@ -138,7 +147,9 @@ async def _recommend_response(
 ) -> Recommendation:
     """Body of the `recommend` tool. `now` is injectable so tests run on a
     fixed instant; production passes `None` and reads `datetime.now(UTC)`
-    here — the only wall-clock read on the path."""
+    here — the only wall-clock read on the path. Publishes the
+    `recommendation.completed v1` envelope exactly once, only after a
+    successful fusion."""
 
     _require_non_empty_symbol(symbol)
     _require_supported_timeframe(timeframe)
@@ -197,7 +208,7 @@ async def _recommend_response(
             f"to now={resolved_now!r}"
         )
 
-    return await asyncio.to_thread(
+    recommendation = await asyncio.to_thread(
         _assemble_and_fuse,
         strategy_module=strategy_module,
         closed_bars=closed_bars,
@@ -211,12 +222,22 @@ async def _recommend_response(
         now=resolved_now,
     )
 
+    # Publish AFTER a successful fusion — every raise above this line leaves
+    # the bus untouched (zero envelopes on failure).
+    event_bus.publish(
+        "recommendation.completed",
+        RecommendationCompletedPayloadV1(recommendation=recommendation),
+    )
+
+    return recommendation
+
 
 def register_recommend(
     server: FastMCP,
     *,
     provider: MarketDataProvider,
     backfill_coordinator: BackfillCoordinator | None,
+    event_bus: EventBus,
     models_dir: Path | None,
 ) -> None:
     """Bind the `recommend` tool to `server`. Dependencies are captured by
@@ -238,6 +259,7 @@ def register_recommend(
         return await _recommend_response(
             provider=provider,
             coordinator=backfill_coordinator,
+            event_bus=event_bus,
             models_dir=models_dir,
             strategy_id=strategy_id,
             symbol=symbol,

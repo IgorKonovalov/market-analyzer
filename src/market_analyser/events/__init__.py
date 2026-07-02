@@ -28,6 +28,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from market_analyser.advisor.models import Recommendation
 from market_analyser.backtest.types import SignalEvaluation
 
 DEFAULT_QUEUE_CAP = 256
@@ -229,6 +230,23 @@ class SignalEvaluatedPayloadV1(BaseModel):
     evaluation: SignalEvaluation
 
 
+class RecommendationCompletedPayloadV1(BaseModel):
+    """`recommendation.completed v1` payload (Plan 0039, ADR-0029): the advisor
+    produced a labeled advisory `Recommendation` for one symbol/timeframe.
+
+    Like `signal.evaluated` (and unlike `run.completed`), the full model rides
+    inline: a recommendation is small and ephemeral — nothing is persisted, so
+    the viewer needs no follow-up fetch. The `Recommendation` model itself
+    enforces the advisory shape structurally (the `label` can only be
+    `"advisory"`, a basis always travels with the call), so anything this
+    payload validates is safe to render as advice-and-only-advice."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    recommendation: Recommendation
+
+
 class ChartUpdateDroppedPayloadV1(BaseModel):
     """Synthetic notice emitted when a subscriber's queue overflowed.
 
@@ -349,6 +367,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.highlight": ChartHighlightPayloadV1,
     "run.completed": RunCompletedPayloadV1,
     "signal.evaluated": SignalEvaluatedPayloadV1,
+    "recommendation.completed": RecommendationCompletedPayloadV1,
     "chart.update_dropped": ChartUpdateDroppedPayloadV1,
     "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
     "ohlcv.backfilled": OhlcvBackfilledPayloadV1,

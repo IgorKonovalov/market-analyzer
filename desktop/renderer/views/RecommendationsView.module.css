@@ -1,0 +1,232 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  max-width: 720px;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--color-fg-muted);
+  text-align: center;
+}
+
+/* The unmissable advisory banner (ADR-0029/ADR-0025): first element in the
+ * panel, accent-bordered, always visible regardless of the recommendation's
+ * direction or conviction. */
+.advisoryBanner {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-accent-bg, var(--color-bg-sunken));
+  border: 1px solid var(--color-accent);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.header {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.symbol {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.timeframe {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.dot {
+  color: var(--color-border-strong);
+}
+
+.asOf {
+  margin: var(--space-1) 0 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+}
+
+.grid {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.row dt {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.row dd {
+  margin: 0;
+}
+
+.muted {
+  color: var(--color-fg-muted);
+}
+
+.dir_long {
+  color: var(--color-bull);
+  background: var(--color-bull-bg);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  width: fit-content;
+}
+
+.dir_short {
+  color: var(--color-bear);
+  background: var(--color-bear-bg);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  width: fit-content;
+}
+
+.dir_flat {
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  width: fit-content;
+}
+
+/* Conviction reads as strong ONLY at high strength; moderate is plain and low
+ * is deliberately quiet — a marginal edge must not look like a verdict. */
+.conviction {
+  font-variant-numeric: tabular-nums;
+}
+
+.conviction[data-strength='high'] {
+  font-weight: 700;
+}
+
+.conviction[data-strength='moderate'] {
+  font-weight: 500;
+}
+
+.conviction[data-strength='low'] {
+  font-weight: 400;
+  color: var(--color-fg-muted);
+}
+
+.levels {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-sunken);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.levelsTitle {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sectionTitle {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rationale {
+  margin: 0;
+}
+
+.rationaleList {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.basis {
+  margin: 0;
+}
+
+.basisGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.basisBlock {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-sm);
+}
+
+.basisLabel {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.basisList {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+.factList {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.factRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.factRow dt {
+  color: var(--color-fg-muted);
+}
+
+.factRow dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.disclaimer {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+}

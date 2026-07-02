@@ -1,8 +1,11 @@
-"""Phase-2 done-when for Plan 0038: the `recommend` MCP tool.
+"""Phase-2 done-when for Plan 0038 (+ Plan 0039 phase 1): the `recommend` MCP tool.
 
 Covered:
 - an aligned set of live inputs yields a directional `Recommendation`
   explicitly labeled advisory and carrying all four basis components;
+- bus side-effect (Plan 0039 phase 1): exactly one `recommendation.completed
+  v1` envelope per success, carrying the full `Recommendation` inline —
+  advisory label and basis included; nothing published on any failure;
 - conviction maps from the forecast probability + backtested edge — varying
   either moves it (not a constant);
 - a no-edge forecast (and any other failed leg) yields the honest flat
@@ -40,6 +43,7 @@ from market_analyser.backtest.result import BacktestMetrics
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
 from market_analyser.data.types import Bar
+from market_analyser.events import Envelope, EventBus
 from market_analyser.forecast.result import (
     EdgeStrength,
     ForecastProvenance,
@@ -194,6 +198,7 @@ def _run(**overrides: Any) -> Any:
     kwargs: dict[str, Any] = {
         "provider": _StubProvider(list(BARS)),
         "coordinator": None,
+        "event_bus": EventBus(),
         "models_dir": None,
         "strategy_id": "rsi",
         "symbol": "SYN",
@@ -274,6 +279,147 @@ class TestHonestFlat:
         rec = _run()
         assert rec.direction == "flat"
         assert any("disagree" in line for line in rec.rationale)
+
+
+def _run_draining_bus(**overrides: Any) -> tuple[Any, list[Envelope]]:
+    """Run `_recommend_response` with a subscription open on its bus and
+    return `(recommendation, envelopes)` — the subscription is opened before
+    the call so nothing published can be missed."""
+
+    bus = EventBus()
+
+    async def _go() -> tuple[Any, list[Envelope]]:
+        sub = bus.subscribe()
+        try:
+            kwargs: dict[str, Any] = {
+                "provider": _StubProvider(list(BARS)),
+                "coordinator": None,
+                "event_bus": bus,
+                "models_dir": None,
+                "strategy_id": "rsi",
+                "symbol": "SYN",
+                "timeframe": "1d",
+                "range_start": RANGE_START,
+                "params": None,
+                "horizon_bars": 1,
+                "flat_band": 0.001,
+                "n_splits": 5,
+                "seed": 1729,
+                "now": NOW,
+            }
+            kwargs.update(overrides)
+            rec = await _recommend_response(**kwargs)
+            envelopes: list[Envelope] = []
+            try:
+                while True:
+                    envelopes.append(await asyncio.wait_for(sub.next(), timeout=0.3))
+            except TimeoutError:
+                pass
+            return rec, envelopes
+        finally:
+            sub.close()
+
+    return asyncio.run(_go())
+
+
+class TestEventEmission:
+    """Plan 0039 phase 1 done-when: calling `recommend` emits exactly one
+    `recommendation.completed v1` envelope carrying the full `Recommendation`
+    including its `advisory` label and basis."""
+
+    def test_success_publishes_exactly_one_envelope_with_full_recommendation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_legs(monkeypatch)
+        rec, envelopes = _run_draining_bus()
+
+        assert len(envelopes) == 1  # exactly one, not "at least one"
+        envelope = envelopes[0]
+        assert envelope.type == "recommendation.completed"
+        assert envelope.version == 1
+
+        payload_rec = envelope.payload["recommendation"]
+        # The full Recommendation rides inline — advisory label and basis
+        # included (the phase's done-when), matching the returned artifact.
+        assert payload_rec["label"] == "advisory"
+        assert payload_rec["direction"] == rec.direction == "long"
+        assert payload_rec["symbol"] == "SYN"
+        assert payload_rec["timeframe"] == "1d"
+        assert payload_rec["conviction"] == rec.conviction
+        assert payload_rec["rationale"] == rec.rationale
+        basis = payload_rec["basis"]
+        assert basis["conditions"] == rec.basis.conditions
+        assert basis["signals"] == rec.basis.signals
+        assert basis["backtest"] is not None
+        assert basis["forecast"] is not None
+        assert payload_rec["entry_zone"] == list(rec.entry_zone or ())
+        assert payload_rec["stop"] == rec.stop
+        assert payload_rec["targets"] == rec.targets
+
+    def test_flat_recommendation_also_publishes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch_legs(
+            monkeypatch,
+            prob_up=None,
+            prob_down=None,
+            prob_flat=None,
+            beats_baseline=False,
+            edge_strength="no_edge",
+        )
+        rec, envelopes = _run_draining_bus()
+        assert rec.direction == "flat"
+        assert len(envelopes) == 1
+        payload_rec = envelopes[0].payload["recommendation"]
+        assert payload_rec["direction"] == "flat"
+        assert payload_rec["label"] == "advisory"
+
+    @staticmethod
+    def _failing_run_envelopes(match: str, **overrides: Any) -> list[Envelope]:
+        """Expect `_recommend_response` to raise; return whatever hit the bus."""
+        bus = EventBus()
+
+        async def _go() -> list[Envelope]:
+            sub = bus.subscribe()
+            try:
+                kwargs: dict[str, Any] = {
+                    "provider": _StubProvider(list(BARS)),
+                    "coordinator": None,
+                    "event_bus": bus,
+                    "models_dir": None,
+                    "strategy_id": "rsi",
+                    "symbol": "SYN",
+                    "timeframe": "1d",
+                    "range_start": RANGE_START,
+                    "params": None,
+                    "horizon_bars": 1,
+                    "flat_band": 0.001,
+                    "n_splits": 5,
+                    "seed": 1729,
+                    "now": NOW,
+                }
+                kwargs.update(overrides)
+                with pytest.raises(ValueError, match=match):
+                    await _recommend_response(**kwargs)
+                envelopes: list[Envelope] = []
+                try:
+                    while True:
+                        envelopes.append(await asyncio.wait_for(sub.next(), timeout=0.2))
+                except TimeoutError:
+                    pass
+                return envelopes
+            finally:
+                sub.close()
+
+        return asyncio.run(_go())
+
+    def test_validation_failure_publishes_nothing(self) -> None:
+        assert self._failing_run_envelopes("unknown strategy_id", strategy_id="nope") == []
+
+    def test_no_bars_failure_publishes_nothing(self) -> None:
+        """A failure past validation (empty bar fetch) also leaves the bus
+        untouched — the publish sits strictly after the fusion."""
+        assert (
+            self._failing_run_envelopes("backfill via get_ohlcv", provider=_StubProvider([])) == []
+        )
 
 
 class TestBoundaryValidation:
