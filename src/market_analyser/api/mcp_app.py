@@ -58,6 +58,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
 )
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
+from market_analyser.api.mcp_tools.recommend import register_recommend
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.scan_patterns import register_scan_patterns
 from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
@@ -193,6 +194,18 @@ def create_mcp_components(
     # computes and returns, it is simply not cached to disk.
     forecast_models_dir = runs_dir.parent / "models" if runs_dir is not None else None
     register_forecast(server, provider=provider, models_dir=forecast_models_dir)
+
+    # `recommend` (Plan 0038, ADR-0029): the advisor layer's labeled advisory
+    # output — fuses the condition snapshot, the live strategy signal, the
+    # walk-forward edge, and the forecast into one Recommendation, or an honest
+    # "no actionable edge". Advisory only: holds no trade key, places no order.
+    # Shares the forecast models_dir so an accepted forecast model persists once.
+    register_recommend(
+        server,
+        provider=provider,
+        backfill_coordinator=backfill_coordinator,
+        models_dir=forecast_models_dir,
+    )
 
     if backtest_runs_repository is not None and runs_dir is not None:
         register_run_backtest(

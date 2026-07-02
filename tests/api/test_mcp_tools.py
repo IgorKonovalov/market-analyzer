@@ -471,6 +471,19 @@ def test_forecast_tool_is_registered(live_server: str, mcp_secret: str) -> None:
     assert "forecast" in asyncio.run(_run())
 
 
+def test_recommend_tool_is_registered(live_server: str, mcp_secret: str) -> None:
+    """`recommend` (Plan 0038) is always registered in `create_mcp_components`
+    (needs only the provider + optional coordinator/models_dir); a forgotten
+    registration would drop the advisor surface from the live toolset here."""
+
+    async def _run() -> set[str]:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.list_tools()
+            return {t.name for t in result.tools}
+
+    assert "recommend" in asyncio.run(_run())
+
+
 def test_detect_levels_tool_is_registered(live_server: str, mcp_secret: str) -> None:
     """`detect_levels` (Plan 0051) is wired in `create_mcp_components` (needs only
     the always-present provider + event bus); a forgotten registration would drop
