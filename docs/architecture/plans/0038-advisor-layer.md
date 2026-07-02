@@ -1,6 +1,6 @@
 # 0038 — Advisor layer (the app may recommend, not act)
 
-> **Status:** approved (2026-06-05)
+> **Status:** in-progress (2026-07-02)
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev
 > **Related ADRs:** [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the advisory boundary this implements — accepts at this plan's close), [ADR-0025](../adrs/0025-trade-execution-feasibility.md) (the execution layer *above* this — explicitly out of scope), [ADR-0004](../adrs/0004-strategy-interface.md) (strategy signals fused), [ADR-0023](../adrs/0023-technical-analysis-surface.md) (conditions fused), [ADR-0024](../adrs/0024-extended-backtest-metrics.md) (backtested basis), [ADR-0030](../adrs/0030-forecasting-subsystem.md) (forecast conviction input)
