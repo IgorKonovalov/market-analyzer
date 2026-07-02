@@ -72,6 +72,7 @@ from market_analyser.api.mcp_tools.update_chart import register_update_chart
 from market_analyser.api.mcp_tools.volume_breakout import register_volume_breakout
 from market_analyser.api.mcp_tools.volume_confirmation import register_volume_confirmation
 from market_analyser.api.mcp_tools.walk_forward_backtest import register_walk_forward_backtest
+from market_analyser.api.mcp_tools.watches import register_watch_tools
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
@@ -89,6 +90,10 @@ from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
+from market_analyser.persistence.repositories.watches import (
+    AlertsRepository,
+    WatchesRepository,
+)
 
 
 def create_mcp_components(
@@ -105,6 +110,8 @@ def create_mcp_components(
     metric_points_repository: MetricPointsRepository | None = None,
     derivatives_source: DerivativesSource | None = None,
     mvrv_source: MetricSeriesSource | None = None,
+    watches_repository: WatchesRepository | None = None,
+    alerts_repository: AlertsRepository | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -264,6 +271,19 @@ def create_mcp_components(
                 if derivatives_source is not None
                 else BinanceDerivativesAdapter(metric_store=metric_points_repository)
             ),
+        )
+
+    # The watch toolset (Plan 0060, ADR-0055) is registered when both alerting
+    # repositories are wired (create_app builds them from the SQLite engine).
+    # The scheduler that evaluates the watches lives in the app lifespan, not
+    # here — these tools only manage definitions and read history. Legacy
+    # callers without persistence keep the smaller toolset; nothing silently
+    # degrades.
+    if watches_repository is not None and alerts_repository is not None:
+        register_watch_tools(
+            server,
+            watches_repository=watches_repository,
+            alerts_repository=alerts_repository,
         )
 
     # `scan_wallet` (Plan 0032) is registered only when a wallet-positions source
