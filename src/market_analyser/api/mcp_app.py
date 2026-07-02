@@ -200,10 +200,13 @@ def create_mcp_components(
     # walk-forward edge, and the forecast into one Recommendation, or an honest
     # "no actionable edge". Advisory only: holds no trade key, places no order.
     # Shares the forecast models_dir so an accepted forecast model persists once.
+    # Publishes `recommendation.completed v1` (Plan 0039) so the viewer's
+    # Recommendations view renders the advisory call live.
     register_recommend(
         server,
         provider=provider,
         backfill_coordinator=backfill_coordinator,
+        event_bus=event_bus,
         models_dir=forecast_models_dir,
     )
 

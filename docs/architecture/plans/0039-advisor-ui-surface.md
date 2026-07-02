@@ -1,6 +1,6 @@
 # 0039 — Advisor UI surface (recommendations view)
 
-> **Status:** approved (2026-06-05)
+> **Status:** in-progress (2026-07-02)
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev, ui-builder
 > **Related ADRs:** [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the advisory boundary — labeling + honest uncertainty are acceptance criteria), [ADR-0025](../adrs/0025-trade-execution-feasibility.md) (the execution boundary the UI must visibly *not* cross), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE stream), [ADR-0015](../adrs/0015-claude-code-primary-control-surface.md) (agent-driven viewer)
