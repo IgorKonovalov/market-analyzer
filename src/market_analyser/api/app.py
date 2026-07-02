@@ -46,6 +46,7 @@ from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.api.routes.ui_events import router as ui_events_router
+from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
@@ -318,6 +319,10 @@ def create_app(
     # The watch scheduler (Plan 0060) — None without persistence. /healthz
     # reads its heartbeat; the alerting MCP tools only touch the repositories.
     app.state.watch_scheduler = watch_scheduler
+    # The alerting repositories (Plan 0060 phase 4): consumed by the renderer
+    # routes below (watch list, enable/disable, alert history).
+    app.state.watches_repository = watches_repository
+    app.state.alerts_repository = alerts_repository
 
     @app.middleware("http")
     async def bearer_auth(
@@ -427,6 +432,12 @@ def create_app(
     # reaches the same scan job through the `scan_wallet` MCP tool instead.
     if effective_wallet_sources:
         app.include_router(defi_router)
+
+    # The Alerts surface routes (Plan 0060 phase 4): watch list +
+    # enable/disable + alert history. Renderer-bearer-gated by the central
+    # middleware; mounted only when the alerting repositories exist.
+    if watches_repository is not None and alerts_repository is not None:
+        app.include_router(watches_router)
 
     # `POST /settings/stop` is always registered (no MCP-secret dependency).
     # Renderer-bearer-gated by the central middleware; an agent on `/mcp`
