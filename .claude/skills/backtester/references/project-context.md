@@ -106,10 +106,10 @@ class BacktestCosts(BaseModel):
 
 Costs apply on both entry and exit (one application per side, not summed once). The architect plan for the engine pins the exact semantics; the cost model is symmetric until/unless an ADR changes them.
 
-## Current state (as of 2026-05-17)
+## Current state (as of 2026-07-03 — verify with `Glob`/`Read`; trust the tree over this section)
 
-- `docs/architecture/` exists with the relevant ADRs (0004 strategy interface) and plan (0002 strategy interface, phase 3 is yours).
-- **No code has been written yet.** The bootstrap plan (`plans/0001-bootstrap.md`) is in `draft` status; until it's implemented, there's no `src/market_analyser/` at all.
-- The backtest engine is written in-house per ADR-0009; Plan 0002's phase 3 (which originally lifted helpers from upstream) is parked pending an architect Mode 4 pass to re-plan against an in-house implementation. Until that re-plan lands, treat the engine as not-yet-designed.
-
-When asked to run a backtest in this state, **block on the engine**: say "the backtest engine isn't built yet — Plan 0002 phase 3 needs to be re-planned post-ADR-0009. Want me to route to architect for the re-plan, or wait?" Don't fake a run against an engine that doesn't exist.
+- **The engine is fully shipped** and owned by this skill: `src/market_analyser/backtest/` holds the pure `run()` engine (`ENGINE_VERSION` 0.3.0 — flat/long/**short** per ADR-0050), extended metrics (ADR-0024: Sharpe/Sortino/Calmar/profit factor/expectancy/best-worst; genuinely-undefined ratios are `None`, never `0.0`), `signals_to_trades` (single-direction state machine, stable exits-before-entries same-bar ordering), `walk_forward()` (contiguous anti-lookahead folds + baseline), live-signal evaluation (`live_signal.py`, Plan 0026), and `persist()` (disk artifact under `runs/` + the `backtest_runs` SQLite index, ADR-0018).
+- **Agent surface:** `run_backtest`, `get_backtest`, `walk_forward_backtest`, `compare_strategies`, and `evaluate_signals` MCP tools (large results paged per ADR-0046).
+- **The determinism golden** pins `model_dump(exclude={"run_id", "started_at", "finished_at"})` equality cross-process. Any engine touch keeps it green; a legitimate behavior change moves `ENGINE_VERSION` and regenerates the fixture in the same commit.
+- **Eight strategies** exist to run (`market-analyser strategies list`), including short-capable ones. The forecaster's walk-forward gate reuses this skill's `fold_bounds()` seam (Plan 0036).
+- For in-flight plans that assign backtester-owned phases (e.g. Plan 0059's v1-vs-v2 honesty artifact), read [`plans/README.md`](../../../../docs/architecture/plans/README.md) first.

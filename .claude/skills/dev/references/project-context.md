@@ -58,7 +58,7 @@ These are the commands plans typically call out in done-when criteria. Use exact
 | Install / sync env        | `uv sync`                                            |
 | Add a runtime dep         | `uv add <package>`                                   |
 | Add a dev dep             | `uv add --dev <package>`                             |
-| Run the sidecar (dev)     | `uv run python -m market_analyser.api --port=0 --secret=test` |
+| Run the sidecar (dev)     | `uv run python -m market_analyser.api --port=0` *(bearer secret via the `MARKET_ANALYSER_SECRET` env var — there is no `--secret` flag; unset, a fresh token is generated per launch)* |
 | Run tests                 | `uv run pytest`                                      |
 | Run tests with coverage   | `uv run pytest --cov=src --cov-fail-under=85`        |
 | Lint                      | `uv run ruff check`                                  |

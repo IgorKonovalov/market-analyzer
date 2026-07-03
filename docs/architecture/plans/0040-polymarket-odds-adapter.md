@@ -51,7 +51,7 @@ flowchart LR
 ### Phase 2 — Prediction-market MCP tools
 - **Owner skill:** dev
 - **What:** Read-only MCP tools to search prediction markets by query and fetch a market's current odds, returning implied probabilities + metadata. Charter-safe — reports odds as facts, never a recommendation.
-- **Files touched:** `src/market_analyser/api/mcp_tools/prediction_markets.py`, `src/market_analyser/api/mcp_tools/__init__.py` (registration), `tests/api/test_prediction_market_tools.py`, the full-toolset registration test.
+- **Files touched:** `src/market_analyser/api/mcp_tools/prediction_markets.py`, `src/market_analyser/api/mcp_app.py` (the `register_*` calls — the Plan 0017 registration seam; `mcp_tools/__init__.py` is a docstring-only package marker), `tests/api/test_prediction_market_tools.py`, the full-toolset registration test.
 - **Done when:** A search tool returns matching markets (question + ids) for a query, and an odds tool returns a market's outcomes with implied probabilities for a market id; both go through the registry-selected source (swappable); the tools are present in the full-toolset registration assertion; outputs carry a `queried_at` and the source identity (provenance), and no output contains advice.
 
 ## Data shapes

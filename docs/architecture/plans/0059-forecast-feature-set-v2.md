@@ -11,7 +11,7 @@ Extend the Plan 0036 forecast pipeline from 16 single-symbol OHLCV features to a
 
 ## Context & problem
 
-The 2026-06-09 gap review found the forecast pillar structurally sound (walk-forward gated, honest no-edge) but informationally narrow: 16 features, all derived from the target symbol's own bars — no cycle position, no sentiment, no derivatives posture, no dominance. For BTC specifically, the user explicitly wants cycle/meta information in the model's view. Plans 0055–0057 make those series available historically; this plan is the join. Separately, next-bar-only output is too short a view for cycle-aware analysis; ADR-0030 already reserves N-bar horizons — this plan ships them.
+The 2026-06-09 gap review found the forecast pillar structurally sound (walk-forward gated, honest no-edge) but informationally narrow: 16 features, all derived from the target symbol's own bars — no cycle position, no sentiment, no derivatives posture, no dominance. For BTC specifically, the user explicitly wants cycle/meta information in the model's view. Plans 0055–0057 made those series available historically (all three closed by 2026-06-15 — F&G/dominance/funding/OI/MVRV are populated in `metric_points`; note 0057's reshape shipped **MVRV only**, which is all this plan names); this plan is the join, and it is fully unblocked. Separately, next-bar-only output is too short a view for cycle-aware analysis; ADR-0030 already reserves N-bar horizons — this plan ships them.
 
 ## Decision
 

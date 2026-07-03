@@ -8,7 +8,7 @@
 
 ## TL;DR
 
-We implement the first `ExecutionVenue` adapter: **Binance USDⓈ-M Futures testnet** via the **official modular SDK** (`binance-sdk-derivatives-trading-usds-futures`), against `testnet.binancefuture.com` (the *futures* testnet — **not** the spot `testnet.binance.vision`, a 2026-06-05 research correction). It places market + limit orders with a client-supplied `newClientOrderId` (idempotency), cancels, queries, and consumes the **user-data WebSocket stream** (with `listenKey` keep-alive) to reconcile fills/positions into the state machine. **Testnet only — no real funds.** First behavior: against the testnet, the full intent→submit→fill→reconcile→close loop runs green for a market and a limit order, with no double-submit on retry.
+We implement the first `ExecutionVenue` adapter (first *execution* venue — distinct from Plan 0056's read-only `BinanceDerivativesAdapter` data source over `fapi.binance.com`, which shipped 2026-06-10): **Binance USDⓈ-M Futures testnet** via the **official modular SDK** (`binance-sdk-derivatives-trading-usds-futures`), against `testnet.binancefuture.com` (the *futures* testnet — **not** the spot `testnet.binance.vision`, a 2026-06-05 research correction). It places market + limit orders with a client-supplied `newClientOrderId` (idempotency), cancels, queries, and consumes the **user-data WebSocket stream** (with `listenKey` keep-alive) to reconcile fills/positions into the state machine. **Testnet only — no real funds.** First behavior: against the testnet, the full intent→submit→fill→reconcile→close loop runs green for a market and a limit order, with no double-submit on retry.
 
 ## Context & problem
 

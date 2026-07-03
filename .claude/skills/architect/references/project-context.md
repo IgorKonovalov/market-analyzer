@@ -22,20 +22,24 @@ Per [ADR-0009](../../../../docs/architecture/adrs/0009-rewrite-data-layer-in-hou
 
 Every external HTTP adapter sits on a **shared resilience client** (`ResilientHttpClient`: TTL cache + retry + backoff + concurrency cap + proxy-from-env), designed in [ADR-0019](../../../../docs/architecture/adrs/0019-external-http-adapter-resilience.md) and landed as Plan 0009 phase 1. New adapters inherit it rather than re-implementing retry/backoff inline.
 
-Data sources written (or in flight) as standalone adapters under `src/market_analyser/data/adapters/`:
+Data sources shipped as standalone adapters under `src/market_analyser/data/adapters/` (as of 2026-07-03 — all shipped; verify with `Glob`):
 
-| Adapter / module                        | Purpose                                  | Status                              |
+| Adapter / module                        | Purpose                                  | Landed via                          |
 |-----------------------------------------|------------------------------------------|-------------------------------------|
-| `yahoo.py` + `_yahoo_fetch.py`          | Equities / historical OHLCV              | Shipped (Plan 0003)                 |
-| `_http.py` (`ResilientHttpClient`)      | Shared resilience for external adapters  | Shipped (Plan 0009 phase 1)         |
-| `tradingview_screener.py`               | TradingView screener queries             | In progress (Plan 0009)             |
-| RSS news + per-headline VADER sentiment | News feed + sentiment scoring            | Approved (Plan 0010)                |
-| Crypto Fear & Greed (alternative.me)    | Market-level crypto sentiment            | Approved (Plan 0011)                |
-| StockTwits sentiment                    | Per-symbol Bullish/Bearish label counts  | Approved (Plan 0012)                |
-| `analysis/indicators.py`                | Technical indicators (RSI, MACD, etc.)   | Future (no plan yet; analyst dep)   |
+| `yahoo.py` + `_yahoo_fetch.py`          | Equities OHLCV (absolute-range) / quote / search | Plans 0003, 0019, 0024, 0031  |
+| `_http.py` (`ResilientHttpClient`)      | Shared resilience for external adapters  | Plan 0009 ([ADR-0019](../../../../docs/architecture/adrs/0019-external-http-adapter-resilience.md)) |
+| Binance klines                          | Crypto-exchange OHLCV; exchangeInfo-membership routing (`BTCUSDT` → Binance, else Yahoo) | Plan 0058 ([ADR-0052](../../../../docs/architecture/adrs/0052-binance-exchange-data-source.md)) |
+| Binance derivatives                     | Funding rate + open interest series      | Plan 0056                           |
+| CoinMetrics community                   | BTC MVRV series (MVRV-only after the 0057 reshape) | Plan 0057 ([ADR-0053](../../../../docs/architecture/adrs/0053-onchain-valuation-source.md)) |
+| TradingView screener                    | Screener queries                         | Plan 0009                           |
+| RSS news + per-headline VADER sentiment | News feed + sentiment scoring            | Plan 0010                           |
+| Crypto Fear & Greed (alternative.me)    | Market-level crypto sentiment + history  | Plans 0011, 0055                    |
+| StockTwits sentiment                    | Per-symbol Bullish/Bearish label counts  | Plan 0012                           |
+| CoinGecko                               | BTC macro context (dominance, total mcap) + accrual | Plans 0022, 0055           |
+| Zerion (`defi/`)                        | DeFi wallet discovery + decoded tx history | Plans 0032, 0034 ([ADR-0034](../../../../docs/architecture/adrs/0034-defi-portfolio-aggregator.md)) |
 | Reddit sentiment                        | Per-symbol social sentiment              | Deferred (keyword scoring fragile)  |
 
-All adapters dispatch through the `MarketDataProvider` Protocol ([ADR-0007](../../../../docs/architecture/adrs/0007-market-data-provider.md)). The Protocol shape, `as_of` seam, cache chokepoint, and lazy bring-in cadence are unchanged from ADR-0007 — only the implementation policy moved from "mirror upstream" to "own it directly".
+All market-data adapters dispatch through the `MarketDataProvider` Protocol ([ADR-0007](../../../../docs/architecture/adrs/0007-market-data-provider.md)) and the per-capability source Protocols + selector registry of [ADR-0031](../../../../docs/architecture/adrs/0031-data-source-adapter-contract.md). External metric series (F&G, dominance, funding, OI, MVRV) are historized in the one `metric_points` table behind the [ADR-0051](../../../../docs/architecture/adrs/0051-historized-metric-series-contract.md) `as_of` contract. The `as_of` seam, cache chokepoint, and lazy bring-in cadence are unchanged from ADR-0007.
 
 ## Stack
 
@@ -44,7 +48,7 @@ All adapters dispatch through the `MarketDataProvider` Protocol ([ADR-0007](../.
 - **Sidecar IPC — renderer.** Local HTTP/JSON on `127.0.0.1`, per-sidecar-launch bearer-token shared secret ([ADR-0002](../../../../docs/architecture/adrs/0002-ipc-local-http.md), [ADR-0011](../../../../docs/architecture/adrs/0011-bearer-secret-transport.md), refined by [ADR-0016](../../../../docs/architecture/adrs/0016-standalone-sidecar-mode.md) — bearer now persisted in `sidecar.lock` `0600` for the attach window). The shared data-dir contract ([ADR-0020](../../../../docs/architecture/adrs/0020-shared-data-dir-contract.md)) keeps Python and Electron resolving the same user-data directory.
 - **Sidecar IPC — agent (MCP).** Streamable HTTP at `/mcp` ([ADR-0014](../../../../docs/architecture/adrs/0014-mcp-as-second-sidecar-protocol.md)), long-lived bearer in `mcp-secret.json` (user data dir, `0600`).
 - **Sidecar lifecycle.** Standalone process ([ADR-0016](../../../../docs/architecture/adrs/0016-standalone-sidecar-mode.md)); lockfile at `<user-data>/sidecar.lock`; Electron attaches idempotently (PID-liveness + `/healthz` identity check); closing the viewer does NOT stop the sidecar. Implemented in Plan 0007. One-command dev loop via `pnpm dev:all` (Plan 0015).
-- **Live UI updates.** Server-Sent Events at `GET /events` (renderer-bearer-gated) carry typed versioned envelopes from the sidecar's in-process event bus ([ADR-0017](../../../../docs/architecture/adrs/0017-live-ui-updates-via-sse.md)). Producers shipped so far: `chart.show/update v1`, `highlight_pattern`, `run.completed v1` (backtests). Implemented in Plan 0007; first backtest producer in Plan 0008.
+- **Live UI updates.** Server-Sent Events at `GET /events` (renderer-bearer-gated) carry typed versioned envelopes from the sidecar's in-process event bus, which lives in the neutral top-level `events/` core ([ADR-0017](../../../../docs/architecture/adrs/0017-live-ui-updates-via-sse.md), [ADR-0032](../../../../docs/architecture/adrs/0032-data-layer-no-api-dependency.md)). Event vocabulary as of 2026-07-03 (all v1): `chart.show/update/highlight/update_dropped`, `run.completed`, `signal.evaluated`, `recommendation.completed`, `ohlcv.backfill_*` (×3), `defi.scan_*` (×4), `alert.triggered`.
 - **Persistence.** SQLite for all application data (cached bars, annotations, strategy metadata, backtest runs) + a hand-editable `config.json` for user config ([ADR-0006](../../../../docs/architecture/adrs/0006-persistence-layout.md)).
 - **Data layer.** Single `MarketDataProvider` Protocol, dispatching to per-source adapters ([ADR-0007](../../../../docs/architecture/adrs/0007-market-data-provider.md)); implementations written in-house per [ADR-0009](../../../../docs/architecture/adrs/0009-rewrite-data-layer-in-house.md); external adapters share `ResilientHttpClient` ([ADR-0019](../../../../docs/architecture/adrs/0019-external-http-adapter-resilience.md)).
 - **Backtest.** Pure `run(strategy, bars, params, **costs) -> BacktestResult` engine + metric helpers + thin `persist()` (disk + SQLite-indexed `backtest_runs` table); schema per [ADR-0018](../../../../docs/architecture/adrs/0018-backtest-result-schema.md). Implemented in Plan 0008.
@@ -60,7 +64,10 @@ These skills consume your plans/ADRs. Design with them in mind. Full description
 - **`ui-builder`** — Electron desktop viewer end-to-end under `desktop/`. **Post-ADR-0015: viewer for agent-issued renders, not the primary control surface.** Subscribes to the SSE event stream; renders chart commands in response.
 - **`market-analyst`** — Read-only TradFi pattern/trend snapshots → `runs/analysis/`.
 - **`defi-analyst`** — Read-only DeFi pool/position analyses → `runs/defi/`.
+- **`advisor`** — The one sanctioned recommendation layer ([ADR-0029](../../../../docs/architecture/adrs/0029-advisory-recommendation-boundary.md); created 2026-07-02): turns conditions into a labeled advisory call via the `recommend` tool → `runs/advice/`. Never an implementer — plans don't assign phases to it.
 - **`skill-creator`** — Skill maintenance (meta).
+
+(A future **`trader`** skill is mandated by [ADR-0025](../../../../docs/architecture/adrs/0025-trade-execution-feasibility.md) invariant 3 for the execution arc — Plan 0044's companion step; it does not exist yet.)
 
 When you write a plan, **name the sibling skill that will own each phase** via the `**Owner skill:**` tag (fixed vocabulary: `dev` / `strategy-author` / `backtester` / `ui-builder` / `human`). That's the handoff seam — see [`templates/cross-skill-handoff.md`](templates/cross-skill-handoff.md).
 
@@ -80,27 +87,30 @@ If the user asks for a mid-plan checkpoint review (rare — they explicitly ask 
 
 ## ADRs
 
-Live in `docs/architecture/adrs/`. The committed index at [`docs/architecture/adrs/README.md`](../../../../docs/architecture/adrs/README.md) is the source of truth for the roster, per-ADR status, supersede/refine lineage, and the next free number — read it (or `Glob docs/architecture/adrs/*.md`) rather than trusting a snapshot table here. As of 2026-05-24: 24 ADRs (0001–0024), next free is **0025**. Two superseded (0001→0005, 0003→0009); three `proposed` (0021, 0023, 0024); the rest accepted.
+Live in `docs/architecture/adrs/`. The committed index at [`docs/architecture/adrs/README.md`](../../../../docs/architecture/adrs/README.md) is the source of truth for the roster, per-ADR status, supersede/refine lineage, and the next free number — read it (or `Glob docs/architecture/adrs/*.md`) rather than trusting a snapshot table here. As of 2026-07-03: 55 ADRs (0001–0055), next free is **0056**. Two superseded (0001→0005, 0003→0009); still `proposed`: 0025 (exploratory — accepts at Plan 0046's close), 0036/0037 (DeFi P&L/risk), 0041–0044 (Polymarket / portfolio / execution pair), 0054 (forecast v2); the rest accepted.
 
 ## Open ADR backlog
 
 Pick one when the user asks for a starter design task; or when the corresponding plan starts to need the decision.
 
-- **Offline mode.** Does the app function without network? If yes, what's cached and for how long? Partially answered by ADR-0006's `bars` cache and ADR-0007's `as_of` seam, but the explicit policy ("what does the app *do* with no network on cold start?") is not yet captured. Plan 0013 (auto-backfill on cache miss) touches the edges of this but doesn't decide the whole-app policy.
-- **Third-party data-source API keys.** Secrets schema, rotation, and Settings UI. Out of scope so far; needed before any *authenticated* external data source (the Tier 2 sources in Plans 0009–0012 are all keyless).
-- **Migration safety policy.** Today's migrations are additive only. Need a rule before the first non-additive migration lands.
-- **Crash supervision for the standalone sidecar.** ADR-0016 deferred automated restart-on-crash. A future ADR may introduce a tray-app supervisor or OS service integration (LaunchAgent / systemd-user / Task Scheduler) if manual restart UX becomes painful.
+- **Offline mode.** Does the app function without network? If yes, what's cached and for how long? Partially answered by ADR-0006's `bars` cache and ADR-0007's `as_of` seam, but the explicit policy ("what does the app *do* with no network on cold start?") is not yet captured.
+- **Migration safety policy.** Today's migrations are additive only (chain head: `0005_watches_alerts`). Need a rule before the first non-additive migration lands.
+- **Crash supervision + general scheduling for the standalone sidecar.** ADR-0016 deferred automated restart-on-crash; [ADR-0055](../../../../docs/architecture/adrs/0055-in-sidecar-watch-scheduler.md)'s scheduler is deliberately watch-scoped, not a general job runner. A future ADR covers timed ingestion / digests / restart supervision.
+- **OS-native notification transport.** In-app alert delivery shipped (Plan 0060 toast + Alerts view); native desktop notifications need their own transport ADR.
+- **LLM-output provenance schema.** ADR-0040 covers model artifacts; a "produced by model@version via tools […]" trail for agent-written facts is unwritten.
+
+(Resolved since this list was first drafted: third-party API keys → [ADR-0038](../../../../docs/architecture/adrs/0038-third-party-api-key-storage.md); model versioning/determinism → [ADR-0040](../../../../docs/architecture/adrs/0040-forecasting-model-artifacts.md). The full open/decided table lives in [`roadmap.md` § Cross-cutting decisions ahead](../../../../docs/architecture/roadmap.md#cross-cutting-decisions-ahead).)
 
 ## Current state of the codebase
 
-The repository has substantial architecture documentation AND a working agent-driven app: walking-skeleton OHLCV chart, MCP foundation, strategy contract + reference strategies, a backtest engine, and the live SSE viewer.
+Snapshot as of 2026-07-03 (Plan 0060 close) — a working agent-driven app spanning analysis, forecasting, advice, DeFi, and alerting. **Verify with `Glob` before relying on any line here.**
 
-- `docs/architecture/adrs/` — 21 ADRs (0001–0021); two superseded (0001, 0003), two proposed (0019, 0021), the rest accepted.
-- `docs/architecture/plans/` — active (all `approved`): 0009 (in progress), 0010, 0011, 0012, 0013, 0014. Closed under `plans/done/`: 0001–0008 and 0015. Next free plan number is **0016**. The roster, recommended execution order, and status vocabulary live in [`plans/README.md`](../../../../docs/architecture/plans/README.md) — read it first.
-- `docs/architecture/diagrams/` — `claude-cli-driven-architecture.md` (the authoritative system map + lifecycle/recovery sequences, post-ADR-0015), `strategy-execution-sequence.md` (backtest runtime order / anti-lookahead seam), `bootstrap-component-map.md` (OHLCV walking-skeleton data flow + SQLite schema reference).
-- `src/market_analyser/` — sidecar source: `api/` (FastAPI + MCP server + routes + tools), `data/` (`MarketDataProvider`, `_http.py` resilience client, `adapters/yahoo*.py`, `tradingview_screener.py` landing via Plan 0009), `persistence/` (SQLite + Alembic + repositories incl. `backtest_runs`), `strategies/` (contracts + `discover()` + RSI reference + five ported: bollinger, macd, ema_cross, supertrend, donchian), `backtest/` (pure engine + metrics + `signals_to_trades` adapter + `BacktestResult` + `persist`).
-- `desktop/` — Electron + React + TS renderer: OHLCV view, Settings page (mcp-secret rotation), annotation chart-marker polling, SSE subscriber + `show_*` chart handlers, `BacktestView` (equity curve + metrics + trade log) + `RecentBacktestsView`. One-command dev loop via `pnpm dev:all`.
-- `.claude/skills/` — `architect`, `dev`, `ui-builder`, `strategy-author`, `backtester`, `market-analyst`, `defi-analyst`, `skill-creator`.
+- `docs/architecture/adrs/` — 55 ADRs (0001–0055), next free **0056**; roster + statuses in [`adrs/README.md`](../../../../docs/architecture/adrs/README.md).
+- `docs/architecture/plans/` — active (all `approved`, none in-progress): 0035, 0037, 0040–0046, 0059. Everything else is closed under `plans/done/`. Next free plan number is **0061**. The roster, recommended execution order (next pair: 0059 ∥ 0035), and status vocabulary live in [`plans/README.md`](../../../../docs/architecture/plans/README.md) — read it first.
+- `docs/architecture/diagrams/` — `claude-cli-driven-architecture.md` (the authoritative system map + lifecycle/recovery sequences; refreshed 2026-07-03), `strategy-execution-sequence.md` (backtest runtime order / anti-lookahead seam), `bootstrap-component-map.md` (OHLCV data flow + SQLite schema reference).
+- `src/market_analyser/` — sidecar source: `api/` (FastAPI app + FastMCP hub `mcp_app.py` + one module per tool under `mcp_tools/` + `routes/`), `data/` (provider + ADR-0031 source registry + adapters + timeframes + metric-series registry), `persistence/` (SQLite + Alembic, migrations `0001`–`0005`), `events/` (neutral bus + envelope registry), `contracts/` + `strategies/` (8 modules, flat/long/short), `backtest/` (engine + metrics + walk-forward + live-signal eval), `analysis/` (indicators, candlestick + chart patterns, levels, volume, cycles, snapshot), `forecast/` (ADR-0030/0040), `advisor/` (ADR-0029), `alerts/` (ADR-0055 scheduler), `defi/` (ADR-0035), `annotations/`. **Not yet in the tree:** `portfolio/` (Plans 0041–0043) and `execution/` (Plans 0044–0046).
+- `desktop/` — Electron + React + TS renderer: 7 nav tabs (Chart, Backtests, Signals, Recommendations, News, Alerts, Settings) over 8 views, theme system (ADR-0039), SSE subscriber with per-payload Zod validation for the newest events, typed fetch client. One-command dev loop via `pnpm dev:all`.
+- `.claude/skills/` — `architect`, `dev`, `ui-builder`, `strategy-author`, `backtester`, `market-analyst`, `defi-analyst`, `advisor`, `skill-creator`, `safe-commit`.
 
 **Workflow rule (learned from a 2026-05-17 incident):** Before writing any ADR, plan, or diagram, `Glob` the three `docs/architecture/` subdirectories to inventory what exists. Trust the filesystem, not this section — if the two disagree, the section is stale and should be refreshed as a follow-up. (See also the `feedback_glob_before_draft` memory.)
 

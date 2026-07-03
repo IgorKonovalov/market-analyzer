@@ -12,7 +12,7 @@ We build the **venue-independent execution machinery** ([ADR-0025](../adrs/0025-
 
 ## Context & problem
 
-[ADR-0025](../adrs/0025-trade-execution-feasibility.md) named the venue-independent core; [ADR-0043](../adrs/0043-execution-venue-protocol.md) fixed its shape; [ADR-0044](../adrs/0044-trade-secret-store.md) fixed the secret mechanism (keychain via `keyring`). This plan builds that core — the hard, stateful, correctness-critical part — independent of any venue, so idempotency, reconciliation, the guard, and the kill switch are proven once against an adversarial stub before Binance ([Plan 0045](0045-binance-futures-testnet-adapter.md)) plugs in. It adds order/position tables, so it **serializes with any other migration-touching plan**.
+[ADR-0025](../adrs/0025-trade-execution-feasibility.md) named the venue-independent core; [ADR-0043](../adrs/0043-execution-venue-protocol.md) fixed its shape; [ADR-0044](../adrs/0044-trade-secret-store.md) fixed the secret mechanism (keychain via `keyring`). This plan builds that core — the hard, stateful, correctness-critical part — independent of any venue, so idempotency, reconciliation, the guard, and the kill switch are proven once against an adversarial stub before Binance ([Plan 0045](0045-binance-futures-testnet-adapter.md)) plugs in. It adds order/position tables, so it **serializes with any other migration-touching plan** (as of 2026-07-03 the chain head is `0005_watches_alerts` and Plan 0035's two migrations are queued ahead of this one — 0035 → 0044 is the standing order).
 
 ## Decision
 

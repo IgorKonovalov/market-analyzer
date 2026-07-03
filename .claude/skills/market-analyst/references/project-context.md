@@ -99,14 +99,16 @@ Practical consequence: bars get into the cache when the user opens a chart for t
 
 This boundary is a feature, not a bug.
 
-## Capability state (as of 2026-05-30)
+## Capability state (as of 2026-07-03)
 
 All four modes are live. The skill is past its "everything blocks honestly" infancy:
 
-- ✅ **Mode 1 (pattern scan)** — `analyze_symbol` returns `recent_patterns` (most-recent-bars window); deep historical sweep via `detect_patterns` fallback.
-- ✅ **Mode 2 (snapshot)** — `analyze_symbol` returns the full trend/momentum/indicators/S-R read in one call.
-- ✅ **Mode 3 (screener)** — `screener_query` (TradingView universe, Plan 0009) for universe screens; `analyze_symbol` per-symbol for watchlist screens.
+- ✅ **Mode 1 (pattern scan)** — `analyze_symbol` returns `recent_patterns` (most-recent-bars window); deep window sweeps via `scan_patterns` (span-bearing markers) and classical chart patterns via `detect_chart_patterns` (H&S, double tops/bottoms, triangles, wedges — forming/confirmed).
+- ✅ **Mode 2 (snapshot)** — `analyze_symbol` returns the full trend/momentum/indicators/S-R read (structured `Level`s, active chart patterns) in one call; `multi_timeframe_analysis` aligns W→D→4H→1H→15m; `detect_levels` computes ranked S/R and draws them.
+- ✅ **Mode 3 (screener)** — `screener_query` (TradingView universe, Plan 0009) for universe screens; `analyze_symbol` per-symbol + the volume scanners (`volume_breakout`/`volume_confirmation`/`smart_volume`) for watchlist screens.
 - ✅ **Mode 4 (brainstorm)** — conversational; never fetched anything, still doesn't.
+
+Adjacent read surfaces that are conditions, not calls (fine to cite in reports): `btc_cycle_snapshot` / `derivatives_snapshot` / `get_metric_series` (crypto cycle + derivatives metrics, Plans 0055–0057), `forecast` (a calibrated probability *condition*, ADR-0030), and condition watches (`create_watch`/`list_alerts`, Plan 0060). Recommendations remain `advisor`'s alone (ADR-0029).
 
 The **only** honest block left is data, not code: a symbol with no cached bars makes `analyze_symbol` return `partial_reason: "no_bars"`. That's resolved by populating the cache (`backfill_ohlcv`, or the user opening the chart), not by routing to architect. Routing to `architect` is now reserved for genuinely new capability — a new indicator/pattern the backend doesn't expose, or a new screener filter shape.
 

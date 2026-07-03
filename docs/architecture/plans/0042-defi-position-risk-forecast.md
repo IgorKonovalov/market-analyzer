@@ -4,7 +4,7 @@
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev
 > **Related ADRs:** [ADR-0037](../adrs/0037-defi-position-risk-forecast.md) (this engine — accepts at close), [ADR-0034](../adrs/0034-defi-portfolio-aggregator.md) (the deep on-chain state scenarios depend on), [ADR-0036](../adrs/0036-defi-pnl-reconstruction.md) (cost basis scenarios value against), [ADR-0018](../adrs/0018-backtest-result-schema.md) (the determinism contract the simulation mirrors), [ADR-0030](../adrs/0030-forecasting-subsystem.md) (the market-forecasting subsystem this is deliberately *distinct* from), [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the recommend line this stays on the report side of)
-> **Related plans:** [Plan 0034](0034-defi-deep-lp-detail.md) (deep state — prereq), [Plan 0035](0035-defi-pnl-reconstruction.md) (cost basis — prereq), [Plan 0041](0041-cross-venue-portfolio-aggregation.md) (holdings this runs over)
+> **Related plans:** [Plan 0034](done/0034-defi-deep-lp-detail.md) (deep state — prereq, **satisfied**: closed 2026-06-05; `defi/enrichment.py` + tick/HF/debt fields shipped), [Plan 0035](0035-defi-pnl-reconstruction.md) (cost basis — prereq, still active/unbuilt), [Plan 0041](0041-cross-venue-portfolio-aggregation.md) (holdings this runs over)
 
 ## TL;DR
 
@@ -12,7 +12,7 @@ We add the **DeFi risk/forecast engine** in `src/market_analyser/defi/` ([ADR-00
 
 ## Context & problem
 
-"Forecast the future of positions and risks" was the most charter-sensitive part of the ask. [ADR-0037](../adrs/0037-defi-position-risk-forecast.md) resolved the shape: this is **not** [ADR-0030](../adrs/0030-forecasting-subsystem.md)'s market forecasting (which predicts *direction* and is gated by walk-forward-beats-baseline). It forecasts *the position given assumed moves* — the scenario engine asserts **no market view** (deterministic math on a supplied shock), and the probabilistic layer is explicitly conditional on a stated vol model. There is no directional claim to validate; correctness is unit-testable position math, and the probabilities are honest about their assumptions. The engine **never** emits exit/rebalance (that is [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)'s advisor). Prereqs: the deep on-chain state ([Plan 0034](0034-defi-deep-lp-detail.md)) for accurate current HF/debt/collateral, and the cost basis ([Plan 0035](0035-defi-pnl-reconstruction.md)) scenarios value against.
+"Forecast the future of positions and risks" was the most charter-sensitive part of the ask. [ADR-0037](../adrs/0037-defi-position-risk-forecast.md) resolved the shape: this is **not** [ADR-0030](../adrs/0030-forecasting-subsystem.md)'s market forecasting (which predicts *direction* and is gated by walk-forward-beats-baseline). It forecasts *the position given assumed moves* — the scenario engine asserts **no market view** (deterministic math on a supplied shock), and the probabilistic layer is explicitly conditional on a stated vol model. There is no directional claim to validate; correctness is unit-testable position math, and the probabilities are honest about their assumptions. The engine **never** emits exit/rebalance (that is [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)'s advisor). Prereqs: the deep on-chain state ([Plan 0034](done/0034-defi-deep-lp-detail.md) — **shipped**, closed 2026-06-05) for accurate current HF/debt/collateral, and the cost basis ([Plan 0035](0035-defi-pnl-reconstruction.md) — still active/unbuilt) scenarios value against.
 
 ## Decision
 

@@ -140,13 +140,13 @@ Re-read these whenever you're unsure. They're short.
 
 ## Current state checkpoints
 
-When you start a session, these tell you what to expect:
+As of 2026-07-03 every checkpoint below is landed — treat them as the floor you build on, and `Glob` before assuming anything newer:
 
-- **`desktop/` exists?** Plan 0001 phase 4 has landed.
-- **`desktop/renderer/components/CandlestickChart.tsx` exists?** Plan 0001 phase 5 has landed — the candlestick chart is in the codebase. You may be editing it, not creating it.
-- **`src/market_analyser/api/routes/ohlcv.py` exists?** Plan 0001 phase 2 has landed. The sidecar serves `/ohlcv`.
-- **`src/market_analyser/strategies/` has files?** Plan 0002 has progressed; you may be rendering a strategy picker or params form.
-- **`src/market_analyser/backtest/engine.py` exists?** A backtest plan has landed; you may be rendering `BacktestResult` shapes.
+- **The renderer has 7 nav tabs / 8 views**: `OhlcvView` (chart), `RecentBacktestsView` + `BacktestView`, `LiveSignalView` (Signals), `RecommendationsView`, `NewsView`, `AlertsView`, `SettingsView` — plus the cross-view `AlertToaster` and `ThemeToggle`.
+- **`CandlestickChart.tsx` is a known god component (~1041 lines)** with a standing decomposition follow-up (plans README) — any chart touch should lift per-effect reconcilers into hooks, not grow it further.
+- **Theming** is renderer-owned (ADR-0039): `lib/theme.ts` is the single source of truth; read colors from CSS tokens, never hardcoded hex.
+- **SSE dispatch** lives in `hooks/useEventStream.ts` (`dispatchEnvelope`); the newest payloads (`recommendation.completed`, `alert.triggered`) are Zod-`safeParse`d via `schemas/` — new event handling follows that pattern, and `types/events.ts` is hand-mirrored (guarded by `events.test.ts`, not `gen-types`).
+- **Reactive agent-emitted surfaces** (Signals, Recommendations, Alerts) are dedicated views fed by App-level state set in `useEventStream` handlers — the house pattern any new reactive surface (e.g. Plan 0037's Forecast view) follows; no auto-switch on incoming events.
 
 The architect's project-context lists the canonical state at any point — read it when in doubt rather than assuming.
 

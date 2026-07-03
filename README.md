@@ -8,14 +8,17 @@ This README is the entrypoint for developers cloning the repo; design docs live 
 
 ## Capabilities
 
-- **OHLCV candlestick charts** for one symbol at a time, timeframes `15m`/`1h`/`4h`/`1d`/`1w`. First fetch hits Yahoo Finance; subsequent loads serve from a local SQLite cache keyed on `(symbol, timeframe, bar timestamp)`, with auto-backfill on cache miss. The data adapter is written in-house under `src/market_analyser/data/`.
-- **Agent control over MCP** at `/mcp` (Streamable HTTP, long-lived bearer). Tools span market data, chart annotations, the agent-driven viewer (`show_chart`/`update_chart`/`highlight_pattern`), backtests, the TradingView screener, news & sentiment, live quotes, symbol search, and a technical-analysis snapshot.
+- **OHLCV candlestick charts** for one symbol at a time, timeframes `15m`/`1h`/`4h`/`1d`/`1w`/`1mo`. Fetches route per symbol to Yahoo Finance or (for exchange pairs like `BTCUSDT`) Binance spot klines; subsequent loads serve from a local SQLite cache keyed on `(symbol, timeframe, bar timestamp)`, with auto-backfill on cache miss and scroll-left lazy history. The data layer is written in-house under `src/market_analyser/data/`.
+- **Agent control over MCP** at `/mcp` (Streamable HTTP, long-lived bearer). ~35 tools spanning market data, chart annotations, the agent-driven viewer (`show_chart`/`update_chart`/`highlight_pattern`), backtests + walk-forward + comparison, live strategy-signal evaluation, the TradingView screener, news & sentiment, live quotes, symbol search, technical-analysis snapshots, candlestick/chart-pattern scans, support/resistance levels, crypto cycle + derivatives metrics, the forecaster, the advisor, DeFi wallet scans, and condition watches.
 - **Live agent-driven viewer** over an SSE stream at `/events`. Agents issue chart commands and the viewer reflects them within ~1 s; chart annotations persist in SQLite and survive restarts.
-- **Strategy contract + six reference strategies** (`rsi`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`) — pure `generate_signals(bars, params) -> list[Signal]` modules with a pydantic `Params` model and a `META` constant. Discover them via `market-analyser strategies list [--json]`.
-- **Backtest engine v1** — pure `run(strategy, bars, params, **costs) -> BacktestResult` producing an equity curve, trade log, and metrics; deterministic and cross-process byte-identical modulo run provenance. Results persist to disk + a SQLite index and render in the chart's backtest views.
-- **Technical-analysis surface** under `src/market_analyser/analysis/` — trailing/anti-lookahead indicators, candlestick-pattern detectors, and a `condition_snapshot` (trend / momentum / support-resistance / recent patterns).
-- **Data breadth** — a shared resilient HTTP client (TTL cache + retry + backoff + concurrency cap) behind the TradingView screener, RSS news + per-headline VADER sentiment, StockTwits sentiment, the crypto Fear & Greed index, a live quote, symbol search, multi-timeframe + volume analysis, and a crypto macro-context snapshot.
-- **DeFi wallet analysis** — paste an EVM address to discover decoded positions across Ethereum / Base / Arbitrum / Optimism via Zerion (`scan_wallet` / `POST /defi/scan`), consumed by the `defi-analyst` skill. Requires a Zerion key (see [Configuration](#configuration)).
+- **Strategy contract + eight strategies** (`rsi`, `rsi_stop`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`, `chart_pattern_breakout`) — pure `generate_signals(bars, params) -> list[Signal]` modules (flat/long/**short**) with a pydantic `Params` model and a `META` constant. Discover them via `market-analyser strategies list [--json]`.
+- **Backtest engine** — pure `run(strategy, bars, params, **costs) -> BacktestResult` producing an equity curve, trade log, and extended metrics (Sharpe/Sortino/Calmar/profit factor/…), long **and short**, plus rolling walk-forward validation; deterministic and cross-process byte-identical modulo run provenance. Results persist to disk + a SQLite index and render in the backtest views.
+- **Technical-analysis surface** under `src/market_analyser/analysis/` — trailing/anti-lookahead indicators, candlestick-pattern detectors (span-bearing), classical chart patterns (H&S, double tops/bottoms, triangles, wedges — forming/confirmed lifecycle), volume-weighted support/resistance levels, volume analysis, BTC cycle metrics, and a `condition_snapshot`.
+- **Forecasting** (`forecast/`) — next-bar direction as a calibrated up/down/flat probability from causal features, gated by walk-forward-beats-baseline validation, with versioned model artifacts and full provenance — or an honest "no edge over baseline".
+- **Advisory recommendations** (`advisor/`, the one sanctioned recommend layer) — the `recommend` tool fuses the condition snapshot, a strategy's live signal, its walk-forward edge, and the forecast into a labeled advisory call (direction, entry/stop/target, derived conviction, rationale, basis) or an honest flat. Advisory only: it holds no keys and places no orders.
+- **Watchlist alerting** (`alerts/`) — persisted condition watches (indicator threshold / pattern / strategy signal) evaluated by an in-sidecar scheduler on closed bars; edge-triggered, condition-only `alert.triggered` events feed an Alerts view + toast and an agent polling leg.
+- **Data breadth** — a shared resilient HTTP client (TTL cache + retry + backoff + concurrency cap) behind Yahoo, Binance (klines + funding/open-interest), the TradingView screener, RSS news + per-headline VADER sentiment, StockTwits sentiment, the crypto Fear & Greed index, CoinGecko macro context, CoinMetrics MVRV, live quotes, symbol search, and multi-timeframe + volume analysis. External metric series are historized in SQLite behind an `as_of` anti-lookahead read contract.
+- **DeFi wallet analysis** — paste an EVM address to discover decoded positions across Ethereum / Base / Arbitrum / Optimism via Zerion (`scan_wallet` / `POST /defi/scan`), enriched with deep on-chain LP state (tick range, in-range, uncollected fees) via direct RPC; consumed by the `defi-analyst` skill. Requires a Zerion key (see [Configuration](#configuration)).
 - **Secure Electron shell** — `contextIsolation`, `sandbox`, no node integration, double-CSP, dual-bearer auth, in-app Light/Dark/System theming. The renderer reaches the sidecar only through a typed `window.api.*` bridge.
 
 ## Architecture at a glance
@@ -32,20 +35,30 @@ flowchart LR
   end
 
   subgraph sidecar["src/market_analyser (Python sidecar)"]
-    api["FastAPI app<br/>(/healthz, /ohlcv, /annotations,<br/>/events SSE, /settings, /search, /mcp)"]
-    mcpapp["FastMCP server<br/>(data, annotations, show_*,<br/>backtest, screener, news/sentiment,<br/>quote, search, analyze_symbol)"]
-    provider["MarketDataProvider<br/>(cache-aware, as_of-gated)"]
-    strategies["strategies/<br/>(rsi, bollinger, macd,<br/>ema_cross, supertrend, donchian)"]
-    backtest["backtest/<br/>(engine v1, BacktestResult,<br/>signals_to_trades, Trade)"]
-    analysis["analysis/<br/>(indicators, patterns,<br/>condition_snapshot)"]
-    cache[("SQLite<br/>(bars, annotations,<br/>backtest_runs, Alembic-migrated)")]
-    adapter["Data adapters<br/>(Yahoo OHLCV/quote/search,<br/>TradingView screener, RSS news,<br/>StockTwits, Fear & Greed)"]
+    api["FastAPI app<br/>(/healthz, /ohlcv, /quote, /annotations,<br/>/backtests, /news, /search, /scan_patterns,<br/>/defi, /watches, /alerts, /settings,<br/>/events SSE, /mcp)"]
+    mcpapp["FastMCP server (~35 tools)<br/>(data, annotations, show_*, backtest,<br/>screener, news/sentiment, quote, search,<br/>analyze_symbol, patterns/levels, cycle +<br/>derivatives metrics, forecast, recommend,<br/>scan_wallet, watches)"]
+    provider["MarketDataProvider<br/>(cache-aware, as_of-gated,<br/>per-symbol Yahoo/Binance routing)"]
+    strategies["strategies/<br/>(8 modules, flat/long/short)"]
+    backtest["backtest/<br/>(engine, metrics, walk-forward,<br/>live-signal eval)"]
+    analysis["analysis/<br/>(indicators, patterns, levels,<br/>volume, cycles, condition_snapshot)"]
+    forecast["forecast/<br/>(calibrated direction probability,<br/>walk-forward gated)"]
+    advisor["advisor/<br/>(labeled advisory Recommendation)"]
+    alerts["alerts/<br/>(in-sidecar watch scheduler,<br/>edge-triggered alerts)"]
+    defi["defi/<br/>(wallet discovery + deep LP state)"]
+    cache[("SQLite<br/>(bars, annotations, backtest_runs,<br/>metric_points, watches, alerts —<br/>Alembic-migrated)")]
+    adapter["Data adapters<br/>(Yahoo, Binance klines + derivatives,<br/>TradingView screener, RSS news, StockTwits,<br/>Fear & Greed, CoinGecko, CoinMetrics, Zerion)"]
     api --> provider --> cache
     api -. mounts .-> mcpapp
     mcpapp --> provider
     provider --> adapter
     backtest -. consumes .-> strategies
     mcpapp -. consumes .-> analysis
+    mcpapp -. consumes .-> forecast
+    mcpapp -. consumes .-> advisor
+    mcpapp -. consumes .-> defi
+    alerts -. evaluates via .-> provider
+    advisor -. fuses .-> forecast
+    advisor -. fuses .-> backtest
   end
 
   renderer -- "HTTP + Bearer<br/>(127.0.0.1)" --> api
@@ -122,7 +135,7 @@ The installer bundles `src/market_analyser/` as `extraResources` so the runtime 
 
 ## Configuration
 
-The sidecar accepts an optional `--config <path>` to a JSON file; defaults are sensible for development. The one key today is `db_path` (default `<user-data-dir>/market-analyser/cache.sqlite`), the SQLite location for the `bars`, `annotations`, and `backtest_runs` tables.
+The sidecar accepts an optional `--config <path>` to a JSON file; defaults are sensible for development. The one key today is `db_path` (default `<user-data-dir>/market-analyser/cache.sqlite`), the SQLite location for the `bars`, `annotations`, `backtest_runs`, `metric_points`, `watches`, and `alerts` tables.
 
 Secrets:
 
@@ -159,13 +172,18 @@ market-analyser/
 │   │   ├── mcp_tools/            # one module per MCP tool (register_* + input models)
 │   │   ├── mcp_secret.py         # long-lived MCP secret read/rotate
 │   │   ├── lockfile.py           # standalone-sidecar lockfile + idempotent attach
-│   │   ├── events/               # SSE event bus
-│   │   └── routes/               # /ohlcv, /annotations, /events, /settings, /search, /backtests, /ui_events
+│   │   └── routes/               # /ohlcv, /quote, /annotations, /events, /settings, /search, /backtests,
+│   │                             #   /news, /scan_patterns, /defi, /watches, /alerts, /ui_events, /agent_mode, /stop
+│   ├── events/                   # neutral SSE event bus + typed envelope registry (no api dependency)
 │   ├── contracts/                # Strategy contract (Signal, BaseParams, META, discover())
-│   ├── strategies/               # rsi, bollinger, macd, ema_cross, supertrend, donchian
-│   ├── backtest/                 # backtest engine v1 + BacktestResult + signals_to_trades + Trade
-│   ├── analysis/                 # indicators, candlestick patterns, condition_snapshot
-│   ├── data/                     # MarketDataProvider Protocol, timeframes registry, adapters/
+│   ├── strategies/               # rsi, rsi_stop, bollinger, macd, ema_cross, supertrend, donchian, chart_pattern_breakout
+│   ├── backtest/                 # engine (flat/long/short) + metrics + walk-forward + live-signal eval
+│   ├── analysis/                 # indicators, candlestick + chart patterns, levels, volume, cycles, condition_snapshot
+│   ├── forecast/                 # causal features, calibrated direction model, registry, walk-forward gate
+│   ├── advisor/                  # Recommendation model + fuse() (the one sanctioned recommend layer)
+│   ├── alerts/                   # watch evaluators + edge reducer + in-sidecar scheduler
+│   ├── defi/                     # wallet discovery, scan job, deep LP enrichment
+│   ├── data/                     # MarketDataProvider Protocol, timeframes registry, metric-series registry, adapters/
 │   ├── annotations/              # repository + Pydantic model
 │   ├── persistence/              # SQLite engine, Alembic migrations
 │   ├── cli.py                    # `market-analyser strategies list` etc.
@@ -175,7 +193,8 @@ market-analyser/
 │   ├── electron/                 # main process, sidecar supervisor, IPC, lockfile attach
 │   ├── electron/preload/         # window.api preload bridge
 │   ├── renderer/                 # React (Vite + lightweight-charts)
-│   │   ├── views/                # OhlcvView, BacktestView, RecentBacktestsView, SettingsView
+│   │   ├── views/                # OhlcvView, BacktestView, RecentBacktestsView, LiveSignalView,
+│   │   │                         #   RecommendationsView, NewsView, AlertsView, SettingsView
 │   │   ├── components/           # CandlestickChart, SymbolPicker, AgentModeToggle, Toast
 │   │   ├── handlers/             # SSE chart-command handlers
 │   │   ├── hooks/                # useOhlcv, useEventStream, useAnnotationsPoll, …
@@ -194,7 +213,7 @@ market-analyser/
 └── README.md                     # this file
 ```
 
-The `runs/` directory (gitignored) holds backtest and analysis run artifacts. `positions/` (gitignored) holds the DeFi analyst's positions file when that subsystem lands.
+The `runs/` directory (gitignored) holds backtest, analysis, DeFi, and advice run artifacts. `positions/` (gitignored) holds the DeFi analyst's positions file (sensitive — never committed).
 
 ## Development
 
@@ -242,7 +261,7 @@ Conventional commits, enforced by `commitizen` and a `commit-msg` Husky hook. Im
 
 Design direction lives in [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md); in-flight and approved plans are indexed in [`docs/architecture/plans/README.md`](docs/architecture/plans/README.md).
 
-The app is evolving from a read-only research + decision-support tool toward **contained, gated decision-execution**. A user-approved program (2026-06-05; Plans 0036–0046) adds, in priority order: **price forecasting** (next-bar direction-as-probability, walk-forward-validated), an **advisory layer** that synthesises conditions / signals / backtests / forecasts into labeled, basis-carrying recommendations, **cross-venue portfolio management + position risk** (Binance + DeFi + a manual positions file, average-cost basis), **Polymarket prediction-market odds** as a read-only signal, and **assisted, testnet-first trade execution** on Binance USDⓈ-M Futures. The two principle crossings — *recommend* and *act* — are each contained to one new, gated skill (`advisor`, `trader`); the read-only analyst surfaces keep their "conditions are facts" contract, every order requires explicit human confirmation, and execution stays testnet-only until the full order loop is proven. **None of this program is implemented yet — these are approved plans, not shipped features.**
+The app is evolving from a read-only research + decision-support tool toward **contained, gated decision-execution**. A user-approved program (2026-06-05; Plans 0036–0046) adds, in priority order: **price forecasting**, an **advisory layer**, **cross-venue portfolio management + position risk**, **Polymarket prediction-market odds** as a read-only signal, and **assisted, testnet-first trade execution** on Binance USDⓈ-M Futures. As of 2026-07-03, the first two pillars have **shipped**: the forecasting foundation (next-bar direction-as-probability, walk-forward-validated) and the advisory layer + its UI (labeled, basis-carrying recommendations via the `recommend` tool and the `advisor` skill). A separately-approved crypto intelligence program also shipped (cycle/derivatives/on-chain metric series, Binance klines, forecast-feature groundwork) along with the watchlist alerting loop. Still plans, not features: the forecast UI + feature-set v2, DeFi P&L reconstruction, Polymarket odds, the portfolio pillar, and the whole execution arc. The two principle crossings — *recommend* and *act* — are each contained to one gated skill (`advisor`, shipped; `trader`, future); the read-only analyst surfaces keep their "conditions are facts" contract, every order will require explicit human confirmation, and execution stays testnet-only until the full order loop is proven.
 
 **Auto-update** (installer auto-update) is deferred to a future packaging plan.
 

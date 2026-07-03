@@ -55,17 +55,12 @@ The indicator module is written in-house per ADR-0009. **Verify the file exists 
 Read `src/market_analyser/data/types.py` (for `Bar`) and `src/market_analyser/contracts/strategy.py` (for everything else) for the authoritative versions. For grounding:
 
 - A **`Bar`** lives in `data/types.py` (Plan 0001 phase 2) and is re-exported from `market_analyser.contracts` for ergonomic imports. Shape: `symbol: str`, `timeframe: str`, `event_ts: datetime` (UTC-aware), `open/high/low/close: float`, `volume: float` (≥ 0), `source: str`.
-- A **`Signal`** lives in `contracts/strategy.py` (Plan 0002 phase 1). Shape: `bar_index: int` (the index into the bars list where the signal fires), `kind: SignalKind` (`ENTER_LONG` / `EXIT_LONG`; `ENTER_SHORT`/`EXIT_SHORT` reserved), `reason: str | None`.
+- A **`Signal`** lives in `contracts/strategy.py` (Plan 0002 phase 1). Shape: `bar_index: int` (the index into the bars list where the signal fires), `kind: SignalKind` (`ENTER_LONG` / `EXIT_LONG` / `ENTER_SHORT` / `EXIT_SHORT` — shorts are fully supported since Plan 0053 / ADR-0050), `reason: str | None`.
 - The strategy parameter base class is **`BaseParams`** — not `Params` — so your strategy can declare `class Params(BaseParams):` without name shadowing.
 
 
-## Current state (as of 2026-05-17)
+## Current state (as of 2026-07-03 — verify with `Glob`/`Read`; trust the tree over this section)
 
-- `docs/architecture/` exists and contains the contract ADR (`adrs/0004-strategy-interface.md`) and plan (`plans/0002-strategy-interface.md`).
-- **No code has been written yet.** The bootstrap plan (`plans/0001-bootstrap.md`) is in `draft` status; until it's implemented, there's no `src/market_analyser/` to put strategies into.
-When asked to write a strategy in this state, you have two options:
-
-1. **Bootstrap-friendly mode**: produce the strategy file and smoke test under the *intended* paths even though the parent directories don't exist. The user can move them once bootstrap lands. Say one line acknowledging this.
-2. **Block on bootstrap**: refuse to write code until `contracts/strategy.py` and `analysis/indicators.py` exist. Use this if the user's prompt implies they expect the code to run today.
-
-Default to (1) unless the user clearly expects code that runs. Either way, **say which mode you picked** so the user can correct course.
+- **The contract and its consumers are fully shipped.** `contracts/strategy.py` (Signal, SignalKind incl. shorts, BaseParams, META, `discover()`), `analysis/` (indicators, candlestick + chart patterns, levels, volume — ADR-0023), and the backtest engine (flat/long/short, ADR-0050) all exist. Strategies run for real, live (`evaluate_signals`) and historically (`run_backtest`).
+- **Eight strategies live in `src/market_analyser/strategies/`**: `rsi`, `rsi_stop`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`, `chart_pattern_breakout`. Each has a pytest smoke test; `tests/test_cli.py` pins the roster count — registering a new strategy means bumping that assertion in the same commit.
+- Write new strategies directly against the real contract; no bootstrap-friendly mode is needed anymore. A no-lookahead truncation-invariance test (re-run on every bars prefix) is the house pattern for new modules.
