@@ -70,8 +70,10 @@ runs/
 
 # Trained forecast model artifacts (Plan 0036 / ADR-0040): versioned, gitignored,
 # sibling to runs/. They are data, not credentials, but are regenerable from the
-# cached bars + seed, so they are never versioned.
-models/
+# cached bars + seed, so they are never versioned. Anchored to the repo root:
+# an unanchored `models/` also swallowed new files under
+# src/market_analyser/persistence/models/ (caught by Plan 0060 phase 1).
+/models/
 
 # Desktop (Electron) — will be populated in phase 4
 desktop/node_modules/

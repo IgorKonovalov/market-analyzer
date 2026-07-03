@@ -55,6 +55,9 @@ const EMIT = new Set([
   'QuoteResponse',
   'ScanPatternsRequest',
   'ScanPatternsResponse',
+  'WatchOut',
+  'AlertOut',
+  'AlertsPage',
 ])
 
 const HEADER = [
@@ -84,7 +87,11 @@ const PYTHON_DUMP_SCRIPT = [
   'annotations_repo = AnnotationsRepository(session_factory)',
   'backtest_repo = BacktestRunsRepository(session_factory)',
   'runs_dir = pathlib.Path(tempfile.mkdtemp(prefix="gen-types-runs-"))',
-  "app = create_app(secret='gen-types-placeholder', mcp_secret='gen-types-placeholder', mcp_secret_path=pathlib.Path(tempfile.gettempdir())/'gen-types-placeholder.json', annotations_repository=annotations_repo, backtest_runs_repository=backtest_repo, runs_dir=runs_dir)",
+  // `engine=engine` mounts the persistence-gated routers (Plan 0060's
+  // /watches + /alerts among them) so their response_models land in
+  // components.schemas. The explicit repos still win over the engine-built
+  // defaults, and no network adapter is exercised (construction-only).
+  "app = create_app(secret='gen-types-placeholder', mcp_secret='gen-types-placeholder', mcp_secret_path=pathlib.Path(tempfile.gettempdir())/'gen-types-placeholder.json', annotations_repository=annotations_repo, backtest_runs_repository=backtest_repo, runs_dir=runs_dir, engine=engine)",
   'print(json.dumps(app.openapi()))',
 ].join('; ')
 

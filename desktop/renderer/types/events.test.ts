@@ -46,6 +46,7 @@ interface DumpedSchemas {
   SignalEvaluatedPayloadV1: JsonSchema
   SignalEvaluation: JsonSchema
   EvaluatedSignal: JsonSchema
+  AlertTriggeredPayloadV1: JsonSchema
   RecommendationCompletedPayloadV1: JsonSchema
   Recommendation: JsonSchema
   RecommendationBasis: JsonSchema
@@ -63,7 +64,8 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    ChartHighlightPayloadV1, RunCompletedPayloadV1,',
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
-    '    SignalEvaluatedPayloadV1, RecommendationCompletedPayloadV1,',
+    '    SignalEvaluatedPayloadV1, AlertTriggeredPayloadV1,',
+    '    RecommendationCompletedPayloadV1,',
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'from market_analyser.advisor.models import Recommendation, RecommendationBasis',
@@ -83,6 +85,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "SignalEvaluatedPayloadV1": SignalEvaluatedPayloadV1.model_json_schema(),',
     '    "SignalEvaluation": SignalEvaluation.model_json_schema(),',
     '    "EvaluatedSignal": EvaluatedSignal.model_json_schema(),',
+    '    "AlertTriggeredPayloadV1": AlertTriggeredPayloadV1.model_json_schema(),',
     '    "RecommendationCompletedPayloadV1": RecommendationCompletedPayloadV1.model_json_schema(),',
     '    "Recommendation": Recommendation.model_json_schema(),',
     '    "RecommendationBasis": RecommendationBasis.model_json_schema(),',
@@ -352,6 +355,30 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     expect(requiredNames(dumped.EvaluatedSignal)).toEqual(['bar_index', 'event_ts', 'kind'])
     expect(literalValues(dumped.EvaluatedSignal, 'kind')).toEqual(
       ['enter_long', 'exit_long', 'enter_short', 'exit_short'].sort(),
+    )
+  })
+
+  it('AlertTriggeredPayloadV1 fields match (all required; kind is a closed literal set)', () => {
+    expect(propertyNames(dumped.AlertTriggeredPayloadV1)).toEqual([
+      'condition',
+      'fired_at',
+      'kind',
+      'symbol',
+      'timeframe',
+      'values',
+      'watch_id',
+    ])
+    expect(requiredNames(dumped.AlertTriggeredPayloadV1)).toEqual([
+      'condition',
+      'fired_at',
+      'kind',
+      'symbol',
+      'timeframe',
+      'values',
+      'watch_id',
+    ])
+    expect(literalValues(dumped.AlertTriggeredPayloadV1, 'kind')).toEqual(
+      ['indicator_threshold', 'pattern', 'strategy_signal'].sort(),
     )
   })
 

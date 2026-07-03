@@ -1,0 +1,8 @@
+/* Fixed overlay corner for the alert toast — above every view, never
+ * reflowing the layout underneath. */
+.host {
+  position: fixed;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 100;
+}

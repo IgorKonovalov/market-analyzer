@@ -19,15 +19,18 @@
  */
 import { useEffect, useReducer, useState } from 'react'
 
+import { notifyAlert } from './handlers/alertBus'
 import { notifyBackfill } from './handlers/backfillBus'
 import { chartReducer, initialChartState, DEFAULT_LOOKBACK_DAYS } from './handlers/chartHandlers'
 import { notifyRunCompleted } from './handlers/runCompletedBus'
 import { useBacktestResult } from './hooks/useBacktestResult'
 import { useEventStream } from './hooks/useEventStream'
 import styles from './App.module.css'
+import { AlertToaster } from './components/AlertToaster'
 import { ThemeToggle } from './components/ThemeToggle'
 import type { Timeframe } from './lib/timeframes'
 import type { Recommendation, SignalEvaluation } from './types/events'
+import { AlertsView } from './views/AlertsView'
 import { BacktestView } from './views/BacktestView'
 import { LiveSignalView } from './views/LiveSignalView'
 import { NewsView } from './views/NewsView'
@@ -44,6 +47,7 @@ type View =
   | 'settings'
   | 'backtest'
   | 'recent-backtests'
+  | 'alerts'
 
 /**
  * Test-only window-attached snapshot of the chart state. The Playwright
@@ -124,6 +128,9 @@ export function App(): JSX.Element {
     onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
     onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
     onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
+    // Plan 0060: validated alert payloads fan out on the alertBus — the
+    // AlertToaster (any view) and AlertsView's live-prepend both subscribe.
+    onAlertTriggered: (payload) => notifyAlert(payload),
     onUpdateDropped: () => {
       console.warn('[App] chart.update_dropped — sidecar queue was full')
     },
@@ -223,6 +230,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'alerts' ? 'page' : undefined}
+            onClick={() => setView('alerts')}
+            data-testid="nav-alerts"
+          >
+            Alerts
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => setView('settings')}
             data-testid="nav-settings"
@@ -248,12 +264,14 @@ export function App(): JSX.Element {
       )}
       {view === 'signals' && <LiveSignalView evaluation={latestEvaluation} />}
       {view === 'recommendations' && <RecommendationsView recommendation={latestRecommendation} />}
+      {view === 'alerts' && <AlertsView />}
       {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}
       {view === 'recent-backtests' && (
         <RecentBacktestsView onSelect={onSelectRun} refreshKey={recentListRefresh} />
       )}
       {view === 'backtest' && <BacktestPanel state={backtestState} onBack={onBackToRecent} />}
+      <AlertToaster />
     </main>
   )
 }

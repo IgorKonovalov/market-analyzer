@@ -361,6 +361,30 @@ class DefiScanFailedPayloadV1(BaseModel):
     message: str
 
 
+class AlertTriggeredPayloadV1(BaseModel):
+    """`alert.triggered v1` payload (Plan 0060, ADR-0055): a watch's condition
+    transitioned false→true on its latest evaluation.
+
+    **Condition-only** by construction: the triggering fact (`condition`, a
+    human-readable statement like ``rsi 28.44 < 30``), the numbers behind it
+    (`values`), and identity/timing fields. Deliberately absent: direction,
+    action, conviction, side, size — an alert from a background loop must
+    never cross the ADR-0029 advisory boundary (`extra="forbid"` plus the
+    schema test in `tests/alerts/test_scheduler.py` pin this).
+    """
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    watch_id: int
+    symbol: str
+    timeframe: str
+    kind: Literal["indicator_threshold", "pattern", "strategy_signal"]
+    fired_at: datetime
+    condition: str
+    values: dict[str, float]
+
+
 TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.show": ChartShowPayloadV1,
     "chart.update": ChartUpdatePayloadV1,
@@ -376,6 +400,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "defi.scan_progress": DefiScanProgressPayloadV1,
     "defi.scan_completed": DefiScanCompletedPayloadV1,
     "defi.scan_failed": DefiScanFailedPayloadV1,
+    "alert.triggered": AlertTriggeredPayloadV1,
 }
 
 

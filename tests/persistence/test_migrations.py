@@ -211,9 +211,84 @@ def test_metric_points_table_has_expected_columns_and_pk_after_upgrade() -> None
         engine.dispose()
 
 
-def test_metric_points_migration_is_reversible_single_step() -> None:
+def test_watches_and_alerts_tables_have_expected_columns_after_upgrade() -> None:
+    """Plan 0060 phase 1: `watches` + `alerts` land at head with the ADR-0055
+    shape — including `last_state` (the persisted edge-detector memory) and the
+    two alert-history indexes."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        inspector = inspect(engine)
+        assert "watches" in inspector.get_table_names()
+        assert "alerts" in inspector.get_table_names()
+        watch_columns = {c["name"] for c in inspector.get_columns("watches")}
+        assert watch_columns == {
+            "id",
+            "symbol",
+            "timeframe",
+            "kind",
+            "params",
+            "interval_seconds",
+            "enabled",
+            "last_state",
+            "created_at",
+        }
+        alert_columns = {c["name"] for c in inspector.get_columns("alerts")}
+        assert alert_columns == {"id", "watch_id", "fired_at", "payload"}
+        index_names = {idx["name"] for idx in inspector.get_indexes("alerts")}
+        assert {"ix_alerts_watch_id", "ix_alerts_fired_at"} <= index_names
+    finally:
+        engine.dispose()
+
+
+def test_watches_alerts_migration_is_reversible_single_step() -> None:
     """`upgrade head -> downgrade -1 -> upgrade head` removes and restores
-    `metric_points` without disturbing the rest of the schema."""
+    `watches`/`alerts` without disturbing the rest of the schema."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+
+        def snapshot() -> dict[str, set[str]]:
+            insp = inspect(engine)
+            return {
+                table: {c["name"] for c in insp.get_columns(table)}
+                for table in insp.get_table_names()
+            }
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_first = snapshot()
+        assert "watches" in head_first
+        assert "alerts" in head_first
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "-1")
+        after_down = snapshot()
+        assert "watches" not in after_down
+        assert "alerts" not in after_down
+        assert "metric_points" in after_down  # other tables survive
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_second = snapshot()
+        assert head_first == head_second
+    finally:
+        engine.dispose()
+
+
+def test_metric_points_migration_is_reversible_single_step() -> None:
+    """`upgrade head -> downgrade below 0004 -> upgrade head` removes and
+    restores `metric_points` without disturbing the rest of the schema. The
+    downgrade targets the explicit pre-metric_points revision because Plan 0060
+    extended the chain past 0004, so `-1` no longer lands there (the same
+    adjustment the backtest_runs test needed when Plan 0055 extended the
+    chain)."""
     engine = make_engine(":memory:")
     try:
         config = _alembic_config(engine)
@@ -233,7 +308,7 @@ def test_metric_points_migration_is_reversible_single_step() -> None:
 
         with engine.begin() as connection:
             config.attributes["connection"] = connection
-            command.downgrade(config, "-1")
+            command.downgrade(config, "0003_create_backtest_runs")
         after_down = snapshot()
         assert "metric_points" not in after_down
         assert "backtest_runs" in after_down  # other tables survive

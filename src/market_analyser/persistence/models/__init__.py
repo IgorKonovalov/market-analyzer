@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from market_analyser.persistence.models._base import Base
 from market_analyser.persistence.models.backtest_runs import BacktestRunRow
 from market_analyser.persistence.models.metric_points import MetricPointRow
+from market_analyser.persistence.models.watches import AlertRow, WatchRow
 
 
 class BarRow(Base):
@@ -68,4 +69,12 @@ class AnnotationRow(Base):
     )
 
 
-__all__ = ["AnnotationRow", "BacktestRunRow", "BarRow", "Base", "MetricPointRow"]
+__all__ = [
+    "AlertRow",
+    "AnnotationRow",
+    "BacktestRunRow",
+    "BarRow",
+    "Base",
+    "MetricPointRow",
+    "WatchRow",
+]

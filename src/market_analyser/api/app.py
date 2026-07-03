@@ -17,6 +17,8 @@ liveness without holding either secret.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -29,6 +31,7 @@ from sqlalchemy import Engine
 from starlette.routing import Route
 
 from market_analyser import __version__
+from market_analyser.alerts.scheduler import WatchScheduler
 from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.annotations import router as annotations_router
@@ -43,6 +46,7 @@ from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.api.routes.ui_events import router as ui_events_router
+from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
@@ -62,6 +66,10 @@ from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
+from market_analyser.persistence.repositories.watches import (
+    AlertsRepository,
+    WatchesRepository,
+)
 from market_analyser.persistence.repository import BarRepository
 from market_analyser.persistence.secrets import SecretsStore
 
@@ -117,6 +125,8 @@ def create_app(
         raise ValueError("create_app requires a non-empty bearer secret")
 
     metric_points_repository: MetricPointsRepository | None = None
+    watches_repository: WatchesRepository | None = None
+    alerts_repository: AlertsRepository | None = None
     if engine is not None:
         apply_migrations(engine)
         session_factory = make_session_factory(engine)
@@ -124,6 +134,12 @@ def create_app(
         # the F&G / dominance adapters write-through into it (composition-root
         # wiring per ADR-0031), and the metric-series MCP tools read from it.
         metric_points_repository = MetricPointsRepository(session_factory)
+        # The alerting stores (Plan 0060, ADR-0055): watch definitions the
+        # lifespan scheduler ticks + the append-only fire history. Built
+        # whenever persistence exists — the watch MCP toolset and the
+        # scheduler both key off these.
+        watches_repository = WatchesRepository(session_factory)
+        alerts_repository = AlertsRepository(session_factory)
         if provider is None:
             provider = DefaultMarketDataProvider(
                 bar_repository=BarRepository(session_factory),
@@ -205,10 +221,45 @@ def create_app(
             wallet_positions_sources=effective_wallet_sources,
             lp_detail_sources=effective_lp_detail_sources,
             metric_points_repository=metric_points_repository,
+            watches_repository=watches_repository,
+            alerts_repository=alerts_repository,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None
     )
+
+    # The watch scheduler (Plan 0060, ADR-0055): the alerting clock, started
+    # and stopped with the app lifespan below. Constructed only when the
+    # alerting repositories exist (i.e. persistence is wired) — a repo-less
+    # test app has no watches to tick and no scheduler either.
+    watch_scheduler = (
+        WatchScheduler(
+            watches_repository=watches_repository,
+            alerts_repository=alerts_repository,
+            provider=effective_provider,
+            event_bus=effective_event_bus,
+            ui_event_buffer=ui_event_buffer,
+            backfill_coordinator=backfill_coordinator,
+        )
+        if watches_repository is not None and alerts_repository is not None
+        else None
+    )
+
+    @asynccontextmanager
+    async def _scheduler_running() -> AsyncIterator[None]:
+        # The watch scheduler rides the lifespan (ADR-0055): started once the
+        # app is up, cancelled — and awaited — on shutdown so its in-flight
+        # tick finishes or unwinds before the process exits.
+        if watch_scheduler is None:
+            yield
+            return
+        task = asyncio.create_task(watch_scheduler.run())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -219,10 +270,11 @@ def create_app(
         # on SIGTERM; this seam is the fix (ADR-0022).
         try:
             if mcp_components is None:
-                yield
+                async with _scheduler_running():
+                    yield
             else:
                 session_manager, _asgi_app = mcp_components
-                async with session_manager.run():
+                async with session_manager.run(), _scheduler_running():
                     yield
         finally:
             for shutdown_callback in on_shutdown or ():
@@ -264,6 +316,13 @@ def create_app(
     # phase / route can introspect in-flight backfills; the MCP tools receive it
     # directly via create_mcp_components.
     app.state.backfill_coordinator = backfill_coordinator
+    # The watch scheduler (Plan 0060) — None without persistence. /healthz
+    # reads its heartbeat; the alerting MCP tools only touch the repositories.
+    app.state.watch_scheduler = watch_scheduler
+    # The alerting repositories (Plan 0060 phase 4): consumed by the renderer
+    # routes below (watch list, enable/disable, alert history).
+    app.state.watches_repository = watches_repository
+    app.state.alerts_repository = alerts_repository
 
     @app.middleware("http")
     async def bearer_auth(
@@ -322,6 +381,13 @@ def create_app(
         # Electron attach path can confirm sidecar identity. MCP bearer holders
         # are not authorised — `data_dir` is renderer-only.
         body: dict[str, object] = {"ok": True, "version": __version__}
+        if watch_scheduler is not None:
+            # The alerting heartbeat (Plan 0060, ADR-0055): a wedged scheduler
+            # must degrade loudly, and this is the existing health surface.
+            # Liveness + error metadata only — no watch definitions, no alert
+            # payloads, no secrets (error strings name exception types and
+            # watch ids, nothing credential-shaped).
+            body["alert_scheduler"] = watch_scheduler.heartbeat().model_dump(mode="json")
         if authorization:
             scheme, _, token = authorization.partition(" ")
             if scheme.lower() == "bearer" and token and secrets.compare_digest(token, secret):
@@ -366,6 +432,12 @@ def create_app(
     # reaches the same scan job through the `scan_wallet` MCP tool instead.
     if effective_wallet_sources:
         app.include_router(defi_router)
+
+    # The Alerts surface routes (Plan 0060 phase 4): watch list +
+    # enable/disable + alert history. Renderer-bearer-gated by the central
+    # middleware; mounted only when the alerting repositories exist.
+    if watches_repository is not None and alerts_repository is not None:
+        app.include_router(watches_router)
 
     # `POST /settings/stop` is always registered (no MCP-secret dependency).
     # Renderer-bearer-gated by the central middleware; an agent on `/mcp`

@@ -34,8 +34,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api, subscribeToConfigChanges } from '../api/client'
+import { parseAlertTriggered } from '../schemas/alertTriggered'
 import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
 import type {
+  AlertTriggeredPayloadV1,
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
   ChartUpdatePayloadV1,
@@ -61,6 +63,7 @@ export interface EventStreamHandlers {
   onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
   onUpdateDropped?: () => void
+  onAlertTriggered?: (payload: AlertTriggeredPayloadV1) => void
 }
 
 export interface UseEventStreamResult {
@@ -81,6 +84,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'ohlcv.backfill_started': 1,
   'ohlcv.backfilled': 1,
   'ohlcv.backfill_failed': 1,
+  'alert.triggered': 1,
 }
 
 // Phase 4.4 failure-driven recovery thresholds. 3 errors within a 10-second
@@ -258,6 +262,14 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
     case 'ohlcv.backfill_failed':
       handlers.onOhlcvBackfillFailed?.(envelope.payload as OhlcvBackfillFailedPayloadV1)
       return
+    case 'alert.triggered': {
+      // Zod-validated at the boundary (Plan 0060 phase 4, the standing
+      // SSE-validation follow-up): a malformed payload is dropped with a
+      // logged warning inside `parseAlertTriggered`, never rendered.
+      const alert = parseAlertTriggered(envelope.payload)
+      if (alert !== null) handlers.onAlertTriggered?.(alert)
+      return
+    }
     case 'chart.update_dropped':
       handlers.onUpdateDropped?.()
       return
