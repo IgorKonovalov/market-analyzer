@@ -1,6 +1,6 @@
 # ADR-0055 — Alerting runs as an in-sidecar scheduler; alerts are edge-triggered conditions
 
-> **Status:** proposed (accepts at Plan 0060's close)
+> **Status:** accepted (Plan 0060 close, 2026-07-03)
 > **Date:** 2026-06-09
 > **Related plan(s):** 0060-watchlist-alerting-loop (implements)
 > **Related ADRs:** [ADR-0016](0016-standalone-sidecar-mode.md) (the long-lived process this rides), [ADR-0017](0017-live-ui-updates-via-sse.md) (the delivery channel), [ADR-0021](0021-renderer-to-agent-feedback.md) (the agent-pollable pending-events path alerts reuse), [ADR-0029](0029-advisory-recommendation-boundary.md) (the boundary alerts must not cross)
