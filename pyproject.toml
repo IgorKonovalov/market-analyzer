@@ -43,9 +43,11 @@ requires = ["hatchling==1.29.0"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-# Advanced past 2026-05-31 to admit pip 26.1.2, the fix for PYSEC-2026-196
-# (CVE-driven bump per CLAUDE.md; pip is transitive via pip-audit -> pip-api).
-exclude-newer = "2026-06-01"
+# Advanced past 2026-06-19 to admit the fixes for the 2026-07-03 pip-audit
+# batch (CVE-driven bump per CLAUDE.md; all five are transitive): starlette
+# 1.3.1, python-multipart 0.0.31, cryptography 48.0.1, msgpack 1.2.1,
+# pydantic-settings 2.14.2.
+exclude-newer = "2026-06-20"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/market_analyser"]
