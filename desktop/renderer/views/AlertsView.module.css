@@ -1,0 +1,147 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  overflow-y: auto;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 2fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.panel {
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  line-height: var(--line-tight);
+  color: var(--color-fg);
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+}
+
+.watchList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.watchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.watchRow:hover {
+  background: var(--color-bg-hover);
+}
+
+.watchToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.watchSymbol {
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.watchMeta {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.enabled {
+  color: var(--color-bull);
+  font-size: var(--font-size-xs);
+}
+
+.disabled {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+}
+
+.alertList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.alertRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.alertRow:last-child {
+  border-bottom: none;
+}
+
+.alertWhen {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.alertWhat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alertSymbol {
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.alertCondition {
+  color: var(--color-fg);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.disclaimer {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+}

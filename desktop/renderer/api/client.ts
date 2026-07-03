@@ -33,6 +33,8 @@ import type { ScanPatternsRequest } from '../types/sidecar/scan-patterns-request
 import type { ScanPatternsResponse } from '../types/sidecar/scan-patterns-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import type { AgentModeState } from '../types/ui-events'
+import type { AlertsPage } from '../types/sidecar/alerts-page'
+import type { WatchOut } from '../types/sidecar/watch-out'
 
 let cached: SidecarPort | null = null
 const configChangeSubscribers = new Set<() => void>()
@@ -267,6 +269,36 @@ export const api = {
     if (trimmed) params.set('symbol', trimmed)
     if (limit !== undefined) params.set('limit', String(limit))
     return callJson<NewsResponse>(`/news?${params.toString()}`)
+  },
+  /**
+   * The persisted watch definitions (Plan 0060). Renderer-bearer-gated
+   * `GET /watches`. Agent creates via MCP; the viewer only lists + toggles.
+   */
+  getWatches(): Promise<WatchOut[]> {
+    return callJson<WatchOut[]>('/watches')
+  },
+  /** Enable/disable one watch — the single viewer-owned mutation (Plan 0060). */
+  setWatchEnabled(watchId: number, enabled: boolean): Promise<WatchOut> {
+    return callJson<WatchOut>(`/watches/${watchId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+  },
+  /**
+   * Newest-first fired-alert history (Plan 0060). Renderer-bearer-gated
+   * `GET /alerts`; each row's `payload` is the condition-only
+   * `alert.triggered v1` fact.
+   */
+  getAlerts(
+    params: { watchId?: number; offset?: number; limit?: number } = {},
+  ): Promise<AlertsPage> {
+    const search = new URLSearchParams()
+    if (params.watchId !== undefined) search.set('watch_id', String(params.watchId))
+    if (params.offset !== undefined) search.set('offset', String(params.offset))
+    if (params.limit !== undefined) search.set('limit', String(params.limit))
+    const query = search.toString()
+    return callJson<AlertsPage>(query ? `/alerts?${query}` : '/alerts')
   },
   getMcpSecret(): Promise<McpSecretRecord> {
     return callJson<McpSecretRecord>('/settings/mcp-secret')

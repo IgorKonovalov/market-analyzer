@@ -178,6 +178,27 @@ export interface OhlcvBackfillFailedPayloadV1 {
   message: string
 }
 
+/** Closed set — mirror of the pydantic `Literal` on `AlertTriggeredPayloadV1.kind`. */
+export type WatchKind = 'indicator_threshold' | 'pattern' | 'strategy_signal'
+
+/** Mirror of the pydantic `AlertTriggeredPayloadV1` (Plan 0060 / ADR-0055): a
+ * watch's condition transitioned false→true. Condition-only by construction
+ * (ADR-0029) — `condition` is the human-readable fact (e.g. `rsi 28.44 < 30`),
+ * `values` the numbers behind it; there is deliberately no direction/action/
+ * conviction field. Unlike the older event mirrors, this payload is ALSO
+ * Zod-validated at the SSE boundary (`schemas/alertTriggered.ts`) — the
+ * standing SSE-validation follow-up pattern starts here. */
+export interface AlertTriggeredPayloadV1 {
+  watch_id: number
+  symbol: string
+  timeframe: string
+  kind: WatchKind
+  /** ISO 8601 UTC timestamp. */
+  fired_at: string
+  condition: string
+  values: Record<string, number>
+}
+
 export type EnvelopeType =
   | 'chart.show'
   | 'chart.update'
@@ -188,6 +209,7 @@ export type EnvelopeType =
   | 'ohlcv.backfill_started'
   | 'ohlcv.backfilled'
   | 'ohlcv.backfill_failed'
+  | 'alert.triggered'
 
 export interface Envelope<T = unknown> {
   type: string
@@ -223,5 +245,9 @@ export type OhlcvBackfilledEnvelope = Envelope<OhlcvBackfilledPayloadV1> & {
 }
 export type OhlcvBackfillFailedEnvelope = Envelope<OhlcvBackfillFailedPayloadV1> & {
   type: 'ohlcv.backfill_failed'
+  version: 1
+}
+export type AlertTriggeredEnvelope = Envelope<AlertTriggeredPayloadV1> & {
+  type: 'alert.triggered'
   version: 1
 }
