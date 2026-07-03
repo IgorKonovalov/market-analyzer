@@ -10,9 +10,10 @@ internals — guarded by an import-lint test.
 **A directional call requires every leg to agree; anything less is flat.**
 The forecast must ship a probability (baseline beaten, ADR-0030) whose argmax
 is directional; at least one live signal must imply the same direction with
-none opposing; and the walk-forward edge must be positive. Each failed leg
-becomes a named blocker in the flat recommendation's rationale — an honest
-"no actionable edge", never a fabricated call.
+none opposing; and the walk-forward edge must be positive **and belong to one
+of the agreeing strategies** (an edge for a strategy that did not vote backs
+nothing). Each failed leg becomes a named blocker in the flat recommendation's
+rationale — an honest "no actionable edge", never a fabricated call.
 
 **Conviction is derived, never invented** (the plan's open question, resolved
 here as the documented monotone mapping):
@@ -157,8 +158,10 @@ def _require_consistent_inputs(
     walk_forward: WalkForwardResult | None,
     forecast: ForecastResult,
 ) -> None:
-    """All inputs must describe the same symbol and timeframe — fusing across
-    symbols/timeframes would produce a well-formed but meaningless call."""
+    """All inputs must describe the same symbol, timeframe, and as-of bar —
+    fusing across symbols/timeframes, or a fresh snapshot with a stale leg,
+    would produce a well-formed but meaningless call. (`WalkForwardResult`
+    carries no as-of field; its currency is the caller's bar series.)"""
 
     expected = (snapshot.symbol, snapshot.timeframe)
     for name, got in (
@@ -172,6 +175,19 @@ def _require_consistent_inputs(
     ):
         if got != expected:
             raise ValueError(f"inconsistent fusion inputs: snapshot is {expected}, {name} is {got}")
+
+    for name, got_ts in (
+        ("forecast.as_of_bar_ts", forecast.as_of_bar_ts),
+        *(
+            (f"signals[{s.strategy_id}].evaluated_through_ts", s.evaluated_through_ts)
+            for s in signals
+        ),
+    ):
+        if got_ts != snapshot.as_of:
+            raise ValueError(
+                f"inconsistent fusion inputs: snapshot as-of is {snapshot.as_of}, "
+                f"{name} is {got_ts}"
+            )
 
 
 def _build_basis(
@@ -238,8 +254,8 @@ def fuse(
     (the as-of bar) — the price anchor for the level geometry. `walk_forward`
     is the out-of-sample validation of the strategy whose live signal is being
     considered; ``None`` means no backtested basis exists, which blocks any
-    directional call. Raises `ValueError` on inconsistent symbol/timeframe
-    inputs or a non-positive `last_close`.
+    directional call. Raises `ValueError` on inconsistent symbol/timeframe or
+    as-of inputs, or a non-positive `last_close`.
     """
 
     if last_close <= 0.0:
@@ -271,6 +287,13 @@ def fuse(
         blockers.append("no walk-forward backtest basis supplied")
     elif edge_factor <= 0.0:
         blockers.append(f"no backtested edge: walk-forward sharpe_mean={sharpe_mean}")
+    elif signal_dir is not None and walk_forward.strategy_id not in (
+        long_ids if signal_dir == "long" else short_ids
+    ):
+        blockers.append(
+            f"walk-forward edge is for {walk_forward.strategy_id!r}, "
+            "which is not among the agreeing signals"
+        )
 
     basis = _build_basis(snapshot, signals, walk_forward, forecast)
 

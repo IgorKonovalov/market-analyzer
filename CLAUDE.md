@@ -8,7 +8,7 @@ This file is the orientation map for the project's skill ecosystem. Skills do th
 
 ## Skill ecosystem
 
-Nine skills under `.claude/skills/`. Each has its own SKILL.md + references. Trust their descriptions — Claude Code triggers them automatically. This table is the orientation, not the trigger.
+Ten skills under `.claude/skills/`. Each has its own SKILL.md + references. Trust their descriptions — Claude Code triggers them automatically. This table is the orientation, not the trigger.
 
 | Skill              | Owns                                            | Triggers on                                                       |
 |--------------------|-------------------------------------------------|-------------------------------------------------------------------|
@@ -19,12 +19,14 @@ Nine skills under `.claude/skills/`. Each has its own SKILL.md + references. Tru
 | `ui-builder`       | `desktop/`                                      | React views, charts, Electron shell, IPC, renderer plumbing       |
 | `market-analyst`   | Read-only TradFi analysis → `runs/analysis/`    | Candlestick scans, trend/momentum snapshots, screeners            |
 | `defi-analyst`     | Read-only DeFi analysis → `runs/defi/`          | Pool screens, LP positions, lending health, on-chain audits       |
+| `advisor`          | Advisory recommendations → `runs/advice/`       | "Should I buy/sell/short/exit", "what's your call", rebalance asks |
 | `skill-creator`    | `.claude/skills/`                               | Creating, editing, or measuring skills (meta)                     |
 | `safe-commit`      | The commit ceremony (explicit-path staging, gates, inline PowerShell here-string message) | Any imminent commit — "commit this", "commit the phase"  |
 
 **Hard splits to remember:**
 - **TradFi vs DeFi.** Stocks/indices/futures → `market-analyst`. Pools/LPs/lending → `defi-analyst`. Never both.
 - **Analyst vs backtester.** "What's the current condition" → analyst. "How would this have done historically" → backtester.
+- **Analyst vs advisor.** "What IS" (conditions, health, trend) → analyst. "What should I DO" (buy/sell/exit/rebalance) → `advisor`, the one labeled advisory layer (ADR-0029). Analysts never recommend; the advisor never re-reports bare conditions.
 - **Author vs implementer.** Architect designs; dev/sibling skills implement. Never invert.
 
 ## Canonical workflows
@@ -49,6 +51,7 @@ Direct implementation, conventional-commit, no plan, no review. If the fix revea
 - **Want a real read on a symbol**: `market-analyst` Mode 1 (pattern scan) or Mode 2 (snapshot). Reads cached bars.
 - **Want to encode it**: `strategy-author` writes the strategy module.
 - **Want to test it**: `backtester` runs against historical bars.
+- **Want a call** ("should I buy", "long or short", "rebalance my book"): `advisor` — fuses conditions + live signal + walk-forward edge + forecast via the `recommend` tool into a labeled advisory recommendation, or an honest "no actionable edge".
 - **Want to see it in the app**: `ui-builder` renders the result.
 
 ### When you don't know which skill
@@ -64,7 +67,7 @@ These apply to **every** skill that writes code or analysis in this repo.
 - **No secrets in code or logs.** Bearer tokens, API keys, the IPC per-launch secret — never persisted, never logged. `secrets.json` (when it exists) lives outside the repo.
 - **Security defaults are not optional.** Electron renderer: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, double-CSP. Renderer never imports Node, never reaches the network except via the typed sidecar fetch client (which injects the bearer).
 - **Validate at boundaries.** Pydantic for sidecar inputs, Zod for IPC payloads, typed responses for sidecar HTTP. Don't validate again inside trusted code paths.
-- **Conditions are facts, decisions are the user's.** Analyst skills (`market-analyst`, `defi-analyst`) report conditions; they never recommend buy/sell/exit/rebalance.
+- **Conditions are facts, decisions are the user's.** Analyst skills (`market-analyst`, `defi-analyst`) report conditions; they never recommend buy/sell/exit/rebalance. The **one sanctioned carve-out** is the `advisor` skill ([ADR-0029](docs/architecture/adrs/0029-advisory-recommendation-boundary.md)): it may recommend — labeled advisory, always carrying rationale + backtested/forecast basis — but never acts (no orders, no trade keys; execution is ADR-0025's untaken decision). The crossing lives in that one layer only; it never leaks back into the analysts.
 - **Commit hygiene under concurrency.** Parallel sessions share one working tree, so stage only the files you changed, by explicit path — **never `git add -A` / `.` / `--all` / `:/`** (a `PreToolUse` hook denies broad staging). `git status` first; never stage, stash, or `checkout` another session's in-progress files. Never rewrite history (no amend/rebase/reset), never push. The `/safe-commit` skill is the ceremony that encodes all of this.
 
 ## Where things live
@@ -83,11 +86,12 @@ src/market_analyser/
 ├── persistence/  # SQLite + Alembic + repositories — dev owns
 ├── strategies/   # strategy-author owns
 ├── backtest/     # backtester owns
-└── analysis/     # market-analyst's deps (patterns, indicators surface — to be authored)
+├── analysis/     # market-analyst's deps (patterns, indicators surface — to be authored)
+└── advisor/      # Recommendation model + fusion (dev owns the code; the `advisor` skill consumes it via the `recommend` tool)
 
 desktop/          # ui-builder owns end-to-end (Electron main + preload + React renderer)
 
-runs/             # gitignored — backtest, analysis, defi artifacts
+runs/             # gitignored — backtest, analysis, defi, advice artifacts
 positions/        # gitignored — defi-analyst's positions.yaml (sensitive)
 ```
 

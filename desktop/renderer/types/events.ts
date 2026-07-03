@@ -148,6 +148,49 @@ export interface SignalEvaluatedPayloadV1 {
   evaluation: SignalEvaluation
 }
 
+/** The JSON-representable value grain of a basis summary — mirror of the
+ * pydantic `BasisValue` (flat scalars only, never nested dumps). */
+export type BasisValue = number | string | boolean | null
+
+/** Mirror of the pydantic `RecommendationBasis` (Plan 0038 / ADR-0029): what
+ * backed the call. All four fields are declared without defaults in pydantic
+ * (so the JSON schema marks them required), but `backtest`/`forecast` may be
+ * `None` — and the bus dumps with `exclude_none`, so on the wire those keys
+ * are ABSENT (not null) when a flat recommendation lacks that leg. Hence
+ * optional here. */
+export interface RecommendationBasis {
+  conditions: string[]
+  signals: string[]
+  backtest?: Record<string, BasisValue> | null
+  forecast?: Record<string, BasisValue> | null
+}
+
+/** Mirror of the pydantic `Recommendation` (Plan 0038 / ADR-0029): the one
+ * sanctioned advisory artifact. `label` can only ever be `"advisory"` —
+ * pinned as a literal on both sides. `entry_zone`/`stop` are required-but-
+ * nullable in pydantic; a flat recommendation dumps them as `None`, which
+ * `exclude_none` strips from the wire — hence optional here (`targets` stays
+ * required: an empty list survives the dump). `entry_zone` serialises as a
+ * two-number `[low, high]` array. */
+export interface Recommendation {
+  symbol: string
+  timeframe: string
+  direction: 'long' | 'short' | 'flat'
+  entry_zone?: [number, number] | null
+  stop?: number | null
+  targets: number[]
+  conviction: number
+  rationale: string[]
+  basis: RecommendationBasis
+  label: 'advisory'
+  /** ISO 8601 UTC timestamp of the last bar the whole basis saw (anti-lookahead). */
+  as_of_bar_ts: string
+}
+
+export interface RecommendationCompletedPayloadV1 {
+  recommendation: Recommendation
+}
+
 /** A single [start, end] coverage gap a backfill is/was filling (Plan 0013). */
 export interface GapWindow {
   start: string
@@ -205,6 +248,7 @@ export type EnvelopeType =
   | 'chart.highlight'
   | 'run.completed'
   | 'signal.evaluated'
+  | 'recommendation.completed'
   | 'chart.update_dropped'
   | 'ohlcv.backfill_started'
   | 'ohlcv.backfilled'
@@ -233,6 +277,10 @@ export type RunCompletedEnvelope = Envelope<RunCompletedPayloadV1> & {
 }
 export type SignalEvaluatedEnvelope = Envelope<SignalEvaluatedPayloadV1> & {
   type: 'signal.evaluated'
+  version: 1
+}
+export type RecommendationCompletedEnvelope = Envelope<RecommendationCompletedPayloadV1> & {
+  type: 'recommendation.completed'
   version: 1
 }
 export type OhlcvBackfillStartedEnvelope = Envelope<OhlcvBackfillStartedPayloadV1> & {

@@ -29,16 +29,25 @@ import styles from './App.module.css'
 import { AlertToaster } from './components/AlertToaster'
 import { ThemeToggle } from './components/ThemeToggle'
 import type { Timeframe } from './lib/timeframes'
-import type { SignalEvaluation } from './types/events'
+import type { Recommendation, SignalEvaluation } from './types/events'
 import { AlertsView } from './views/AlertsView'
 import { BacktestView } from './views/BacktestView'
 import { LiveSignalView } from './views/LiveSignalView'
 import { NewsView } from './views/NewsView'
 import { OhlcvView } from './views/OhlcvView'
 import { RecentBacktestsView } from './views/RecentBacktestsView'
+import { RecommendationsView } from './views/RecommendationsView'
 import { SettingsView } from './views/SettingsView'
 
-type View = 'chart' | 'news' | 'signals' | 'settings' | 'backtest' | 'recent-backtests' | 'alerts'
+type View =
+  | 'chart'
+  | 'news'
+  | 'signals'
+  | 'recommendations'
+  | 'settings'
+  | 'backtest'
+  | 'recent-backtests'
+  | 'alerts'
 
 /**
  * Test-only window-attached snapshot of the chart state. The Playwright
@@ -82,6 +91,11 @@ export function App(): JSX.Element {
   // whatever the agent last evaluated via `signal.evaluated v1`. No auto-switch —
   // the user navigates to the Signals tab; the most-recent evaluation persists.
   const [latestEvaluation, setLatestEvaluation] = useState<SignalEvaluation | null>(null)
+  // Latest advisory recommendation (Plan 0039). Same reactive-only posture as
+  // the signals panel — and deliberately NO auto-switch: an advisory call must
+  // not grab the screen (ADR-0029's quiet-advice framing); the user opens the
+  // Recommendations tab when they want to read it.
+  const [latestRecommendation, setLatestRecommendation] = useState<Recommendation | null>(null)
 
   const backtestState = useBacktestResult({ runId: selectedRunId })
 
@@ -110,6 +124,7 @@ export function App(): JSX.Element {
     onChartHighlight: (payload) => dispatch({ kind: 'event/chart.highlight', payload }),
     onRunCompleted: handleRunCompleted,
     onSignalEvaluated: (payload) => setLatestEvaluation(payload.evaluation),
+    onRecommendationCompleted: (payload) => setLatestRecommendation(payload.recommendation),
     onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
     onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
     onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
@@ -197,6 +212,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'recommendations' ? 'page' : undefined}
+            onClick={() => setView('recommendations')}
+            data-testid="nav-recommendations"
+          >
+            Recommendations
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'news' ? 'page' : undefined}
             onClick={() => setView('news')}
             data-testid="nav-news"
@@ -239,6 +263,7 @@ export function App(): JSX.Element {
         />
       )}
       {view === 'signals' && <LiveSignalView evaluation={latestEvaluation} />}
+      {view === 'recommendations' && <RecommendationsView recommendation={latestRecommendation} />}
       {view === 'alerts' && <AlertsView />}
       {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}

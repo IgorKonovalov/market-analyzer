@@ -338,6 +338,31 @@ class TestFlatVerdicts:
         assert rec.direction == "flat"
         assert any("no backtested edge" in line for line in rec.rationale)
 
+    def test_walk_forward_for_nonvoting_strategy_blocks_directional_call(self) -> None:
+        """The backtested basis must back a strategy that actually voted the
+        direction — an edge for a bystander strategy backs nothing."""
+
+        alien_wf = make_walk_forward().model_copy(update={"strategy_id": "macd"})
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal("rsi", "long")],
+            walk_forward=alien_wf,
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        assert any("not among the agreeing signals" in line for line in rec.rationale)
+
+    def test_walk_forward_for_voting_strategy_still_directional(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal("rsi", "long"), make_signal("macd", "long")],
+            walk_forward=make_walk_forward(),  # strategy_id "rsi" — among the voters
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"
+
     def test_flat_still_carries_a_basis(self) -> None:
         rec = fuse(
             snapshot=make_snapshot(),
@@ -376,6 +401,32 @@ class TestInputValidation:
                 walk_forward=make_walk_forward(),
                 forecast=make_forecast(),
                 last_close=0.0,
+            )
+
+    def test_stale_forecast_as_of_raises(self) -> None:
+        stale = make_forecast().model_copy(
+            update={"as_of_bar_ts": datetime(2026, 5, 25, tzinfo=UTC)}
+        )
+        with pytest.raises(ValueError, match="inconsistent fusion inputs"):
+            fuse(
+                snapshot=make_snapshot(),
+                signals=[make_signal()],
+                walk_forward=make_walk_forward(),
+                forecast=stale,
+                last_close=LAST_CLOSE,
+            )
+
+    def test_stale_signal_as_of_raises(self) -> None:
+        stale = make_signal().model_copy(
+            update={"evaluated_through_ts": datetime(2026, 5, 25, tzinfo=UTC)}
+        )
+        with pytest.raises(ValueError, match="inconsistent fusion inputs"):
+            fuse(
+                snapshot=make_snapshot(),
+                signals=[stale],
+                walk_forward=make_walk_forward(),
+                forecast=make_forecast(),
+                last_close=LAST_CLOSE,
             )
 
 

@@ -22,6 +22,7 @@ interface JsonSchema {
   properties?: Record<string, JsonSchema>
   required?: string[]
   enum?: unknown[]
+  const?: unknown
   type?: string | string[]
   anyOf?: JsonSchema[]
   $ref?: string
@@ -46,6 +47,9 @@ interface DumpedSchemas {
   SignalEvaluation: JsonSchema
   EvaluatedSignal: JsonSchema
   AlertTriggeredPayloadV1: JsonSchema
+  RecommendationCompletedPayloadV1: JsonSchema
+  Recommendation: JsonSchema
+  RecommendationBasis: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -61,8 +65,10 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
     '    SignalEvaluatedPayloadV1, AlertTriggeredPayloadV1,',
+    '    RecommendationCompletedPayloadV1,',
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
+    'from market_analyser.advisor.models import Recommendation, RecommendationBasis',
     'print(json.dumps({',
     '    "OverlaySpec": OverlaySpec.model_json_schema(),',
     '    "Marker": Marker.model_json_schema(),',
@@ -80,6 +86,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "SignalEvaluation": SignalEvaluation.model_json_schema(),',
     '    "EvaluatedSignal": EvaluatedSignal.model_json_schema(),',
     '    "AlertTriggeredPayloadV1": AlertTriggeredPayloadV1.model_json_schema(),',
+    '    "RecommendationCompletedPayloadV1": RecommendationCompletedPayloadV1.model_json_schema(),',
+    '    "Recommendation": Recommendation.model_json_schema(),',
+    '    "RecommendationBasis": RecommendationBasis.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -371,5 +380,64 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     expect(literalValues(dumped.AlertTriggeredPayloadV1, 'kind')).toEqual(
       ['indicator_threshold', 'pattern', 'strategy_signal'].sort(),
     )
+  })
+
+  it('RecommendationCompletedPayloadV1 carries the recommendation inline (Plan 0039)', () => {
+    expect(propertyNames(dumped.RecommendationCompletedPayloadV1)).toEqual(['recommendation'])
+    expect(requiredNames(dumped.RecommendationCompletedPayloadV1)).toEqual(['recommendation'])
+  })
+
+  it('Recommendation fields match (advisory label pinned as a single-value literal)', () => {
+    expect(propertyNames(dumped.Recommendation)).toEqual([
+      'as_of_bar_ts',
+      'basis',
+      'conviction',
+      'direction',
+      'entry_zone',
+      'label',
+      'rationale',
+      'stop',
+      'symbol',
+      'targets',
+      'timeframe',
+    ])
+    // No pydantic defaults anywhere → every field is schema-required. The TS
+    // still marks `entry_zone`/`stop` optional because they are None-valued on
+    // a flat recommendation and the bus dumps with `exclude_none` — required
+    // in the model, absent on the wire (the inverse of TrendlineSpec.style).
+    expect(requiredNames(dumped.Recommendation)).toEqual([
+      'as_of_bar_ts',
+      'basis',
+      'conviction',
+      'direction',
+      'entry_zone',
+      'label',
+      'rationale',
+      'stop',
+      'symbol',
+      'targets',
+      'timeframe',
+    ])
+    expect(literalValues(dumped.Recommendation, 'direction')).toEqual(['flat', 'long', 'short'])
+    // A single-value Literal is emitted as `const`, not `enum` — the ADR-0029
+    // guarantee that no non-advisory label can be constructed, pinned here.
+    expect(dumped.Recommendation.properties?.label?.const).toBe('advisory')
+  })
+
+  it('RecommendationBasis fields match (backtest/forecast nullable, absent on the wire when None)', () => {
+    expect(propertyNames(dumped.RecommendationBasis)).toEqual([
+      'backtest',
+      'conditions',
+      'forecast',
+      'signals',
+    ])
+    // Same required-but-nullable shape as Recommendation's levels: schema-
+    // required, wire-absent for a flat call missing that leg → TS optional.
+    expect(requiredNames(dumped.RecommendationBasis)).toEqual([
+      'backtest',
+      'conditions',
+      'forecast',
+      'signals',
+    ])
   })
 })
