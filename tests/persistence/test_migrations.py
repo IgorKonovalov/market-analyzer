@@ -284,9 +284,12 @@ def test_watches_alerts_migration_is_reversible_single_step() -> None:
         engine.dispose()
 
 
-def test_defi_tx_migration_is_reversible_single_step() -> None:
-    """`upgrade head -> downgrade -1 -> upgrade head` removes and restores
-    `defi_tx` without disturbing the rest of the schema (Plan 0035 phase 3)."""
+def test_plan_0035_migrations_are_reversible_as_a_pair() -> None:
+    """`upgrade head -> downgrade 0005 -> upgrade head` removes and restores
+    the two Plan 0035 tables (`defi_tx`, 0006; `price_snapshots`, 0007)
+    without disturbing the rest of the schema. The target is the explicit
+    revision below the pair, not `-1` — head-relative steps break every time
+    a later plan moves the head."""
     engine = make_engine(":memory:")
     try:
         config = _alembic_config(engine)
@@ -303,12 +306,14 @@ def test_defi_tx_migration_is_reversible_single_step() -> None:
             command.upgrade(config, "head")
         head_first = snapshot()
         assert "defi_tx" in head_first
+        assert "price_snapshots" in head_first
 
         with engine.begin() as connection:
             config.attributes["connection"] = connection
-            command.downgrade(config, "-1")
+            command.downgrade(config, "0005_watches_alerts")
         after_down = snapshot()
         assert "defi_tx" not in after_down
+        assert "price_snapshots" not in after_down
         assert "watches" in after_down  # other tables survive
         assert "alerts" in after_down
 

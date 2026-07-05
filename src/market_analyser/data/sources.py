@@ -201,6 +201,30 @@ class TxHistorySource(Protocol):
 
 
 @runtime_checkable
+class HistoricalPriceSource(Protocol):
+    """A source of a token's USD price at a past timestamp (ADR-0034/0036) —
+    the P&L engine's block-time valuation input. `address` is the token's
+    contract address on `chain`, or `None` for the chain's native coin (all
+    four target chains are ETH-native). `ts` is the UTC epoch-second block
+    timestamp.
+
+    Returns the price, or `None` when the source has no coverage for that
+    token at that timestamp — the typed "no price" the engine must surface as
+    an *incomplete* position, never coerce to zero (ADR-0036 loud failure).
+    A conforming source snapshots every resolved price on first lookup and
+    re-reads it thereafter (the ADR-0036 determinism mechanism): an upstream
+    revision must not change a re-run."""
+
+    def fetch_price(
+        self,
+        *,
+        chain: Chain,
+        address: str | None,
+        ts: int,
+    ) -> float | None: ...
+
+
+@runtime_checkable
 class MetricSeriesSource(Protocol):
     """A source of historized scalar metric points for one or more registered
     series ids (ADR-0051). Sources that expose history implement a real backfill
