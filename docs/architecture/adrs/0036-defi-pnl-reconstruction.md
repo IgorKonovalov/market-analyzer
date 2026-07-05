@@ -1,6 +1,6 @@
 # ADR-0036 — DeFi P&L by transaction replay: event taxonomy, block-time pricing, average-cost lots
 
-> **Status:** proposed — accepts at [Plan 0035](../plans/0035-defi-pnl-reconstruction.md)'s close (its `human` live-smoke phase is the gate)
+> **Status:** accepted (Plan 0035 close, 2026-07-05) — the gating `human` live smoke ran 2026-07-05 against the test wallet: one position fully reconstructed (realized +$4,015.16 on a $873.50 basis), four honestly `incomplete` (the designed loud-failure paths), wallet totals honestly null, Zerion FIFO cross-check $29,670.07 with no gross-divergence warning, replay-derived figures byte-identical across runs
 > **Date:** 2026-06-03
 > **Related plan(s):** [Plan 0035](../plans/0035-defi-pnl-reconstruction.md) (implements this end to end; approved 2026-06-05)
 > **Related ADRs:** [ADR-0034](0034-defi-portfolio-aggregator.md) (the decoded-tx-history source this replays), [ADR-0035](0035-defi-domain-placement.md) (the `defi/` home this engine lives in), [ADR-0018](0018-backtest-result-schema.md) (the determinism contract this mirrors), [ADR-0006](0006-persistence-layout.md) (SQLite cache for snapshotted prices + decoded events), [ADR-0019](0019-external-http-adapter-resilience.md) (resilience for the price source), [ADR-0037](0037-defi-position-risk-forecast.md) (the risk engine that consumes the cost basis this produces)
