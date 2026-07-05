@@ -1,0 +1,149 @@
+"""`compute_wallet_pnl` MCP tool (Plan 0035 phase 7).
+
+The agent's entry point to DeFi profitability: paste a public EVM address, get
+back the **reconstructed** per-position and total realized/unrealized P&L —
+every number traced to decoded events priced at their own block timestamps
+(ADR-0036), never an aggregator's opaque figure. Zerion's FIFO total rides
+along only as an advisory cross-check.
+
+The tool runs the async P&L job (which streams `defi.pnl_*` progress on the
+SSE stream) and returns the `WalletPnl` dump. Input is boundary-validated
+(`extra="forbid"`, `EVM_ADDRESS_PATTERN`); failures return the structured
+`{positions: null, error, message}` shape with the same typed reasons as
+`scan_wallet` — `auth` / `rate_limited` / `upstream_unavailable` /
+`malformed_response`.
+
+Dispatches through the `TxHistorySource` / `WalletPositionsSource` registries
+(ADR-0031); concrete adapters are never imported for fetching — only Zerion's
+typed error classes, to map them to a precise reason.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from market_analyser.data.adapters.zerion import ZerionAuthError, ZerionError
+from market_analyser.data.errors import UpstreamDataError, failure_reason
+from market_analyser.data.sources import (
+    HistoricalPriceSource,
+    PnlCrosscheckSource,
+    TxHistorySource,
+    WalletPositionsSource,
+)
+from market_analyser.defi.pnl_job import run_wallet_pnl
+from market_analyser.defi.scan_job import EVM_ADDRESS_PATTERN
+from market_analyser.events import EventBus
+from market_analyser.persistence.defi_tx_repository import DefiTxRepository
+
+_DEFAULT_SOURCE = "zerion"
+
+COMPUTE_WALLET_PNL_DESCRIPTION = (
+    "Reconstruct a wallet's DeFi profitability from its decoded on-chain "
+    "transaction history (Ethereum, Base, Arbitrum, Optimism): per-position and "
+    "total realized/unrealized P&L under average-cost lots, every leg valued at "
+    "its own block timestamp - never trusting an aggregator's number. Returns "
+    "{wallet (masked), positions: [{position_id, realized_usd, unrealized_usd, "
+    "cost_basis_usd, vs_hodl_usd (LP only), incomplete, notes}], position_count, "
+    "incomplete, realized_usd, unrealized_usd, crosscheck_zerion_total, "
+    "crosscheck_warning, error, message}. A position with a missing historical "
+    "price or an unbooked event kind reports null figures with incomplete=true "
+    "and a naming note - never a silently-zeroed number; wallet totals are null "
+    "whenever any position is incomplete. crosscheck_zerion_total is Zerion's "
+    "own FIFO figure, advisory only; crosscheck_warning flags gross (order-of-"
+    "magnitude or sign) divergence - small differences are expected because the "
+    "methods differ (average-cost vs FIFO). refresh=true pulls new transactions "
+    "before replaying; the default replays the immutable cached history "
+    "(deterministic re-run, zero upstream calls). First pull of a long history "
+    "is slow (rate-limit-spaced pagination + per-event price lookups); re-runs "
+    "read SQLite. On failure positions is null and error is 'auth' (no Zerion "
+    "API key set - set it via the Settings secret endpoint), 'rate_limited', "
+    "'upstream_unavailable', or 'malformed_response'. address must be a raw 0x "
+    "EVM address; ENS is not supported. Streams pnl_started/pnl_completed/"
+    "pnl_failed on the SSE stream. Data from Zerion (history) + DefiLlama "
+    "(historical prices)."
+)
+
+
+class ComputeWalletPnlInput(BaseModel):
+    """MCP-boundary input. Unknown keys rejected; `address` must be a raw
+    `0x…` EVM address. `refresh=true` gap-fetches before replaying."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    address: str = Field(pattern=EVM_ADDRESS_PATTERN)
+    refresh: bool = False
+
+
+def register_compute_wallet_pnl(
+    server: FastMCP,
+    *,
+    tx_history_sources: Mapping[str, TxHistorySource],
+    wallet_positions_sources: Mapping[str, WalletPositionsSource],
+    historical_price_source: HistoricalPriceSource,
+    defi_tx_repository: DefiTxRepository,
+    event_bus: EventBus,
+) -> None:
+    """Bind the `compute_wallet_pnl` tool to `server`. Dependencies are
+    captured by closure so the tool body keeps its single declared parameter
+    (FastMCP introspects it for the input schema)."""
+    tx_source = tx_history_sources[_DEFAULT_SOURCE]
+    positions_source = wallet_positions_sources[_DEFAULT_SOURCE]
+    crosscheck = tx_source if isinstance(tx_source, PnlCrosscheckSource) else None
+
+    @server.tool(description=COMPUTE_WALLET_PNL_DESCRIPTION)
+    async def compute_wallet_pnl(params: ComputeWalletPnlInput) -> dict[str, Any]:
+        try:
+            result = await run_wallet_pnl(
+                tx_source=tx_source,
+                positions_source=positions_source,
+                price_source=historical_price_source,
+                tx_repository=defi_tx_repository,
+                event_bus=event_bus,
+                address=params.address,
+                refresh=params.refresh,
+                crosscheck_source=crosscheck,
+            )
+        except ZerionAuthError as err:
+            return _error("auth", err)
+        except UpstreamDataError as err:
+            return _error(failure_reason(err), err)
+        except (ZerionError, ValidationError) as err:
+            return _error("malformed_response", err)
+        return {
+            "wallet": result.wallet,
+            "positions": [position.model_dump(mode="json") for position in result.positions],
+            "position_count": len(result.positions),
+            "incomplete": result.incomplete,
+            "realized_usd": result.realized_usd,
+            "unrealized_usd": result.unrealized_usd,
+            "crosscheck_zerion_total": result.crosscheck_zerion_total,
+            "crosscheck_warning": result.crosscheck_warning,
+            "error": None,
+            "message": None,
+        }
+
+
+def _error(reason: str, err: Exception) -> dict[str, Any]:
+    return {
+        "wallet": None,
+        "positions": None,
+        "position_count": None,
+        "incomplete": None,
+        "realized_usd": None,
+        "unrealized_usd": None,
+        "crosscheck_zerion_total": None,
+        "crosscheck_warning": None,
+        "error": reason,
+        "message": str(err),
+    }
+
+
+__all__ = [
+    "COMPUTE_WALLET_PNL_DESCRIPTION",
+    "ComputeWalletPnlInput",
+    "register_compute_wallet_pnl",
+]

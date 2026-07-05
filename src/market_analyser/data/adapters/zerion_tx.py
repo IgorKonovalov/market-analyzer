@@ -59,6 +59,9 @@ from market_analyser.defi.tx_models import DecodedTx, TxAct, TxFee, TxTransfer
 from market_analyser.persistence.secrets import SecretsStore
 
 _TRANSACTIONS_URL = "https://api.zerion.io/v1/wallets/{address}/transactions/"
+# NO trailing slash on /pnl — `/pnl/` 301-redirects (the survey's quirk table);
+# a naive `+ "/"` convention breaks exactly this endpoint.
+_PNL_URL = "https://api.zerion.io/v1/wallets/{address}/pnl"
 _SOURCE = "zerion-tx"
 
 # Fresh read per scan, like the positions adapter — the phase-3 SQLite cache is
@@ -180,6 +183,36 @@ class ZerionTxAdapter:
                 "the pagination cursor appears to be looping",
             )
         return _finalize(newest_first)
+
+    def fetch_pnl_total(self, address: str) -> float | None:
+        """Zerion's own FIFO `total_gain` for the wallet — the ADR-0036
+        **advisory cross-check**, never the source of truth. Returns `None`
+        when the payload carries no usable figure; typed upstream errors
+        propagate (the P&L job treats the whole cross-check as best-effort).
+        Small reuse of the existing key/client (survey §3 #3)."""
+        key = self._secrets.get("zerion_api_key")
+        if not key:
+            raise ZerionAuthError(
+                "zerion: no API key configured — set `zerion_api_key` before scanning",
+            )
+        try:
+            response = self._http.get(
+                _PNL_URL.format(address=urllib.parse.quote(address, safe="")),
+                params={"currency": "usd"},
+                headers={"Authorization": basic_auth_header(key)},
+                expect_json=True,
+            )
+        except ResilientHttpError as err:
+            raise _classify_error(err) from err
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return None
+        data = payload.get("data")
+        attributes = data.get("attributes") if isinstance(data, dict) else None
+        total = attributes.get("total_gain") if isinstance(attributes, dict) else None
+        if isinstance(total, bool) or not isinstance(total, (int, float)):
+            return None
+        return float(total)
 
 
 class _ParsedTx:

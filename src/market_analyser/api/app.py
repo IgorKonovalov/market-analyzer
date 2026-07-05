@@ -53,6 +53,7 @@ from market_analyser.config import default_app_data_dir
 from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
+from market_analyser.data.adapters.defillama import DefiLlamaAdapter
 from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
 from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.adapters.zerion_tx import ZerionTxAdapter
@@ -60,13 +61,16 @@ from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
+    HistoricalPriceSource,
     LpPositionDetailSource,
     TxHistorySource,
     WalletPositionsSource,
 )
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
+from market_analyser.persistence.defi_tx_repository import DefiTxRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
+from market_analyser.persistence.price_snapshot_repository import PriceSnapshotRepository
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
@@ -92,6 +96,7 @@ def create_app(
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
     tx_history_sources: Mapping[str, TxHistorySource] | None = None,
+    historical_price_source: HistoricalPriceSource | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
@@ -133,6 +138,7 @@ def create_app(
     metric_points_repository: MetricPointsRepository | None = None
     watches_repository: WatchesRepository | None = None
     alerts_repository: AlertsRepository | None = None
+    defi_tx_repository: DefiTxRepository | None = None
     if engine is not None:
         apply_migrations(engine)
         session_factory = make_session_factory(engine)
@@ -146,6 +152,15 @@ def create_app(
         # scheduler both key off these.
         watches_repository = WatchesRepository(session_factory)
         alerts_repository = AlertsRepository(session_factory)
+        # The P&L caches (Plan 0035, ADR-0036): the immutable decoded-tx store
+        # behind the gap-fetch ingestion, and the first-write-wins price
+        # snapshots that make a replay revision-proof. The DefiLlama adapter is
+        # keyless and network-free to construct; only a fetch touches the wire.
+        defi_tx_repository = DefiTxRepository(session_factory)
+        if historical_price_source is None:
+            historical_price_source = DefiLlamaAdapter(
+                snapshot_store=PriceSnapshotRepository(session_factory),
+            )
         if provider is None:
             provider = DefaultMarketDataProvider(
                 bar_repository=BarRepository(session_factory),
@@ -238,6 +253,9 @@ def create_app(
             runs_dir=runs_dir,
             wallet_positions_sources=effective_wallet_sources,
             lp_detail_sources=effective_lp_detail_sources,
+            tx_history_sources=effective_tx_history_sources,
+            defi_tx_repository=defi_tx_repository,
+            historical_price_source=historical_price_source,
             metric_points_repository=metric_points_repository,
             watches_repository=watches_repository,
             alerts_repository=alerts_repository,
@@ -325,6 +343,10 @@ def create_app(
     # The DeFi tx-history registry (Plan 0035) — consumed by the P&L ingestion
     # path (`POST /defi/pnl` + the `compute_wallet_pnl` tool, phase 7).
     app.state.tx_history_sources = effective_tx_history_sources
+    # The P&L pipeline's persistence + pricing halves (Plan 0035): None without
+    # an engine — the /defi/pnl route answers 503 rather than crashing.
+    app.state.defi_tx_repository = defi_tx_repository
+    app.state.historical_price_source = historical_price_source
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.

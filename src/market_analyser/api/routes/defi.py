@@ -1,15 +1,17 @@
-"""`POST /defi/scan` — wallet discovery for the renderer (Plan 0032 phase 4).
+"""`POST /defi/scan` + `POST /defi/pnl` — the renderer's DeFi routes.
 
-The renderer-side twin of the `scan_wallet` MCP tool: both reach the same scan
-job (ADR-0015 reconciliation — UI for the at-a-glance view, agent for narrative
-deep-dives). Renderer-bearer-gated by the central middleware in `app.py`; a
-request carrying the MCP secret is rejected cross-tenant.
+The renderer-side twins of the `scan_wallet` / `compute_wallet_pnl` MCP tools:
+each pair reaches the same job (ADR-0015 reconciliation — UI for the
+at-a-glance view, agent for narrative deep-dives). Renderer-bearer-gated by the
+central middleware in `app.py`; a request carrying the MCP secret is rejected
+cross-tenant.
 
-The address is validated at the boundary (`EVM_ADDRESS_PATTERN`) by the request
-model, so a non-address returns 422 — a typed 4xx, never a 500. A scan failure is
-mapped to a meaningful status: a missing/rejected key → 400, a rate limit → 429,
-any other upstream/parse failure → 502. Positions are returned live (not
-persisted); the scan streams `defi.scan_*` progress on `/events`.
+Addresses are validated at the boundary (`EVM_ADDRESS_PATTERN`) by the request
+models, so a non-address returns 422 — a typed 4xx, never a 500. A job failure
+is mapped to a meaningful status: a missing/rejected key → 400, a rate limit →
+429, any other upstream/parse failure → 502. Scan positions are returned live
+(not persisted); the P&L path persists its decoded-tx + price-snapshot caches
+(Plan 0035 phases 3-4) and streams `defi.scan_*` / `defi.pnl_*` on `/events`.
 """
 
 from __future__ import annotations
@@ -22,9 +24,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from market_analyser.data.adapters.zerion import ZerionAuthError, ZerionError
 from market_analyser.data.errors import RateLimitedError, UpstreamDataError
-from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
+from market_analyser.data.sources import (
+    HistoricalPriceSource,
+    LpPositionDetailSource,
+    PnlCrosscheckSource,
+    TxHistorySource,
+    WalletPositionsSource,
+)
+from market_analyser.defi.pnl_job import run_wallet_pnl
 from market_analyser.defi.scan_job import EVM_ADDRESS_PATTERN, run_wallet_scan
 from market_analyser.events import EventBus
+from market_analyser.persistence.defi_tx_repository import DefiTxRepository
 
 router = APIRouter(prefix="/defi", tags=["defi"])
 
@@ -86,4 +96,83 @@ async def post_defi_scan(request: Request, body: ScanRequest) -> ScanResponse:
         chains=result.chains,
         position_count=len(result.positions),
         total_usd_value=result.total_usd_value,
+    )
+
+
+class PnlRequest(BaseModel):
+    """`POST /defi/pnl` body. `address` must be a raw `0x…` EVM address (422
+    otherwise); `refresh=true` gap-fetches new transactions before replaying —
+    the default replays the cached history (the deterministic re-run path)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    address: str = Field(pattern=EVM_ADDRESS_PATTERN)
+    refresh: bool = False
+
+
+class PnlResponse(BaseModel):
+    """The reconstructed P&L. `wallet` is masked; `positions` are per-position
+    breakdowns (JSON dumps of `PositionPnl` — `None` figures always travel
+    with `incomplete=true` and a naming note); wallet totals are `None`
+    whenever any position is incomplete. `crosscheck_zerion_total` is the
+    advisory FIFO figure; `crosscheck_warning` flags gross divergence only —
+    average-cost vs FIFO makes small differences expected (ADR-0036)."""
+
+    wallet: str
+    positions: list[dict[str, Any]]
+    position_count: int
+    incomplete: bool
+    realized_usd: float | None
+    unrealized_usd: float | None
+    crosscheck_zerion_total: float | None
+    crosscheck_warning: bool
+
+
+@router.post("/pnl", response_model=PnlResponse)
+async def post_defi_pnl(request: Request, body: PnlRequest) -> PnlResponse:
+    tx_sources: Mapping[str, TxHistorySource] = request.app.state.tx_history_sources
+    tx_source = tx_sources.get(_DEFAULT_SOURCE)
+    positions_sources: Mapping[str, WalletPositionsSource] = (
+        request.app.state.wallet_positions_sources
+    )
+    positions_source = positions_sources.get(_DEFAULT_SOURCE)
+    tx_repository: DefiTxRepository | None = request.app.state.defi_tx_repository
+    price_source: HistoricalPriceSource | None = request.app.state.historical_price_source
+    if tx_source is None or positions_source is None or tx_repository is None:
+        # The route needs the full pipeline: tx source + discovery + the
+        # decoded-tx cache. Absent pieces mean no persistence / no key store
+        # was wired — a deployment condition, not a client error.
+        raise HTTPException(status_code=503, detail="P&L pipeline is not configured")
+    if price_source is None:
+        raise HTTPException(status_code=503, detail="no historical price source configured")
+    crosscheck = tx_source if isinstance(tx_source, PnlCrosscheckSource) else None
+    event_bus: EventBus = request.app.state.event_bus
+    try:
+        result = await run_wallet_pnl(
+            tx_source=tx_source,
+            positions_source=positions_source,
+            price_source=price_source,
+            tx_repository=tx_repository,
+            event_bus=event_bus,
+            address=body.address,
+            refresh=body.refresh,
+            crosscheck_source=crosscheck,
+        )
+    except ZerionAuthError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except RateLimitedError as err:
+        raise HTTPException(status_code=429, detail=str(err)) from err
+    except UpstreamDataError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    except (ZerionError, ValidationError) as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    return PnlResponse(
+        wallet=result.wallet,
+        positions=[position.model_dump(mode="json") for position in result.positions],
+        position_count=len(result.positions),
+        incomplete=result.incomplete,
+        realized_usd=result.realized_usd,
+        unrealized_usd=result.unrealized_usd,
+        crosscheck_zerion_total=result.crosscheck_zerion_total,
+        crosscheck_warning=result.crosscheck_warning,
     )

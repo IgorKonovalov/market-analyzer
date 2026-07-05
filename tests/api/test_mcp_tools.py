@@ -508,3 +508,130 @@ def test_detect_chart_patterns_tool_is_registered(live_server: str, mcp_secret: 
             return {t.name for t in result.tools}
 
     assert "detect_chart_patterns" in asyncio.run(_run())
+
+
+# --- exhaustive toolset registration (Plan 0035 phase 7) --------------------------
+#
+# The safety net the 2026-05-31 audit asked for ("no safety-net test that every
+# MCP tool is registered"): build `create_mcp_components` with EVERY dependency
+# wired and assert the toolset is exactly the expected set, by name. A forgotten
+# `register_*` call fails here; so does a new tool that forgets to update this
+# roster (deliberate — the roster is the reviewable record of the agent surface).
+
+EXPECTED_FULL_TOOLSET = {
+    "analyze_symbol",
+    "backfill_ohlcv",
+    "bitcoin_market_pulse",
+    "btc_cycle_snapshot",
+    "compare_strategies",
+    "compute_wallet_pnl",
+    "create_watch",
+    "crypto_fear_greed",
+    "delete_watch",
+    "derivatives_snapshot",
+    "detect_chart_patterns",
+    "detect_levels",
+    "evaluate_signals",
+    "forecast",
+    "get_backtest",
+    "get_metric_series",
+    "get_ohlcv",
+    "get_pending_ui_events",
+    "highlight_pattern",
+    "list_alerts",
+    "list_annotations",
+    "list_watches",
+    "market_snapshot",
+    "multi_timeframe_analysis",
+    "news_for",
+    "quote_for",
+    "recommend",
+    "run_backtest",
+    "scan_patterns",
+    "scan_wallet",
+    "screener_query",
+    "search_symbols",
+    "sentiment_for_news",
+    "show_chart",
+    "smart_volume",
+    "stocktwits_sentiment",
+    "update_chart",
+    "volume_breakout",
+    "volume_confirmation",
+    "walk_forward_backtest",
+    "write_annotation",
+}
+
+
+def test_full_toolset_registration_is_exhaustive(provider: _BarsProvider, tmp_path: Path) -> None:
+    import anyio
+    from mcp.types import ListToolsRequest, ListToolsResult
+
+    from market_analyser.api.mcp_app import create_mcp_components
+    from market_analyser.api.ui_events.buffer import UIEventBuffer
+    from market_analyser.defi.models import DefiPosition
+    from market_analyser.defi.tx_models import DecodedTx
+    from market_analyser.events import EventBus
+    from market_analyser.persistence.defi_tx_repository import DefiTxRepository
+    from market_analyser.persistence.repositories.backtest_runs import BacktestRunsRepository
+    from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
+    from market_analyser.persistence.repositories.watches import (
+        AlertsRepository,
+        WatchesRepository,
+    )
+
+    class _NullWalletSource:
+        def fetch_positions(self, address: str) -> list[DefiPosition]:
+            return []
+
+    class _NullTxSource:
+        def fetch_transactions(
+            self, address: str, *, min_mined_at: datetime | None = None
+        ) -> list[DecodedTx]:
+            return []
+
+    class _NullPriceSource:
+        def fetch_price(self, *, chain: str, address: str | None, ts: int) -> float | None:
+            return None
+
+    class _NullDerivativesSource:
+        def fetch_series(
+            self, series_id: str, start: int | None = None, end: int | None = None
+        ) -> list[object]:
+            return []
+
+        def fetch_open_interest_sample(self, series_id: str) -> object | None:
+            return None
+
+    engine = make_engine(":memory:")
+    try:
+        apply_migrations(engine)
+        session_factory = make_session_factory(engine)
+        session_manager, _asgi = create_mcp_components(
+            provider=provider,
+            annotations_repository=AnnotationsRepository(session_factory),
+            event_bus=EventBus(),
+            ui_event_buffer=UIEventBuffer(),
+            backtest_runs_repository=BacktestRunsRepository(session_factory),
+            runs_dir=tmp_path / "runs",
+            wallet_positions_sources={"zerion": _NullWalletSource()},
+            lp_detail_sources=None,
+            tx_history_sources={"zerion": _NullTxSource()},
+            defi_tx_repository=DefiTxRepository(session_factory),
+            historical_price_source=_NullPriceSource(),
+            metric_points_repository=MetricPointsRepository(session_factory),
+            derivatives_source=_NullDerivativesSource(),  # type: ignore[arg-type]
+            watches_repository=WatchesRepository(session_factory),
+            alerts_repository=AlertsRepository(session_factory),
+        )
+        handler = session_manager.app.request_handlers[ListToolsRequest]
+        result = anyio.run(handler, ListToolsRequest(method="tools/list"))
+        tools_result = result.root
+        assert isinstance(tools_result, ListToolsResult)
+        names = {tool.name for tool in tools_result.tools}
+    finally:
+        engine.dispose()
+    assert names == EXPECTED_FULL_TOOLSET, (
+        f"missing: {sorted(EXPECTED_FULL_TOOLSET - names)}; "
+        f"unexpected: {sorted(names - EXPECTED_FULL_TOOLSET)}"
+    )

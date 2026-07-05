@@ -36,6 +36,7 @@ from market_analyser.api.mcp_tools.analyze_symbol import register_analyze_symbol
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
+from market_analyser.api.mcp_tools.compute_wallet_pnl import register_compute_wallet_pnl
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.cycle_snapshot import register_btc_cycle_snapshot
 from market_analyser.api.mcp_tools.derivatives_snapshot import (
@@ -80,12 +81,15 @@ from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapte
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
+    HistoricalPriceSource,
     LpPositionDetailSource,
     MetricSeriesSource,
+    TxHistorySource,
     WalletPositionsSource,
 )
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
+from market_analyser.persistence.defi_tx_repository import DefiTxRepository
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
@@ -107,6 +111,9 @@ def create_mcp_components(
     runs_dir: Path | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
+    tx_history_sources: Mapping[str, TxHistorySource] | None = None,
+    defi_tx_repository: DefiTxRepository | None = None,
+    historical_price_source: HistoricalPriceSource | None = None,
     metric_points_repository: MetricPointsRepository | None = None,
     derivatives_source: DerivativesSource | None = None,
     mvrv_source: MetricSeriesSource | None = None,
@@ -298,6 +305,25 @@ def create_mcp_components(
             wallet_positions_sources=wallet_positions_sources,
             event_bus=event_bus,
             lp_detail_sources=lp_detail_sources,
+        )
+
+    # `compute_wallet_pnl` (Plan 0035) needs the whole P&L pipeline: the tx
+    # source + discovery (both key off the secrets store), the immutable
+    # decoded-tx cache (persistence), and a historical price source. Absent any
+    # piece, the tool is simply not registered — nothing silently degrades.
+    if (
+        tx_history_sources
+        and wallet_positions_sources
+        and defi_tx_repository is not None
+        and historical_price_source is not None
+    ):
+        register_compute_wallet_pnl(
+            server,
+            tx_history_sources=tx_history_sources,
+            wallet_positions_sources=wallet_positions_sources,
+            historical_price_source=historical_price_source,
+            defi_tx_repository=defi_tx_repository,
+            event_bus=event_bus,
         )
 
     # streamable_http_app() also lazily constructs the session manager; we call

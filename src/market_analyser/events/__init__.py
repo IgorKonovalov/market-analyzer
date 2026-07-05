@@ -361,6 +361,46 @@ class DefiScanFailedPayloadV1(BaseModel):
     message: str
 
 
+class DefiPnlStartedPayloadV1(BaseModel):
+    """`defi.pnl_started v1`: a wallet P&L reconstruction began (Plan 0035).
+    `wallet` is the **masked** address — the full address never reaches the
+    wire (ADR-0038 discipline)."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    wallet: str
+
+
+class DefiPnlCompletedPayloadV1(BaseModel):
+    """`defi.pnl_completed v1`: the reconstruction finished. Totals are `None`
+    whenever any position is `incomplete` — the wire carries the same honesty
+    the engine does (never a confident partial number, ADR-0036)."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    wallet: str
+    position_count: int
+    incomplete_count: int
+    realized_usd: float | None
+    unrealized_usd: float | None
+
+
+class DefiPnlFailedPayloadV1(BaseModel):
+    """`defi.pnl_failed v1`: the reconstruction failed with a typed reason (the
+    scan-failed literal set — same closed vocabulary, same neutrality: the
+    precise auth error reaches the caller through the job's re-raised typed
+    exception, not the wire)."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    wallet: str
+    reason: Literal["rate_limited", "upstream_unavailable", "malformed_response"]
+    message: str
+
+
 class AlertTriggeredPayloadV1(BaseModel):
     """`alert.triggered v1` payload (Plan 0060, ADR-0055): a watch's condition
     transitioned false→true on its latest evaluation.
@@ -400,6 +440,9 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "defi.scan_progress": DefiScanProgressPayloadV1,
     "defi.scan_completed": DefiScanCompletedPayloadV1,
     "defi.scan_failed": DefiScanFailedPayloadV1,
+    "defi.pnl_started": DefiPnlStartedPayloadV1,
+    "defi.pnl_completed": DefiPnlCompletedPayloadV1,
+    "defi.pnl_failed": DefiPnlFailedPayloadV1,
     "alert.triggered": AlertTriggeredPayloadV1,
 }
 

@@ -201,6 +201,17 @@ class TxHistorySource(Protocol):
 
 
 @runtime_checkable
+class PnlCrosscheckSource(Protocol):
+    """A source of a third-party wallet-P&L total, used only as the ADR-0036
+    **advisory cross-check** (Zerion's FIFO `total_gain`): a gross divergence
+    from our reconstruction flags a likely bug; small method-driven
+    differences are expected and ignored. Never the source of truth. `None`
+    means the source carries no usable figure."""
+
+    def fetch_pnl_total(self, address: str) -> float | None: ...
+
+
+@runtime_checkable
 class HistoricalPriceSource(Protocol):
     """A source of a token's USD price at a past timestamp (ADR-0034/0036) —
     the P&L engine's block-time valuation input. `address` is the token's
