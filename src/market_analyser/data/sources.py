@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     # this Protocol only names the return type). `defi/models` imports nothing
     # from `data/`, so there is no import cycle.
     from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail
+    from market_analyser.defi.tx_models import DecodedTx
 
 
 @runtime_checkable
@@ -176,6 +177,27 @@ class LpPositionDetailSource(Protocol):
         A one-hop-only source returns `None`; the enrichment step calls this only
         for Uni-v3-class positions, then passes the id to `fetch_lp_detail`."""
         ...
+
+
+@runtime_checkable
+class TxHistorySource(Protocol):
+    """A source of a wallet's decoded transaction history across the target EVM
+    chains (ADR-0035 / ADR-0036) — the P&L replay engine's input. `address` is a
+    raw `0x…` EVM address; the source returns normalized, boundary-validated
+    transactions in deterministic order (block number, then in-block index).
+
+    `min_mined_at` is the gap-fetch seam (Plan 0035 phase 3): the ingestion
+    facade passes the newest cached transaction's timestamp so a re-scan pulls
+    only what's newer, instead of re-paging the full history. `None` means the
+    full history. Members of the DeFi tx-history selector registry, keyed by
+    source name ("zerion"), built in the composition root (ADR-0031)."""
+
+    def fetch_transactions(
+        self,
+        address: str,
+        *,
+        min_mined_at: datetime | None = None,
+    ) -> Sequence[DecodedTx]: ...
 
 
 @runtime_checkable

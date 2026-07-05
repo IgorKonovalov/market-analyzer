@@ -58,7 +58,11 @@ from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
-from market_analyser.data.sources import LpPositionDetailSource, WalletPositionsSource
+from market_analyser.data.sources import (
+    LpPositionDetailSource,
+    TxHistorySource,
+    WalletPositionsSource,
+)
 from market_analyser.events import EventBus
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
@@ -86,6 +90,7 @@ def create_app(
     secrets_store: SecretsStore | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
+    tx_history_sources: Mapping[str, TxHistorySource] | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
@@ -209,6 +214,15 @@ def create_app(
         effective_lp_detail_sources = {"rpc": RpcLpDetailAdapter(secrets_store=secrets_store)}
     else:
         effective_lp_detail_sources = {}
+    # DeFi tx-history sources (Plan 0035, ADR-0031/0035/0036): the selector
+    # registry behind the P&L ingestion path. An explicit map wins (tests inject
+    # a fake); the concrete Zerion tx adapter is built from the secrets store by
+    # phase 2. Empty until then — the P&L surface (phase 7) treats an absent
+    # source as "P&L unavailable" rather than failing at construction.
+    if tx_history_sources is not None:
+        effective_tx_history_sources: dict[str, TxHistorySource] = dict(tx_history_sources)
+    else:
+        effective_tx_history_sources = {}
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
@@ -304,6 +318,9 @@ def create_app(
     # The DeFi LP-detail registry (Plan 0034) — consumed by the enrichment step
     # (phase 5) to deepen discovered LP positions with on-chain tick/fee state.
     app.state.lp_detail_sources = effective_lp_detail_sources
+    # The DeFi tx-history registry (Plan 0035) — consumed by the P&L ingestion
+    # path (`POST /defi/pnl` + the `compute_wallet_pnl` tool, phase 7).
+    app.state.tx_history_sources = effective_tx_history_sources
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
