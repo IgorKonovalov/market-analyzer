@@ -55,6 +55,7 @@ from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
 from market_analyser.data.adapters.zerion import ZerionAdapter
+from market_analyser.data.adapters.zerion_tx import ZerionTxAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
@@ -216,11 +217,14 @@ def create_app(
         effective_lp_detail_sources = {}
     # DeFi tx-history sources (Plan 0035, ADR-0031/0035/0036): the selector
     # registry behind the P&L ingestion path. An explicit map wins (tests inject
-    # a fake); the concrete Zerion tx adapter is built from the secrets store by
-    # phase 2. Empty until then — the P&L surface (phase 7) treats an absent
-    # source as "P&L unavailable" rather than failing at construction.
+    # a fake); otherwise the Zerion tx adapter is built from the secrets store
+    # (lazy key read, so it constructs before a key is set — a keyless pull
+    # fails typed at call time). Empty when no store is wired — the P&L surface
+    # (phase 7) treats an absent source as "P&L unavailable", not a crash.
     if tx_history_sources is not None:
         effective_tx_history_sources: dict[str, TxHistorySource] = dict(tx_history_sources)
+    elif secrets_store is not None:
+        effective_tx_history_sources = {"zerion": ZerionTxAdapter(secrets_store=secrets_store)}
     else:
         effective_tx_history_sources = {}
     mcp_components = (

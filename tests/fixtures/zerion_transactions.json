@@ -1,0 +1,544 @@
+{
+  "_comment": "Two-page Zerion /wallets/{addr}/transactions/ fixture mirroring the live 0xae5b...9790 shape (Plan 0035 phase 2). Newest-first within and across pages, links.next carries the page boundary. Covers: a trade with a dropped 'self' transfer, two same-block txs (in-block ordering), an off-target polygon tx (dropped), an unrecognized operation_type 'burn' (normalizes to 'unknown') with a dropped zero-amount transfer, an approve with no transfers, and a native-ETH receive with a null implementation address.",
+  "page1": {
+    "links": {
+      "self": "https://api.zerion.io/v1/wallets/0x2222222222222222222222222222222222222222/transactions/?currency=usd",
+      "next": "https://api.zerion.io/v1/wallets/0x2222222222222222222222222222222222222222/transactions/?currency=usd&page%5Bafter%5D=CURSOR2"
+    },
+    "data": [
+      {
+        "type": "transactions",
+        "id": "tx-e5",
+        "attributes": {
+          "operation_type": "trade",
+          "hash": "0xe5",
+          "mined_at_block": 22412360,
+          "mined_at": "2025-11-02T15:00:00Z",
+          "sent_from": "0x2222222222222222222222222222222222222222",
+          "sent_to": "0x6cb442acf35158d5eda88fe602221b67b400be3e",
+          "status": "confirmed",
+          "nonce": 41,
+          "fee": {
+            "fungible_info": {
+              "name": "Ethereum",
+              "symbol": "ETH",
+              "implementations": [
+                { "chain_id": "base", "address": null, "decimals": 18 }
+              ]
+            },
+            "quantity": {
+              "int": "31500000000000",
+              "decimals": 18,
+              "float": 3.15e-5,
+              "numeric": "0.0000315"
+            },
+            "price": 3500.0,
+            "value": 0.11025
+          },
+          "transfers": [
+            {
+              "fungible_info": {
+                "name": "Aerodrome",
+                "symbol": "AERO",
+                "implementations": [
+                  {
+                    "chain_id": "base",
+                    "address": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+                    "decimals": 18
+                  }
+                ]
+              },
+              "direction": "out",
+              "quantity": {
+                "int": "50000000000000000000",
+                "decimals": 18,
+                "float": 50.0,
+                "numeric": "50.0"
+              },
+              "value": 60.5,
+              "price": 1.21,
+              "sender": "0x2222222222222222222222222222222222222222",
+              "recipient": "0x6cb442acf35158d5eda88fe602221b67b400be3e",
+              "act_id": "act-e5-1"
+            },
+            {
+              "fungible_info": {
+                "name": "USD Coin",
+                "symbol": "USDC",
+                "implementations": [
+                  {
+                    "chain_id": "base",
+                    "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                    "decimals": 6
+                  }
+                ]
+              },
+              "direction": "in",
+              "quantity": {
+                "int": "60000000",
+                "decimals": 6,
+                "float": 60.0,
+                "numeric": "60.0"
+              },
+              "value": 60.0,
+              "price": 1.0,
+              "sender": "0x6cb442acf35158d5eda88fe602221b67b400be3e",
+              "recipient": "0x2222222222222222222222222222222222222222",
+              "act_id": "act-e5-1"
+            },
+            {
+              "fungible_info": {
+                "name": "USD Coin",
+                "symbol": "USDC",
+                "implementations": [
+                  {
+                    "chain_id": "base",
+                    "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                    "decimals": 6
+                  }
+                ]
+              },
+              "direction": "self",
+              "quantity": {
+                "int": "1000000",
+                "decimals": 6,
+                "float": 1.0,
+                "numeric": "1.0"
+              },
+              "value": 1.0,
+              "price": 1.0,
+              "sender": "0x2222222222222222222222222222222222222222",
+              "recipient": "0x2222222222222222222222222222222222222222",
+              "act_id": "act-e5-2"
+            }
+          ],
+          "approvals": [],
+          "acts": [
+            {
+              "id": "act-e5-1",
+              "type": "trade",
+              "application_metadata": {
+                "contract_address": "0x6cb442acf35158d5eda88fe602221b67b400be3e",
+                "method": { "id": "0x3593564c", "name": "execute" }
+              }
+            }
+          ]
+        },
+        "relationships": {
+          "chain": { "data": { "type": "chains", "id": "base" } }
+        }
+      },
+      {
+        "type": "transactions",
+        "id": "tx-d2",
+        "attributes": {
+          "operation_type": "withdraw",
+          "hash": "0xd2",
+          "mined_at_block": 22412350,
+          "mined_at": "2025-11-02T14:31:07Z",
+          "sent_from": "0x2222222222222222222222222222222222222222",
+          "sent_to": "0xcdac0d6c6c59727a65f871236188350531885c43",
+          "status": "confirmed",
+          "nonce": 40,
+          "fee": {
+            "fungible_info": {
+              "name": "Ethereum",
+              "symbol": "ETH",
+              "implementations": [
+                { "chain_id": "base", "address": null, "decimals": 18 }
+              ]
+            },
+            "quantity": {
+              "int": "21000000000000",
+              "decimals": 18,
+              "float": 2.1e-5,
+              "numeric": "0.000021"
+            },
+            "price": 3500.0,
+            "value": 0.0735
+          },
+          "transfers": [
+            {
+              "fungible_info": {
+                "name": "Wrapped Ether",
+                "symbol": "WETH",
+                "implementations": [
+                  {
+                    "chain_id": "base",
+                    "address": "0x4200000000000000000000000000000000000006",
+                    "decimals": 18
+                  }
+                ]
+              },
+              "direction": "in",
+              "quantity": {
+                "int": "200000000000000000",
+                "decimals": 18,
+                "float": 0.2,
+                "numeric": "0.2"
+              },
+              "value": 700.0,
+              "price": 3500.0,
+              "sender": "0xcdac0d6c6c59727a65f871236188350531885c43",
+              "recipient": "0x2222222222222222222222222222222222222222",
+              "act_id": "act-d2-1"
+            },
+            {
+              "fungible_info": {
+                "name": "USD Coin",
+                "symbol": "USDC",
+                "implementations": [
+                  {
+                    "chain_id": "base",
+                    "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                    "decimals": 6
+                  }
+                ]
+              },
+              "direction": "in",
+              "quantity": {
+                "int": "700000000",
+                "decimals": 6,
+                "float": 700.0,
+                "numeric": "700.0"
+              },
+              "value": 700.0,
+              "price": 1.0,
+              "sender": "0xcdac0d6c6c59727a65f871236188350531885c43",
+              "recipient": "0x2222222222222222222222222222222222222222",
+              "act_id": "act-d2-1"
+            }
+          ],
+          "approvals": [],
+          "acts": [
+            {
+              "id": "act-d2-1",
+              "type": "withdraw",
+              "application_metadata": {
+                "contract_address": "0xcdac0d6c6c59727a65f871236188350531885c43",
+                "method": { "id": "0x89afcb44", "name": "burn" }
+              }
+            }
+          ]
+        },
+        "relationships": {
+          "chain": { "data": { "type": "chains", "id": "base" } }
+        }
+      },
+      {
+        "type": "transactions",
+        "id": "tx-d1",
+        "attributes": {
+          "operation_type": "deposit",
+          "hash": "0xd1",
+          "mined_at_block": 22412350,
+          "mined_at": "2025-11-02T14:31:07Z",
+          "sent_from": "0x2222222222222222222222222222222222222222",
+          "sent_to": "0xcdac0d6c6c59727a65f871236188350531885c43",
+          "status": "confirmed",
+          "nonce": 39,
+          "fee": {
+            "fungible_info": {
+              "name": "Ethereum",
+              "symbol": "ETH",
+              "implementations": [
+                { "chain_id": "base", "address": null, "decimals": 18 }
+              ]
+            },
+            "quantity": {
+              "int": "21000000000000",
+              "decimals": 18,
+              "float": 2.1e-5,
+              "numeric": "0.000021"
+            },
+            "price": 3500.0,
+            "value": 0.0735
+          },
+          "transfers": [
+            {
+              "fungible_info": {
+                "name": "USD Coin",
+                "symbol": "USDC",
+                "implementations": [
+                  {
+                    "chain_id": "base",
+                    "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                    "decimals": 6
+                  }
+                ]
+              },
+              "direction": "out",
+              "quantity": {
+                "int": "1500000000",
+                "decimals": 6,
+                "float": 1500.0,
+                "numeric": "1500.0"
+              },
+              "value": 1500.12,
+              "price": 1.0001,
+              "sender": "0x2222222222222222222222222222222222222222",
+              "recipient": "0xcdac0d6c6c59727a65f871236188350531885c43",
+              "act_id": "act-d1-1"
+            }
+          ],
+          "approvals": [],
+          "acts": [
+            {
+              "id": "act-d1-1",
+              "type": "deposit",
+              "application_metadata": {
+                "contract_address": "0xcdac0d6c6c59727a65f871236188350531885c43",
+                "method": { "id": "0x6a627842", "name": "mint" }
+              }
+            }
+          ]
+        },
+        "relationships": {
+          "chain": { "data": { "type": "chains", "id": "base" } }
+        }
+      },
+      {
+        "type": "transactions",
+        "id": "tx-poly",
+        "attributes": {
+          "operation_type": "receive",
+          "hash": "0xpoly",
+          "mined_at_block": 55000000,
+          "mined_at": "2025-11-01T09:00:00Z",
+          "sent_from": "0x9999999999999999999999999999999999999999",
+          "sent_to": "0x2222222222222222222222222222222222222222",
+          "status": "confirmed",
+          "nonce": 12,
+          "fee": null,
+          "transfers": [
+            {
+              "fungible_info": {
+                "name": "Polygon",
+                "symbol": "POL",
+                "implementations": [
+                  { "chain_id": "polygon", "address": null, "decimals": 18 }
+                ]
+              },
+              "direction": "in",
+              "quantity": {
+                "int": "5000000000000000000",
+                "decimals": 18,
+                "float": 5.0,
+                "numeric": "5.0"
+              },
+              "value": 2.4,
+              "price": 0.48,
+              "sender": "0x9999999999999999999999999999999999999999",
+              "recipient": "0x2222222222222222222222222222222222222222",
+              "act_id": "act-poly-1"
+            }
+          ],
+          "approvals": [],
+          "acts": []
+        },
+        "relationships": {
+          "chain": { "data": { "type": "chains", "id": "polygon" } }
+        }
+      }
+    ]
+  },
+  "page2": {
+    "links": {
+      "self": "https://api.zerion.io/v1/wallets/0x2222222222222222222222222222222222222222/transactions/?currency=usd&page%5Bafter%5D=CURSOR2"
+    },
+    "data": [
+      {
+        "type": "transactions",
+        "id": "tx-c3",
+        "attributes": {
+          "operation_type": "burn",
+          "hash": "0xc3",
+          "mined_at_block": 19000000,
+          "mined_at": "2025-06-10T08:00:00Z",
+          "sent_from": "0x2222222222222222222222222222222222222222",
+          "sent_to": "0x0000000000000000000000000000000000000000",
+          "status": "confirmed",
+          "nonce": 21,
+          "fee": {
+            "fungible_info": {
+              "name": "Ethereum",
+              "symbol": "ETH",
+              "implementations": [
+                { "chain_id": "ethereum", "address": null, "decimals": 18 }
+              ]
+            },
+            "quantity": {
+              "int": "84000000000000",
+              "decimals": 18,
+              "float": 8.4e-5,
+              "numeric": "0.000084"
+            },
+            "price": 3400.0,
+            "value": 0.2856
+          },
+          "transfers": [
+            {
+              "fungible_info": {
+                "name": "Aavegotchi",
+                "symbol": "GHST",
+                "implementations": [
+                  {
+                    "chain_id": "ethereum",
+                    "address": "0x3f382dbd960e3a9bbceae22651e88158d2791550",
+                    "decimals": 18
+                  }
+                ]
+              },
+              "direction": "out",
+              "quantity": {
+                "int": "12000000000000000000",
+                "decimals": 18,
+                "float": 12.0,
+                "numeric": "12.0"
+              },
+              "value": 14.4,
+              "price": 1.2,
+              "sender": "0x2222222222222222222222222222222222222222",
+              "recipient": "0x0000000000000000000000000000000000000000",
+              "act_id": "act-c3-1"
+            },
+            {
+              "fungible_info": {
+                "name": "Dust Token",
+                "symbol": "DUST",
+                "implementations": [
+                  {
+                    "chain_id": "ethereum",
+                    "address": "0xdust000000000000000000000000000000000000",
+                    "decimals": 18
+                  }
+                ]
+              },
+              "direction": "out",
+              "quantity": {
+                "int": "0",
+                "decimals": 18,
+                "float": 0.0,
+                "numeric": "0.0"
+              },
+              "value": 0.0,
+              "price": null,
+              "sender": "0x2222222222222222222222222222222222222222",
+              "recipient": "0x0000000000000000000000000000000000000000",
+              "act_id": "act-c3-2"
+            }
+          ],
+          "approvals": [],
+          "acts": [
+            {
+              "id": "act-c3-1",
+              "type": "burn",
+              "application_metadata": {
+                "contract_address": "0x3f382dbd960e3a9bbceae22651e88158d2791550",
+                "method": { "id": "0x42966c68", "name": "burn" }
+              }
+            }
+          ]
+        },
+        "relationships": {
+          "chain": { "data": { "type": "chains", "id": "ethereum" } }
+        }
+      },
+      {
+        "type": "transactions",
+        "id": "tx-b2",
+        "attributes": {
+          "operation_type": "approve",
+          "hash": "0xb2",
+          "mined_at_block": 22000000,
+          "mined_at": "2025-09-20T11:30:00Z",
+          "sent_from": "0x2222222222222222222222222222222222222222",
+          "sent_to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "status": "confirmed",
+          "nonce": 20,
+          "fee": {
+            "fungible_info": {
+              "name": "Ethereum",
+              "symbol": "ETH",
+              "implementations": [
+                { "chain_id": "base", "address": null, "decimals": 18 }
+              ]
+            },
+            "quantity": {
+              "int": "30000000000000",
+              "decimals": 18,
+              "float": 3.0e-5,
+              "numeric": "0.00003"
+            },
+            "price": 3450.0,
+            "value": 0.1035
+          },
+          "transfers": [],
+          "approvals": [
+            {
+              "fungible_info": { "name": "USD Coin", "symbol": "USDC" },
+              "quantity": { "float": 115792089237316200000000000000.0 },
+              "sender": "0x2222222222222222222222222222222222222222"
+            }
+          ],
+          "acts": [
+            {
+              "id": "act-b2-1",
+              "type": "approve",
+              "application_metadata": {
+                "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                "method": { "id": "0x095ea7b3", "name": "approve" }
+              }
+            }
+          ]
+        },
+        "relationships": {
+          "chain": { "data": { "type": "chains", "id": "base" } }
+        }
+      },
+      {
+        "type": "transactions",
+        "id": "tx-a1",
+        "attributes": {
+          "operation_type": "receive",
+          "hash": "0xa1",
+          "mined_at_block": 21999990,
+          "mined_at": "2025-09-20T11:25:00Z",
+          "sent_from": "0x7777777777777777777777777777777777777777",
+          "sent_to": "0x2222222222222222222222222222222222222222",
+          "status": "confirmed",
+          "nonce": 8,
+          "fee": null,
+          "transfers": [
+            {
+              "fungible_info": {
+                "name": "Ethereum",
+                "symbol": "ETH",
+                "implementations": [
+                  { "chain_id": "base", "address": null, "decimals": 18 }
+                ]
+              },
+              "direction": "in",
+              "quantity": {
+                "int": "500000000000000000",
+                "decimals": 18,
+                "float": 0.5,
+                "numeric": "0.5"
+              },
+              "value": 1750.0,
+              "price": 3500.0,
+              "sender": "0x7777777777777777777777777777777777777777",
+              "recipient": "0x2222222222222222222222222222222222222222",
+              "act_id": "act-a1-1"
+            }
+          ],
+          "approvals": [],
+          "acts": []
+        },
+        "relationships": {
+          "chain": { "data": { "type": "chains", "id": "base" } }
+        }
+      }
+    ]
+  }
+}

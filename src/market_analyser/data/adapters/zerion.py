@@ -48,12 +48,12 @@ Protocol and the composition-root registry, never imported directly downstream.
 
 from __future__ import annotations
 
-import base64
 import urllib.parse
 from collections.abc import Iterable
 from typing import Any
 
 from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
+from market_analyser.data.adapters._zerion_common import CHAIN_IDS, basic_auth_header
 from market_analyser.data.errors import (
     RateLimitedError,
     UpstreamDataError,
@@ -70,14 +70,8 @@ _SOURCE = "zerion"
 # scan is a fresh read.
 _CACHE_TTL_SECONDS = 0.0
 
-# Zerion's chain ids → our target-chain literal. A position on any chain absent
-# from this map is dropped (off-target).
-_CHAIN_IDS: dict[str, Chain] = {
-    "ethereum": "ethereum",
-    "base": "base",
-    "arbitrum": "arbitrum",
-    "optimism": "optimism",
-}
+# The target-chain map and the Basic-auth builder are shared with the tx-history
+# adapter (`zerion_tx.py`) via `_zerion_common` so the two can't drift.
 
 
 class ZerionError(ValueError):
@@ -130,20 +124,12 @@ class ZerionAdapter:
                 # whole point of discovery. Request `no_filter` to get complex
                 # positions too; the parser drops the simple balances by kind.
                 params={"currency": "usd", "filter[positions]": "no_filter"},
-                headers={"Authorization": _basic_auth_header(key)},
+                headers={"Authorization": basic_auth_header(key)},
                 expect_json=True,
             )
         except ResilientHttpError as err:
             raise _classify_error(err) from err
         return _parse_positions(response.json())
-
-
-def _basic_auth_header(key: str) -> str:
-    """Zerion uses HTTP Basic auth with the API key as the username and an empty
-    password. The key never reaches a log or the cache key (the client excludes
-    headers from the cache key; nothing here logs the header)."""
-    token = base64.b64encode(f"{key}:".encode()).decode("ascii")
-    return f"Basic {token}"
 
 
 def _classify_error(err: ResilientHttpError) -> UpstreamDataError:
@@ -354,7 +340,7 @@ def _chain_of(entry: dict[str, Any]) -> Chain | None:
     chain_id = chain_data.get("id")
     if not isinstance(chain_id, str):
         return None
-    return _CHAIN_IDS.get(chain_id)
+    return CHAIN_IDS.get(chain_id)
 
 
 def _classify_kind(
