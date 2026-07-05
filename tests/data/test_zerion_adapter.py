@@ -258,3 +258,13 @@ def test_implements_wallet_positions_source_protocol(tmp_path: Path) -> None:
 
     adapter = ZerionAdapter(secrets_store=_store_with_key(tmp_path))
     assert isinstance(adapter, WalletPositionsSource)
+
+
+def test_zero_quantity_position_entry_is_dropped_not_fatal(tmp_path: Path) -> None:
+    """Live 2026-07-05 Plan 0035 smoke finding: Zerion lists emptied/dust
+    holdings with quantity.float == 0.0. A zero amount is "nothing held" — the
+    entry is dropped instead of exploding at the PositionToken gt-0 boundary
+    and failing the whole scan (the fixture carries one such entry)."""
+    positions = _positions(tmp_path)
+    assert all(p.position_id != "base:aerodrome:group-dust-1" for p in positions)
+    assert all(all(t.amount > 0 for t in p.tokens) for p in positions)

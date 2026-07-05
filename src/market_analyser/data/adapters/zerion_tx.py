@@ -367,6 +367,13 @@ def _transfers_of(attributes: dict[str, Any], chain: Chain, tx_hash: str) -> lis
             )
         fungible = item.get("fungible_info")
         if not isinstance(fungible, dict):
+            # NFT transfers carry `nft_info` instead of `fungible_info` (found
+            # live in the 2026-07-05 phase-8 smoke — the survey's §3 shape only
+            # showed fungible rows). A non-fungible movement is not a fungible
+            # economic leg for the v1 P&L, so it is skipped; a transfer with
+            # *neither* info block is still a malformed payload, raised loud.
+            if isinstance(item.get("nft_info"), dict):
+                continue
             raise ZerionError(f"zerion: transaction {tx_hash} transfer missing 'fungible_info'")
         symbol = fungible.get("symbol")
         if not isinstance(symbol, str) or not symbol:

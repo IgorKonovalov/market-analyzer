@@ -158,6 +158,14 @@ def test_zero_amount_transfer_is_dropped(tmp_path: Path) -> None:
     assert [x.symbol for x in burn.transfers] == ["GHST"]
 
 
+def test_nft_transfer_is_skipped_not_fatal(tmp_path: Path) -> None:
+    """Live 2026-07-05 smoke finding: NFT transfers carry `nft_info` instead of
+    `fungible_info`. They are not fungible economic legs — skipped, while the
+    transaction's fungible legs survive (the fixture's trade carries one)."""
+    trade = next(t for t in _fetch(tmp_path) if t.hash == "0xe5")
+    assert [x.symbol for x in trade.transfers] == ["AERO", "USDC"]
+
+
 def test_off_target_chain_transaction_is_dropped(tmp_path: Path) -> None:
     assert all(t.hash != "0xpoly" for t in _fetch(tmp_path))
 

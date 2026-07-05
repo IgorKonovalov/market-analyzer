@@ -1,5 +1,7 @@
 {
-  "links": { "self": "https://api.zerion.io/v1/wallets/0xabc/positions/" },
+  "links": {
+    "self": "https://api.zerion.io/v1/wallets/0xabc/positions/"
+  },
   "data": [
     {
       "type": "positions",
@@ -10,22 +12,44 @@
         "protocol_module": "lending",
         "name": "Aave V3",
         "position_type": "deposit",
-        "quantity": { "int": "1000000000", "decimals": 6, "float": 1000.0, "numeric": "1000.0" },
+        "quantity": {
+          "int": "1000000000",
+          "decimals": 6,
+          "float": 1000.0,
+          "numeric": "1000.0"
+        },
         "value": 1000.0,
         "price": 1.0,
         "fungible_info": {
           "name": "USD Coin",
           "symbol": "USDC",
           "implementations": [
-            { "chain_id": "ethereum", "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "decimals": 6 }
+            {
+              "chain_id": "ethereum",
+              "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "decimals": 6
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "ethereum" } },
-        "dapp": { "data": { "type": "dapps", "id": "aave-v3" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "ethereum"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "aave-v3"
+          }
+        }
       }
     },
     {
@@ -37,22 +61,44 @@
         "protocol_module": "lending",
         "name": "Aave V3",
         "position_type": "loan",
-        "quantity": { "int": "200000000000000000", "decimals": 18, "float": 0.2, "numeric": "0.2" },
+        "quantity": {
+          "int": "200000000000000000",
+          "decimals": 18,
+          "float": 0.2,
+          "numeric": "0.2"
+        },
         "value": 500.0,
         "price": 2500.0,
         "fungible_info": {
           "name": "Wrapped Ether",
           "symbol": "WETH",
           "implementations": [
-            { "chain_id": "ethereum", "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "decimals": 18 }
+            {
+              "chain_id": "ethereum",
+              "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+              "decimals": 18
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "ethereum" } },
-        "dapp": { "data": { "type": "dapps", "id": "aave-v3" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "ethereum"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "aave-v3"
+          }
+        }
       }
     },
     {
@@ -66,22 +112,44 @@
         "position_type": "deposit",
         "group_id": "uniswap-v3:arbitrum:nft-1",
         "pool_address": "0xc6962004f452be9203591991d15f6b388e09e8d0",
-        "quantity": { "int": "600000000", "decimals": 6, "float": 600.0, "numeric": "600.0" },
+        "quantity": {
+          "int": "600000000",
+          "decimals": 6,
+          "float": 600.0,
+          "numeric": "600.0"
+        },
         "value": 600.0,
         "price": 1.0,
         "fungible_info": {
           "name": "USD Coin",
           "symbol": "USDC",
           "implementations": [
-            { "chain_id": "arbitrum", "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831", "decimals": 6 }
+            {
+              "chain_id": "arbitrum",
+              "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+              "decimals": 6
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "arbitrum" } },
-        "dapp": { "data": { "type": "dapps", "id": "uniswap-v3" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "arbitrum"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "uniswap-v3"
+          }
+        }
       }
     },
     {
@@ -95,22 +163,44 @@
         "position_type": "deposit",
         "group_id": "uniswap-v3:arbitrum:nft-1",
         "pool_address": "0xc6962004f452be9203591991d15f6b388e09e8d0",
-        "quantity": { "int": "160000000000000000", "decimals": 18, "float": 0.16, "numeric": "0.16" },
+        "quantity": {
+          "int": "160000000000000000",
+          "decimals": 18,
+          "float": 0.16,
+          "numeric": "0.16"
+        },
         "value": 400.0,
         "price": 2500.0,
         "fungible_info": {
           "name": "Wrapped Ether",
           "symbol": "WETH",
           "implementations": [
-            { "chain_id": "arbitrum", "address": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", "decimals": 18 }
+            {
+              "chain_id": "arbitrum",
+              "address": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+              "decimals": 18
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "arbitrum" } },
-        "dapp": { "data": { "type": "dapps", "id": "uniswap-v3" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "arbitrum"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "uniswap-v3"
+          }
+        }
       }
     },
     {
@@ -124,22 +214,44 @@
         "position_type": "deposit",
         "group_id": "aerodrome:base:pool-7",
         "pool_address": "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59",
-        "quantity": { "int": "1000000", "decimals": 8, "float": 0.01, "numeric": "0.01" },
+        "quantity": {
+          "int": "1000000",
+          "decimals": 8,
+          "float": 0.01,
+          "numeric": "0.01"
+        },
         "value": 700.0,
         "price": 70000.0,
         "fungible_info": {
           "name": "Coinbase Wrapped BTC",
           "symbol": "cbBTC",
           "implementations": [
-            { "chain_id": "base", "address": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf", "decimals": 8 }
+            {
+              "chain_id": "base",
+              "address": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+              "decimals": 8
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "base" } },
-        "dapp": { "data": { "type": "dapps", "id": "aerodrome" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "base"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "aerodrome"
+          }
+        }
       }
     },
     {
@@ -153,22 +265,44 @@
         "position_type": "deposit",
         "group_id": "aerodrome:base:pool-7",
         "pool_address": "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59",
-        "quantity": { "int": "120000000000000000", "decimals": 18, "float": 0.12, "numeric": "0.12" },
+        "quantity": {
+          "int": "120000000000000000",
+          "decimals": 18,
+          "float": 0.12,
+          "numeric": "0.12"
+        },
         "value": 300.0,
         "price": 2500.0,
         "fungible_info": {
           "name": "Wrapped Ether",
           "symbol": "WETH",
           "implementations": [
-            { "chain_id": "base", "address": "0x4200000000000000000000000000000000000006", "decimals": 18 }
+            {
+              "chain_id": "base",
+              "address": "0x4200000000000000000000000000000000000006",
+              "decimals": 18
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "base" } },
-        "dapp": { "data": { "type": "dapps", "id": "aerodrome" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "base"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "aerodrome"
+          }
+        }
       }
     },
     {
@@ -180,22 +314,44 @@
         "protocol_module": "staking",
         "name": "Staked OP",
         "position_type": "staked",
-        "quantity": { "int": "250000000000000000000", "decimals": 18, "float": 250.0, "numeric": "250.0" },
+        "quantity": {
+          "int": "250000000000000000000",
+          "decimals": 18,
+          "float": 250.0,
+          "numeric": "250.0"
+        },
         "value": 250.0,
         "price": 1.0,
         "fungible_info": {
           "name": "Optimism",
           "symbol": "OP",
           "implementations": [
-            { "chain_id": "optimism", "address": "0x4200000000000000000000000000000000000042", "decimals": 18 }
+            {
+              "chain_id": "optimism",
+              "address": "0x4200000000000000000000000000000000000042",
+              "decimals": 18
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "optimism" } },
-        "dapp": { "data": { "type": "dapps", "id": "beefy" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "optimism"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "beefy"
+          }
+        }
       }
     },
     {
@@ -209,22 +365,44 @@
         "position_type": "staked",
         "group_id": "aerodrome:base:gauge-9",
         "pool_address": "0xe3800a58b5535935850a10e082952ec3577d8dcc",
-        "quantity": { "int": "160000000000000000", "decimals": 18, "float": 0.16, "numeric": "0.16" },
+        "quantity": {
+          "int": "160000000000000000",
+          "decimals": 18,
+          "float": 0.16,
+          "numeric": "0.16"
+        },
         "value": 400.0,
         "price": 2500.0,
         "fungible_info": {
           "name": "Wrapped Ether",
           "symbol": "WETH",
           "implementations": [
-            { "chain_id": "base", "address": "0x4200000000000000000000000000000000000006", "decimals": 18 }
+            {
+              "chain_id": "base",
+              "address": "0x4200000000000000000000000000000000000006",
+              "decimals": 18
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "base" } },
-        "dapp": { "data": { "type": "dapps", "id": "aerodrome" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "base"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "aerodrome"
+          }
+        }
       }
     },
     {
@@ -238,22 +416,44 @@
         "position_type": "staked",
         "group_id": "aerodrome:base:gauge-9",
         "pool_address": "0xe3800a58b5535935850a10e082952ec3577d8dcc",
-        "quantity": { "int": "500000000000000000000", "decimals": 18, "float": 500.0, "numeric": "500.0" },
+        "quantity": {
+          "int": "500000000000000000000",
+          "decimals": 18,
+          "float": 500.0,
+          "numeric": "500.0"
+        },
         "value": 350.0,
         "price": 0.7,
         "fungible_info": {
           "name": "Aerodrome",
           "symbol": "AERO",
           "implementations": [
-            { "chain_id": "base", "address": "0x940181a94a35a4569e4529a3cdfb74e38fd98631", "decimals": 18 }
+            {
+              "chain_id": "base",
+              "address": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+              "decimals": 18
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "base" } },
-        "dapp": { "data": { "type": "dapps", "id": "aerodrome" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "base"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "aerodrome"
+          }
+        }
       }
     },
     {
@@ -267,22 +467,44 @@
         "position_type": "staked",
         "group_id": "aerodrome:base:gauge-9",
         "pool_address": "0xe3800a58b5535935850a10e082952ec3577d8dcc",
-        "quantity": { "int": "20000000000000000", "decimals": 18, "float": 0.02, "numeric": "0.02" },
+        "quantity": {
+          "int": "20000000000000000",
+          "decimals": 18,
+          "float": 0.02,
+          "numeric": "0.02"
+        },
         "value": 50.0,
         "price": 2500.0,
         "fungible_info": {
           "name": "Wrapped Ether",
           "symbol": "WETH",
           "implementations": [
-            { "chain_id": "base", "address": "0x4200000000000000000000000000000000000006", "decimals": 18 }
+            {
+              "chain_id": "base",
+              "address": "0x4200000000000000000000000000000000000006",
+              "decimals": 18
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "base" } },
-        "dapp": { "data": { "type": "dapps", "id": "aerodrome" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "base"
+          }
+        },
+        "dapp": {
+          "data": {
+            "type": "dapps",
+            "id": "aerodrome"
+          }
+        }
       }
     },
     {
@@ -294,21 +516,76 @@
         "protocol_module": null,
         "name": "Asset",
         "position_type": "wallet",
-        "quantity": { "int": "50000000", "decimals": 6, "float": 50.0, "numeric": "50.0" },
+        "quantity": {
+          "int": "50000000",
+          "decimals": 6,
+          "float": 50.0,
+          "numeric": "50.0"
+        },
         "value": 50.0,
         "price": 1.0,
         "fungible_info": {
           "name": "USD Coin",
           "symbol": "USDC",
           "implementations": [
-            { "chain_id": "ethereum", "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "decimals": 6 }
+            {
+              "chain_id": "ethereum",
+              "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "decimals": 6
+            }
           ]
         },
-        "flags": { "displayable": true, "is_trash": false },
+        "flags": {
+          "displayable": true,
+          "is_trash": false
+        },
         "updated_at": "2026-06-03T00:00:00Z"
       },
       "relationships": {
-        "chain": { "data": { "type": "chains", "id": "ethereum" } }
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "ethereum"
+          }
+        }
+      }
+    },
+    {
+      "type": "positions",
+      "id": "dust-empty-lp-base",
+      "attributes": {
+        "position_type": "staked",
+        "protocol_module": "farming",
+        "protocol": "aerodrome",
+        "name": "Emptied Pool",
+        "group_id": "group-dust-1",
+        "pool_address": "0xdead00000000000000000000000000000000dead",
+        "value": 0.0,
+        "quantity": {
+          "int": "0",
+          "decimals": 18,
+          "float": 0.0,
+          "numeric": "0"
+        },
+        "fungible_info": {
+          "name": "Aerodrome",
+          "symbol": "AERO",
+          "implementations": [
+            {
+              "chain_id": "base",
+              "address": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+              "decimals": 18
+            }
+          ]
+        }
+      },
+      "relationships": {
+        "chain": {
+          "data": {
+            "type": "chains",
+            "id": "base"
+          }
+        }
       }
     }
   ]

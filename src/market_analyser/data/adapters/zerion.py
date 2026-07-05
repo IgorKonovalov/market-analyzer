@@ -289,6 +289,8 @@ def _parse_entry(entry: Any) -> _ParsedEntry | None:
 
     usd_value = _require_float(attributes.get("value"), "value")
     token = _token_of(attributes, chain)
+    if token is None:
+        return None  # zero-quantity entry — an emptied/dust holding, not a position leg
     protocol = _protocol_of(attributes)
     pool = attributes.get("name") if kind == "lp" else None
     pool = pool if isinstance(pool, str) and pool else None
@@ -380,7 +382,12 @@ def _protocol_of(attributes: dict[str, Any]) -> str:
     return "unknown"
 
 
-def _token_of(attributes: dict[str, Any], chain: Chain) -> PositionToken:
+def _token_of(attributes: dict[str, Any], chain: Chain) -> PositionToken | None:
+    """The entry's token leg, or `None` for a zero-quantity entry. Zerion lists
+    emptied/dust holdings with `quantity.float == 0.0` (found live in the
+    2026-07-05 Plan 0035 smoke); a zero amount is "nothing held" — dropped by
+    the caller, never coerced past the `PositionToken` gt-0 boundary and never
+    fatal to the whole scan."""
     fungible = attributes.get("fungible_info")
     if not isinstance(fungible, dict):
         raise ZerionError("zerion: position missing 'fungible_info'")
@@ -388,6 +395,8 @@ def _token_of(attributes: dict[str, Any], chain: Chain) -> PositionToken:
     if not isinstance(symbol, str) or not symbol:
         raise ZerionError("zerion: position 'fungible_info' missing a symbol")
     amount = _require_float(_quantity_float(attributes.get("quantity")), "quantity.float")
+    if amount == 0:
+        return None
     return PositionToken(
         symbol=symbol,
         address=_implementation_address(fungible, chain) or symbol,
