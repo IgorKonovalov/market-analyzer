@@ -107,10 +107,18 @@ def _matrix(rows: list[FeatureRow]) -> list[list[float]]:
 
 
 def train(
-    rows: list[FeatureRow], labels: list[Direction], params: ModelParams | None = None
+    rows: list[FeatureRow],
+    labels: list[Direction],
+    params: ModelParams | None = None,
+    *,
+    feature_set_id: str = FEATURE_SET_ID,
 ) -> TrainedModel:
     """Fit the classifier on already-aligned ``(rows, labels)`` (see
     `align_samples`). Single-threaded and seeded for byte-identical reruns.
+
+    ``feature_set_id`` names the frozen feature set the rows were built from
+    (v1 by default; pass ``FEATURE_SET_ID_V2`` for v2 matrices, Plan 0059) — it
+    is recorded on the model and flows into ``model_version`` (ADR-0040).
 
     Raises ``ValueError`` if there are no samples or fewer than two label classes
     (a classifier needs at least two outcomes to predict between)."""
@@ -144,7 +152,7 @@ def train(
         clf=clf,
         classes=classes,
         params=p,
-        feature_set_id=FEATURE_SET_ID,
+        feature_set_id=feature_set_id,
         n_samples=len(rows),
         training_cutoff=rows[-1].event_ts,
     )
