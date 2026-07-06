@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from market_analyser.advisor.models import Recommendation
 from market_analyser.backtest.types import SignalEvaluation
+from market_analyser.forecast.result import MultiHorizonForecastResult
 
 DEFAULT_QUEUE_CAP = 256
 
@@ -247,6 +248,24 @@ class RecommendationCompletedPayloadV1(BaseModel):
     recommendation: Recommendation
 
 
+class ForecastCompletedPayloadV1(BaseModel):
+    """`forecast.completed v1` payload (Plan 0037, ADR-0030/ADR-0054): the
+    `forecast` tool produced a multi-horizon forecast.
+
+    Like `signal.evaluated` and `recommendation.completed`, the full result
+    rides inline — small and ephemeral, nothing is persisted for the viewer to
+    follow-up fetch. One envelope per tool call, however many horizons; a
+    horizon that failed the baseline gate travels inside its block with null
+    probabilities (the honest no-edge verdict is carried, never suppressed —
+    ADR-0030 invariants 3/4). A *condition report* (a calibrated probability),
+    never a recommendation (ADR-0029)."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    forecast: MultiHorizonForecastResult
+
+
 class ChartUpdateDroppedPayloadV1(BaseModel):
     """Synthetic notice emitted when a subscriber's queue overflowed.
 
@@ -432,6 +451,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "run.completed": RunCompletedPayloadV1,
     "signal.evaluated": SignalEvaluatedPayloadV1,
     "recommendation.completed": RecommendationCompletedPayloadV1,
+    "forecast.completed": ForecastCompletedPayloadV1,
     "chart.update_dropped": ChartUpdateDroppedPayloadV1,
     "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
     "ohlcv.backfilled": OhlcvBackfilledPayloadV1,

@@ -50,6 +50,13 @@ interface DumpedSchemas {
   RecommendationCompletedPayloadV1: JsonSchema
   Recommendation: JsonSchema
   RecommendationBasis: JsonSchema
+  ForecastCompletedPayloadV1: JsonSchema
+  MultiHorizonForecastResult: JsonSchema
+  HorizonForecast: JsonSchema
+  ForecastValidation: JsonSchema
+  FoldSkill: JsonSchema
+  ForecastProvenance: JsonSchema
+  SeriesInput: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -65,10 +72,15 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
     '    SignalEvaluatedPayloadV1, AlertTriggeredPayloadV1,',
-    '    RecommendationCompletedPayloadV1,',
+    '    RecommendationCompletedPayloadV1, ForecastCompletedPayloadV1,',
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'from market_analyser.advisor.models import Recommendation, RecommendationBasis',
+    'from market_analyser.forecast.result import (',
+    '    MultiHorizonForecastResult, HorizonForecast,',
+    '    ForecastProvenance, SeriesInput,',
+    ')',
+    'from market_analyser.forecast.validation import ForecastValidation, FoldSkill',
     'print(json.dumps({',
     '    "OverlaySpec": OverlaySpec.model_json_schema(),',
     '    "Marker": Marker.model_json_schema(),',
@@ -89,6 +101,13 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "RecommendationCompletedPayloadV1": RecommendationCompletedPayloadV1.model_json_schema(),',
     '    "Recommendation": Recommendation.model_json_schema(),',
     '    "RecommendationBasis": RecommendationBasis.model_json_schema(),',
+    '    "ForecastCompletedPayloadV1": ForecastCompletedPayloadV1.model_json_schema(),',
+    '    "MultiHorizonForecastResult": MultiHorizonForecastResult.model_json_schema(),',
+    '    "HorizonForecast": HorizonForecast.model_json_schema(),',
+    '    "ForecastValidation": ForecastValidation.model_json_schema(),',
+    '    "FoldSkill": FoldSkill.model_json_schema(),',
+    '    "ForecastProvenance": ForecastProvenance.model_json_schema(),',
+    '    "SeriesInput": SeriesInput.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -422,6 +441,127 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     // A single-value Literal is emitted as `const`, not `enum` — the ADR-0029
     // guarantee that no non-advisory label can be constructed, pinned here.
     expect(dumped.Recommendation.properties?.label?.const).toBe('advisory')
+  })
+
+  it('ForecastCompletedPayloadV1 carries the multi-horizon result inline (Plan 0037)', () => {
+    expect(propertyNames(dumped.ForecastCompletedPayloadV1)).toEqual(['forecast'])
+    expect(requiredNames(dumped.ForecastCompletedPayloadV1)).toEqual(['forecast'])
+  })
+
+  it('MultiHorizonForecastResult fields match (all required)', () => {
+    expect(propertyNames(dumped.MultiHorizonForecastResult)).toEqual([
+      'as_of_bar_ts',
+      'feature_set_id',
+      'horizons',
+      'symbol',
+      'timeframe',
+    ])
+    expect(requiredNames(dumped.MultiHorizonForecastResult)).toEqual([
+      'as_of_bar_ts',
+      'feature_set_id',
+      'horizons',
+      'symbol',
+      'timeframe',
+    ])
+  })
+
+  it('HorizonForecast fields match (prob_*/edge_margin/provenance nullable, absent when None; edge_strength closed set)', () => {
+    expect(propertyNames(dumped.HorizonForecast)).toEqual([
+      'edge_margin',
+      'edge_strength',
+      'horizon_bars',
+      'prob_down',
+      'prob_flat',
+      'prob_up',
+      'provenance',
+      'validation',
+    ])
+    // No pydantic defaults anywhere → every field is schema-required. The TS
+    // still marks prob_*/edge_margin/provenance optional because they are
+    // None-valued for a no-edge/untrainable horizon and the bus dumps with
+    // `exclude_none` — required in the model, absent on the wire (the
+    // Recommendation entry_zone/stop shape).
+    expect(requiredNames(dumped.HorizonForecast)).toEqual([
+      'edge_margin',
+      'edge_strength',
+      'horizon_bars',
+      'prob_down',
+      'prob_flat',
+      'prob_up',
+      'provenance',
+      'validation',
+    ])
+    expect(literalValues(dumped.HorizonForecast, 'edge_strength')).toEqual(
+      ['clear', 'marginal', 'no_edge'].sort(),
+    )
+  })
+
+  it('ForecastValidation fields match (skill fields nullable, absent when unscored)', () => {
+    expect(propertyNames(dumped.ForecastValidation)).toEqual([
+      'baseline_skill',
+      'beats_baseline',
+      'folds',
+      'horizon_bars',
+      'majority_skill',
+      'n_scored',
+      'n_splits',
+      'persistence_skill',
+      'skill',
+    ])
+    expect(requiredNames(dumped.ForecastValidation)).toEqual([
+      'baseline_skill',
+      'beats_baseline',
+      'folds',
+      'horizon_bars',
+      'majority_skill',
+      'n_scored',
+      'n_splits',
+      'persistence_skill',
+      'skill',
+    ])
+  })
+
+  it('FoldSkill fields match (skill fields nullable, absent when unscored)', () => {
+    expect(propertyNames(dumped.FoldSkill)).toEqual([
+      'fold_index',
+      'majority_skill',
+      'model_skill',
+      'n_test',
+      'persistence_skill',
+    ])
+    expect(requiredNames(dumped.FoldSkill)).toEqual([
+      'fold_index',
+      'majority_skill',
+      'model_skill',
+      'n_test',
+      'persistence_skill',
+    ])
+  })
+
+  it('ForecastProvenance fields match (series_inputs defaulted, never None, always on the wire)', () => {
+    expect(propertyNames(dumped.ForecastProvenance)).toEqual([
+      'feature_set_id',
+      'lib_versions',
+      'model_version',
+      'seed',
+      'series_inputs',
+      'training_cutoff',
+    ])
+    // `series_inputs` has a non-None default (`()`) → not in `required`, but it
+    // is never None so `exclude_none` keeps it on the wire — the TS marks it
+    // required (the TrendlineSpec.style shape).
+    expect(requiredNames(dumped.ForecastProvenance)).toEqual([
+      'feature_set_id',
+      'lib_versions',
+      'model_version',
+      'seed',
+      'training_cutoff',
+    ])
+  })
+
+  it('SeriesInput fields match (last_point_ts nullable, absent when the series had no point)', () => {
+    expect(propertyNames(dumped.SeriesInput)).toEqual(['last_point_ts', 'series_id'])
+    expect(requiredNames(dumped.SeriesInput)).toEqual(['last_point_ts', 'series_id'])
   })
 
   it('RecommendationBasis fields match (backtest/forecast nullable, absent on the wire when None)', () => {

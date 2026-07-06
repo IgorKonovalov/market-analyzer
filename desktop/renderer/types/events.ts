@@ -191,6 +191,98 @@ export interface RecommendationCompletedPayloadV1 {
   recommendation: Recommendation
 }
 
+/** Closed set — mirror of the pydantic `EdgeStrength` literal (Plan 0036/0059).
+ * `no_edge` = the model did not beat baseline out-of-sample (prob_* are absent);
+ * `marginal` / `clear` split a real beat by the sidecar's margin threshold so a
+ * thin beat reads as thin. */
+export type EdgeStrength = 'no_edge' | 'marginal' | 'clear'
+
+/** Mirror of the pydantic `SeriesInput` (Plan 0059 / ADR-0054): one exogenous
+ * metric series a forecast consumed. `last_point_ts` is required-but-nullable
+ * in pydantic (epoch seconds of the freshest point the lag-1 join read); the
+ * bus dumps with `exclude_none`, so it is ABSENT on the wire for an all-NaN
+ * column — hence optional here. */
+export interface SeriesInput {
+  series_id: string
+  last_point_ts?: number | null
+}
+
+/** Mirror of the pydantic `FoldSkill` (Plan 0036): one scored walk-forward
+ * fold. The three `*_skill` fields are required-but-nullable (`None` marks an
+ * unscored fold) and `exclude_none`-stripped from the wire — hence optional. */
+export interface FoldSkill {
+  fold_index: number
+  n_test: number
+  model_skill?: number | null
+  persistence_skill?: number | null
+  majority_skill?: number | null
+}
+
+/** Mirror of the pydantic `ForecastValidation` (Plan 0036 / ADR-0030): the
+ * walk-forward verdict. `skill`/`baseline_skill`/`persistence_skill`/
+ * `majority_skill` are required-but-nullable (None = nothing scorable) and
+ * absent on the wire when None — hence optional here. `beats_baseline` is the
+ * gate: false means no probability was shipped for that horizon. */
+export interface ForecastValidation {
+  horizon_bars: number
+  n_splits: number
+  n_scored: number
+  skill?: number | null
+  baseline_skill?: number | null
+  persistence_skill?: number | null
+  majority_skill?: number | null
+  beats_baseline: boolean
+  folds: FoldSkill[]
+}
+
+/** Mirror of the pydantic `ForecastProvenance` (ADR-0040 / ADR-0054): the audit
+ * trail that makes a forecast reproducible. `series_inputs` has a non-None
+ * default (`()`), so like `TrendlineSpec.style` it is not schema-required but
+ * is ALWAYS present on the wire (an empty array for a v1 model) — hence
+ * required here. */
+export interface ForecastProvenance {
+  model_version: string
+  feature_set_id: string
+  /** ISO 8601 UTC timestamp. */
+  training_cutoff: string
+  seed: number
+  lib_versions: Record<string, string>
+  series_inputs: SeriesInput[]
+}
+
+/** Mirror of the pydantic `HorizonForecast` (Plan 0059 / ADR-0054): one
+ * horizon's independently-validated block. `prob_*`/`edge_margin`/`provenance`
+ * are required-but-nullable — None for a no-edge horizon (probs), an unscored
+ * comparison (margin), or a horizon with nothing to train on (provenance) —
+ * and `exclude_none`-stripped from the wire, hence optional here. */
+export interface HorizonForecast {
+  horizon_bars: number
+  prob_up?: number | null
+  prob_down?: number | null
+  prob_flat?: number | null
+  validation: ForecastValidation
+  edge_margin?: number | null
+  edge_strength: EdgeStrength
+  provenance?: ForecastProvenance | null
+}
+
+/** Mirror of the pydantic `MultiHorizonForecastResult` (Plan 0059 / ADR-0054):
+ * the `forecast` tool's response — one block per requested horizon, each
+ * trained/validated/gated independently. A condition (a calibrated
+ * probability), never a recommendation. */
+export interface MultiHorizonForecastResult {
+  symbol: string
+  timeframe: string
+  /** ISO 8601 UTC timestamp of the as-of bar (anti-lookahead). */
+  as_of_bar_ts: string
+  feature_set_id: string
+  horizons: HorizonForecast[]
+}
+
+export interface ForecastCompletedPayloadV1 {
+  forecast: MultiHorizonForecastResult
+}
+
 /** A single [start, end] coverage gap a backfill is/was filling (Plan 0013). */
 export interface GapWindow {
   start: string
@@ -249,6 +341,7 @@ export type EnvelopeType =
   | 'run.completed'
   | 'signal.evaluated'
   | 'recommendation.completed'
+  | 'forecast.completed'
   | 'chart.update_dropped'
   | 'ohlcv.backfill_started'
   | 'ohlcv.backfilled'
@@ -281,6 +374,10 @@ export type SignalEvaluatedEnvelope = Envelope<SignalEvaluatedPayloadV1> & {
 }
 export type RecommendationCompletedEnvelope = Envelope<RecommendationCompletedPayloadV1> & {
   type: 'recommendation.completed'
+  version: 1
+}
+export type ForecastCompletedEnvelope = Envelope<ForecastCompletedPayloadV1> & {
+  type: 'forecast.completed'
   version: 1
 }
 export type OhlcvBackfillStartedEnvelope = Envelope<OhlcvBackfillStartedPayloadV1> & {

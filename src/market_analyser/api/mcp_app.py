@@ -214,11 +214,13 @@ def create_mcp_components(
     # is simply not cached to disk. The metric store (when wired) enables the v2
     # exogenous feature set (ADR-0054); without it the tool computes on the v1
     # OHLCV-only set and its provenance says so (feature_set_id + empty
-    # series_inputs) — explicit, not silent.
+    # series_inputs) — explicit, not silent. Publishes `forecast.completed v1`
+    # (Plan 0037) so the viewer's Forecast view renders the blocks live.
     forecast_models_dir = runs_dir.parent / "models" if runs_dir is not None else None
     register_forecast(
         server,
         provider=provider,
+        event_bus=event_bus,
         models_dir=forecast_models_dir,
         metric_lookup=metric_points_repository,
     )

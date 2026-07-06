@@ -16,7 +16,11 @@ Covered:
   round-trips through `MultiHorizonForecastResult` with `series_inputs`
   populated when a metric store is wired, and says v1/empty when not (done-when
   c, ADR-0054);
-- the tool is wired into the live MCP server (registration assertion).
+- the tool is wired into the live MCP server (registration assertion);
+- Plan 0037 phase 1: a successful run publishes exactly one `forecast.completed
+  v1` envelope carrying the full `MultiHorizonForecastResult` inline (a no-edge
+  horizon travels with null probabilities — `exclude_none`-absent on the wire —
+  rather than suppressing the event); nothing is published on any failure.
 
 The accepted/no-edge *branches* of the v1 core are exercised by stubbing
 `validate` so the gate state is deterministic; the gate's own correctness on real
@@ -35,6 +39,7 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -53,6 +58,7 @@ from market_analyser.api.mcp_tools.forecast import (
     _classify_edge,
     _compute_forecast,
     _compute_multi_horizon_forecast,
+    _multi_forecast_response,
     _normalise_horizons,
     default_horizons,
 )
@@ -67,7 +73,7 @@ from market_analyser.data.types import (
     SentimentSample,
     SymbolInfo,
 )
-from market_analyser.events import EventBus
+from market_analyser.events import Envelope, EventBus
 from market_analyser.forecast import validation as validation_module
 from market_analyser.forecast.features import (
     EXOGENOUS_SERIES_IDS_V2,
@@ -513,6 +519,144 @@ def test_multi_horizon_result_is_deterministic() -> None:
 def test_description_documents_multi_horizon_surface() -> None:
     assert "horizons" in FORECAST_DESCRIPTION
     assert "series_inputs" in FORECAST_DESCRIPTION
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0037 phase 1: `forecast.completed v1` emission.                        #
+# --------------------------------------------------------------------------- #
+
+
+def _run_draining_bus(**overrides: Any) -> tuple[MultiHorizonForecastResult, list[Envelope]]:
+    """Run `_multi_forecast_response` with a subscription open on its bus and
+    return `(result, envelopes)` — the subscription is opened before the call
+    so nothing published can be missed (the `recommend` test pattern)."""
+
+    bus = EventBus()
+
+    async def _go() -> tuple[MultiHorizonForecastResult, list[Envelope]]:
+        sub = bus.subscribe()
+        try:
+            kwargs: dict[str, Any] = {
+                "provider": _BarsProvider(BARS),
+                "event_bus": bus,
+                "models_dir": None,
+                "metric_lookup": None,
+                "symbol": "SYN",
+                "timeframe": "1d",
+                "range_start": datetime(2024, 1, 1, tzinfo=UTC),
+                "range_end": datetime(2025, 12, 31, tzinfo=UTC),
+                "horizons": [1, 5],
+                "flat_band": 0.001,
+                "n_splits": 5,
+                "seed": 1729,
+            }
+            kwargs.update(overrides)
+            result = await _multi_forecast_response(**kwargs)
+            envelopes: list[Envelope] = []
+            try:
+                while True:
+                    envelopes.append(await asyncio.wait_for(sub.next(), timeout=0.3))
+            except TimeoutError:
+                pass
+            return result, envelopes
+        finally:
+            sub.close()
+
+    return asyncio.run(_go())
+
+
+class TestEventEmission:
+    """Plan 0037 phase 1 done-when: running `forecast` emits exactly one
+    `forecast.completed v1` envelope carrying the full
+    `MultiHorizonForecastResult`; a no-edge horizon ships null probabilities in
+    its block rather than suppressing the event; failures publish nothing."""
+
+    def test_success_publishes_exactly_one_envelope_with_full_result(self) -> None:
+        result, envelopes = _run_draining_bus()
+
+        assert len(envelopes) == 1  # exactly one, not "at least one"
+        envelope = envelopes[0]
+        assert envelope.type == "forecast.completed"
+        assert envelope.version == 1
+
+        # The full result rides inline: the payload is byte-for-byte the bus's
+        # dump of the returned artifact, blocks and provenance included.
+        assert envelope.payload == {"forecast": result.model_dump(mode="json", exclude_none=True)}
+        payload_forecast = envelope.payload["forecast"]
+        assert payload_forecast["symbol"] == "SYN"
+        assert payload_forecast["timeframe"] == "1d"
+        assert [block["horizon_bars"] for block in payload_forecast["horizons"]] == [1, 5]
+
+    def test_all_no_edge_result_still_publishes_with_null_probabilities(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The honest no-edge verdict travels: the event fires and the failed
+        horizon's block carries no `prob_*` keys on the wire (`None` values are
+        `exclude_none`-stripped) — the event is never suppressed."""
+
+        monkeypatch.setattr(
+            forecast_tool, "validate", lambda bars, **kw: _fake_validation(beats=False)
+        )
+        result, envelopes = _run_draining_bus(horizons=[1])
+
+        (block_model,) = result.horizons
+        assert block_model.prob_up is None
+
+        assert len(envelopes) == 1
+        (block,) = envelopes[0].payload["forecast"]["horizons"]
+        assert block["validation"]["beats_baseline"] is False
+        assert "prob_up" not in block
+        assert "prob_down" not in block
+        assert "prob_flat" not in block
+
+    @staticmethod
+    def _failing_run_envelopes(match: str, **overrides: Any) -> list[Envelope]:
+        """Expect `_multi_forecast_response` to raise; return whatever hit the bus."""
+
+        bus = EventBus()
+
+        async def _go() -> list[Envelope]:
+            sub = bus.subscribe()
+            try:
+                kwargs: dict[str, Any] = {
+                    "provider": _BarsProvider(BARS),
+                    "event_bus": bus,
+                    "models_dir": None,
+                    "metric_lookup": None,
+                    "symbol": "SYN",
+                    "timeframe": "1d",
+                    "range_start": datetime(2024, 1, 1, tzinfo=UTC),
+                    "range_end": datetime(2025, 12, 31, tzinfo=UTC),
+                    "horizons": [1],
+                    "flat_band": 0.001,
+                    "n_splits": 5,
+                    "seed": 1729,
+                }
+                kwargs.update(overrides)
+                with pytest.raises(ValueError, match=match):
+                    await _multi_forecast_response(**kwargs)
+                envelopes: list[Envelope] = []
+                try:
+                    while True:
+                        envelopes.append(await asyncio.wait_for(sub.next(), timeout=0.2))
+                except TimeoutError:
+                    pass
+                return envelopes
+            finally:
+                sub.close()
+
+        return asyncio.run(_go())
+
+    def test_validation_failure_publishes_nothing(self) -> None:
+        assert self._failing_run_envelopes("not supported", timeframe="3m") == []
+
+    def test_no_bars_failure_publishes_nothing(self) -> None:
+        """A failure past input validation (empty bar fetch) also leaves the
+        bus untouched — the publish sits strictly after the computation."""
+
+        assert (
+            self._failing_run_envelopes("backfill via get_ohlcv", provider=_BarsProvider([])) == []
+        )
 
 
 # --------------------------------------------------------------------------- #

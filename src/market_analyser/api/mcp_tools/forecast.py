@@ -20,6 +20,11 @@ The flow:
              -> beats_baseline: ship probabilities + persist the accepted model
                 else:           ship prob_*=None, keep the validation basis
         -> return MultiHorizonForecastResult (blocks + series provenance)
+        -> publish `forecast.completed v1` carrying the result inline
+           (Plan 0037) — exactly once per successful run, strictly after the
+           result is built; any raise above the publish leaves the bus
+           untouched (the `signal.evaluated`/`recommendation.completed`
+           discipline)
 
 **Honest uncertainty** (ADR-0030 invariant 4): every block carries its own
 out-of-sample `skill`, `baseline_skill`, and `beats_baseline` — "edge at 1d, no
@@ -51,6 +56,7 @@ from market_analyser.api.mcp_tools._validation import (
 )
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
+from market_analyser.events import EventBus, ForecastCompletedPayloadV1
 from market_analyser.forecast.exogenous import MetricAsOfLookup, build_exogenous_columns
 from market_analyser.forecast.features import (
     EXOGENOUS_SERIES_IDS_V2,
@@ -391,6 +397,7 @@ def _compute_multi_horizon_forecast(
 async def _multi_forecast_response(
     *,
     provider: MarketDataProvider,
+    event_bus: EventBus,
     models_dir: Path | None,
     metric_lookup: MetricAsOfLookup | None,
     symbol: str,
@@ -402,7 +409,9 @@ async def _multi_forecast_response(
     n_splits: int,
     seed: int,
 ) -> MultiHorizonForecastResult:
-    """Body of `forecast`: validate, fetch, then offload the model work."""
+    """Body of `forecast`: validate, fetch, then offload the model work.
+    Publishes the `forecast.completed v1` envelope exactly once, only after a
+    successful computation (Plan 0037)."""
 
     _require_non_empty_symbol(symbol)
     _require_supported_timeframe(timeframe)
@@ -428,7 +437,7 @@ async def _multi_forecast_response(
             "backfill via get_ohlcv first",
         )
 
-    return await asyncio.to_thread(
+    result = await asyncio.to_thread(
         _compute_multi_horizon_forecast,
         bars=bars,
         symbol=symbol,
@@ -441,19 +450,27 @@ async def _multi_forecast_response(
         metric_lookup=metric_lookup,
     )
 
+    # Publish AFTER a successful computation — every raise above this line
+    # leaves the bus untouched (zero envelopes on failure). A no-edge horizon
+    # still travels: its block carries null probabilities, the event fires.
+    event_bus.publish("forecast.completed", ForecastCompletedPayloadV1(forecast=result))
+
+    return result
+
 
 def register_forecast(
     server: FastMCP,
     *,
     provider: MarketDataProvider,
+    event_bus: EventBus,
     models_dir: Path | None,
     metric_lookup: MetricAsOfLookup | None = None,
 ) -> None:
-    """Bind `forecast` to `server`. The provider, models_dir and metric store are
-    captured by closure so the tool body keeps the parameter list FastMCP
-    introspects for the schema. ``metric_lookup`` (the ADR-0051 as_of surface)
-    enables the v2 exogenous feature set; without it the tool computes on the v1
-    set and says so in its provenance."""
+    """Bind `forecast` to `server`. The provider, event bus, models_dir and
+    metric store are captured by closure so the tool body keeps the parameter
+    list FastMCP introspects for the schema. ``metric_lookup`` (the ADR-0051
+    as_of surface) enables the v2 exogenous feature set; without it the tool
+    computes on the v1 set and says so in its provenance."""
 
     @server.tool(description=FORECAST_DESCRIPTION)
     async def forecast(
@@ -468,6 +485,7 @@ def register_forecast(
     ) -> MultiHorizonForecastResult:
         return await _multi_forecast_response(
             provider=provider,
+            event_bus=event_bus,
             models_dir=models_dir,
             metric_lookup=metric_lookup,
             symbol=symbol,
