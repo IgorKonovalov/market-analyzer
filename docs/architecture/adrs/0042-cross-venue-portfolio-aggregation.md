@@ -1,6 +1,6 @@
 # ADR-0042 — Cross-venue portfolio aggregation: one read-only view, average-cost basis
 
-> **Status:** proposed — accepts at the portfolio aggregation plan close ([Plan 0041](../plans/0041-cross-venue-portfolio-aggregation.md))
+> **Status:** accepted (2026-07-06, at [Plan 0041](../plans/done/0041-cross-venue-portfolio-aggregation.md)'s close)
 > **Date:** 2026-06-05
 > **Related plan(s):** [Plan 0041](../plans/0041-cross-venue-portfolio-aggregation.md) (aggregation), [Plan 0042](../plans/0042-defi-position-risk-forecast.md) (DeFi risk/forecast over these holdings), [Plan 0043](../plans/0043-portfolio-ui-surface.md) (UI)
 > **Related ADRs:** [ADR-0036](0036-defi-pnl-reconstruction.md) (the average-cost basis this adopts venue-wide), [ADR-0031](0031-data-source-adapter-contract.md) (the Binance read adapter's contract), [ADR-0038](0038-third-party-api-key-storage.md) (where the Binance *read* key lives — not the trade keychain), [ADR-0034](0034-defi-portfolio-aggregator.md)/[ADR-0035](0035-defi-domain-placement.md) (the DeFi holdings leg), [ADR-0015](0015-claude-code-primary-control-surface.md) ("conditions are facts" — exposure/P&L report, never advise), [ADR-0029](0029-advisory-recommendation-boundary.md) (rebalance *advice* lives in the advisor, not here)

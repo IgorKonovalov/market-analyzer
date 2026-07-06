@@ -1,6 +1,6 @@
 # 0041 — Cross-venue portfolio aggregation
 
-> **Status:** approved (2026-06-05)
+> **Status:** done (2026-07-06) — three `dev` phases on `main` (`18816b9` Binance read adapter → `95d62d0` manual source + unified `Holding` model → `00b3ffe` aggregator + `portfolio_summary`, the 42nd tool), no branch, migration-free. Clean Mode 4 same day: no blockers, no majors; every named spec read at the assertion level (the tool test drives the **real** ADR-0036 replay through a seeded in-memory `DefiTxRepository`; determinism, no-advice, and read-only-by-AST-scan pins all verified); 49 plan specs + full suite re-run green at close. ADR-0042 accepted at close. Open question resolved as proposed (futures = positions with entry price as basis, `kind`-flagged distinct from spot). One reasoned deviation: the manual file is JSON, not YAML (no YAML parser in the repo; `config.json` house precedent). Two Mode 4 minors carried to Followups below.
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev
 > **Related ADRs:** [ADR-0042](../adrs/0042-cross-venue-portfolio-aggregation.md) (this subsystem — accepts at close), [ADR-0036](../adrs/0036-defi-pnl-reconstruction.md) (average-cost engine reused), [ADR-0031](../adrs/0031-data-source-adapter-contract.md) (Binance read adapter contract), [ADR-0038](../adrs/0038-third-party-api-key-storage.md) (Binance read-key storage), [ADR-0034](../adrs/0034-defi-portfolio-aggregator.md) (DeFi holdings leg)
@@ -99,3 +99,5 @@ class PortfolioSummary(BaseModel):
 - DeFi risk/forecast over these holdings ([Plan 0042](0042-defi-position-risk-forecast.md)).
 - Portfolio UI ([Plan 0043](0043-portfolio-ui-surface.md)).
 - Optional realized-P&L history (this plan does unrealized; realized P&L for the CEX/manual legs mirrors [ADR-0036](../adrs/0036-defi-pnl-reconstruction.md)'s DeFi realized path).
+- **Symbol normalization for `exposure_by_asset`** (Mode 4 minor, 2026-07-06): the keys are venue-native holding symbols, so Binance spot `BTC` and futures `BTCUSDT` (same underlying) never merge, and DeFi rows key on pool names. Honest and test-pinned as facts, but [Plan 0043](0043-portfolio-ui-surface.md)'s UI should label the breakdown "by holding", and a true net-underlying-exposure view needs an architect-gated symbol-normalization map first.
+- **CWD-relative default manual-positions path** (Mode 4 minor, 2026-07-06): `mcp_app.py` defaults to `positions/portfolio.json` relative to the sidecar's CWD; a standalone sidecar (ADR-0016) launched outside the repo root reads the leg as absent (surfaced by a note, not silent). `dev`: resolve against a configured root, or document the launch-from-repo-root constraint.
