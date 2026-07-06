@@ -1,6 +1,6 @@
 # 0059 — Forecast feature-set v2: exogenous crypto features + multi-horizon
 
-> **Status:** in-progress (2026-07-05)
+> **Status:** done (closed 2026-07-06 — phases 1–3 `dev` on branch `plan-0059-forecast-feature-set-v2` (`30fd6de` → `f1942f3` → `a1080e4`), merged `--no-ff`; phase 4 `backtester` artifact `runs/analysis/2026-07-06-plan-0059-v1-vs-v2/`. Clean Mode 4: no blockers, no majors; every done-when read at the assertion level. Suite on the merged tree: 1830 passed / 7 Win-skips; one unrelated `network`-marked Yahoo smoke flake (July-4 holiday calendar). ADR-0054 accepted. Phase-4 read: v1 no-edge at all three horizons on 11.4y BTC-USD 1d; v2 unevaluable — production metric store empty, see Followups.)
 > **Created:** 2026-06-09
 > **Owner skill(s):** dev, backtester
 > **Related ADRs:** [ADR-0054](../adrs/0054-exogenous-forecast-features-multi-horizon.md) (implements; accepts at close), [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (the `as_of` join it consumes), [ADR-0030](0030-forecasting-subsystem.md) / [ADR-0040](../adrs/0040-forecasting-model-artifacts.md) (invariants + versioning that carry over)
@@ -95,4 +95,7 @@ class SeriesInput(BaseModel):
 
 ## Followups (after this lands)
 
-- (fill as discovered)
+- **Production metric store is empty (found at phase 4, 2026-07-06).** All five exogenous series (`fng.value`, `coingecko.btc_dominance`, `binance.funding_rate.BTCUSDT`, `binance.open_interest.BTCUSDT`, `coinmetrics.btc.mvrv`) have **0 points** in the production DB, despite Plans 0055/0056/0057 having landed backfill + accrual. Whether accrual stopped, never ran in this deployment, or the DB was recreated (migrations 0006/0007 landed 2026-07-05) needs investigation. Until series accrue (F&G/funding/MVRV backfill deep; dominance/OI accrue-only), **v2 is structurally unevaluable in production** — the tool honestly falls back per its design, but the plan's headline behavior (v2 blocks on `BTC-USD 1d`) is not yet live. Cheapest fix if it's just cold: call the refresh-bearing tools (`crypto_fear_greed`, `bitcoin_market_pulse`, `derivatives_snapshot refresh=true`, `btc_cycle_snapshot refresh=true`) and let accrual run.
+- **Re-run the phase-4 comparison once the series are warm** (reproducible from `comparison.json`'s inputs block). v2 rows first define ~8 daily bars after the last accrue-only series starts; a scored fold realistically needs months of accrual.
+- **Cached BTC-USD 1d bars end 2026-06-08** (~1 month stale at the phase-4 run). Backfill before any live-facing forecast use.
+- **Multi-horizon presentation in the Forecast panel** — Plan 0037 renders the tool's response; a small follow-up there if the per-horizon blocks want distinct UI (noted in "What this plan does NOT do").

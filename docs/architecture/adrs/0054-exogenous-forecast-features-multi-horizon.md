@@ -1,6 +1,6 @@
 # ADR-0054 — Exogenous forecast features join lag-1 as-of; horizons validate independently
 
-> **Status:** proposed (accepts at Plan 0059's close)
+> **Status:** accepted (Plan 0059 close, 2026-07-06)
 > **Date:** 2026-06-09
 > **Related plan(s):** 0059-forecast-feature-set-v2 (implements), 0055/0056/0057 (supply the series)
 > **Related ADRs:** [ADR-0030](0030-forecasting-subsystem.md) (the four invariants this extends to exogenous inputs — not an amendment: 0030 already reserves "configurable N-bar-ahead" horizons), [ADR-0040](0040-forecasting-model-artifacts.md) (model_version hashing the expanded feature set flows into), [ADR-0051](0051-historized-metric-series-contract.md) (the `as_of` read this builds on)
