@@ -98,10 +98,16 @@ _OI_HIST_PAGE_LIMIT = 500
 _OI_BUCKET_SECONDS = 3600
 
 # How far before the latest observed print the seed starts walking: the
-# documented retention is "the latest 1 month", so 30 days bounds it from
-# below without a wall-clock read (the anchor is upstream's own latest
-# timestamp).
-_OI_SEED_WINDOW_MS = 30 * 86_400 * 1000
+# documented retention is "the latest 1 month", bounded from below without a
+# wall-clock read (the anchor is upstream's own latest timestamp). One hour
+# INSIDE the 30-day mark, not exactly 30 days: verified live 2026-07-06 (Plan
+# 0061 phase-4 smoke), upstream now rejects any startTime >= 720h old with
+# HTTP 400 and CLAMPS a younger-but-pre-retention startTime to the ~21 days it
+# actually holds — so the hour of margin costs nothing (the clamp serves
+# everything available) while an exact 30d cursor, anchored on an
+# hour-truncated data timestamp that trails wall-clock now, lands on the
+# rejected side and the seed 400s forever.
+_OI_SEED_WINDOW_MS = (30 * 24 - 1) * 3_600 * 1000
 
 # What a startTime *older than retention* returns is undocumented. A clamping
 # upstream (the live-verified /fapi/v1/fundingRate behavior) serves rows from

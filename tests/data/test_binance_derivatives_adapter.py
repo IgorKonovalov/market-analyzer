@@ -510,7 +510,10 @@ class _FakeOiTransport:
     smoke verified, conservatively assumed shared. With
     `clamp_early_start=False` the fake instead answers a startTime older than
     its earliest retained row with an EMPTY page (the undocumented
-    non-clamping alternative the seed must survive).
+    non-clamping alternative the seed must survive). With
+    `reject_start_at_or_before_ms` set, a paged startTime at or before that
+    instant answers **HTTP 400** — the live-verified 2026-07-06 boundary
+    behavior (any startTime >= 720h old is rejected outright, never clamped).
 
     `/fapi/v1/openInterest`: returns `snapshot_holder["body"]` (mutable
     between calls so a test can steer the sample's timestamp/value).
@@ -522,10 +525,12 @@ class _FakeOiTransport:
         snapshot_holder: dict[str, dict[str, Any]] | None = None,
         *,
         clamp_early_start: bool = True,
+        reject_start_at_or_before_ms: int | None = None,
     ) -> None:
         self._entries = entries
         self._snapshot_holder = snapshot_holder if snapshot_holder is not None else {}
         self._clamp_early_start = clamp_early_start
+        self._reject_start_at_or_before_ms = reject_start_at_or_before_ms
         self.hist_requests: list[dict[str, str]] = []
         self.snapshot_requests: list[dict[str, str]] = []
 
@@ -536,6 +541,12 @@ class _FakeOiTransport:
         query = {k: v[0] for k, v in raw_query.items()}
         if "openInterestHist" in url:
             self.hist_requests.append(query)
+            if (
+                self._reject_start_at_or_before_ms is not None
+                and "startTime" in query
+                and int(query["startTime"]) <= self._reject_start_at_or_before_ms
+            ):
+                return HttpResponse(status_code=400, headers={}, body=b"{}", elapsed_seconds=0.0)
             payload: Any = self._hist_page(query)
         else:
             self.snapshot_requests.append(query)
@@ -646,6 +657,40 @@ def test_oi_seed_survives_a_non_clamping_upstream(
     assert stored[-1].ts == _OI_BASE_TS + (_OI_HIST_HOURS - 1) * 3600
     # Bounded walk: the day-sized skip covers the 30-day window in ~30 probes.
     assert len(fake.hist_requests) < 40
+
+
+def test_oi_seed_window_stays_inside_the_upstream_400_boundary(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    """Verified live 2026-07-06 (Plan 0061 phase-4 smoke): upstream answers
+    HTTP 400 to any paged startTime 720 or more hours old — it CLAMPS a
+    younger pre-retention startTime to the ~21 days it actually holds, but a
+    startTime at the exact 30-day mark is rejected outright, not clamped and
+    not answered empty. The seed cursor anchors on the latest data timestamp
+    (hour-truncated, so slightly older than upstream's wall clock), which put
+    the old exactly-30-day window on the rejected side every time: the seed
+    400'd forever and the series never seeded. The window is now one hour
+    inside the mark; against a fake enforcing the live-verified boundary the
+    seed must land the full fixture and the paginated cursor must stay
+    strictly on the accepted side."""
+    entries = [_oi_hist_entry(i) for i in range(_OI_HIST_HOURS)]
+    latest_ms = int(str(entries[-1]["timestamp"]))
+    transport = _FakeOiTransport(
+        entries, reject_start_at_or_before_ms=latest_ms - 720 * 3_600 * 1000
+    )
+    adapter, fake = _oi_adapter(monkeypatch, store, transport=transport)
+
+    inserted = adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    assert inserted == _OI_HIST_HOURS
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert [p.ts for p in stored] == [_OI_BASE_TS + i * 3600 for i in range(_OI_HIST_HOURS)]
+    # The first paged cursor is exactly one hour inside the 30-day boundary —
+    # pinned as an independent literal so a regression back to the rejected
+    # exact-30d window fails here, not in production.
+    first_paged = next(req for req in fake.hist_requests if "startTime" in req)
+    assert int(first_paged["startTime"]) == latest_ms - (30 * 24 - 1) * 3_600 * 1000
+    assert int(first_paged["startTime"]) > latest_ms - 720 * 3_600 * 1000
 
 
 def test_oi_seed_with_empty_upstream_window_is_a_noop(
