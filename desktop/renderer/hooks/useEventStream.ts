@@ -35,6 +35,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { api, subscribeToConfigChanges } from '../api/client'
 import { parseAlertTriggered } from '../schemas/alertTriggered'
+import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
 import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
 import type {
   AlertTriggeredPayloadV1,
@@ -42,6 +43,7 @@ import type {
   ChartShowPayloadV1,
   ChartUpdatePayloadV1,
   Envelope,
+  ForecastCompletedPayloadV1,
   OhlcvBackfilledPayloadV1,
   OhlcvBackfillFailedPayloadV1,
   OhlcvBackfillStartedPayloadV1,
@@ -59,6 +61,7 @@ export interface EventStreamHandlers {
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
   onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
   onRecommendationCompleted?: (payload: RecommendationCompletedPayloadV1) => void
+  onForecastCompleted?: (payload: ForecastCompletedPayloadV1) => void
   onOhlcvBackfillStarted?: (payload: OhlcvBackfillStartedPayloadV1) => void
   onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
@@ -80,6 +83,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'run.completed': 1,
   'signal.evaluated': 1,
   'recommendation.completed': 1,
+  'forecast.completed': 1,
   'chart.update_dropped': 1,
   'ohlcv.backfill_started': 1,
   'ohlcv.backfilled': 1,
@@ -251,6 +255,22 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
         return
       }
       handlers.onRecommendationCompleted?.(parsed.data)
+      return
+    }
+    case 'forecast.completed': {
+      // Zod-validated before it reaches any state (Plan 0037 phase 2 done-when):
+      // a probability is the most over-trusted output the app produces
+      // (ADR-0030), so a malformed payload is dropped loudly, never rendered
+      // half-parsed as a confident number.
+      const parsed = forecastCompletedPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed forecast.completed payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onForecastCompleted?.(parsed.data)
       return
     }
     case 'ohlcv.backfill_started':

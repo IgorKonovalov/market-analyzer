@@ -29,9 +29,10 @@ import styles from './App.module.css'
 import { AlertToaster } from './components/AlertToaster'
 import { ThemeToggle } from './components/ThemeToggle'
 import type { Timeframe } from './lib/timeframes'
-import type { Recommendation, SignalEvaluation } from './types/events'
+import type { MultiHorizonForecastResult, Recommendation, SignalEvaluation } from './types/events'
 import { AlertsView } from './views/AlertsView'
 import { BacktestView } from './views/BacktestView'
+import { ForecastView } from './views/ForecastView'
 import { LiveSignalView } from './views/LiveSignalView'
 import { NewsView } from './views/NewsView'
 import { OhlcvView } from './views/OhlcvView'
@@ -44,6 +45,7 @@ type View =
   | 'news'
   | 'signals'
   | 'recommendations'
+  | 'forecast'
   | 'settings'
   | 'backtest'
   | 'recent-backtests'
@@ -96,6 +98,10 @@ export function App(): JSX.Element {
   // not grab the screen (ADR-0029's quiet-advice framing); the user opens the
   // Recommendations tab when they want to read it.
   const [latestRecommendation, setLatestRecommendation] = useState<Recommendation | null>(null)
+  // Latest multi-horizon forecast (Plan 0037). Same reactive-only posture, and
+  // deliberately NO auto-switch: a probability must not grab the screen
+  // (ADR-0030's honest-uncertainty framing); the user opens the Forecast tab.
+  const [latestForecast, setLatestForecast] = useState<MultiHorizonForecastResult | null>(null)
 
   const backtestState = useBacktestResult({ runId: selectedRunId })
 
@@ -125,6 +131,7 @@ export function App(): JSX.Element {
     onRunCompleted: handleRunCompleted,
     onSignalEvaluated: (payload) => setLatestEvaluation(payload.evaluation),
     onRecommendationCompleted: (payload) => setLatestRecommendation(payload.recommendation),
+    onForecastCompleted: (payload) => setLatestForecast(payload.forecast),
     onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
     onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
     onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
@@ -221,6 +228,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'forecast' ? 'page' : undefined}
+            onClick={() => setView('forecast')}
+            data-testid="nav-forecast"
+          >
+            Forecast
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'news' ? 'page' : undefined}
             onClick={() => setView('news')}
             data-testid="nav-news"
@@ -264,6 +280,7 @@ export function App(): JSX.Element {
       )}
       {view === 'signals' && <LiveSignalView evaluation={latestEvaluation} />}
       {view === 'recommendations' && <RecommendationsView recommendation={latestRecommendation} />}
+      {view === 'forecast' && <ForecastView forecast={latestForecast} />}
       {view === 'alerts' && <AlertsView />}
       {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}

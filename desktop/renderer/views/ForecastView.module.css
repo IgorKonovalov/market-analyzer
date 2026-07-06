@@ -1,0 +1,240 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  max-width: 720px;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--color-fg-muted);
+  text-align: center;
+}
+
+/* The condition framing (ADR-0030): first element in the panel, quiet but
+ * always visible — a probability must never read as advice. */
+.conditionBanner {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+}
+
+.header {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.symbol {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.timeframe {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.dot {
+  color: var(--color-border-strong);
+}
+
+.asOf {
+  margin: var(--space-1) 0 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+}
+
+.featureSet {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+}
+
+.muted {
+  color: var(--color-fg-muted);
+}
+
+.blocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-3);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/* A no-edge block recedes: the honest "don't know" must not compete visually
+ * with a horizon that actually has something to say. */
+.block[data-strength='no_edge'] {
+  border-style: dashed;
+}
+
+.blockHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.blockTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.edgeBadge {
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+/* Edge badges: only a clear edge gets any chromatic weight; marginal is
+ * neutral, no-edge is deliberately muted (marginal-is-not-conviction). */
+.edgeBadge[data-strength='clear'] {
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  font-weight: 600;
+}
+
+.edgeBadge[data-strength='marginal'] {
+  color: var(--color-fg);
+  border: 1px solid var(--color-border-strong);
+  font-weight: 400;
+}
+
+.edgeBadge[data-strength='no_edge'] {
+  color: var(--color-fg-muted);
+  border: 1px dashed var(--color-border-strong);
+  font-weight: 400;
+}
+
+.probList {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.probRow {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.probLabel {
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.probCell {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 48px;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.track {
+  display: block;
+  height: 8px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+}
+
+.fill[data-kind='up'] {
+  background: var(--color-bull);
+}
+
+.fill[data-kind='down'] {
+  background: var(--color-bear);
+}
+
+.fill[data-kind='flat'] {
+  background: var(--color-border-strong);
+}
+
+/* A probability value reads emphatic ONLY under a clear edge and a decisive
+ * number; everything else stays quiet — 0.52 is a whisper, not a verdict. */
+.probValue {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.probValue[data-emphasis='strong'] {
+  font-weight: 700;
+}
+
+.probValue[data-emphasis='quiet'] {
+  font-weight: 400;
+  color: var(--color-fg-muted);
+}
+
+.noEdge {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-fg-muted);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.skillLine {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+}
+
+.skillValue {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
+}
+
+.provenance {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+}
+
+.disclaimer {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+}
