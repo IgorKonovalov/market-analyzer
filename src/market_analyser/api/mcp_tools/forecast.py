@@ -105,6 +105,28 @@ DAILY_HORIZONS: tuple[int, ...] = (1, 5, 21)
 # not a no-edge gate (that stays `beats_baseline` / `prob_*=None`).
 EDGE_MARGIN_THRESHOLD = 0.02
 
+# The stated reason a v1 feature set was used when no metric store exists at
+# all (Plan 0061 phase 2): every v1-on-fallback result says why, the unwired
+# case included.
+FALLBACK_REASON_UNWIRED = "metric store not wired"
+
+
+def _v2_min_usable_rows(n_splits: int) -> int:
+    """The smallest usable-row count worth running the requested purged
+    walk-forward on (Plan 0061 phase 2) — the wired-but-starved fallback bound,
+    derived from ``n_splits`` rather than a magic row count.
+
+    ``fold_bounds`` partitions the bars into ``n_splits`` near-equal contiguous
+    folds and fold 0 is the unscored training seed, so with fewer than two
+    usable rows per fold the validation degenerates toward unscored folds and
+    single-label train windows. The 2026-07-06 production finding is the far
+    end of that degeneracy: a starved store joins to **zero** usable rows and
+    the walk-forward "verdict" (``beats_baseline=False``, ``n_scored=0``)
+    scored nothing at all — not a market read, and no longer shipped as one.
+    """
+
+    return 2 * n_splits
+
 
 def _classify_edge(validation: ForecastValidation) -> tuple[float | None, EdgeStrength]:
     """Return `(edge_margin, edge_strength)` from a validation verdict.
@@ -140,9 +162,11 @@ FORECAST_DESCRIPTION = (
     "Multiple, 200W-MA distance) and exogenous series (Fear & Greed, BTC "
     "dominance, funding rate, open interest, MVRV) joined lag-1 as-of at bar "
     "open, so publication-lag lookahead is structurally impossible; provenance "
-    "lists every series consumed under series_inputs (empty when the metric "
-    "store is unavailable and the OHLCV-only v1 feature set was used — check "
-    "feature_set_id). Each block carries out-of-sample skill, baseline skill, "
+    "lists every series consumed under series_inputs (empty when the OHLCV-only "
+    "v1 feature set was used because the metric store is unwired or holds too "
+    "little exogenous history for the requested walk-forward — then "
+    "provenance.fallback_reason states why; check feature_set_id). Each block "
+    "carries out-of-sample skill, baseline skill, "
     "edge_margin = skill - baseline_skill, and edge_strength ('no_edge' / "
     "'marginal' / 'clear'); treat a high prob_* under a 'marginal' edge as thin, "
     "not near-certain. This is a CONDITION (a probability), never a buy/sell "
@@ -276,26 +300,47 @@ def _compute_multi_horizon_forecast(
 
     With a metric store wired the matrix is v2 (cycle + lag-1 exogenous,
     ADR-0054); without one it is the v1 OHLCV-only set — stated, not silent:
-    ``feature_set_id`` names the set used and ``series_inputs`` is empty. A
-    horizon with nothing to train on (e.g. every row dropped during exogenous
-    warm-up) yields an honest block: ``prob_*`` null, the unscored validation
-    basis attached, ``provenance`` None (no model exists to version).
+    ``feature_set_id`` names the set used, ``series_inputs`` is empty, and
+    ``provenance.fallback_reason`` says why. A **wired but starved** store
+    (Plan 0061 phase 2 — the 2026-07-06 finding) gets the same treatment: when
+    the v2 join leaves fewer usable rows than `_v2_min_usable_rows(n_splits)`,
+    the call computes on the v1 set instead of shipping a vacuous no-edge whose
+    walk-forward scored nothing. A horizon with nothing to train on yields an
+    honest block: ``prob_*`` null, the unscored validation basis attached,
+    ``provenance`` None (no model exists to version).
     """
 
     model_params = ModelParams(seed=seed)
     series_inputs: tuple[SeriesInput, ...]
+    fallback_reason: str | None
+    rows: list[FeatureRow | None]
     if metric_lookup is not None:
         exogenous = build_exogenous_columns(bars, EXOGENOUS_SERIES_IDS_V2, metric_lookup)
-        rows: list[FeatureRow | None] = build_feature_rows_v2(bars, exogenous)
-        feature_set_id = FEATURE_SET_ID_V2
-        series_inputs = tuple(
-            SeriesInput(series_id=series_id, last_point_ts=exogenous.last_point_ts[series_id])
-            for series_id in exogenous.series_ids
-        )
+        v2_rows = build_feature_rows_v2(bars, exogenous)
+        n_usable = sum(1 for row in v2_rows if row is not None)
+        min_usable = _v2_min_usable_rows(n_splits)
+        if n_usable >= min_usable:
+            rows = v2_rows
+            feature_set_id = FEATURE_SET_ID_V2
+            series_inputs = tuple(
+                SeriesInput(series_id=series_id, last_point_ts=exogenous.last_point_ts[series_id])
+                for series_id in exogenous.series_ids
+            )
+            fallback_reason = None
+        else:
+            rows = build_feature_rows(bars)
+            feature_set_id = FEATURE_SET_ID
+            series_inputs = ()
+            fallback_reason = (
+                f"v2 unavailable: exogenous store has insufficient history "
+                f"({n_usable} of {len(bars)} bars survived the join; the requested "
+                f"walk-forward needs at least {min_usable})"
+            )
     else:
         rows = build_feature_rows(bars)
         feature_set_id = FEATURE_SET_ID
         series_inputs = ()
+        fallback_reason = FALLBACK_REASON_UNWIRED
 
     defined_rows = [row for row in rows if row is not None]
     predict_row = defined_rows[-1] if defined_rows else None
@@ -354,6 +399,7 @@ def _compute_multi_horizon_forecast(
             seed=model.params.seed,
             lib_versions=lib_versions,
             series_inputs=series_inputs,
+            fallback_reason=fallback_reason,
         )
 
         dist = predict_proba(model, [predict_row])[0]
@@ -502,6 +548,7 @@ def register_forecast(
 __all__ = [
     "DAILY_HORIZONS",
     "EDGE_MARGIN_THRESHOLD",
+    "FALLBACK_REASON_UNWIRED",
     "FORECAST_DESCRIPTION",
     "EdgeStrength",
     "ForecastProvenance",

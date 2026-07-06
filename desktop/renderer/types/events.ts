@@ -239,7 +239,10 @@ export interface ForecastValidation {
  * trail that makes a forecast reproducible. `series_inputs` has a non-None
  * default (`()`), so like `TrendlineSpec.style` it is not schema-required but
  * is ALWAYS present on the wire (an empty array for a v1 model) — hence
- * required here. */
+ * required here. `fallback_reason` (Plan 0061) says why a v1 feature set was
+ * used (store unwired, or wired but too starved for the requested
+ * walk-forward); None when the v2 set genuinely ran, and then
+ * `exclude_none`-stripped from the wire — hence optional here. */
 export interface ForecastProvenance {
   model_version: string
   feature_set_id: string
@@ -248,6 +251,7 @@ export interface ForecastProvenance {
   seed: number
   lib_versions: Record<string, string>
   series_inputs: SeriesInput[]
+  fallback_reason?: string | null
 }
 
 /** Mirror of the pydantic `HorizonForecast` (Plan 0059 / ADR-0054): one

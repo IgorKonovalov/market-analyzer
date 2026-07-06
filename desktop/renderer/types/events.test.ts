@@ -540,6 +540,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
 
   it('ForecastProvenance fields match (series_inputs defaulted, never None, always on the wire)', () => {
     expect(propertyNames(dumped.ForecastProvenance)).toEqual([
+      'fallback_reason',
       'feature_set_id',
       'lib_versions',
       'model_version',
@@ -549,7 +550,9 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     ])
     // `series_inputs` has a non-None default (`()`) → not in `required`, but it
     // is never None so `exclude_none` keeps it on the wire — the TS marks it
-    // required (the TrendlineSpec.style shape).
+    // required (the TrendlineSpec.style shape). `fallback_reason` (Plan 0061)
+    // is defaulted AND nullable — None when the v2 set genuinely ran, then
+    // `exclude_none`-stripped from the wire — so the TS marks it optional.
     expect(requiredNames(dumped.ForecastProvenance)).toEqual([
       'feature_set_id',
       'lib_versions',

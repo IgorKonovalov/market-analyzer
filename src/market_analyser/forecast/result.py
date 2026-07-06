@@ -39,7 +39,11 @@ class ForecastProvenance(BaseModel):
     """The audit trail that makes a forecast reproducible and traceable to its
     exact model (ADR-0040 §4). ``series_inputs`` (Plan 0059, ADR-0054) names
     every exogenous series the feature set consumed — empty for a v1 model,
-    whose features are derived from the target symbol's own bars only."""
+    whose features are derived from the target symbol's own bars only.
+    ``fallback_reason`` (Plan 0061, ADR-0056) says *why* a v1 set was used when
+    the v2 set was the goal — the store was unwired, or wired but too starved
+    for the requested walk-forward — and is ``None`` (wire-absent under the
+    bus's ``exclude_none`` dump) when the v2 set genuinely ran."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -52,6 +56,9 @@ class ForecastProvenance(BaseModel):
     # ForecastResult edge_margin precedent); defaulted so pre-0059 constructors
     # stay valid.
     series_inputs: tuple[SeriesInput, ...] = ()
+    # Appended after series_inputs, same wire-stability discipline; defaulted
+    # so pre-0061 constructors stay valid and the v2 path's dumps do not move.
+    fallback_reason: str | None = None
 
 
 class ForecastResult(BaseModel):

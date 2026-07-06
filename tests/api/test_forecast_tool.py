@@ -54,12 +54,14 @@ from market_analyser.api.mcp_tools import forecast as forecast_tool
 from market_analyser.api.mcp_tools.forecast import (
     DAILY_HORIZONS,
     EDGE_MARGIN_THRESHOLD,
+    FALLBACK_REASON_UNWIRED,
     FORECAST_DESCRIPTION,
     _classify_edge,
     _compute_forecast,
     _compute_multi_horizon_forecast,
     _multi_forecast_response,
     _normalise_horizons,
+    _v2_min_usable_rows,
     default_horizons,
 )
 from market_analyser.data.metric_series import MetricPoint
@@ -469,7 +471,8 @@ def test_normalise_horizons_dedupes_sorts_and_rejects_invalid() -> None:
 
 def test_without_metric_store_result_is_explicitly_v1() -> None:
     """No metric store wired → the v1 OHLCV-only feature set, stated in the
-    result (feature_set_id + empty series_inputs), never silent (ADR-0054)."""
+    result (feature_set_id + empty series_inputs + the unwired fallback
+    reason), never silent (ADR-0054; Plan 0061 phase 2)."""
 
     result = _compute_multi_horizon_forecast(
         bars=list(BARS),
@@ -487,6 +490,94 @@ def test_without_metric_store_result_is_explicitly_v1() -> None:
     assert block.provenance is not None
     assert block.provenance.feature_set_id == FEATURE_SET_ID
     assert block.provenance.series_inputs == ()
+    assert block.provenance.fallback_reason == FALLBACK_REASON_UNWIRED
+
+
+def test_wired_but_starved_store_falls_back_to_v1_with_stated_reason() -> None:
+    """Plan 0061 phase 2 done-when: a wired store with ZERO exogenous points no
+    longer produces the vacuous no-edge (the 2026-07-06 production finding —
+    `beats_baseline=False` with `n_scored=0` shipped as if it were an evaluated
+    verdict). The call computes on the v1 set: every block carries a genuinely
+    scored validation (`n_scored > 0`), and the provenance states the
+    insufficient-history reason with the join arithmetic in it."""
+
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    starved_store = MetricPointsRepository(make_session_factory(engine))
+    result = _compute_multi_horizon_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1, 5),
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=starved_store,
+    )
+    engine.dispose()
+
+    assert result.feature_set_id == FEATURE_SET_ID  # v1, stated
+    assert len(result.horizons) == 2
+    for block in result.horizons:
+        # The vacuous shape is no longer producible from a starved store:
+        # every block's walk-forward genuinely scored something.
+        assert block.validation.n_scored > 0
+        assert block.provenance is not None
+        assert block.provenance.feature_set_id == FEATURE_SET_ID
+        assert block.provenance.series_inputs == ()
+        reason = block.provenance.fallback_reason
+        assert reason is not None
+        assert "insufficient history" in reason
+        assert (
+            f"0 of {len(BARS)} bars survived the join; the requested "
+            f"walk-forward needs at least {_v2_min_usable_rows(5)}" in reason
+        )
+
+
+def test_v2_run_keeps_fallback_reason_absent_and_wire_stable() -> None:
+    """A store with enough joined history runs v2 with `fallback_reason=None`,
+    and the field is absent from the `exclude_none` wire dump — the existing
+    v2 provenance dump does not move (the 0052 additive-field precedent)."""
+
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    store = MetricPointsRepository(make_session_factory(engine))
+    first_open = int(BARS_V2[0].event_ts.timestamp())
+    store.upsert_points(
+        [
+            MetricPoint(series_id=series_id, ts=first_open - 60, value=10.0 + float(i))
+            for i, series_id in enumerate(EXOGENOUS_SERIES_IDS_V2)
+        ]
+    )
+    result = _compute_multi_horizon_forecast(
+        bars=list(BARS_V2),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1,),
+        flat_band=0.001,
+        n_splits=4,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=store,
+    )
+    engine.dispose()
+
+    assert result.feature_set_id == FEATURE_SET_ID_V2
+    (block,) = result.horizons
+    assert block.provenance is not None
+    assert block.provenance.fallback_reason is None
+    wire = block.provenance.model_dump(mode="json", exclude_none=True)
+    assert "fallback_reason" not in wire
+    # The exact pre-0061 v2 wire field set, byte-for-byte unmoved.
+    assert set(wire) == {
+        "model_version",
+        "feature_set_id",
+        "training_cutoff",
+        "seed",
+        "lib_versions",
+        "series_inputs",
+    }
 
 
 def test_multi_horizon_result_is_deterministic() -> None:
