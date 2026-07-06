@@ -51,8 +51,10 @@ from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentM
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
 from market_analyser.data.adapters.binance_account import BinanceAccountAdapter
+from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
 from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
+from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.defillama import DefiLlamaAdapter
 from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
@@ -60,6 +62,11 @@ from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.adapters.zerion_tx import ZerionTxAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
+from market_analyser.data.metric_accrual import (
+    DEFAULT_INTERVAL_SECONDS,
+    MetricAccrualJob,
+    MetricAccrualSources,
+)
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
     AccountHoldingsSource,
@@ -109,6 +116,9 @@ def create_app(
     dev_origin: str | None = None,
     event_bus: EventBus | None = None,
     agent_mode_path: Path | None = None,
+    metric_accrual_enabled: bool = False,
+    metric_accrual_interval_seconds: int = DEFAULT_INTERVAL_SECONDS,
+    metric_accrual_sources: MetricAccrualSources | None = None,
     on_shutdown: Sequence[Callable[[], None]] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
@@ -299,6 +309,52 @@ def create_app(
         else None
     )
 
+    # The metric-accrual job (Plan 0061, ADR-0056): the self-warming clock for
+    # the five v2 exogenous series, started and stopped with the app lifespan
+    # below. Constructed only when the metric store exists (persistence wired)
+    # AND the caller opted in — disabled or persistence-free, no job, and the
+    # sources (fakes in tests, real adapters here) are never touched. The
+    # product-level on-by-default lives in `AppConfig.metric_accrual_enabled`
+    # (__main__ passes it through); this factory's parameter defaults to False
+    # because the job ticks immediately at startup — an engine-wired test app
+    # that never asked for accrual must never reach the network. All four real
+    # adapters construct network-free; only a tick reaches the wire.
+    if metric_accrual_enabled and metric_points_repository is not None:
+        if metric_accrual_sources is None:
+            derivatives_adapter = BinanceDerivativesAdapter(
+                metric_store=metric_points_repository,
+            )
+            metric_accrual_sources = MetricAccrualSources(
+                fng=CryptoFearGreedAdapter(metric_store=metric_points_repository),
+                macro=CoinGeckoAdapter(metric_store=metric_points_repository),
+                funding=derivatives_adapter,
+                open_interest=derivatives_adapter,
+                mvrv=CoinMetricsCommunityAdapter(metric_store=metric_points_repository),
+            )
+        metric_accrual_job: MetricAccrualJob | None = MetricAccrualJob(
+            metric_store=metric_points_repository,
+            sources=metric_accrual_sources,
+            interval_seconds=metric_accrual_interval_seconds,
+        )
+    else:
+        metric_accrual_job = None
+
+    @asynccontextmanager
+    async def _accrual_running() -> AsyncIterator[None]:
+        # The metric-accrual job rides the lifespan exactly like the watch
+        # scheduler (ADR-0056 via the ADR-0055 pattern): separate duty,
+        # separate clock, same start/cancel discipline.
+        if metric_accrual_job is None:
+            yield
+            return
+        task = asyncio.create_task(metric_accrual_job.run())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
     @asynccontextmanager
     async def _scheduler_running() -> AsyncIterator[None]:
         # The watch scheduler rides the lifespan (ADR-0055): started once the
@@ -324,11 +380,11 @@ def create_app(
         # on SIGTERM; this seam is the fix (ADR-0022).
         try:
             if mcp_components is None:
-                async with _scheduler_running():
+                async with _scheduler_running(), _accrual_running():
                     yield
             else:
                 session_manager, _asgi_app = mcp_components
-                async with session_manager.run(), _scheduler_running():
+                async with session_manager.run(), _scheduler_running(), _accrual_running():
                     yield
         finally:
             for shutdown_callback in on_shutdown or ():
@@ -380,6 +436,9 @@ def create_app(
     # The watch scheduler (Plan 0060) — None without persistence. /healthz
     # reads its heartbeat; the alerting MCP tools only touch the repositories.
     app.state.watch_scheduler = watch_scheduler
+    # The metric-accrual job (Plan 0061, ADR-0056) — None when disabled or
+    # persistence-free. /healthz reads its heartbeat; tests drive tick_once.
+    app.state.metric_accrual_job = metric_accrual_job
     # The alerting repositories (Plan 0060 phase 4): consumed by the renderer
     # routes below (watch list, enable/disable, alert history).
     app.state.watches_repository = watches_repository
@@ -449,6 +508,11 @@ def create_app(
             # payloads, no secrets (error strings name exception types and
             # watch ids, nothing credential-shaped).
             body["alert_scheduler"] = watch_scheduler.heartbeat().model_dump(mode="json")
+        if metric_accrual_job is not None:
+            # The self-warming heartbeat (Plan 0061, ADR-0056): per-series
+            # freshness must be observable, not discoverable-by-forensics.
+            # Liveness + per-series status only — no metric values, no secrets.
+            body["metric_accrual"] = metric_accrual_job.heartbeat().model_dump(mode="json")
         if authorization:
             scheme, _, token = authorization.partition(" ")
             if scheme.lower() == "bearer" and token and secrets.compare_digest(token, secret):

@@ -26,6 +26,14 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     db_path: Path = Field(default_factory=lambda: default_app_data_dir() / "app.db")
+    # Metric-store self-warming (Plan 0061, ADR-0056): on by default — a fresh
+    # deployment must accrue unattended (opt-in-by-default was rejected in the
+    # ADR); the off-switch covers the offline/debug case. The interval default
+    # (hourly, the store's bucket size) mirrors
+    # `data.metric_accrual.DEFAULT_INTERVAL_SECONDS` — kept literal here so the
+    # config module stays dependency-free.
+    metric_accrual_enabled: bool = True
+    metric_accrual_interval_seconds: int = Field(default=3600, ge=1)
 
 
 def default_app_data_dir() -> Path:

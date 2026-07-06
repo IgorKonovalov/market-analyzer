@@ -214,6 +214,10 @@ async def _serve(
         runs_dir=runs_dir,
         dev_origin=dev_origin,
         agent_mode_path=agent_mode_path,
+        # Metric-store self-warming (Plan 0061, ADR-0056): the config.json
+        # off-switch and interval reach the lifespan job here.
+        metric_accrual_enabled=config.metric_accrual_enabled,
+        metric_accrual_interval_seconds=config.metric_accrual_interval_seconds,
         # Remove the lockfile during the app's lifespan shutdown so cleanup runs
         # before uvicorn re-raises a captured SIGTERM (ADR-0022). The `_run_serve`
         # `finally` below is an idempotent backstop for non-serve exit paths.

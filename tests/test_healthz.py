@@ -63,3 +63,13 @@ def test_protected_route_with_valid_auth_returns_404_when_route_absent(
 def test_create_app_rejects_empty_secret() -> None:
     with pytest.raises(ValueError):
         create_app(secret="")
+
+
+def test_healthz_has_no_metric_accrual_heartbeat_without_persistence(
+    client: TestClient,
+) -> None:
+    # The metric-accrual job (Plan 0061, ADR-0056) is absent in the
+    # persistence-free app, so its heartbeat never appears here. The
+    # engine-wired heartbeat shape is pinned in tests/data/test_metric_accrual.py.
+    body = client.get("/healthz").json()
+    assert "metric_accrual" not in body
