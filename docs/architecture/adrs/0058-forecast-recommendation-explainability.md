@@ -1,0 +1,32 @@
+# 0058 — Forecast & recommendation explainability contract
+
+> **Status:** proposed — accepts at [Plan 0063](../plans/0063-forecast-recommendation-explainability.md) close
+> **Created:** 2026-07-06
+> **Related:** [ADR-0030](0030-forecasting-subsystem.md) (honest uncertainty — this extends it from *how sure* to *why*), [ADR-0040](0040-forecasting-model-artifacts.md) (the provenance trail this enriches), [ADR-0054](0054-exogenous-forecast-features-multi-horizon.md) (the v2 feature set whose sources get ranked), [ADR-0029](0029-advisory-recommendation-boundary.md) (the recommendation whose basis becomes replayable), [ADR-0046](0046-mcp-large-result-delivery.md) (the small-wire posture that forces the delivery split), [ADR-0018](0018-backtest-result-schema.md) (the determinism discipline the explanation inherits), [ADR-0057](0057-forecast-feature-set-tiers.md) (tiered feature-set selection — whichever tier trains, its features are what get ranked)
+
+## Context
+
+A forecast today states *how sure* it is and *whether that sureness validated* (calibrated probabilities, walk-forward skill vs baseline, per-fold table) and *what went in* (feature set id, series consumed with last-point timestamps, fallback reason — ADR-0040/0054, extended by Plan 0061). It states nothing about **which inputs the validated model actually leans on** or **what those inputs said at the predicted bar**. A recommendation states *which legs agreed* (rationale strings, per-leg summary scalars, named blockers on a flat — ADR-0029) but the fusion's individual gates — threshold versus actual value, per check — are not recorded anywhere.
+
+The owner wears two hats and both are blocked by this opacity: as **developer**, choosing which exogenous sources earn their upkeep (and whether a method change helped) requires measured per-feature contribution, not skill deltas read blind; as **trader**, acting on a 0.97-down requires knowing whether it is funding-driven or a momentum echo. The forcing constraints: the financially-meaningful path must stay deterministic (CLAUDE.md), MCP results and SSE envelopes stay small (ADR-0046), and new dependencies pay the 14-day cooldown plus exact pinning (ADR-0012/0013) — which makes "just add `shap`" a real cost, not a default.
+
+## Decision
+
+Every forecast and every recommendation carries a **deterministic explanation**, delivered split: a **compact summary inline** on the existing wire shapes (additive fields), and the **complete explanation as a JSON artifact** under the sidecar's configured `runs_dir`. Three parts:
+
+1. **Forecast method: out-of-sample permutation importance + the predict row.** Per horizon model, feature importance is computed by seeded permutation (`sklearn.inspection.permutation_importance` — no new dependency) on the walk-forward's **scored, out-of-sample fold slices** using each fold's own model, then averaged (mean and spread reported). This measures what the *validated* model uses, not what a final in-sample fit memorized. Beside it, the explanation records the actual feature values of the row being predicted, and the per-series freshness already carried in `series_inputs`. Importance is association within the model, not causality — the artifact says so in a fixed disclaimer field.
+2. **Recommendation method: a structured fusion trace.** `fuse()` records every gate it evaluates as a typed check — leg, check name, threshold, actual value, outcome — so any verdict (directional or flat) is replayable line by line. The trace is the numeric superset of the existing rationale strings and flat-verdict blockers.
+3. **Delivery split.** Wire shapes gain only a summary (top feature drivers; the trace itself is small enough to ride whole) plus the artifact's relative path; the full explanation (all features' importances with per-fold spread, the complete predict row, the fold table, provenance) is persisted per call under `runs_dir/forecast/…` and `runs_dir/advice/…` — diffable across method changes, auditable after the conversation is gone. Panels render the inline summary and name the artifact.
+
+## Consequences
+
+**Positive.** Source curation becomes evidence-based: a series whose features carry ~zero validated importance is a measured removal candidate, and a method change shows up as a diff between two explanation artifacts. The trader sees the drivers next to the probability and the exact gate arithmetic behind a call — or behind an honest flat. OOS-based importance keeps the honesty invariant: the explanation describes the model that was validated, in the same run that validated it, under the same seed discipline (byte-identical re-runs modulo the documented run-provenance exceptions).
+
+**Negative — the price.** Each forecast call spends more compute inside the walk-forward (extra predictions ≈ features × repeats × fold rows — bounded, HGB predict is cheap, but it is not free). Permutation importance splits credit across correlated features (funding and OI move together) — documented, not solved; readers must not treat the ranking as causal attribution. The sidecar now writes an unbounded-growth file class under `runs_dir` (gitignored; retention stays the owner's chore). And the recommendation/provenance wire field sets change once — the ADR-0029 exact-field-set pins and the 0061 provenance pin are updated **deliberately**, a versioned wire change rather than drift.
+
+## Alternatives considered
+
+- **Per-call local attribution (`shap`).** The strongest trader-side answer ("funding contributed +0.12 toward down *on this call*"), rejected for v1: a new dependency under cooldown + pinning for its heaviest use case, per-call compute, and its explainers' determinism would need auditing before entering the deterministic path. The artifact schema leaves room; revisit if global-plus-inputs proves insufficient.
+- **In-sample impurity/gain importances.** Free from the tree model, rejected: they describe what the final fit memorized, are biased toward high-cardinality features, and would attach an unvalidated story to a validated number — exactly the confusion ADR-0030 exists to prevent.
+- **Everything inline on the wire.** Rejected: ~10–20 KB of explanation on every `forecast.completed` envelope and MCP reply whether or not anyone reads it, against ADR-0046; and conversation-lifetime history only, which fails the developer's diffing need.
+- **Logs-only explanation.** Rejected: invisible to the agent, the panel, and the trader; not diffable; logs are not a contract.
