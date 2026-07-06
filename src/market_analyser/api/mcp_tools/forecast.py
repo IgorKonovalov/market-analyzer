@@ -8,10 +8,13 @@ The flow:
 
     validate inputs (symbol / timeframe / range / horizons)
         -> fetch cached bars via the provider (ADR-0007)
-        -> build ONE feature matrix for the call:
-             v2 (16 OHLCV + cycle + lag-1 exogenous, ADR-0054) when a metric
-             store is wired; otherwise the v1 OHLCV-only set — explicit in the
-             result's feature_set_id + empty series_inputs, never silent
+        -> build ONE feature matrix for the call via the ADR-0057 tier
+           ladder (Plan 0062): richest-first v2-full -> v2-deep -> v1, each
+           exogenous tier eligible only past max(2*n_splits, MIN_TIER_ROWS)
+           surviving rows; every skipped tier is stated with its row count
+           in fallback_reason, series_inputs names exactly the selected
+           tier's series — explicit, never silent. No store wired -> v1
+           with the unwired reason.
         -> per horizon, INDEPENDENTLY (ADR-0054 rule 2):
              horizon-purged walk-forward + baseline gate
              -> train the final model (deterministic, seeded)
@@ -57,14 +60,11 @@ from market_analyser.api.mcp_tools._validation import (
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
 from market_analyser.events import EventBus, ForecastCompletedPayloadV1
-from market_analyser.forecast.exogenous import MetricAsOfLookup, build_exogenous_columns
+from market_analyser.forecast.exogenous import MetricAsOfLookup
 from market_analyser.forecast.features import (
-    EXOGENOUS_SERIES_IDS_V2,
     FEATURE_SET_ID,
-    FEATURE_SET_ID_V2,
     FeatureRow,
     build_feature_rows,
-    build_feature_rows_v2,
 )
 from market_analyser.forecast.labels import Direction, LabelParams, build_labels
 from market_analyser.forecast.model import (
@@ -91,6 +91,7 @@ from market_analyser.forecast.result import (
     MultiHorizonForecastResult,
     SeriesInput,
 )
+from market_analyser.forecast.tiers import select_feature_tier
 from market_analyser.forecast.validation import ForecastValidation, validate
 
 # The horizon set for daily bars (ADR-0054: next-day / ~1w / ~1mo). Every other
@@ -109,23 +110,6 @@ EDGE_MARGIN_THRESHOLD = 0.02
 # all (Plan 0061 phase 2): every v1-on-fallback result says why, the unwired
 # case included.
 FALLBACK_REASON_UNWIRED = "metric store not wired"
-
-
-def _v2_min_usable_rows(n_splits: int) -> int:
-    """The smallest usable-row count worth running the requested purged
-    walk-forward on (Plan 0061 phase 2) — the wired-but-starved fallback bound,
-    derived from ``n_splits`` rather than a magic row count.
-
-    ``fold_bounds`` partitions the bars into ``n_splits`` near-equal contiguous
-    folds and fold 0 is the unscored training seed, so with fewer than two
-    usable rows per fold the validation degenerates toward unscored folds and
-    single-label train windows. The 2026-07-06 production finding is the far
-    end of that degeneracy: a starved store joins to **zero** usable rows and
-    the walk-forward "verdict" (``beats_baseline=False``, ``n_scored=0``)
-    scored nothing at all — not a market read, and no longer shipped as one.
-    """
-
-    return 2 * n_splits
 
 
 def _classify_edge(validation: ForecastValidation) -> tuple[float | None, EdgeStrength]:
@@ -161,11 +145,14 @@ FORECAST_DESCRIPTION = (
     "symbol's own OHLCV indicators plus BTC cycle features (halving clock, Mayer "
     "Multiple, 200W-MA distance) and exogenous series (Fear & Greed, BTC "
     "dominance, funding rate, open interest, MVRV) joined lag-1 as-of at bar "
-    "open, so publication-lag lookahead is structurally impossible; provenance "
-    "lists every series consumed under series_inputs (empty when the OHLCV-only "
-    "v1 feature set was used because the metric store is unwired or holds too "
-    "little exogenous history for the requested walk-forward — then "
-    "provenance.fallback_reason states why; check feature_set_id). Each block "
+    "open, so publication-lag lookahead is structurally impossible. Feature "
+    "sets form a fixed ladder selected richest-first per call by exogenous "
+    "history depth: v2-full (all five series) -> v2-deep (F&G/funding/MVRV "
+    "only, the deep-history tier) -> v1 (OHLCV only); provenance lists exactly "
+    "the selected tier's series under series_inputs (empty for v1) and "
+    "provenance.fallback_reason names every richer tier skipped with its "
+    "surviving-row count (absent when v2-full trained; check feature_set_id "
+    "for the tier used). Each block "
     "carries out-of-sample skill, baseline skill, "
     "edge_margin = skill - baseline_skill, and edge_strength ('no_edge' / "
     "'marginal' / 'clear'); treat a high prob_* under a 'marginal' edge as thin, "
@@ -298,16 +285,16 @@ def _compute_multi_horizon_forecast(
     """The deterministic, CPU-bound Plan 0059 core: build one feature matrix,
     then validate / train / gate / (persist) each horizon independently.
 
-    With a metric store wired the matrix is v2 (cycle + lag-1 exogenous,
-    ADR-0054); without one it is the v1 OHLCV-only set — stated, not silent:
-    ``feature_set_id`` names the set used, ``series_inputs`` is empty, and
-    ``provenance.fallback_reason`` says why. A **wired but starved** store
-    (Plan 0061 phase 2 — the 2026-07-06 finding) gets the same treatment: when
-    the v2 join leaves fewer usable rows than `_v2_min_usable_rows(n_splits)`,
-    the call computes on the v1 set instead of shipping a vacuous no-edge whose
-    walk-forward scored nothing. A horizon with nothing to train on yields an
-    honest block: ``prob_*`` null, the unscored validation basis attached,
-    ``provenance`` None (no model exists to version).
+    With a metric store wired the matrix comes from the ADR-0057 tier ladder
+    (`select_feature_tier`): the richest of ``v2-full → v2-deep → v1`` whose
+    post-join surviving rows clear ``max(2 * n_splits, MIN_TIER_ROWS)`` trains,
+    and every skipped tier is stated with its surviving-row count in
+    ``provenance.fallback_reason`` — never silent (the Plan 0061 honesty
+    property, now per rung). Without a store the call computes on the v1
+    OHLCV-only set with the unwired reason. ``series_inputs`` names exactly
+    the selected tier's consumed series. A horizon with nothing to train on
+    yields an honest block: ``prob_*`` null, the unscored validation basis
+    attached, ``provenance`` None (no model exists to version).
     """
 
     model_params = ModelParams(seed=seed)
@@ -315,27 +302,11 @@ def _compute_multi_horizon_forecast(
     fallback_reason: str | None
     rows: list[FeatureRow | None]
     if metric_lookup is not None:
-        exogenous = build_exogenous_columns(bars, EXOGENOUS_SERIES_IDS_V2, metric_lookup)
-        v2_rows = build_feature_rows_v2(bars, exogenous)
-        n_usable = sum(1 for row in v2_rows if row is not None)
-        min_usable = _v2_min_usable_rows(n_splits)
-        if n_usable >= min_usable:
-            rows = v2_rows
-            feature_set_id = FEATURE_SET_ID_V2
-            series_inputs = tuple(
-                SeriesInput(series_id=series_id, last_point_ts=exogenous.last_point_ts[series_id])
-                for series_id in exogenous.series_ids
-            )
-            fallback_reason = None
-        else:
-            rows = build_feature_rows(bars)
-            feature_set_id = FEATURE_SET_ID
-            series_inputs = ()
-            fallback_reason = (
-                f"v2 unavailable: exogenous store has insufficient history "
-                f"({n_usable} of {len(bars)} bars survived the join; the requested "
-                f"walk-forward needs at least {min_usable})"
-            )
+        selection = select_feature_tier(bars, metric_lookup, n_splits=n_splits)
+        rows = selection.rows
+        feature_set_id = selection.feature_set_id
+        series_inputs = selection.series_inputs
+        fallback_reason = selection.fallback_reason
     else:
         rows = build_feature_rows(bars)
         feature_set_id = FEATURE_SET_ID

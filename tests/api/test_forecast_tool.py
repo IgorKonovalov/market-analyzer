@@ -1,5 +1,5 @@
-"""Phase-4 done-when (tool half) for Plan 0036, extended by Plan 0059 phase 3:
-the `forecast` MCP tool.
+"""Phase-4 done-when (tool half) for Plan 0036, extended by Plan 0059 phase 3
+and Plan 0062 phase 2 (the ADR-0057 tier ladder): the `forecast` MCP tool.
 
 Covered:
 - the no-edge gate result ships null probabilities but keeps the validation basis
@@ -61,7 +61,6 @@ from market_analyser.api.mcp_tools.forecast import (
     _compute_multi_horizon_forecast,
     _multi_forecast_response,
     _normalise_horizons,
-    _v2_min_usable_rows,
     default_horizons,
 )
 from market_analyser.data.metric_series import MetricPoint
@@ -77,13 +76,18 @@ from market_analyser.data.types import (
 )
 from market_analyser.events import Envelope, EventBus
 from market_analyser.forecast import validation as validation_module
+from market_analyser.forecast.exogenous import build_exogenous_columns
 from market_analyser.forecast.features import (
     EXOGENOUS_SERIES_IDS_V2,
+    EXOGENOUS_SERIES_IDS_V2_DEEP,
     FEATURE_SET_ID,
     FEATURE_SET_ID_V2,
+    FEATURE_SET_ID_V2_DEEP,
+    build_feature_rows_v2_deep,
 )
 from market_analyser.forecast.labels import Direction, LabelParams, build_labels
 from market_analyser.forecast.result import MultiHorizonForecastResult
+from market_analyser.forecast.tiers import MIN_TIER_ROWS
 from market_analyser.forecast.validation import ForecastValidation
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (
@@ -494,12 +498,13 @@ def test_without_metric_store_result_is_explicitly_v1() -> None:
 
 
 def test_wired_but_starved_store_falls_back_to_v1_with_stated_reason() -> None:
-    """Plan 0061 phase 2 done-when: a wired store with ZERO exogenous points no
-    longer produces the vacuous no-edge (the 2026-07-06 production finding —
-    `beats_baseline=False` with `n_scored=0` shipped as if it were an evaluated
-    verdict). The call computes on the v1 set: every block carries a genuinely
-    scored validation (`n_scored > 0`), and the provenance states the
-    insufficient-history reason with the join arithmetic in it."""
+    """Plan 0061 phase 2 done-when, restated over the Plan 0062 ladder: a wired
+    store with ZERO exogenous points no longer produces the vacuous no-edge
+    (the 2026-07-06 production finding — `beats_baseline=False` with
+    `n_scored=0` shipped as if it were an evaluated verdict). The call computes
+    on the v1 set: every block carries a genuinely scored validation
+    (`n_scored > 0`), and the provenance states the full ADR-0057 skip chain —
+    both exogenous tiers named, each with its surviving-row count and floor."""
 
     engine = make_engine(":memory:")
     apply_migrations(engine)
@@ -526,12 +531,11 @@ def test_wired_but_starved_store_falls_back_to_v1_with_stated_reason() -> None:
         assert block.provenance is not None
         assert block.provenance.feature_set_id == FEATURE_SET_ID
         assert block.provenance.series_inputs == ()
-        reason = block.provenance.fallback_reason
-        assert reason is not None
-        assert "insufficient history" in reason
-        assert (
-            f"0 of {len(BARS)} bars survived the join; the requested "
-            f"walk-forward needs at least {_v2_min_usable_rows(5)}" in reason
+        assert block.provenance.fallback_reason == (
+            f"v2-full unavailable: 0 of {len(BARS)} bars survived the join "
+            f"(floor {MIN_TIER_ROWS}); "
+            f"v2-deep unavailable: 0 of {len(BARS)} bars survived the join "
+            f"(floor {MIN_TIER_ROWS})"
         )
 
 
@@ -578,6 +582,64 @@ def test_v2_run_keeps_fallback_reason_absent_and_wire_stable() -> None:
         "lib_versions",
         "series_inputs",
     }
+
+
+def test_deep_seeded_store_trains_v2_deep_and_states_the_v2_full_skip() -> None:
+    """Plan 0062 phase 2 done-when (b): dominance and OI empty but the deep
+    series seeded across the bar window → **v2-deep trains**. The provenance's
+    `feature_set_id` is the deep id, `series_inputs` names exactly the three
+    deep series, and `fallback_reason` names the v2-full skip with its
+    surviving-row count — the live BTC-USD store shape, end to end through the
+    tool core."""
+
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    store = MetricPointsRepository(make_session_factory(engine))
+    first_open = int(BARS_V2[0].event_ts.timestamp())
+    store.upsert_points(
+        [
+            MetricPoint(series_id=series_id, ts=first_open - 60, value=10.0 + float(i))
+            for i, series_id in enumerate(EXOGENOUS_SERIES_IDS_V2_DEEP)
+        ]
+    )
+    n_deep = sum(
+        1
+        for row in build_feature_rows_v2_deep(
+            BARS_V2, build_exogenous_columns(BARS_V2, EXOGENOUS_SERIES_IDS_V2, store)
+        )
+        if row is not None
+    )
+    assert n_deep >= MIN_TIER_ROWS  # the fixture genuinely clears the floor
+
+    result = _compute_multi_horizon_forecast(
+        bars=list(BARS_V2),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1,),
+        flat_band=0.001,
+        n_splits=4,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=store,
+    )
+    engine.dispose()
+
+    assert result.feature_set_id == FEATURE_SET_ID_V2_DEEP
+    (block,) = result.horizons
+    assert block.validation.n_scored > 0  # deep genuinely trained and scored
+    assert block.provenance is not None
+    assert block.provenance.feature_set_id == FEATURE_SET_ID_V2_DEEP
+    consumed = {s.series_id: s.last_point_ts for s in block.provenance.series_inputs}
+    assert set(consumed) == set(EXOGENOUS_SERIES_IDS_V2_DEEP)
+    assert all(ts == first_open - 60 for ts in consumed.values())
+    assert block.provenance.fallback_reason == (
+        f"v2-full unavailable: 0 of {len(BARS_V2)} bars survived the join "
+        f"(floor {MIN_TIER_ROWS}); trained v2-deep ({n_deep} rows)"
+    )
+    # The skip chain travels on the wire (exclude_none keeps a non-None reason).
+    wire = block.provenance.model_dump(mode="json", exclude_none=True)
+    assert wire["fallback_reason"] == block.provenance.fallback_reason
+    assert [s["series_id"] for s in wire["series_inputs"]] == list(EXOGENOUS_SERIES_IDS_V2_DEEP)
 
 
 def test_multi_horizon_result_is_deterministic() -> None:
