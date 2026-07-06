@@ -1,6 +1,6 @@
 # 0056 — Self-warming metric store: background accrual in the sidecar
 
-> **Status:** proposed — accepts at [Plan 0061](../plans/0061-metric-store-self-warming.md) close
+> **Status:** accepted ([Plan 0061](../plans/done/0061-metric-store-self-warming.md) close 2026-07-06 — live-verified at close: all five series warm from one boot, the accrue-only clocks running, the starved forecast stating its fallback reason)
 > **Created:** 2026-07-06
 > **Related:** [ADR-0051](0051-historized-metric-series-contract.md) (the store + `as_of` contract this feeds), [ADR-0055](0055-in-sidecar-watch-scheduler.md) (the lifespan-loop precedent), [ADR-0054](0054-exogenous-forecast-features-multi-horizon.md) (the v2 feature set this exists to make evaluable), [ADR-0052](0052-binance-exchange-data-source.md)/[ADR-0053](0053-onchain-valuation-source.md) (the sources being driven), [ADR-0016](0016-standalone-sidecar-mode.md) (the always-on process this rides)
 
