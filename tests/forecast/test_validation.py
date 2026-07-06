@@ -133,7 +133,10 @@ def test_folds_are_contiguous_and_train_precedes_test() -> None:
     assert max(r.bar_index for r in train_rows) < min(r.bar_index for r in test_rows)
 
 
-def test_validate_purges_train_labels_by_horizon(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("horizon", [3, 21])
+def test_validate_purges_train_labels_by_horizon(
+    monkeypatch: pytest.MonkeyPatch, horizon: int
+) -> None:
     """The purge guard — anti-lookahead on the *label*, bound to `validate`'s real
     behaviour rather than a re-derived formula.
 
@@ -146,11 +149,12 @@ def test_validate_purges_train_labels_by_horizon(monkeypatch: pytest.MonkeyPatch
     test — and assert no captured *training* row's forward window reaches the test
     window. ``horizon=3`` makes the off-by-one unambiguous: drop the purge and the
     last train index ``start-1`` lands at ``start-1+3 = start+2 >= start``, failing
-    here."""
+    here. ``horizon=21`` is the widest label window the multi-horizon set ships
+    (Plan 0059 phase 3 done-when b) — 21 trailing train labels would overlap the
+    test window without the purge."""
 
     from market_analyser.forecast import validation as val
 
-    horizon = 3
     bars = synthetic_bars(400)
     n_splits = 5
 

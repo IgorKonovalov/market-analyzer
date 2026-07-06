@@ -14,18 +14,34 @@ that merely importing `forecast` does not drag the ML stack into every caller.
 
 from __future__ import annotations
 
+from market_analyser.forecast.exogenous import (
+    ExogenousColumns,
+    MetricAsOfLookup,
+    build_exogenous_columns,
+)
 from market_analyser.forecast.features import (
+    EXOGENOUS_SERIES_IDS_V2,
     FEATURE_NAMES,
+    FEATURE_NAMES_V2,
     FEATURE_SET_ID,
+    FEATURE_SET_ID_V2,
     FeatureRow,
     build_feature_rows,
+    build_feature_rows_v2,
     feature_names,
 )
 
 __all__ = [
+    "EXOGENOUS_SERIES_IDS_V2",
     "FEATURE_NAMES",
+    "FEATURE_NAMES_V2",
     "FEATURE_SET_ID",
+    "FEATURE_SET_ID_V2",
+    "ExogenousColumns",
     "FeatureRow",
+    "MetricAsOfLookup",
+    "build_exogenous_columns",
     "build_feature_rows",
+    "build_feature_rows_v2",
     "feature_names",
 ]

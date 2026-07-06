@@ -148,9 +148,15 @@ def validate(
     flat_band: float = 0.001,
     n_splits: int = 5,
     model_params: ModelParams | None = None,
+    feature_rows: Sequence[FeatureRow | None] | None = None,
 ) -> ForecastValidation:
     """Run expanding-window walk-forward validation and return the baseline-gated
     verdict.
+
+    ``feature_rows`` optionally supplies a prebuilt bar-aligned feature matrix
+    (Plan 0059: the v2 matrix is built once per call and shared across the
+    horizon set — the exogenous as-of join is the expensive step). When omitted
+    the v1 matrix is built from ``bars``, the Plan 0036 behaviour.
 
     Raises `ForecastValidationError` when ``n_splits`` is invalid for the series
     (``< 2`` — at least one seed fold plus one scored fold are required — or larger
@@ -162,10 +168,14 @@ def validate(
         raise ForecastValidationError(f"n_splits must be >= 2, got {n_splits}")
     if n_splits > len(bars):
         raise ForecastValidationError(f"n_splits ({n_splits}) exceeds bar count ({len(bars)})")
+    if feature_rows is not None and len(feature_rows) != len(bars):
+        raise ForecastValidationError(
+            f"feature_rows ({len(feature_rows)}) must align to bars ({len(bars)})"
+        )
 
     params = model_params if model_params is not None else ModelParams()
     closes = [b.close for b in bars]
-    rows = build_feature_rows(bars)
+    rows = list(feature_rows) if feature_rows is not None else build_feature_rows(bars)
     labels = build_labels(bars, LabelParams(horizon_bars=horizon_bars, flat_band=flat_band))
 
     fold_results: list[FoldSkill] = []

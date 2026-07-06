@@ -29,7 +29,7 @@ from typing import Any
 
 import joblib
 
-from market_analyser.forecast.labels import Direction
+from market_analyser.forecast.labels import Direction, LabelParams
 from market_analyser.forecast.model import ModelParams, TrainedModel
 
 # The model class is itself a prediction-affecting input (a different estimator on
@@ -41,18 +41,22 @@ def compute_model_version(
     *,
     feature_set_id: str,
     model_params: ModelParams,
+    label_params: LabelParams,
     training_cutoff: datetime,
     lib_versions: dict[str, str],
 ) -> str:
     """A deterministic 16-hex-char hash over every prediction-affecting input:
-    feature-set id, model class + hyperparameters (incl. seed), training-window
-    cutoff, and library versions. ``sort_keys`` makes the JSON canonical so the
-    hash never depends on dict ordering."""
+    feature-set id, model class + hyperparameters (incl. seed), the labelling
+    rule (horizon + flat band — Plan 0059: two horizons train genuinely
+    different models over the same features, ADR-0040's named collision failure
+    mode), training-window cutoff, and library versions. ``sort_keys`` makes the
+    JSON canonical so the hash never depends on dict ordering."""
 
     payload: dict[str, Any] = {
         "feature_set_id": feature_set_id,
         "model_class": MODEL_CLASS,
         "hyperparameters": model_params.model_dump(mode="json"),
+        "label_params": label_params.model_dump(mode="json"),
         "training_cutoff": training_cutoff.isoformat(),
         "lib_versions": lib_versions,
     }
@@ -77,10 +81,13 @@ def save_model(
     model_version: str,
     lib_versions: dict[str, str],
     root: Path,
+    label_params: LabelParams | None = None,
 ) -> Path:
     """Persist ``model`` under ``root/<model_version>/`` as a joblib estimator plus a
     JSON provenance sidecar. Idempotent: re-saving the same ``model_version``
-    rewrites identical content. Returns the artifact directory."""
+    rewrites identical content. ``label_params`` (when supplied) lands in the
+    sidecar so a multi-horizon artifact is self-describing about its target.
+    Returns the artifact directory."""
 
     cutoff = model.training_cutoff
     assert isinstance(cutoff, datetime)  # set from a bar event_ts in model.train
@@ -98,6 +105,8 @@ def save_model(
         "training_cutoff": cutoff.isoformat(),
         "lib_versions": lib_versions,
     }
+    if label_params is not None:
+        meta["label_params"] = label_params.model_dump(mode="json")
     (dest / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
     return dest
 

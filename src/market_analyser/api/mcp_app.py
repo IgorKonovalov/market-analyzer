@@ -201,13 +201,22 @@ def create_mcp_components(
     register_market_snapshot(server, provider=provider)
     register_stocktwits_sentiment(server, provider=provider)
 
-    # `forecast` (Plan 0036): direction-as-probability over cached bars, gated on
-    # beating a naive baseline out-of-sample. Always registered (needs only the
-    # provider). Accepted models persist under a gitignored models/ root sibling to
-    # runs/ (ADR-0040) when a runs_dir is wired; without one, the forecast still
-    # computes and returns, it is simply not cached to disk.
+    # `forecast` (Plan 0036, multi-horizon per Plan 0059): direction-as-probability
+    # over cached bars, per-horizon gated on beating a naive baseline
+    # out-of-sample. Always registered (needs only the provider). Accepted models
+    # persist under a gitignored models/ root sibling to runs/ (ADR-0040) when a
+    # runs_dir is wired; without one, the forecast still computes and returns, it
+    # is simply not cached to disk. The metric store (when wired) enables the v2
+    # exogenous feature set (ADR-0054); without it the tool computes on the v1
+    # OHLCV-only set and its provenance says so (feature_set_id + empty
+    # series_inputs) — explicit, not silent.
     forecast_models_dir = runs_dir.parent / "models" if runs_dir is not None else None
-    register_forecast(server, provider=provider, models_dir=forecast_models_dir)
+    register_forecast(
+        server,
+        provider=provider,
+        models_dir=forecast_models_dir,
+        metric_lookup=metric_points_repository,
+    )
 
     # `recommend` (Plan 0038, ADR-0029): the advisor layer's labeled advisory
     # output — fuses the condition snapshot, the live strategy signal, the

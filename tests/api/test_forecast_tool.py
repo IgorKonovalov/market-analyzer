@@ -1,4 +1,5 @@
-"""Phase-4 done-when (tool half) for Plan 0036: the `forecast` MCP tool.
+"""Phase-4 done-when (tool half) for Plan 0036, extended by Plan 0059 phase 3:
+the `forecast` MCP tool.
 
 Covered:
 - the no-edge gate result ships null probabilities but keeps the validation basis
@@ -9,23 +10,30 @@ Covered:
   (no wall-clock field), with stable provenance;
 - provenance carries the model_version + the prediction-affecting inputs, and its
   lib_versions are scikit-learn only (the prediction-affecting lib);
+- Plan 0059: per-horizon independence — genuine 1-bar signal + shuffled 21-bar
+  labels ships probabilities at h=1 and no-edge at h=21 **in the same call**
+  (done-when a); the horizon set defaults per timeframe; the tool response
+  round-trips through `MultiHorizonForecastResult` with `series_inputs`
+  populated when a metric store is wired, and says v1/empty when not (done-when
+  c, ADR-0054);
 - the tool is wired into the live MCP server (registration assertion).
 
-The accepted/no-edge *branches* are exercised by stubbing `validate` so the
-gate state is deterministic; the gate's own correctness on real data is pinned by
-`tests/forecast/test_validation.py`. The determinism + provenance tests run the
-real pipeline end to end.
+The accepted/no-edge *branches* of the v1 core are exercised by stubbing
+`validate` so the gate state is deterministic; the gate's own correctness on real
+data is pinned by `tests/forecast/test_validation.py`. The determinism,
+provenance, independence, and live-server tests run the real pipeline end to end.
 """
 
 from __future__ import annotations
 
 import asyncio
+import random
 import socket
 import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
-from contextlib import asynccontextmanager
-from datetime import datetime
+from contextlib import asynccontextmanager, contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -39,11 +47,16 @@ from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.api.mcp_tools import forecast as forecast_tool
 from market_analyser.api.mcp_tools.forecast import (
+    DAILY_HORIZONS,
     EDGE_MARGIN_THRESHOLD,
     FORECAST_DESCRIPTION,
     _classify_edge,
     _compute_forecast,
+    _compute_multi_horizon_forecast,
+    _normalise_horizons,
+    default_horizons,
 )
+from market_analyser.data.metric_series import MetricPoint
 from market_analyser.data.types import (
     Bar,
     MacroContext,
@@ -55,7 +68,14 @@ from market_analyser.data.types import (
     SymbolInfo,
 )
 from market_analyser.events import EventBus
-from market_analyser.forecast.features import FEATURE_SET_ID
+from market_analyser.forecast import validation as validation_module
+from market_analyser.forecast.features import (
+    EXOGENOUS_SERIES_IDS_V2,
+    FEATURE_SET_ID,
+    FEATURE_SET_ID_V2,
+)
+from market_analyser.forecast.labels import Direction, LabelParams, build_labels
+from market_analyser.forecast.result import MultiHorizonForecastResult
 from market_analyser.forecast.validation import ForecastValidation
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (
@@ -63,6 +83,7 @@ from market_analyser.persistence.engine import (
     make_engine,
     make_session_factory,
 )
+from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from tests.forecast._synthetic import synthetic_bars
 
 RENDERER_SECRET = "renderer-test-secret"
@@ -316,6 +337,185 @@ def test_description_documents_edge_strength() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Plan 0059 phase 3: multi-horizon blocks, per-horizon independence,          #
+# horizon defaults, and the v1 fallback's explicit provenance.                #
+# --------------------------------------------------------------------------- #
+
+
+def _mean_reverting_bars(n: int, seed: int) -> list[Bar]:
+    """Genuine 1-bar signal: the close alternates ±2% every bar (strong one-bar
+    mean reversion, fully revealed by a trailing feature like ``ret_1``) plus
+    small seeded noise so the series is not literally periodic. The persistence
+    baseline is systematically wrong on it (it predicts continuation) and the
+    majority baseline sits near 0.5, so a causal model genuinely beats baseline
+    at h=1."""
+
+    rng = random.Random(seed)
+    start_ts = datetime(2025, 1, 1, tzinfo=UTC)
+    price = 100.0
+    bars: list[Bar] = []
+    for i in range(n):
+        direction = 1.0 if i % 2 == 0 else -1.0
+        open_ = price
+        price = max(1.0, price * (1.0 + direction * 0.02 + rng.gauss(0.0, 0.003)))
+        close = price
+        high = max(open_, close) * (1.0 + abs(rng.gauss(0.0, 0.002)))
+        low = min(open_, close) * (1.0 - abs(rng.gauss(0.0, 0.002)))
+        volume = 1_000_000.0 + rng.random() * 10_000.0
+        bars.append(
+            Bar(
+                symbol="ALT",
+                timeframe="1d",
+                event_ts=start_ts + timedelta(days=i),
+                open=open_,
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+                source="synthetic",
+            )
+        )
+    return bars
+
+
+def _shuffled_labels(labels: list[Direction | None], seed: int) -> list[Direction | None]:
+    """A seeded shuffle of the defined labels in place of their original
+    positions (``None`` alignment padding stays put). The label distribution is
+    preserved; the feature→label relation is destroyed — the honest verdict on
+    the shuffled target is 'no edge'."""
+
+    defined = [label for label in labels if label is not None]
+    random.Random(seed).shuffle(defined)
+    it = iter(defined)
+    return [next(it) if label is not None else None for label in labels]
+
+
+def test_horizons_are_independent_within_one_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plan 0059 phase 3 done-when (a): genuine 1-bar signal + shuffled 21-bar
+    labels → h=1 ships probabilities while h=21 returns no-edge, in the SAME
+    call. The 21-bar labels are decoupled from the features by a seeded shuffle
+    injected at the label builder (for that horizon only); everything else —
+    walk-forward, purge, gate, training — is the real pipeline."""
+
+    bars = _mean_reverting_bars(400, seed=20260706)
+
+    def _patched(bars_arg: Sequence[Bar], params: LabelParams) -> list[Direction | None]:
+        labels = build_labels(bars_arg, params)
+        if params.horizon_bars == 21:
+            return _shuffled_labels(labels, seed=99)
+        return labels
+
+    monkeypatch.setattr(validation_module, "build_labels", _patched)
+    monkeypatch.setattr(forecast_tool, "build_labels", _patched)
+
+    result = _compute_multi_horizon_forecast(
+        bars=bars,
+        symbol="ALT",
+        timeframe="1d",
+        horizons=(1, 21),
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=None,
+    )
+
+    assert [block.horizon_bars for block in result.horizons] == [1, 21]
+    h1, h21 = result.horizons
+
+    # h=1: the model genuinely beats baseline out-of-sample and ships.
+    assert h1.validation.beats_baseline is True
+    assert h1.prob_up is not None
+    assert h1.prob_down is not None
+    assert h1.prob_flat is not None
+    assert abs(h1.prob_up + h1.prob_down + h1.prob_flat - 1.0) < 1e-9
+
+    # h=21: shuffled target → honest no-edge, null probabilities — the failed
+    # horizon does not poison the passing one, nor vice versa.
+    assert h21.validation.beats_baseline is False
+    assert h21.prob_up is None
+    assert h21.prob_down is None
+    assert h21.prob_flat is None
+    assert h21.edge_strength == "no_edge"
+
+    # Both blocks keep their own validation basis (per-horizon numbers).
+    assert h1.validation.horizon_bars == 1
+    assert h21.validation.horizon_bars == 21
+    assert h1.validation.skill is not None
+    assert h21.validation.skill is not None
+
+
+def test_default_horizons_per_timeframe() -> None:
+    assert default_horizons("1d") == DAILY_HORIZONS == (1, 5, 21)
+    for timeframe in ("1h", "15m", "4h", "1w"):
+        assert default_horizons(timeframe) == (1,)
+
+
+def test_normalise_horizons_dedupes_sorts_and_rejects_invalid() -> None:
+    assert _normalise_horizons(None, "1d") == (1, 5, 21)
+    assert _normalise_horizons(None, "1h") == (1,)
+    assert _normalise_horizons([21, 1, 5, 1], "1d") == (1, 5, 21)
+    with pytest.raises(ValueError, match="must not be empty"):
+        _normalise_horizons([], "1d")
+    with pytest.raises(ValueError, match=">= 1"):
+        _normalise_horizons([1, 0], "1d")
+
+
+def test_without_metric_store_result_is_explicitly_v1() -> None:
+    """No metric store wired → the v1 OHLCV-only feature set, stated in the
+    result (feature_set_id + empty series_inputs), never silent (ADR-0054)."""
+
+    result = _compute_multi_horizon_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1,),
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=None,
+    )
+    assert result.feature_set_id == FEATURE_SET_ID
+    (block,) = result.horizons
+    assert block.provenance is not None
+    assert block.provenance.feature_set_id == FEATURE_SET_ID
+    assert block.provenance.series_inputs == ()
+
+
+def test_multi_horizon_result_is_deterministic() -> None:
+    first = _compute_multi_horizon_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1, 5),
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=None,
+    )
+    second = _compute_multi_horizon_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1, 5),
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=None,
+    )
+    assert first == second
+    assert first.model_dump() == second.model_dump()
+
+
+def test_description_documents_multi_horizon_surface() -> None:
+    assert "horizons" in FORECAST_DESCRIPTION
+    assert "series_inputs" in FORECAST_DESCRIPTION
+
+
+# --------------------------------------------------------------------------- #
 # Live-server test — registration + end-to-end call.                          #
 # --------------------------------------------------------------------------- #
 
@@ -402,8 +602,8 @@ def app(mcp_secret: str, annotations_repo: AnnotationsRepository) -> FastAPI:
     )
 
 
-@pytest.fixture
-def live_server(app: FastAPI) -> Iterator[str]:
+@contextmanager
+def _uvicorn_server(app: FastAPI) -> Iterator[str]:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
@@ -429,6 +629,12 @@ def live_server(app: FastAPI) -> Iterator[str]:
         thread.join(timeout=5)
 
 
+@pytest.fixture
+def live_server(app: FastAPI) -> Iterator[str]:
+    with _uvicorn_server(app) as url:
+        yield url
+
+
 @asynccontextmanager
 async def _mcp_session(url: str, bearer: str) -> AsyncIterator[ClientSession]:
     async with (
@@ -444,6 +650,9 @@ async def _mcp_session(url: str, bearer: str) -> AsyncIterator[ClientSession]:
 
 
 def test_forecast_tool_registered_and_returns_result(live_server: str, mcp_secret: str) -> None:
+    """No metric store on this server → the call computes on the v1 feature set
+    and the response says so explicitly (feature_set_id + empty series_inputs)."""
+
     async def _run() -> dict[str, object]:
         async with _mcp_session(live_server, mcp_secret) as session:
             tools = {t.name for t in (await session.list_tools()).tools}
@@ -455,7 +664,7 @@ def test_forecast_tool_registered_and_returns_result(live_server: str, mcp_secre
                     "timeframe": "1d",
                     "range_start": "2025-01-01T00:00:00+00:00",
                     "range_end": "2025-12-31T00:00:00+00:00",
-                    "horizon_bars": 1,
+                    "horizons": [1],
                 },
             )
             assert not result.isError, f"forecast errored: {result.content}"
@@ -463,13 +672,95 @@ def test_forecast_tool_registered_and_returns_result(live_server: str, mcp_secre
             return dict(result.structuredContent)
 
     payload = asyncio.run(_run())
-    assert payload["symbol"] == "SYN"
-    assert payload["timeframe"] == "1d"
-    assert payload["horizon_bars"] == 1
-    assert isinstance(payload["validation"], dict)
-    provenance = payload["provenance"]
-    assert isinstance(provenance, dict)
-    assert provenance["model_version"]
-    # prob_* keys are always present (null on a no-edge verdict).
-    for key in ("prob_up", "prob_down", "prob_flat"):
-        assert key in payload
+    parsed = MultiHorizonForecastResult.model_validate(payload)
+    assert parsed.symbol == "SYN"
+    assert parsed.timeframe == "1d"
+    assert parsed.feature_set_id == FEATURE_SET_ID  # v1, stated
+    (block,) = parsed.horizons
+    assert block.horizon_bars == 1
+    assert block.provenance is not None
+    assert block.provenance.model_version
+    assert block.provenance.series_inputs == ()  # and not silent about it
+
+
+# The v2 live-server fixture pair: a real metric store (in-memory SQLite through
+# the migrations) seeded with one pre-series point per exogenous series, and a
+# bar history long enough for the 200W-MA cycle feature to define v2 rows
+# (~1400 daily bars) with room after the warm-up for scored walk-forward folds.
+BARS_V2 = synthetic_bars(2200)
+
+
+@pytest.fixture
+def v2_app(mcp_secret: str) -> Iterator[FastAPI]:
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    session_factory = make_session_factory(engine)
+    first_open = int(BARS_V2[0].event_ts.timestamp())
+    MetricPointsRepository(session_factory).upsert_points(
+        [
+            MetricPoint(series_id=series_id, ts=first_open - 60, value=10.0 + float(i))
+            for i, series_id in enumerate(EXOGENOUS_SERIES_IDS_V2)
+        ]
+    )
+    yield create_app(
+        secret=RENDERER_SECRET,
+        mcp_secret=mcp_secret,
+        provider=_BarsProvider(bars=BARS_V2),
+        annotations_repository=AnnotationsRepository(session_factory),
+        engine=engine,
+        event_bus=EventBus(),
+    )
+    engine.dispose()
+
+
+@pytest.fixture
+def v2_live_server(v2_app: FastAPI) -> Iterator[str]:
+    with _uvicorn_server(v2_app) as url:
+        yield url
+
+
+def test_forecast_tool_round_trips_with_series_inputs(v2_live_server: str, mcp_secret: str) -> None:
+    """Plan 0059 phase 3 done-when (c): the tool response round-trips through
+    `MultiHorizonForecastResult` with `series_inputs` populated, and every
+    horizon block carries its own beats_baseline / skill / baseline numbers.
+    The default 1d horizon set (1/5/21) is exercised through the wire."""
+
+    async def _run() -> dict[str, object]:
+        async with _mcp_session(v2_live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "forecast",
+                {
+                    "symbol": "SYN",
+                    "timeframe": "1d",
+                    "range_start": "2025-01-01T00:00:00+00:00",
+                    "range_end": "2031-12-31T00:00:00+00:00",
+                    "n_splits": 4,
+                },
+            )
+            assert not result.isError, f"forecast errored: {result.content}"
+            assert result.structuredContent is not None
+            return dict(result.structuredContent)
+
+    payload = asyncio.run(_run())
+    parsed = MultiHorizonForecastResult.model_validate(payload)
+
+    assert parsed.feature_set_id == FEATURE_SET_ID_V2
+    assert [block.horizon_bars for block in parsed.horizons] == [1, 5, 21]
+
+    first_open = int(BARS_V2[0].event_ts.timestamp())
+    for block in parsed.horizons:
+        # Per-horizon validation basis, whatever the verdict says.
+        assert block.validation.horizon_bars == block.horizon_bars
+        assert block.validation.skill is not None
+        assert block.validation.baseline_skill is not None
+        assert isinstance(block.validation.beats_baseline, bool)
+        # Provenance names every exogenous series consumed, with the freshest
+        # point ts the lag-1 join actually read.
+        assert block.provenance is not None
+        assert block.provenance.feature_set_id == FEATURE_SET_ID_V2
+        consumed = {s.series_id: s.last_point_ts for s in block.provenance.series_inputs}
+        assert set(consumed) == set(EXOGENOUS_SERIES_IDS_V2)
+        assert all(ts == first_open - 60 for ts in consumed.values())
+
+    # Round-trip: re-validating the parsed model's own dump is lossless.
+    assert MultiHorizonForecastResult.model_validate(parsed.model_dump()) == parsed

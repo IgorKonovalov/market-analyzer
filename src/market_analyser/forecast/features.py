@@ -24,12 +24,22 @@ feature whose scale silently encodes the (non-stationary) absolute price.
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from market_analyser.analysis import cycles
 from market_analyser.analysis import indicators as ind
+from market_analyser.data.metric_series import (
+    SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
+    SERIES_BINANCE_OPEN_INTEREST_BTCUSDT,
+    SERIES_COINGECKO_BTC_DOMINANCE,
+    SERIES_COINMETRICS_BTC_MVRV,
+    SERIES_FNG_VALUE,
+)
 from market_analyser.data.types import Bar
+from market_analyser.forecast.exogenous import ExogenousColumns
 
 # --- Indicator periods the feature set is built on -------------------------- #
 # Chosen to match the `analysis/snapshot.py` conventions so the forecast features
@@ -78,6 +88,41 @@ def _compute_feature_set_id(names: tuple[str, ...]) -> str:
 
 
 FEATURE_SET_ID: str = _compute_feature_set_id(FEATURE_NAMES)
+
+# --- Feature-set v2 (Plan 0059 phase 2, ADR-0054) ---------------------------- #
+# v1's 16 OHLCV features + 4 cycle features (constants + cached bars — ordinary
+# trailing features, no lag needed) + 7 exogenous features read lag-1 as-of from
+# the metric store. The delta features are derived **in-pipeline** from the
+# joined columns (the plan's resolved open question: the registry stays
+# raw-observations-only). v1 stays frozen and reproducible under its own id.
+DELTA_LOOKBACK = 7  # bars between the two endpoints of the *_delta_7 features
+
+FEATURE_NAMES_V2: tuple[str, ...] = (
+    *FEATURE_NAMES,
+    "halving_phase",  # fraction of the halving cycle elapsed, [0, 1]
+    "days_since_halving",  # days since the last halving at the bar's UTC date
+    "mayer_multiple",  # close / SMA200(daily closes)
+    "dist_200w_ma",  # close / SMA1400(daily closes) - 1
+    "fng_value",  # Fear & Greed index (0-100), lag-1
+    "fng_delta_7",  # fng_value[i] - fng_value[i-7] (both lag-1)
+    "btc_dominance",  # BTC dominance percent (0-100), lag-1
+    "dominance_delta_7",  # btc_dominance[i] - btc_dominance[i-7]
+    "funding_rate",  # Binance BTCUSDT perp funding rate, lag-1
+    "oi_delta_7",  # open_interest[i] / open_interest[i-7] - 1 (fractional)
+    "mvrv",  # CoinMetrics BTC MVRV ratio, lag-1
+)
+
+FEATURE_SET_ID_V2: str = _compute_feature_set_id(FEATURE_NAMES_V2)
+
+# The exogenous series the v2 set consumes, in column order. BTC legs only —
+# the ETH funding/OI series exist in the registry but are not v2 inputs.
+EXOGENOUS_SERIES_IDS_V2: tuple[str, ...] = (
+    SERIES_FNG_VALUE,
+    SERIES_COINGECKO_BTC_DOMINANCE,
+    SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
+    SERIES_BINANCE_OPEN_INTEREST_BTCUSDT,
+    SERIES_COINMETRICS_BTC_MVRV,
+)
 
 
 def feature_names() -> tuple[str, ...]:
@@ -233,10 +278,133 @@ def _row_at(
     return tuple(v for v in values if v is not None)
 
 
+def _finite_or_none(value: float) -> float | None:
+    """NaN (the exogenous missing marker) → ``None`` so the v2 row assembly
+    collapses a not-yet-warm series into a dropped row, mirroring v1's
+    undefined-indicator handling. Never coerces to zero (ADR-0054)."""
+
+    return None if math.isnan(value) else value
+
+
+def _cycle_features_at(
+    i: int, bars: Sequence[Bar], closes: Sequence[float]
+) -> tuple[float | None, float | None, float | None, float | None]:
+    """The four cycle features at bar ``i`` — trailing by construction: dates
+    from the bar's own UTC timestamp, moving averages over ``closes[0..=i]``.
+    All ``None`` before the first halving (no cycle is defined there)."""
+
+    bar_date = bars[i].event_ts.date()
+    if bar_date < cycles.HALVING_DATES[0]:
+        return None, None, None, None
+    return (
+        cycles.halving_phase(bar_date),
+        float(cycles.days_since_halving(bar_date)),
+        cycles.mayer_multiple(closes[: i + 1]),
+        cycles.dist_200w_ma(closes[: i + 1]),
+    )
+
+
+def _exogenous_features_at(i: int, exogenous: ExogenousColumns) -> tuple[float | None, ...]:
+    """The seven exogenous features at bar ``i`` from the lag-1 columns, in
+    FEATURE_NAMES_V2 order. A NaN endpoint makes the feature ``None``; the
+    delta features additionally need the ``i - DELTA_LOOKBACK`` endpoint."""
+
+    fng = exogenous.columns[SERIES_FNG_VALUE]
+    dom = exogenous.columns[SERIES_COINGECKO_BTC_DOMINANCE]
+    funding = exogenous.columns[SERIES_BINANCE_FUNDING_RATE_BTCUSDT]
+    oi = exogenous.columns[SERIES_BINANCE_OPEN_INTEREST_BTCUSDT]
+    mvrv = exogenous.columns[SERIES_COINMETRICS_BTC_MVRV]
+
+    fng_value = _finite_or_none(fng[i])
+    dominance = _finite_or_none(dom[i])
+    funding_rate = _finite_or_none(funding[i])
+    mvrv_value = _finite_or_none(mvrv[i])
+
+    fng_delta_7: float | None = None
+    dominance_delta_7: float | None = None
+    oi_delta_7: float | None = None
+    if i >= DELTA_LOOKBACK:
+        fng_prev = _finite_or_none(fng[i - DELTA_LOOKBACK])
+        if fng_value is not None and fng_prev is not None:
+            fng_delta_7 = fng_value - fng_prev
+        dom_prev = _finite_or_none(dom[i - DELTA_LOOKBACK])
+        if dominance is not None and dom_prev is not None:
+            dominance_delta_7 = dominance - dom_prev
+        oi_now = _finite_or_none(oi[i])
+        oi_prev = _finite_or_none(oi[i - DELTA_LOOKBACK])
+        if oi_now is not None and oi_prev is not None:
+            oi_delta_7 = _safe_ratio(oi_now, oi_prev)
+            if oi_delta_7 is not None:
+                oi_delta_7 -= 1.0
+
+    return (
+        fng_value,
+        fng_delta_7,
+        dominance,
+        dominance_delta_7,
+        funding_rate,
+        oi_delta_7,
+        mvrv_value,
+    )
+
+
+def build_feature_rows_v2(
+    bars: Sequence[Bar], exogenous: ExogenousColumns
+) -> list[FeatureRow | None]:
+    """Build the v2 per-bar feature matrix, aligned to ``bars``.
+
+    ``exogenous`` must carry lag-1 columns (see `exogenous.build_exogenous_columns`)
+    for every series in `EXOGENOUS_SERIES_IDS_V2`, aligned to the same bars. Entry
+    ``i`` is a `FeatureRow` ordered exactly as `FEATURE_NAMES_V2` once **every**
+    feature is defined there, or ``None`` otherwise — a missing exogenous value
+    (series not yet warm) drops the row from the matrix, it is never zero-filled
+    (ADR-0054 row policy). Entry ``i`` reads only ``bars[0..=i]`` plus metric
+    points strictly before bar ``i``'s open, so the v1 anti-lookahead property
+    carries over.
+    """
+
+    missing = [s for s in EXOGENOUS_SERIES_IDS_V2 if s not in exogenous.columns]
+    if missing:
+        raise ValueError(f"exogenous columns missing required series: {missing}")
+    for series_id in EXOGENOUS_SERIES_IDS_V2:
+        if len(exogenous.columns[series_id]) != len(bars):
+            raise ValueError(
+                f"exogenous column {series_id!r} has {len(exogenous.columns[series_id])} "
+                f"entries for {len(bars)} bars — columns must align to the bar list",
+            )
+
+    v1_rows = build_feature_rows(bars)
+    closes = [b.close for b in bars]
+
+    rows: list[FeatureRow | None] = [None] * len(bars)
+    for i, v1_row in enumerate(v1_rows):
+        if v1_row is None:
+            continue
+        extras: tuple[float | None, ...] = (
+            *_cycle_features_at(i, bars, closes),
+            *_exogenous_features_at(i, exogenous),
+        )
+        values = (*v1_row.values, *extras)
+        assert len(values) == len(FEATURE_NAMES_V2)  # order/length lock, as in v1
+        if any(v is None for v in extras):
+            continue
+        rows[i] = FeatureRow(
+            bar_index=i,
+            event_ts=bars[i].event_ts,
+            values=tuple(v for v in values if v is not None),
+        )
+    return rows
+
+
 __all__ = [
+    "DELTA_LOOKBACK",
+    "EXOGENOUS_SERIES_IDS_V2",
     "FEATURE_NAMES",
+    "FEATURE_NAMES_V2",
     "FEATURE_SET_ID",
+    "FEATURE_SET_ID_V2",
     "FeatureRow",
     "build_feature_rows",
+    "build_feature_rows_v2",
     "feature_names",
 ]
