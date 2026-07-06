@@ -12,6 +12,11 @@
  * high-conviction one; the v1 feature-set fallback is stated, not hidden; and
  * the SSE payload is Zod-validated in the dispatcher — a malformed forecast
  * never reaches the handler.
+ *
+ * Plan 0061 phase 3 adds: a dispatched envelope whose provenance carries
+ * `fallback_reason` renders the reason in the feature-set footer (the reason
+ * survives the Zod parse); an envelope without the field renders exactly
+ * today's footer — no new text, no fallback element.
  */
 import '@testing-library/jest-dom'
 
@@ -229,6 +234,53 @@ it('states the v1 feature-set fallback out loud when no exogenous series were co
   const featureSet = screen.getByTestId('forecast-feature-set')
   expect(featureSet).toHaveTextContent('ohlcv_v1')
   expect(featureSet).toHaveTextContent(/no exogenous series were consumed/i)
+})
+
+it('renders the fallback reason in the feature-set footer when a dispatched envelope carries one', () => {
+  const reason =
+    'v2 unavailable: exogenous store has insufficient history ' +
+    '(0 of 220 bars survived the join; the requested walk-forward needs at least 10)'
+  const starvedFallback: MultiHorizonForecastResult = {
+    ...MIXED_FORECAST,
+    feature_set_id: 'ohlcv_v1',
+    horizons: [
+      {
+        ...CLEAR_BLOCK,
+        provenance: provenance({
+          feature_set_id: 'ohlcv_v1',
+          series_inputs: [],
+          fallback_reason: reason,
+        }),
+      },
+    ],
+  }
+
+  // Through the real dispatch → Zod → handler path: the schema accepts the
+  // with-reason shape and the field SURVIVES the parse (pre-0061 the
+  // non-strict schema stripped it).
+  const captured = throughDispatch(starvedFallback)
+  expect(captured).not.toBeNull()
+  expect(captured?.horizons[0]?.provenance?.fallback_reason).toBe(reason)
+
+  render(<ForecastView forecast={captured} />)
+  const fallback = screen.getByTestId('forecast-fallback-reason')
+  expect(fallback).toHaveTextContent(/insufficient history/)
+  // One plain sentence in the feature-set footer, beside the v1 statement.
+  const featureSet = screen.getByTestId('forecast-feature-set')
+  expect(featureSet).toHaveTextContent(/no exogenous series were consumed/i)
+  expect(featureSet).toHaveTextContent(reason)
+})
+
+it('renders exactly today’s footer when no fallback reason travels (no regression)', () => {
+  // The schema accepts the without-field shape (both fixtures predate 0061).
+  const captured = throughDispatch(MIXED_FORECAST)
+  expect(captured).not.toBeNull()
+
+  render(<ForecastView forecast={captured} />)
+  expect(screen.queryByTestId('forecast-fallback-reason')).not.toBeInTheDocument()
+  expect(screen.getByTestId('forecast-feature-set')).toHaveTextContent(
+    'feature set ohlcv_v2_exog — exogenous series: alternative.fear_greed, coinmetrics.btc.mvrv',
+  )
 })
 
 it('shows a clear placeholder before any forecast arrives', () => {

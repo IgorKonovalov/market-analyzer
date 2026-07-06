@@ -14,6 +14,9 @@
  * `SeriesInput.last_point_ts` are ABSENT (not null) when None — hence
  * `.nullish()`. `ForecastProvenance.series_inputs` has a non-None default and
  * is always present (an empty array marks the v1 OHLCV-only feature set).
+ * `ForecastProvenance.fallback_reason` (Plan 0061) is ABSENT when the v2 set
+ * genuinely ran and a plain sentence when a v1 fallback happened (store
+ * unwired, or wired but too starved for the requested walk-forward).
  *
  * The schema is `satisfies`-pinned to the hand-written TS mirror in
  * `types/events.ts`, so the compiler rejects drift between the two; the
@@ -56,6 +59,7 @@ const forecastProvenanceSchema = z.object({
   seed: z.number(),
   lib_versions: z.record(z.string()),
   series_inputs: z.array(seriesInputSchema),
+  fallback_reason: z.string().nullish(),
 })
 
 /** A probability is only a probability in [0, 1] — anything else is malformed

@@ -75,9 +75,12 @@ export function ForecastView({ forecast }: Props): JSX.Element {
 
   // All blocks of one call share the same feature set; the series list lives
   // on each trained block's provenance. An empty list = the OHLCV-only v1
-  // fallback — stated out loud, never silent (ADR-0054).
+  // fallback — stated out loud, never silent (ADR-0054). `fallback_reason`
+  // (Plan 0061) says WHY a v1 fallback happened; it is call-level too (the
+  // tool computes it once per call), so the first block's copy speaks for all.
   const firstProvenance = forecast.horizons.find((b) => b.provenance != null)?.provenance ?? null
   const seriesInputs = firstProvenance?.series_inputs ?? []
+  const fallbackReason = firstProvenance?.fallback_reason ?? null
 
   return (
     <section className={styles.view} aria-label="Direction forecast">
@@ -108,6 +111,12 @@ export function ForecastView({ forecast }: Props): JSX.Element {
             <span className={styles.muted}>
               {' '}
               — exogenous series: {seriesInputs.map((s) => s.series_id).join(', ')}
+            </span>
+          )}
+          {fallbackReason != null && (
+            <span className={styles.muted} data-testid="forecast-fallback-reason">
+              {' '}
+              — {fallbackReason}
             </span>
           )}
         </p>
