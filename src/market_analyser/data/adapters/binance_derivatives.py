@@ -284,6 +284,15 @@ class BinanceDerivativesAdapter:
             pairs.extend(page)
             last_ms = page[-1][0]
             if last_ms < cursor_ms:
+                if cursor_ms > latest_ms:
+                    # Past upstream's newest row, a startTime is clamped BACK
+                    # to the latest data and the newest row(s) are re-served —
+                    # not the empty page the walk originally terminated on
+                    # (verified live 2026-07-06, Plan 0061 phase-4 smoke:
+                    # startTime = newest+1 returned the newest row again).
+                    # End of data, not a stuck cursor; the echoed rows are
+                    # already collected and dedup by bucket.
+                    break
                 raise BinanceDerivativesError(
                     f"binance-futures: openInterestHist page for {symbol} did not advance "
                     f"past startTime={cursor_ms} (last timestamp={last_ms}) — refusing to loop",

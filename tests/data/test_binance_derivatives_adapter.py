@@ -514,6 +514,10 @@ class _FakeOiTransport:
     `reject_start_at_or_before_ms` set, a paged startTime at or before that
     instant answers **HTTP 400** — the live-verified 2026-07-06 boundary
     behavior (any startTime >= 720h old is rejected outright, never clamped).
+    With `echo_latest_past_end=True`, a paged startTime PAST the newest row
+    re-serves the newest row instead of answering empty — the other
+    live-verified 2026-07-06 behavior (startTime = newest+1 returned the
+    newest row again; the empty-page terminator is gone).
 
     `/fapi/v1/openInterest`: returns `snapshot_holder["body"]` (mutable
     between calls so a test can steer the sample's timestamp/value).
@@ -526,11 +530,13 @@ class _FakeOiTransport:
         *,
         clamp_early_start: bool = True,
         reject_start_at_or_before_ms: int | None = None,
+        echo_latest_past_end: bool = False,
     ) -> None:
         self._entries = entries
         self._snapshot_holder = snapshot_holder if snapshot_holder is not None else {}
         self._clamp_early_start = clamp_early_start
         self._reject_start_at_or_before_ms = reject_start_at_or_before_ms
+        self._echo_latest_past_end = echo_latest_past_end
         self.hist_requests: list[dict[str, str]] = []
         self.snapshot_requests: list[dict[str, str]] = []
 
@@ -566,6 +572,10 @@ class _FakeOiTransport:
             earliest = int(str(self._entries[0]["timestamp"]))
             if start_ms < earliest:
                 return []
+        if self._echo_latest_past_end and self._entries:
+            newest = int(str(self._entries[-1]["timestamp"]))
+            if start_ms > newest:
+                return [self._entries[-1]]
         limit = int(query.get("limit", "30"))
         page = [e for e in self._entries if int(str(e["timestamp"])) >= start_ms]
         return page[: min(limit, _OI_SERVER_PAGE_ROWS)]
@@ -691,6 +701,38 @@ def test_oi_seed_window_stays_inside_the_upstream_400_boundary(
     first_paged = next(req for req in fake.hist_requests if "startTime" in req)
     assert int(first_paged["startTime"]) == latest_ms - (30 * 24 - 1) * 3_600 * 1000
     assert int(first_paged["startTime"]) > latest_ms - 720 * 3_600 * 1000
+
+
+def test_oi_seed_terminates_on_the_latest_window_echo_past_the_newest_row(
+    monkeypatch: pytest.MonkeyPatch, store: MetricPointsRepository
+) -> None:
+    """Verified live 2026-07-06 (Plan 0061 phase-4 smoke, second finding): a
+    paged startTime PAST upstream's newest row no longer answers empty — it is
+    clamped back and the newest row is re-served. The walk must read that
+    non-advancing echo as end-of-data (the cursor is already past the
+    probe-anchored latest) and terminate with the full window landed — never
+    raise refusing-to-loop, never actually loop. A non-advancing page BEFORE
+    the latest row is still the loud error (the stuck-cursor guard holds)."""
+    transport = _FakeOiTransport(
+        [_oi_hist_entry(i) for i in range(_OI_HIST_HOURS)], echo_latest_past_end=True
+    )
+    adapter, fake = _oi_adapter(monkeypatch, store, transport=transport)
+
+    inserted = adapter.seed_open_interest(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT)
+
+    assert inserted == _OI_HIST_HOURS
+    stored = store.range(SERIES_BINANCE_OPEN_INTEREST_BTCUSDT, *_OI_ALL)
+    assert [p.ts for p in stored] == [_OI_BASE_TS + i * 3600 for i in range(_OI_HIST_HOURS)]
+    # Values intact through the echoed-row dedup (first write in a bucket wins).
+    assert [p.value for p in stored] == [float(_oi_value_str(i)) for i in range(_OI_HIST_HOURS)]
+    # Terminated on the first past-end echo: bounded walk, no loop.
+    past_end = [
+        req
+        for req in fake.hist_requests
+        if "startTime" in req
+        and int(req["startTime"]) > (_OI_BASE_TS + (_OI_HIST_HOURS - 1) * 3600) * 1000
+    ]
+    assert len(past_end) == 1
 
 
 def test_oi_seed_with_empty_upstream_window_is_a_noop(
