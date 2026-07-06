@@ -224,6 +224,100 @@ class MacroContext(BaseModel):
         return v
 
 
+class SpotBalance(BaseModel):
+    """One spot-wallet asset balance from a venue account read (Plan 0041).
+
+    Quantities only — a spot balance carries no entry price (the venue does not
+    record one) and no USD value (valuation is the aggregator's job, with its
+    pricing reference named as provenance). Zero-total balances are dropped at
+    the adapter boundary, so a parsed balance always holds something.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    asset: str = Field(min_length=1)  # venue asset code, e.g. "BTC"
+    free: float = Field(ge=0)
+    locked: float = Field(ge=0)
+
+    @field_validator("free", "locked")
+    @classmethod
+    def _amounts_must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("balance amounts must be finite (no NaN/Inf)")
+        return v
+
+    @model_validator(mode="after")
+    def _must_hold_something(self) -> SpotBalance:
+        if self.free + self.locked <= 0:
+            raise ValueError("a spot balance must hold a positive total")
+        return self
+
+
+class FuturesPosition(BaseModel):
+    """One open USDⓈ-M futures position from a venue account read (Plan 0041).
+
+    Deliberately distinct from `SpotBalance` (the Plan 0041 open question,
+    resolved as proposed): a derivative position has an entry price that serves
+    as its cost basis, a signed quantity (negative = short), and a venue-marked
+    price — none of which a spot balance has. Flat (zero-quantity) rows are
+    dropped at the adapter boundary.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str = Field(min_length=1)  # venue-native contract symbol, e.g. "BTCUSDT"
+    quantity: float  # signed base-asset amount; negative = short, never zero
+    entry_price: float = Field(gt=0)
+    position_side: str = Field(min_length=1)  # "BOTH" (one-way) | "LONG" | "SHORT" (hedge)
+    mark_price: float | None = None  # venue's own mark — the leg's pricing reference
+    unrealized_pnl_usd: float | None = None  # venue-computed, at the venue's mark
+
+    @field_validator("quantity", "entry_price")
+    @classmethod
+    def _measurements_must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("position measurements must be finite (no NaN/Inf)")
+        return v
+
+    @field_validator("quantity")
+    @classmethod
+    def _quantity_must_be_nonzero(cls, v: float) -> float:
+        if v == 0:
+            raise ValueError("an open position's quantity must be nonzero")
+        return v
+
+    @field_validator("mark_price", "unrealized_pnl_usd")
+    @classmethod
+    def _optional_measurements_must_be_finite(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("position measurements must be finite (no NaN/Inf)")
+        return v
+
+
+class AccountHoldings(BaseModel):
+    """A venue account's holdings snapshot — spot balances + open derivative
+    positions — for the cross-venue portfolio (Plan 0041 / ADR-0042).
+
+    `as_of` is the query instant of a live API read (there is no replayable
+    history), stamped once per fetch so the leg's freshness is carried as
+    provenance and never blended with other venues' legs.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    venue: str = Field(min_length=1)  # "binance"
+    spot: list[SpotBalance]
+    futures: list[FuturesPosition]
+    as_of: datetime
+
+    @field_validator("as_of")
+    @classmethod
+    def _as_of_must_be_utc(cls, v: datetime) -> datetime:
+        if v.tzinfo is None:
+            raise ValueError("as_of must be timezone-aware (UTC)")
+        return v.astimezone(UTC)
+
+
 @dataclass(frozen=True)
 class Coverage:
     """Cache-only read result for backfill scheduling (Plan 0013): the bars
@@ -248,15 +342,18 @@ class BackfillResult:
 
 
 __all__ = [
+    "AccountHoldings",
     "BackfillResult",
     "Bar",
     "Coverage",
     "CryptoRegime",
+    "FuturesPosition",
     "MacroContext",
     "MarketSentimentSample",
     "NewsItem",
     "Quote",
     "ScreenerRow",
     "SentimentSample",
+    "SpotBalance",
     "SymbolInfo",
 ]

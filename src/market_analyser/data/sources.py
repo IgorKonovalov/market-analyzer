@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from market_analyser.data.metric_series import MetricPoint
 from market_analyser.data.types import (
+    AccountHoldings,
     Bar,
     MarketSentimentSample,
     NewsItem,
@@ -233,6 +234,19 @@ class HistoricalPriceSource(Protocol):
         address: str | None,
         ts: int,
     ) -> float | None: ...
+
+
+@runtime_checkable
+class AccountHoldingsSource(Protocol):
+    """A source of one venue account's holdings — spot balances plus open
+    derivative positions — for the cross-venue portfolio (Plan 0041 /
+    ADR-0042). Read-only by charter: a conforming source authenticates with a
+    read-only credential (ADR-0038) and exposes no order/write path (the
+    Plan 0041 done-when pins this at the source level). Members of the
+    portfolio holdings registry, keyed by venue name ("binance"), built in the
+    composition root (ADR-0031)."""
+
+    def fetch_account_holdings(self) -> AccountHoldings: ...
 
 
 @runtime_checkable

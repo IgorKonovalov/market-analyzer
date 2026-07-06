@@ -42,10 +42,20 @@ POSIX_FILE_MODE = 0o600
 SECRETS_FILENAME = "secrets.json"
 ENV_VAR_PREFIX = "MARKET_ANALYSER_"
 
-# The known secret keys. `zerion_api_key` is Plan 0032's consumer; the others are
-# reserved for the deep-adapter / pricing plans that reuse this store unchanged
-# (ADR-0034 notes, ADR-0035 §Authenticated-source prerequisite).
-SecretKey = Literal["zerion_api_key", "graph_api_key", "eth_rpc_url", "base_rpc_url"]
+# The known secret keys. `zerion_api_key` is Plan 0032's consumer; the RPC/Graph
+# keys are reserved for the deep-adapter / pricing plans that reuse this store
+# unchanged (ADR-0034 notes, ADR-0035 §Authenticated-source prerequisite). The
+# `binance_read_*` pair is the Plan 0041 portfolio leg's **read-only** credential
+# (ADR-0042) — a lower-value secret than a trade key, which is why it lives here
+# and not in the Pillar-5 trade keychain (ADR-0044).
+SecretKey = Literal[
+    "zerion_api_key",
+    "graph_api_key",
+    "eth_rpc_url",
+    "base_rpc_url",
+    "binance_read_api_key",
+    "binance_read_api_secret",
+]
 KNOWN_SECRET_KEYS: tuple[SecretKey, ...] = get_args(SecretKey)
 SecretStatus = Literal["set", "unset"]
 
@@ -63,6 +73,8 @@ class SecretsFile(BaseModel):
     graph_api_key: str | None = None
     eth_rpc_url: str | None = None
     base_rpc_url: str | None = None
+    binance_read_api_key: str | None = None
+    binance_read_api_secret: str | None = None
 
 
 class SecretsStore:
