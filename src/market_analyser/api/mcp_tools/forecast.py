@@ -1,31 +1,39 @@
-"""`forecast` MCP tool — Plan 0036 phase 4 (ADR-0030 / ADR-0040).
+"""`forecast` MCP tool — Plan 0036 phase 4, multi-horizon per Plan 0059 (ADR-0030
+/ ADR-0040 / ADR-0054).
 
-The first **forward-looking** tool in the app. It returns a calibrated up/down/flat
-direction probability for the next ``horizon_bars``, or an honest **no-edge**
-verdict — never a price level, never a recommendation (that is the advisor,
-ADR-0029). The flow:
+The first **forward-looking** tool in the app. It returns, per requested horizon,
+a calibrated up/down/flat direction probability or an honest **no-edge** verdict
+— never a price level, never a recommendation (that is the advisor, ADR-0029).
+The flow:
 
-    validate inputs (symbol / timeframe / range / horizon)
+    validate inputs (symbol / timeframe / range / horizons)
         -> fetch cached bars via the provider (ADR-0007)
-        -> validate(): expanding-window walk-forward + baseline gate (phase 3)
-        -> train the final model on all labelled bars (deterministic, seeded)
-        -> model_version = hash of all prediction-affecting inputs (ADR-0040)
-        -> if beats_baseline: ship probabilities + persist the accepted model
-           else:             ship prob_*=None (no edge), keep the validation basis
-        -> return ForecastResult (prob + validation basis + full provenance)
+        -> build ONE feature matrix for the call:
+             v2 (16 OHLCV + cycle + lag-1 exogenous, ADR-0054) when a metric
+             store is wired; otherwise the v1 OHLCV-only set — explicit in the
+             result's feature_set_id + empty series_inputs, never silent
+        -> per horizon, INDEPENDENTLY (ADR-0054 rule 2):
+             horizon-purged walk-forward + baseline gate
+             -> train the final model (deterministic, seeded)
+             -> model_version = hash of all prediction-affecting inputs,
+                incl. the labelling rule (ADR-0040)
+             -> beats_baseline: ship probabilities + persist the accepted model
+                else:           ship prob_*=None, keep the validation basis
+        -> return MultiHorizonForecastResult (blocks + series provenance)
 
-**Honest uncertainty** (ADR-0030 invariant 4): the `validation` block — the
-out-of-sample `skill`, the `baseline_skill`, and `beats_baseline` — travels with
-every result, so a marginal beat reads as marginal and a no-edge reads as no-edge.
-**Determinism** (ADR-0040): the result carries no wall-clock field, so re-running
-on the same cached bars + seed returns a byte-identical `ForecastResult` —
-`prob_*`, `skill`, and `model_version` all stable.
+**Honest uncertainty** (ADR-0030 invariant 4): every block carries its own
+out-of-sample `skill`, `baseline_skill`, and `beats_baseline` — "edge at 1d, no
+edge at 1mo" is an expressible verdict. **Determinism** (ADR-0040): no
+wall-clock field anywhere, so re-running on the same cached bars + metric points
++ seed returns a byte-identical result.
 
 The CPU-bound model work is offloaded with `asyncio.to_thread`; the body is
-factored into `_forecast_response` / `_compute_forecast` so it is unit-testable
-without a live MCP server. Persistence targets a gitignored `models/` root
-(sibling to `runs/`); when no such root is wired the forecast still computes and
-returns, it is simply not cached to disk.
+factored into `_multi_forecast_response` / `_compute_multi_horizon_forecast` so
+it is unit-testable without a live MCP server. `_compute_forecast` remains the
+single-horizon v1 core the `recommend` tool consumes (its surface is
+deliberately untouched by Plan 0059). Persistence targets a gitignored
+`models/` root (sibling to `runs/`); when no such root is wired the forecast
+still computes and returns, it is simply not cached to disk.
 """
 
 from __future__ import annotations
@@ -43,7 +51,15 @@ from market_analyser.api.mcp_tools._validation import (
 )
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
-from market_analyser.forecast.features import FEATURE_SET_ID, build_feature_rows
+from market_analyser.forecast.exogenous import MetricAsOfLookup, build_exogenous_columns
+from market_analyser.forecast.features import (
+    EXOGENOUS_SERIES_IDS_V2,
+    FEATURE_SET_ID,
+    FEATURE_SET_ID_V2,
+    FeatureRow,
+    build_feature_rows,
+    build_feature_rows_v2,
+)
 from market_analyser.forecast.labels import Direction, LabelParams, build_labels
 from market_analyser.forecast.model import (
     DEFAULT_SEED,
@@ -65,8 +81,15 @@ from market_analyser.forecast.result import (
     EdgeStrength,
     ForecastProvenance,
     ForecastResult,
+    HorizonForecast,
+    MultiHorizonForecastResult,
+    SeriesInput,
 )
 from market_analyser.forecast.validation import ForecastValidation, validate
+
+# The horizon set for daily bars (ADR-0054: next-day / ~1w / ~1mo). Every other
+# timeframe keeps next-bar only for now (plan phase 3).
+DAILY_HORIZONS: tuple[int, ...] = (1, 5, 21)
 
 # How far the out-of-sample model skill must exceed the baseline skill for the
 # edge to read as "clear" rather than "marginal". 0.02 = two percentage points of
@@ -99,21 +122,27 @@ def _classify_edge(validation: ForecastValidation) -> tuple[float | None, EdgeSt
 
 
 FORECAST_DESCRIPTION = (
-    "Forecast the next-N-bar price DIRECTION for a cached symbol as a calibrated "
-    "up/down/flat probability, or an honest 'no edge over baseline' verdict. A "
-    "causal, leakage-free model (trained only on bars[0..=i]) is validated by "
-    "rolling out-of-sample walk-forward and must beat a naive baseline "
-    "(persistence + majority-class) to ship a probability; otherwise prob_up/down/"
-    "flat are null and only the validation basis is returned. Every result carries "
-    "its out-of-sample skill, the baseline skill, and full model provenance "
-    "(model_version, feature-set id, training cutoff, seed, library versions). "
-    "edge_strength labels how decisively the model beat baseline — 'no_edge' (no "
-    "probability shipped), 'marginal' (beat baseline but by less than the margin "
-    "threshold), or 'clear' — with edge_margin = skill - baseline_skill; treat a "
-    "high prob_* under a 'marginal' edge as thin, not near-certain. This is a "
-    "CONDITION (a probability), never a buy/sell recommendation and never a price "
-    "level. Requires bars already cached for the window (backfill via get_ohlcv "
-    "first). Supported timeframes: 1d, 1h, 15m, 4h, 1w."
+    "Forecast the price DIRECTION of a cached symbol over one or more horizons, "
+    "each as a calibrated up/down/flat probability or an honest 'no edge over "
+    "baseline' verdict. Horizons default to 1/5/21 bars on 1d (next-day / ~1w / "
+    "~1mo) and to next-bar only on other timeframes; pass horizons=[...] to "
+    "override. Each horizon trains and walk-forward-validates its OWN model and "
+    "passes or fails the naive-baseline gate (persistence + majority-class) "
+    "INDEPENDENTLY — 'edge at 1d, no edge at 1mo' is a normal result; a failed "
+    "horizon ships prob_*=null with its validation basis. Features: the target "
+    "symbol's own OHLCV indicators plus BTC cycle features (halving clock, Mayer "
+    "Multiple, 200W-MA distance) and exogenous series (Fear & Greed, BTC "
+    "dominance, funding rate, open interest, MVRV) joined lag-1 as-of at bar "
+    "open, so publication-lag lookahead is structurally impossible; provenance "
+    "lists every series consumed under series_inputs (empty when the metric "
+    "store is unavailable and the OHLCV-only v1 feature set was used — check "
+    "feature_set_id). Each block carries out-of-sample skill, baseline skill, "
+    "edge_margin = skill - baseline_skill, and edge_strength ('no_edge' / "
+    "'marginal' / 'clear'); treat a high prob_* under a 'marginal' edge as thin, "
+    "not near-certain. This is a CONDITION (a probability), never a buy/sell "
+    "recommendation and never a price level. Requires bars already cached for "
+    "the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, "
+    "15m, 4h, 1w."
 )
 
 
@@ -158,6 +187,7 @@ def _compute_forecast(
     model_version = compute_model_version(
         feature_set_id=FEATURE_SET_ID,
         model_params=model.params,
+        label_params=LabelParams(horizon_bars=horizon_bars, flat_band=flat_band),
         training_cutoff=cutoff,
         lib_versions=lib_versions,
     )
@@ -176,7 +206,11 @@ def _compute_forecast(
         prob_flat: float | None = dist[Direction.FLAT]
         if models_dir is not None and not model_exists(model_version, root=models_dir):
             save_model(
-                model, model_version=model_version, lib_versions=lib_versions, root=models_dir
+                model,
+                model_version=model_version,
+                lib_versions=lib_versions,
+                root=models_dir,
+                label_params=LabelParams(horizon_bars=horizon_bars, flat_band=flat_band),
             )
     else:
         prob_up = prob_down = prob_flat = None
@@ -198,26 +232,182 @@ def _compute_forecast(
     )
 
 
-async def _forecast_response(
+def default_horizons(timeframe: str) -> tuple[int, ...]:
+    """The horizon set a timeframe gets when the caller does not name one:
+    `DAILY_HORIZONS` on daily bars, next-bar only everywhere else."""
+
+    return DAILY_HORIZONS if timeframe == "1d" else (1,)
+
+
+def _normalise_horizons(horizons: list[int] | None, timeframe: str) -> tuple[int, ...]:
+    """Resolve the requested horizon list: default per timeframe, each >= 1,
+    deduplicated, ascending (a deterministic block order on the wire)."""
+
+    if horizons is None:
+        return default_horizons(timeframe)
+    if not horizons:
+        raise ValueError("horizons must not be empty; omit it for the default set")
+    for horizon in horizons:
+        if horizon < 1:
+            raise ValueError(f"every horizon must be >= 1, got {horizon}")
+    return tuple(sorted(set(horizons)))
+
+
+def _compute_multi_horizon_forecast(
+    *,
+    bars: list[Bar],
+    symbol: str,
+    timeframe: str,
+    horizons: tuple[int, ...],
+    flat_band: float,
+    n_splits: int,
+    seed: int,
+    models_dir: Path | None,
+    metric_lookup: MetricAsOfLookup | None,
+) -> MultiHorizonForecastResult:
+    """The deterministic, CPU-bound Plan 0059 core: build one feature matrix,
+    then validate / train / gate / (persist) each horizon independently.
+
+    With a metric store wired the matrix is v2 (cycle + lag-1 exogenous,
+    ADR-0054); without one it is the v1 OHLCV-only set — stated, not silent:
+    ``feature_set_id`` names the set used and ``series_inputs`` is empty. A
+    horizon with nothing to train on (e.g. every row dropped during exogenous
+    warm-up) yields an honest block: ``prob_*`` null, the unscored validation
+    basis attached, ``provenance`` None (no model exists to version).
+    """
+
+    model_params = ModelParams(seed=seed)
+    series_inputs: tuple[SeriesInput, ...]
+    if metric_lookup is not None:
+        exogenous = build_exogenous_columns(bars, EXOGENOUS_SERIES_IDS_V2, metric_lookup)
+        rows: list[FeatureRow | None] = build_feature_rows_v2(bars, exogenous)
+        feature_set_id = FEATURE_SET_ID_V2
+        series_inputs = tuple(
+            SeriesInput(series_id=series_id, last_point_ts=exogenous.last_point_ts[series_id])
+            for series_id in exogenous.series_ids
+        )
+    else:
+        rows = build_feature_rows(bars)
+        feature_set_id = FEATURE_SET_ID
+        series_inputs = ()
+
+    defined_rows = [row for row in rows if row is not None]
+    predict_row = defined_rows[-1] if defined_rows else None
+    as_of_bar_ts = predict_row.event_ts if predict_row is not None else bars[-1].event_ts
+    lib_versions = model_lib_versions()
+
+    blocks: list[HorizonForecast] = []
+    for horizon in horizons:
+        label_params = LabelParams(horizon_bars=horizon, flat_band=flat_band)
+        validation = validate(
+            bars,
+            horizon_bars=horizon,
+            flat_band=flat_band,
+            n_splits=n_splits,
+            model_params=model_params,
+            feature_rows=rows,
+        )
+        labels = build_labels(bars, label_params)
+        train_rows, train_labels = align_samples(rows, labels)
+        trainable = (
+            predict_row is not None
+            and bool(train_rows)
+            and len({label for label in train_labels}) >= 2
+        )
+        edge_margin, edge_strength = _classify_edge(validation)
+
+        if not trainable or predict_row is None:
+            blocks.append(
+                HorizonForecast(
+                    horizon_bars=horizon,
+                    prob_up=None,
+                    prob_down=None,
+                    prob_flat=None,
+                    validation=validation,
+                    edge_margin=edge_margin,
+                    edge_strength=edge_strength,
+                    provenance=None,
+                )
+            )
+            continue
+
+        model = train(train_rows, train_labels, model_params, feature_set_id=feature_set_id)
+        cutoff = model.training_cutoff
+        assert isinstance(cutoff, datetime)  # set from a bar event_ts in model.train
+        model_version = compute_model_version(
+            feature_set_id=feature_set_id,
+            model_params=model.params,
+            label_params=label_params,
+            training_cutoff=cutoff,
+            lib_versions=lib_versions,
+        )
+        provenance = ForecastProvenance(
+            model_version=model_version,
+            feature_set_id=feature_set_id,
+            training_cutoff=cutoff,
+            seed=model.params.seed,
+            lib_versions=lib_versions,
+            series_inputs=series_inputs,
+        )
+
+        dist = predict_proba(model, [predict_row])[0]
+        if validation.beats_baseline:
+            prob_up: float | None = dist[Direction.UP]
+            prob_down: float | None = dist[Direction.DOWN]
+            prob_flat: float | None = dist[Direction.FLAT]
+            if models_dir is not None and not model_exists(model_version, root=models_dir):
+                save_model(
+                    model,
+                    model_version=model_version,
+                    lib_versions=lib_versions,
+                    root=models_dir,
+                    label_params=label_params,
+                )
+        else:
+            prob_up = prob_down = prob_flat = None
+
+        blocks.append(
+            HorizonForecast(
+                horizon_bars=horizon,
+                prob_up=prob_up,
+                prob_down=prob_down,
+                prob_flat=prob_flat,
+                validation=validation,
+                edge_margin=edge_margin,
+                edge_strength=edge_strength,
+                provenance=provenance,
+            )
+        )
+
+    return MultiHorizonForecastResult(
+        symbol=symbol,
+        timeframe=timeframe,
+        as_of_bar_ts=as_of_bar_ts,
+        feature_set_id=feature_set_id,
+        horizons=blocks,
+    )
+
+
+async def _multi_forecast_response(
     *,
     provider: MarketDataProvider,
     models_dir: Path | None,
+    metric_lookup: MetricAsOfLookup | None,
     symbol: str,
     timeframe: str,
     range_start: datetime,
     range_end: datetime,
-    horizon_bars: int,
+    horizons: list[int] | None,
     flat_band: float,
     n_splits: int,
     seed: int,
-) -> ForecastResult:
+) -> MultiHorizonForecastResult:
     """Body of `forecast`: validate, fetch, then offload the model work."""
 
     _require_non_empty_symbol(symbol)
     _require_supported_timeframe(timeframe)
     _require_ordered_range(range_start, range_end)
-    if horizon_bars < 1:
-        raise ValueError(f"horizon_bars must be >= 1, got {horizon_bars}")
+    resolved_horizons = _normalise_horizons(horizons, timeframe)
     if n_splits < 2:
         raise ValueError(f"n_splits must be >= 2, got {n_splits}")
     if flat_band < 0:
@@ -239,24 +429,31 @@ async def _forecast_response(
         )
 
     return await asyncio.to_thread(
-        _compute_forecast,
+        _compute_multi_horizon_forecast,
         bars=bars,
         symbol=symbol,
         timeframe=timeframe,
-        horizon_bars=horizon_bars,
+        horizons=resolved_horizons,
         flat_band=flat_band,
         n_splits=n_splits,
         seed=seed,
         models_dir=models_dir,
+        metric_lookup=metric_lookup,
     )
 
 
 def register_forecast(
-    server: FastMCP, *, provider: MarketDataProvider, models_dir: Path | None
+    server: FastMCP,
+    *,
+    provider: MarketDataProvider,
+    models_dir: Path | None,
+    metric_lookup: MetricAsOfLookup | None = None,
 ) -> None:
-    """Bind `forecast` to `server`. The provider + models_dir are captured by
-    closure so the tool body keeps the parameter list FastMCP introspects for the
-    schema."""
+    """Bind `forecast` to `server`. The provider, models_dir and metric store are
+    captured by closure so the tool body keeps the parameter list FastMCP
+    introspects for the schema. ``metric_lookup`` (the ADR-0051 as_of surface)
+    enables the v2 exogenous feature set; without it the tool computes on the v1
+    set and says so in its provenance."""
 
     @server.tool(description=FORECAST_DESCRIPTION)
     async def forecast(
@@ -264,19 +461,20 @@ def register_forecast(
         timeframe: str,
         range_start: datetime,
         range_end: datetime,
-        horizon_bars: int = 1,
+        horizons: list[int] | None = None,
         flat_band: float = 0.001,
         n_splits: int = 5,
         seed: int = DEFAULT_SEED,
-    ) -> ForecastResult:
-        return await _forecast_response(
+    ) -> MultiHorizonForecastResult:
+        return await _multi_forecast_response(
             provider=provider,
             models_dir=models_dir,
+            metric_lookup=metric_lookup,
             symbol=symbol,
             timeframe=timeframe,
             range_start=range_start,
             range_end=range_end,
-            horizon_bars=horizon_bars,
+            horizons=horizons,
             flat_band=flat_band,
             n_splits=n_splits,
             seed=seed,
@@ -284,13 +482,19 @@ def register_forecast(
 
 
 __all__ = [
+    "DAILY_HORIZONS",
     "EDGE_MARGIN_THRESHOLD",
     "FORECAST_DESCRIPTION",
     "EdgeStrength",
     "ForecastProvenance",
     "ForecastResult",
+    "HorizonForecast",
+    "MultiHorizonForecastResult",
+    "SeriesInput",
     "_classify_edge",
     "_compute_forecast",
-    "_forecast_response",
+    "_compute_multi_horizon_forecast",
+    "_multi_forecast_response",
+    "default_horizons",
     "register_forecast",
 ]

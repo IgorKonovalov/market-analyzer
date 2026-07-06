@@ -23,9 +23,23 @@ from market_analyser.forecast.validation import ForecastValidation
 EdgeStrength = Literal["no_edge", "marginal", "clear"]
 
 
+class SeriesInput(BaseModel):
+    """Provenance for one exogenous metric series a forecast consumed (Plan
+    0059, ADR-0054): the registered ``series_id`` and the timestamp of the
+    freshest point the lag-1 join actually read (``None`` when the series was
+    registered as an input but had no observable point — all-NaN column)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    series_id: str
+    last_point_ts: int | None
+
+
 class ForecastProvenance(BaseModel):
     """The audit trail that makes a forecast reproducible and traceable to its
-    exact model (ADR-0040 §4)."""
+    exact model (ADR-0040 §4). ``series_inputs`` (Plan 0059, ADR-0054) names
+    every exogenous series the feature set consumed — empty for a v1 model,
+    whose features are derived from the target symbol's own bars only."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -34,6 +48,10 @@ class ForecastProvenance(BaseModel):
     training_cutoff: datetime
     seed: int
     lib_versions: dict[str, str]
+    # Appended after lib_versions to keep the wire-stable field order (the
+    # ForecastResult edge_margin precedent); defaulted so pre-0059 constructors
+    # stay valid.
+    series_inputs: tuple[SeriesInput, ...] = ()
 
 
 class ForecastResult(BaseModel):
@@ -63,4 +81,48 @@ class ForecastResult(BaseModel):
     edge_strength: EdgeStrength
 
 
-__all__ = ["EdgeStrength", "ForecastProvenance", "ForecastResult"]
+class HorizonForecast(BaseModel):
+    """One horizon's independently-validated forecast block (Plan 0059,
+    ADR-0054 rule 2). ``prob_*`` are ``None`` when this horizon did not beat
+    baseline out-of-sample; the ``validation`` basis always travels with the
+    block so a per-horizon no-edge reads as exactly that. ``provenance`` is
+    ``None`` only when the horizon had nothing to train on at all (e.g. every
+    row dropped during exogenous warm-up) — then no model exists to version."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    horizon_bars: int
+    prob_up: float | None
+    prob_down: float | None
+    prob_flat: float | None
+    validation: ForecastValidation
+    edge_margin: float | None
+    edge_strength: EdgeStrength
+    provenance: ForecastProvenance | None
+
+
+class MultiHorizonForecastResult(BaseModel):
+    """The `forecast` tool's Plan 0059 response: one block per requested
+    horizon, each trained, walk-forward-validated, and baseline-gated
+    **independently** (no shared verdict — ADR-0054 rejected the multi-output
+    model). ``feature_set_id`` names the frozen feature set the whole call
+    used; each block's provenance repeats it alongside that block's own
+    ``model_version``."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    as_of_bar_ts: datetime
+    feature_set_id: str
+    horizons: list[HorizonForecast]
+
+
+__all__ = [
+    "EdgeStrength",
+    "ForecastProvenance",
+    "ForecastResult",
+    "HorizonForecast",
+    "MultiHorizonForecastResult",
+    "SeriesInput",
+]

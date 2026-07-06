@@ -32,6 +32,8 @@ from market_analyser.forecast.registry import (
 )
 from tests.forecast._synthetic import synthetic_bars
 
+LABELS_1D = LabelParams(horizon_bars=1, flat_band=0.001)
+
 
 def _trained_model(seed: int = DEFAULT_SEED) -> tuple[TrainedModel, list[FeatureRow]]:
     bars = synthetic_bars(200)
@@ -50,10 +52,18 @@ def test_model_version_is_stable_for_identical_inputs() -> None:
     params = ModelParams(seed=DEFAULT_SEED)
     cutoff = _cutoff()
     first = compute_model_version(
-        feature_set_id=FEATURE_SET_ID, model_params=params, training_cutoff=cutoff, lib_versions=lib
+        feature_set_id=FEATURE_SET_ID,
+        model_params=params,
+        label_params=LABELS_1D,
+        training_cutoff=cutoff,
+        lib_versions=lib,
     )
     second = compute_model_version(
-        feature_set_id=FEATURE_SET_ID, model_params=params, training_cutoff=cutoff, lib_versions=lib
+        feature_set_id=FEATURE_SET_ID,
+        model_params=params,
+        label_params=LABELS_1D,
+        training_cutoff=cutoff,
+        lib_versions=lib,
     )
     assert first == second
 
@@ -63,6 +73,7 @@ def test_model_version_changes_when_any_input_changes() -> None:
     base = compute_model_version(
         feature_set_id=FEATURE_SET_ID,
         model_params=ModelParams(seed=DEFAULT_SEED),
+        label_params=LABELS_1D,
         training_cutoff=_cutoff(),
         lib_versions=lib,
     )
@@ -71,30 +82,49 @@ def test_model_version_changes_when_any_input_changes() -> None:
         compute_model_version(
             feature_set_id="different-feature-set",
             model_params=ModelParams(seed=DEFAULT_SEED),
+            label_params=LABELS_1D,
             training_cutoff=_cutoff(),
             lib_versions=lib,
         ),
         compute_model_version(
             feature_set_id=FEATURE_SET_ID,
             model_params=ModelParams(seed=DEFAULT_SEED + 1),  # seed
+            label_params=LABELS_1D,
             training_cutoff=_cutoff(),
             lib_versions=lib,
         ),
         compute_model_version(
             feature_set_id=FEATURE_SET_ID,
             model_params=ModelParams(seed=DEFAULT_SEED, max_iter=100),  # a hyperparameter
+            label_params=LABELS_1D,
             training_cutoff=_cutoff(),
             lib_versions=lib,
         ),
         compute_model_version(
             feature_set_id=FEATURE_SET_ID,
             model_params=ModelParams(seed=DEFAULT_SEED),
+            label_params=LabelParams(horizon_bars=21, flat_band=0.001),  # horizon (Plan 0059)
+            training_cutoff=_cutoff(),
+            lib_versions=lib,
+        ),
+        compute_model_version(
+            feature_set_id=FEATURE_SET_ID,
+            model_params=ModelParams(seed=DEFAULT_SEED),
+            label_params=LabelParams(horizon_bars=1, flat_band=0.002),  # flat band (Plan 0059)
+            training_cutoff=_cutoff(),
+            lib_versions=lib,
+        ),
+        compute_model_version(
+            feature_set_id=FEATURE_SET_ID,
+            model_params=ModelParams(seed=DEFAULT_SEED),
+            label_params=LABELS_1D,
             training_cutoff=_cutoff() + timedelta(days=1),  # training window
             lib_versions=lib,
         ),
         compute_model_version(
             feature_set_id=FEATURE_SET_ID,
             model_params=ModelParams(seed=DEFAULT_SEED),
+            label_params=LABELS_1D,
             training_cutoff=_cutoff(),
             lib_versions={"scikit-learn": "9.9.9"},  # pinned lib
         ),
@@ -112,6 +142,7 @@ def test_save_load_roundtrip_predicts_identically(tmp_path: Path) -> None:
     model_version = compute_model_version(
         feature_set_id=FEATURE_SET_ID,
         model_params=model.params,
+        label_params=LABELS_1D,
         training_cutoff=cutoff,
         lib_versions=lib,
     )
@@ -134,6 +165,7 @@ def test_save_is_idempotent(tmp_path: Path) -> None:
     model_version = compute_model_version(
         feature_set_id=FEATURE_SET_ID,
         model_params=model.params,
+        label_params=LABELS_1D,
         training_cutoff=cutoff,
         lib_versions=lib,
     )
