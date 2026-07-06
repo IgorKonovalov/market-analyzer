@@ -1,6 +1,6 @@
 # 0061 — Metric-store self-warming + honest starved-forecast fallback
 
-> **Status:** draft
+> **Status:** approved (2026-07-06 architect review: factual anchors verified against the tree — `AppConfig` extra-forbid, `EXOGENOUS_SERIES_IDS_V2`, `ForecastProvenance`, the 0037 renderer files, the ADR-0055 heartbeat precedent; owner tags in-vocabulary; no substantive changes)
 > **Created:** 2026-07-06
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [ADR-0056](../adrs/0056-self-warming-metric-store.md) (paired — proposed, accepts at this plan's close), [ADR-0051](../adrs/0051-historized-metric-series-contract.md) (the store contract), [ADR-0054](../adrs/0054-exogenous-forecast-features-multi-horizon.md) (the v2 feature set + the stated-not-silent fallback this extends), [ADR-0055](../adrs/0055-in-sidecar-watch-scheduler.md) (the lifespan-loop pattern), [ADR-0030](../adrs/0030-forecasting-subsystem.md) (honest uncertainty — the invariant the vacuous no-edge violates in spirit)
