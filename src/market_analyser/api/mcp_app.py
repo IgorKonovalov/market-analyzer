@@ -58,6 +58,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     register_multi_timeframe_analysis,
 )
 from market_analyser.api.mcp_tools.news_for import register_news_for
+from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.recommend import register_recommend
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
@@ -81,6 +82,7 @@ from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapte
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
+    AccountHoldingsSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
     MetricSeriesSource,
@@ -98,6 +100,7 @@ from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
     WatchesRepository,
 )
+from market_analyser.portfolio.sources import MANUAL_POSITIONS_FILENAME
 
 
 def create_mcp_components(
@@ -119,6 +122,8 @@ def create_mcp_components(
     mvrv_source: MetricSeriesSource | None = None,
     watches_repository: WatchesRepository | None = None,
     alerts_repository: AlertsRepository | None = None,
+    account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
+    manual_positions_path: Path | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -333,6 +338,29 @@ def create_mcp_components(
             historical_price_source=historical_price_source,
             defi_tx_repository=defi_tx_repository,
             event_bus=event_bus,
+        )
+
+    # `portfolio_summary` (Plan 0041, ADR-0042): the cross-venue read-only
+    # holdings view. Registered when an account-holdings source is wired (the
+    # Binance read adapter keys off the secrets store, like the DeFi sources);
+    # the DeFi legs reuse whatever the DeFi toolset already wired and degrade
+    # to typed leg_errors/notes when a piece is absent — nothing crashes, and
+    # nothing silently pretends a leg was read. The manual positions file
+    # defaults to the gitignored positions/ home (ADR-0042).
+    if account_holdings_sources:
+        register_portfolio_summary(
+            server,
+            provider=provider,
+            account_holdings_sources=account_holdings_sources,
+            manual_positions_path=(
+                manual_positions_path
+                if manual_positions_path is not None
+                else Path("positions") / MANUAL_POSITIONS_FILENAME
+            ),
+            wallet_positions_sources=wallet_positions_sources,
+            tx_history_sources=tx_history_sources,
+            defi_tx_repository=defi_tx_repository,
+            historical_price_source=historical_price_source,
         )
 
     # streamable_http_app() also lazily constructs the session manager; we call

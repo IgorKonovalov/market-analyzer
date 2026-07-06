@@ -38,6 +38,7 @@ from market_analyser.annotations.types import AnnotationKind
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.types import (
+    AccountHoldings,
     Bar,
     MacroContext,
     MarketSentimentSample,
@@ -544,6 +545,7 @@ EXPECTED_FULL_TOOLSET = {
     "market_snapshot",
     "multi_timeframe_analysis",
     "news_for",
+    "portfolio_summary",
     "quote_for",
     "recommend",
     "run_backtest",
@@ -603,6 +605,12 @@ def test_full_toolset_registration_is_exhaustive(provider: _BarsProvider, tmp_pa
         def fetch_open_interest_sample(self, series_id: str) -> object | None:
             return None
 
+    class _NullAccountSource:
+        def fetch_account_holdings(self) -> AccountHoldings:
+            return AccountHoldings(
+                venue="binance", spot=[], futures=[], as_of=datetime(2026, 1, 1, tzinfo=UTC)
+            )
+
     engine = make_engine(":memory:")
     try:
         apply_migrations(engine)
@@ -623,6 +631,8 @@ def test_full_toolset_registration_is_exhaustive(provider: _BarsProvider, tmp_pa
             derivatives_source=_NullDerivativesSource(),  # type: ignore[arg-type]
             watches_repository=WatchesRepository(session_factory),
             alerts_repository=AlertsRepository(session_factory),
+            account_holdings_sources={"binance": _NullAccountSource()},
+            manual_positions_path=tmp_path / "portfolio.json",
         )
         handler = session_manager.app.request_handlers[ListToolsRequest]
         result = anyio.run(handler, ListToolsRequest(method="tools/list"))

@@ -50,6 +50,7 @@ from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.binance_account import BinanceAccountAdapter
 from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
@@ -61,6 +62,7 @@ from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
+    AccountHoldingsSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
     TxHistorySource,
@@ -97,6 +99,8 @@ def create_app(
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
     tx_history_sources: Mapping[str, TxHistorySource] | None = None,
     historical_price_source: HistoricalPriceSource | None = None,
+    account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
+    manual_positions_path: Path | None = None,
     provider: MarketDataProvider | None = None,
     annotations_repository: AnnotationsRepository | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
@@ -242,6 +246,18 @@ def create_app(
         effective_tx_history_sources = {"zerion": ZerionTxAdapter(secrets_store=secrets_store)}
     else:
         effective_tx_history_sources = {}
+    # Venue account-holdings sources (Plan 0041, ADR-0042): the cross-venue
+    # portfolio's CEX leg. An explicit map wins (tests inject a fake); otherwise
+    # the read-only Binance account adapter is built from the secrets store
+    # (lazy key read — it constructs before a key is set; a keyless read fails
+    # typed at call time). Empty when no store is wired — `portfolio_summary`
+    # is then simply not registered, nothing silently degrades.
+    if account_holdings_sources is not None:
+        effective_account_sources: dict[str, AccountHoldingsSource] = dict(account_holdings_sources)
+    elif secrets_store is not None:
+        effective_account_sources = {"binance": BinanceAccountAdapter(secrets_store=secrets_store)}
+    else:
+        effective_account_sources = {}
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
@@ -259,6 +275,8 @@ def create_app(
             metric_points_repository=metric_points_repository,
             watches_repository=watches_repository,
             alerts_repository=alerts_repository,
+            account_holdings_sources=effective_account_sources,
+            manual_positions_path=manual_positions_path,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None
