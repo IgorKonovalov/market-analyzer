@@ -1,6 +1,6 @@
 # 0062 — Tiered forecast feature sets (v2-deep) + the v1-vs-v2 evaluation, unblocked
 
-> **Status:** approved (user, 2026-07-06)
+> **Status:** in-progress
 > **Created:** 2026-07-06
 > **Owner skill(s):** dev, backtester, human
 > **Related ADRs:** [ADR-0057](../adrs/0057-forecast-feature-set-tiers.md) (paired — accepts at this plan's close), [ADR-0054](../adrs/0054-exogenous-forecast-features-multi-horizon.md), [ADR-0030](../adrs/0030-forecasting-subsystem.md), [ADR-0051](../adrs/0051-historized-metric-series-contract.md), [ADR-0056](../adrs/0056-self-warming-metric-store.md), [ADR-0040](../adrs/0040-forecasting-model-artifacts.md)

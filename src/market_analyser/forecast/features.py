@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -121,6 +121,34 @@ EXOGENOUS_SERIES_IDS_V2: tuple[str, ...] = (
     SERIES_COINGECKO_BTC_DOMINANCE,
     SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
     SERIES_BINANCE_OPEN_INTEREST_BTCUSDT,
+    SERIES_COINMETRICS_BTC_MVRV,
+)
+
+# --- Feature-set v2-deep (Plan 0062 phase 1, ADR-0057) ----------------------- #
+# The deep-history tier of the ADR-0057 ladder: v2-full minus the three features
+# fed by the accrual-only series (`btc_dominance`, `dominance_delta_7`,
+# `oi_delta_7`), whose empty pre-deployment history vetoes every historical bar
+# under the conjunctive row-drop rule. The remaining exogenous series backfill
+# to 2018-02 / 2019-09 / 2011-12, so this set actually trains today. Its own
+# frozen tuple and id; v1's and v2-full's ids do not move.
+FEATURE_NAMES_V2_DEEP: tuple[str, ...] = (
+    *FEATURE_NAMES,
+    "halving_phase",  # fraction of the halving cycle elapsed, [0, 1]
+    "days_since_halving",  # days since the last halving at the bar's UTC date
+    "mayer_multiple",  # close / SMA200(daily closes)
+    "dist_200w_ma",  # close / SMA1400(daily closes) - 1
+    "fng_value",  # Fear & Greed index (0-100), lag-1
+    "fng_delta_7",  # fng_value[i] - fng_value[i-7] (both lag-1)
+    "funding_rate",  # Binance BTCUSDT perp funding rate, lag-1
+    "mvrv",  # CoinMetrics BTC MVRV ratio, lag-1
+)
+
+FEATURE_SET_ID_V2_DEEP: str = _compute_feature_set_id(FEATURE_NAMES_V2_DEEP)
+
+# The exogenous series the deep set consumes — the three with deep history.
+EXOGENOUS_SERIES_IDS_V2_DEEP: tuple[str, ...] = (
+    SERIES_FNG_VALUE,
+    SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
     SERIES_COINMETRICS_BTC_MVRV,
 )
 
@@ -348,25 +376,47 @@ def _exogenous_features_at(i: int, exogenous: ExogenousColumns) -> tuple[float |
     )
 
 
-def build_feature_rows_v2(
-    bars: Sequence[Bar], exogenous: ExogenousColumns
+def _exogenous_features_at_deep(i: int, exogenous: ExogenousColumns) -> tuple[float | None, ...]:
+    """The four deep-tier exogenous features at bar ``i`` from the lag-1 columns,
+    in FEATURE_NAMES_V2_DEEP order — the v2-full extraction minus the features
+    fed by the accrual-only series (ADR-0057). Same NaN → ``None`` semantics."""
+
+    fng = exogenous.columns[SERIES_FNG_VALUE]
+    funding = exogenous.columns[SERIES_BINANCE_FUNDING_RATE_BTCUSDT]
+    mvrv = exogenous.columns[SERIES_COINMETRICS_BTC_MVRV]
+
+    fng_value = _finite_or_none(fng[i])
+    funding_rate = _finite_or_none(funding[i])
+    mvrv_value = _finite_or_none(mvrv[i])
+
+    fng_delta_7: float | None = None
+    if i >= DELTA_LOOKBACK:
+        fng_prev = _finite_or_none(fng[i - DELTA_LOOKBACK])
+        if fng_value is not None and fng_prev is not None:
+            fng_delta_7 = fng_value - fng_prev
+
+    return (fng_value, fng_delta_7, funding_rate, mvrv_value)
+
+
+def _build_exogenous_feature_rows(
+    bars: Sequence[Bar],
+    exogenous: ExogenousColumns,
+    *,
+    feature_names: tuple[str, ...],
+    series_ids: tuple[str, ...],
+    exogenous_at: Callable[[int, ExogenousColumns], tuple[float | None, ...]],
 ) -> list[FeatureRow | None]:
-    """Build the v2 per-bar feature matrix, aligned to ``bars``.
+    """The one exogenous-tier row builder (Plan 0062 phase 1): v1 rows + cycle
+    features + a tier's exogenous extraction, with the lag-1 join and the
+    NaN-drops-row semantics identical across tiers — parameterized so the tiers
+    cannot drift apart. ``exogenous`` may carry more series than the tier reads
+    (the ladder builds one column set for all tiers); only ``series_ids`` are
+    required and validated."""
 
-    ``exogenous`` must carry lag-1 columns (see `exogenous.build_exogenous_columns`)
-    for every series in `EXOGENOUS_SERIES_IDS_V2`, aligned to the same bars. Entry
-    ``i`` is a `FeatureRow` ordered exactly as `FEATURE_NAMES_V2` once **every**
-    feature is defined there, or ``None`` otherwise — a missing exogenous value
-    (series not yet warm) drops the row from the matrix, it is never zero-filled
-    (ADR-0054 row policy). Entry ``i`` reads only ``bars[0..=i]`` plus metric
-    points strictly before bar ``i``'s open, so the v1 anti-lookahead property
-    carries over.
-    """
-
-    missing = [s for s in EXOGENOUS_SERIES_IDS_V2 if s not in exogenous.columns]
+    missing = [s for s in series_ids if s not in exogenous.columns]
     if missing:
         raise ValueError(f"exogenous columns missing required series: {missing}")
-    for series_id in EXOGENOUS_SERIES_IDS_V2:
+    for series_id in series_ids:
         if len(exogenous.columns[series_id]) != len(bars):
             raise ValueError(
                 f"exogenous column {series_id!r} has {len(exogenous.columns[series_id])} "
@@ -382,10 +432,10 @@ def build_feature_rows_v2(
             continue
         extras: tuple[float | None, ...] = (
             *_cycle_features_at(i, bars, closes),
-            *_exogenous_features_at(i, exogenous),
+            *exogenous_at(i, exogenous),
         )
         values = (*v1_row.values, *extras)
-        assert len(values) == len(FEATURE_NAMES_V2)  # order/length lock, as in v1
+        assert len(values) == len(feature_names)  # order/length lock, as in v1
         if any(v is None for v in extras):
             continue
         rows[i] = FeatureRow(
@@ -396,15 +446,66 @@ def build_feature_rows_v2(
     return rows
 
 
+def build_feature_rows_v2(
+    bars: Sequence[Bar], exogenous: ExogenousColumns
+) -> list[FeatureRow | None]:
+    """Build the v2 per-bar feature matrix, aligned to ``bars``.
+
+    ``exogenous`` must carry lag-1 columns (see `exogenous.build_exogenous_columns`)
+    for every series in `EXOGENOUS_SERIES_IDS_V2`, aligned to the same bars. Entry
+    ``i`` is a `FeatureRow` ordered exactly as `FEATURE_NAMES_V2` once **every**
+    feature is defined there, or ``None`` otherwise — a missing exogenous value
+    (series not yet warm) drops the row from the matrix, it is never zero-filled
+    (ADR-0054 row policy). Entry ``i`` reads only ``bars[0..=i]`` plus metric
+    points strictly before bar ``i``'s open, so the v1 anti-lookahead property
+    carries over.
+    """
+
+    return _build_exogenous_feature_rows(
+        bars,
+        exogenous,
+        feature_names=FEATURE_NAMES_V2,
+        series_ids=EXOGENOUS_SERIES_IDS_V2,
+        exogenous_at=_exogenous_features_at,
+    )
+
+
+def build_feature_rows_v2_deep(
+    bars: Sequence[Bar], exogenous: ExogenousColumns
+) -> list[FeatureRow | None]:
+    """Build the v2-deep per-bar feature matrix, aligned to ``bars`` (ADR-0057).
+
+    Identical contract to `build_feature_rows_v2` over the deep tier: columns for
+    every series in `EXOGENOUS_SERIES_IDS_V2_DEEP` (extra series in ``exogenous``
+    are ignored, so the ladder can share one column set), rows ordered exactly as
+    `FEATURE_NAMES_V2_DEEP`, missing exogenous value drops the row, never
+    zero-filled. Because the accrual-only series are not read here, bars they
+    would have vetoed under v2-full survive whenever the three deep series are
+    observable.
+    """
+
+    return _build_exogenous_feature_rows(
+        bars,
+        exogenous,
+        feature_names=FEATURE_NAMES_V2_DEEP,
+        series_ids=EXOGENOUS_SERIES_IDS_V2_DEEP,
+        exogenous_at=_exogenous_features_at_deep,
+    )
+
+
 __all__ = [
     "DELTA_LOOKBACK",
     "EXOGENOUS_SERIES_IDS_V2",
+    "EXOGENOUS_SERIES_IDS_V2_DEEP",
     "FEATURE_NAMES",
     "FEATURE_NAMES_V2",
+    "FEATURE_NAMES_V2_DEEP",
     "FEATURE_SET_ID",
     "FEATURE_SET_ID_V2",
+    "FEATURE_SET_ID_V2_DEEP",
     "FeatureRow",
     "build_feature_rows",
     "build_feature_rows_v2",
+    "build_feature_rows_v2_deep",
     "feature_names",
 ]
