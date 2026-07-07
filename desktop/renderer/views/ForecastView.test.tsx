@@ -17,10 +17,16 @@
  * `fallback_reason` renders the reason in the feature-set footer (the reason
  * survives the Zod parse); an envelope without the field renders exactly
  * today's footer — no new text, no fallback element.
+ *
+ * Plan 0063 phase 3 adds: a dispatched envelope with an explanation summary
+ * renders the ordered drivers, input freshness, and the artifact path (plain
+ * text, never a link) inside the "Why" disclosure; one without renders
+ * exactly today's view; and the Why expand/collapse is the ONLY interactive
+ * element in the panel (the ADR-0025/0029 no-action posture).
  */
 import '@testing-library/jest-dom'
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 
 import { dispatchEnvelope } from '../hooks/useEventStream'
 import type {
@@ -281,6 +287,97 @@ it('renders exactly today’s footer when no fallback reason travels (no regress
   expect(screen.getByTestId('forecast-feature-set')).toHaveTextContent(
     'feature set ohlcv_v2_exog — exogenous series: alternative.fear_greed, coinmetrics.btc.mvrv',
   )
+})
+
+/** The Plan 0063 explained shape: one clear block whose provenance carries an
+ * explanation summary — ordered drivers plus the artifact's relative path. */
+const EXPLAINED_FORECAST: MultiHorizonForecastResult = {
+  ...MIXED_FORECAST,
+  horizons: [
+    {
+      ...CLEAR_BLOCK,
+      provenance: provenance({
+        explanation: {
+          top_drivers: [
+            { feature: 'funding_rate', importance: 0.041 },
+            { feature: 'mayer_multiple', importance: 0.032 },
+            { feature: 'rsi_14', importance: 0.018 },
+          ],
+          artifact: 'forecast/20260707T101530000000Z-BTC-USD-1d/explanation.json',
+        },
+      }),
+    },
+  ],
+}
+
+it('renders the "Why" drivers, input freshness, and artifact path from a dispatched envelope with an explanation summary', () => {
+  const captured = throughDispatch(EXPLAINED_FORECAST)
+  expect(captured).not.toBeNull()
+  // The summary survives the Zod parse whole (the non-strict schema would
+  // otherwise silently strip it — the 0061 lesson, re-pinned).
+  expect(captured?.horizons[0]?.provenance?.explanation?.top_drivers).toHaveLength(3)
+
+  render(<ForecastView forecast={captured} />)
+
+  expect(screen.getByTestId('forecast-why')).toBeInTheDocument()
+
+  // Drivers render in the wire's order — importance-descending, as ranked.
+  const drivers = within(screen.getByTestId('forecast-why-drivers-1')).getAllByRole('listitem')
+  expect(drivers.map((item) => item.querySelector('code')?.textContent)).toEqual([
+    'funding_rate',
+    'mayer_multiple',
+    'rsi_14',
+  ])
+
+  // Per-series freshness from series_inputs (epoch seconds → UTC timestamp).
+  const freshness = screen.getByTestId('forecast-why-freshness')
+  expect(freshness).toHaveTextContent('alternative.fear_greed')
+  expect(freshness).toHaveTextContent('2025-06-30')
+
+  // The artifact path is a provenance FACT — plain text, never a link.
+  const artifact = screen.getByTestId('forecast-why-artifact')
+  expect(artifact).toHaveTextContent('forecast/20260707T101530000000Z-BTC-USD-1d/explanation.json')
+  expect(artifact.querySelector('a')).toBeNull()
+})
+
+it('renders exactly today’s view when no explanation travels (no regression)', () => {
+  const captured = throughDispatch(MIXED_FORECAST)
+  expect(captured).not.toBeNull()
+
+  render(<ForecastView forecast={captured} />)
+  expect(screen.queryByTestId('forecast-why')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('forecast-why-artifact')).not.toBeInTheDocument()
+})
+
+it('renders drivers without an artifact line when the sidecar had no runs directory', () => {
+  const noArtifact: MultiHorizonForecastResult = {
+    ...EXPLAINED_FORECAST,
+    horizons: [
+      {
+        ...CLEAR_BLOCK,
+        provenance: provenance({
+          explanation: {
+            top_drivers: [{ feature: 'funding_rate', importance: 0.041 }],
+          },
+        }),
+      },
+    ],
+  }
+  const captured = throughDispatch(noArtifact)
+  expect(captured).not.toBeNull()
+
+  render(<ForecastView forecast={captured} />)
+  expect(screen.getByTestId('forecast-why-drivers-1')).toHaveTextContent('funding_rate')
+  expect(screen.queryByTestId('forecast-why-artifact')).not.toBeInTheDocument()
+})
+
+it('adds zero interactive elements beyond the Why expand/collapse control (no-action posture)', () => {
+  const { container } = render(<ForecastView forecast={EXPLAINED_FORECAST} />)
+  expect(
+    container.querySelectorAll('button, input, select, textarea, a, [role="button"]'),
+  ).toHaveLength(0)
+  // Exactly one disclosure control — the Forecast "Why" — and nothing else.
+  expect(container.querySelectorAll('summary')).toHaveLength(1)
 })
 
 it('shows a clear placeholder before any forecast arrives', () => {

@@ -8,10 +8,16 @@
  * enforced as a test); a low-conviction recommendation is not styled as a
  * strong call; and the SSE payload is Zod-validated in the dispatcher — a
  * malformed recommendation never reaches the handler.
+ *
+ * Plan 0063 phase 3 adds: a dispatched recommendation with checks renders the
+ * fusion-trace table (leg, check, threshold, actual, pass/fail as TEXT); a
+ * flat verdict's failed checks are visible without expansion; an empty trace
+ * renders exactly today's view; and the table adds no interactive element
+ * (the ADR-0025/0029 no-action posture, re-asserted with a trace rendered).
  */
 import '@testing-library/jest-dom'
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 
 import { dispatchEnvelope } from '../hooks/useEventStream'
 import type { Recommendation, RecommendationCompletedEnvelope } from '../types/events'
@@ -72,7 +78,26 @@ const FLAT_REC: Recommendation = {
     conditions: ['trend: sideways'],
     signals: ['macd flat'],
     forecast: { beats_baseline: false },
-    checks: [],
+    // Plan 0063: a flat verdict's trace carries its failed gates — the checks
+    // table must show them WITHOUT expansion (the honest-flat legibility
+    // criterion). The vote is a recorded fact: threshold key absent.
+    checks: [
+      {
+        leg: 'forecast',
+        check: 'probabilities shipped (baseline beaten out-of-sample)',
+        threshold: true,
+        actual: false,
+        passed: false,
+      },
+      { leg: 'signal', check: 'live vote: macd', actual: 'flat', passed: true },
+      {
+        leg: 'backtest',
+        check: 'backtested edge positive (sharpe_mean above zero)',
+        threshold: 0,
+        actual: -0.4,
+        passed: false,
+      },
+    ],
   },
   label: 'advisory',
   as_of_bar_ts: '2026-01-10T15:00:00+00:00',
@@ -173,6 +198,75 @@ it('renders an honest flat: no levels, zero conviction, absent basis leg said ou
   // The missing backtest leg is stated, not hidden.
   expect(screen.getByTestId('basis-backtest')).toHaveTextContent(/not part of this basis/)
   expect(screen.getByTestId('basis-forecast')).toHaveTextContent(/beats_baseline/)
+})
+
+it('renders the fusion checks table from a dispatched envelope — leg, check, threshold, actual, pass/fail as text', () => {
+  const captured = throughDispatch(LONG_REC)
+  expect(captured).not.toBeNull()
+  // The trace survives the Zod parse whole (the ADR-0029 pin move, verified
+  // through the real dispatcher).
+  expect(captured?.basis.checks).toHaveLength(2)
+
+  render(<RecommendationsView recommendation={captured} />)
+
+  const table = screen.getByTestId('recommendation-checks')
+  // Header row + one row per check.
+  expect(within(table).getAllByRole('row')).toHaveLength(3)
+  // The real numbers travel: threshold 0 vs actual 0.80 on the edge gate.
+  const edgeRow = within(table)
+    .getByText(/backtested edge positive/)
+    .closest('tr')
+  expect(edgeRow).not.toBeNull()
+  expect(edgeRow).toHaveTextContent('backtest')
+  expect(edgeRow).toHaveTextContent('0')
+  expect(edgeRow).toHaveTextContent('0.80')
+  // Pass/fail is a word, not a color: both gates passed on this call.
+  expect(within(table).getAllByText('pass')).toHaveLength(2)
+  expect(within(table).queryByText('FAIL')).not.toBeInTheDocument()
+  // A recorded fact's absent threshold renders as a dash, never "null".
+  const voteRow = within(table).getByText('live vote: rsi').closest('tr')
+  expect(voteRow).toHaveTextContent('—')
+  expect(voteRow).not.toHaveTextContent(/null|undefined/)
+})
+
+it('shows a flat verdict’s failed checks without expansion — the honest flat stays as legible as a call', () => {
+  const captured = throughDispatch(FLAT_REC)
+  expect(captured).not.toBeNull()
+
+  const { container } = render(<RecommendationsView recommendation={captured} />)
+
+  // The table is immediately visible: no details/summary, nothing to expand.
+  expect(container.querySelector('details, summary')).toBeNull()
+  const table = screen.getByTestId('recommendation-checks')
+  expect(table).toBeVisible()
+
+  // Both failed gates read as FAIL by text, with their real numbers beside.
+  const failed = within(table).getAllByText('FAIL')
+  expect(failed).toHaveLength(2)
+  const edgeRow = within(table)
+    .getByText(/backtested edge positive/)
+    .closest('tr')
+  expect(edgeRow).toHaveTextContent('-0.40')
+  expect(edgeRow).toHaveAttribute('data-passed', 'false')
+  // The passed fact is distinguishable from the failures — by text.
+  const voteRow = within(table).getByText('live vote: macd').closest('tr')
+  expect(voteRow).toHaveTextContent('pass')
+})
+
+it('renders exactly today’s view when the trace is empty (no regression)', () => {
+  const noTrace: Recommendation = {
+    ...LONG_REC,
+    basis: { ...LONG_REC.basis, checks: [] },
+  }
+  render(<RecommendationsView recommendation={noTrace} />)
+  expect(screen.queryByTestId('recommendation-checks')).not.toBeInTheDocument()
+})
+
+it('the checks table adds NO interactive element — the ADR-0025 no-action posture holds with a trace rendered', () => {
+  const { container } = render(<RecommendationsView recommendation={FLAT_REC} />)
+  expect(
+    container.querySelectorAll('button, input, select, textarea, a, [role="button"], summary'),
+  ).toHaveLength(0)
 })
 
 it('shows a clear placeholder before any recommendation arrives', () => {

@@ -18,7 +18,7 @@
  * labeled `price_line` overlays through the existing chart channel.
  */
 import { formatDateTime } from '../lib/format'
-import type { BasisValue, Recommendation } from '../types/events'
+import type { BasisValue, FusionCheck, Recommendation } from '../types/events'
 import styles from './RecommendationsView.module.css'
 
 interface Props {
@@ -164,6 +164,10 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
         </ul>
       </section>
 
+      {recommendation.basis.checks.length > 0 && (
+        <ChecksTable checks={recommendation.basis.checks} />
+      )}
+
       <section className={styles.basis} aria-label="Basis">
         <h3 className={styles.sectionTitle}>What backed this call</h3>
         <div className={styles.basisGrid}>
@@ -193,6 +197,50 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
       <p className={styles.disclaimer}>
         Labeled advisory (ADR-0029): the basis above travels with every call, and a flat verdict is
         an honest &quot;no actionable edge&quot;, never a fabricated call.
+      </p>
+    </section>
+  )
+}
+
+interface ChecksTableProps {
+  checks: FusionCheck[]
+}
+
+/** The full fusion trace (Plan 0063, ADR-0058), rendered quietly below the
+ * rationale — never behind an expansion, so a flat verdict's failed gates are
+ * as legible as a call's passed ones. Pass/fail is a word ("pass"/"FAIL"),
+ * never color alone; an absent threshold/actual (a recorded fact with no pass
+ * bar) renders as a dash. A plain table: nothing here is interactive. */
+function ChecksTable({ checks }: ChecksTableProps): JSX.Element {
+  return (
+    <section className={styles.checks} aria-label="Fusion checks">
+      <h3 className={styles.sectionTitle}>Every gate checked</h3>
+      <table className={styles.checksTable} data-testid="recommendation-checks">
+        <thead>
+          <tr>
+            <th scope="col">leg</th>
+            <th scope="col">check</th>
+            <th scope="col">threshold</th>
+            <th scope="col">actual</th>
+            <th scope="col">result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {checks.map((check) => (
+            <tr key={`${check.leg}:${check.check}`} data-passed={check.passed}>
+              <td className={styles.checkLeg}>{check.leg}</td>
+              <td>{check.check}</td>
+              <td className={styles.checkValue}>{formatBasisValue(check.threshold ?? null)}</td>
+              <td className={styles.checkValue}>{formatBasisValue(check.actual ?? null)}</td>
+              <td className={styles.checkResult} data-passed={check.passed}>
+                {check.passed ? 'pass' : 'FAIL'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className={styles.checksNote}>
+        The trace records the fusion&apos;s decision; a directional call means every gate passed.
       </p>
     </section>
   )

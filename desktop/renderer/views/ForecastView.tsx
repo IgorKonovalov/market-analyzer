@@ -18,10 +18,19 @@
  *     probability under a `marginal` edge — renders quietly.
  *
  * A forecast is a CONDITION (a calibrated probability), never a
- * recommendation — no action language, no levels, nothing to click.
+ * recommendation — no action language, no levels, nothing to click. The one
+ * sanctioned interactive element is the "Why" expand/collapse (Plan 0063):
+ * a native details/summary disclosing the validated drivers, input
+ * freshness, and the explanation artifact's path — a provenance fact
+ * rendered as plain text, never a link (the renderer never touches the
+ * filesystem).
  */
 import { formatDateTime } from '../lib/format'
-import type { HorizonForecast, MultiHorizonForecastResult } from '../types/events'
+import type {
+  ExplanationSummary,
+  HorizonForecast,
+  MultiHorizonForecastResult,
+} from '../types/events'
 import styles from './ForecastView.module.css'
 
 interface Props {
@@ -82,6 +91,19 @@ export function ForecastView({ forecast }: Props): JSX.Element {
   const seriesInputs = firstProvenance?.series_inputs ?? []
   const fallbackReason = firstProvenance?.fallback_reason ?? null
 
+  // Plan 0063: each trained block carries its own explanation summary (the
+  // drivers genuinely differ per horizon); the artifact path is call-level —
+  // every block names the same file, so the first one speaks for all. An
+  // envelope without explanations renders exactly the pre-0063 panel.
+  const explainedBlocks = forecast.horizons.flatMap((block) =>
+    block.provenance?.explanation != null
+      ? [{ horizonBars: block.horizon_bars, explanation: block.provenance.explanation }]
+      : [],
+  )
+  const artifactPath =
+    explainedBlocks.map(({ explanation }) => explanation.artifact).find((path) => path != null) ??
+    null
+
   return (
     <section className={styles.view} aria-label="Direction forecast">
       <p className={styles.conditionBanner} data-testid="forecast-condition-note" role="note">
@@ -122,6 +144,44 @@ export function ForecastView({ forecast }: Props): JSX.Element {
         </p>
       </header>
 
+      {explainedBlocks.length > 0 && (
+        <details className={styles.why} data-testid="forecast-why">
+          <summary className={styles.whySummary}>Why — what the validated models lean on</summary>
+          <div className={styles.whyBody}>
+            {explainedBlocks.map(({ horizonBars, explanation }) => (
+              <WhyDrivers key={horizonBars} horizonBars={horizonBars} explanation={explanation} />
+            ))}
+            {seriesInputs.length > 0 && (
+              <div className={styles.whyGroup} data-testid="forecast-why-freshness">
+                <h4 className={styles.whyGroupTitle}>Input freshness</h4>
+                <ul className={styles.freshnessList}>
+                  {seriesInputs.map((series) => (
+                    <li key={series.series_id}>
+                      <code>{series.series_id}</code>{' '}
+                      {series.last_point_ts != null
+                        ? `— freshest point ${formatDateTime(
+                            new Date(series.last_point_ts * 1000).toISOString(),
+                          )} UTC`
+                        : '— no observable point'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {artifactPath != null && (
+              <p className={styles.whyArtifact} data-testid="forecast-why-artifact">
+                full explanation persisted at <code>{artifactPath}</code> (relative to the
+                sidecar&apos;s runs directory)
+              </p>
+            )}
+            <p className={styles.whyDisclaimer}>
+              Driver importance is out-of-sample permutation importance — association within the
+              validated model, not causation; correlated inputs share credit.
+            </p>
+          </div>
+        </details>
+      )}
+
       <div className={styles.blocks} data-testid="forecast-blocks">
         {forecast.horizons.map((block) => (
           <HorizonBlock key={block.horizon_bars} block={block} />
@@ -135,6 +195,50 @@ export function ForecastView({ forecast }: Props): JSX.Element {
       </p>
     </section>
   )
+}
+
+interface WhyDriversProps {
+  horizonBars: number
+  explanation: ExplanationSummary
+}
+
+/** One horizon's ordered top drivers as quiet horizontal bars: magnitude is
+ * relative to the horizon's own strongest driver. A negative or zero
+ * importance draws no bar (permutation importance can dip below zero on
+ * noise); the number is still shown. */
+function WhyDrivers({ horizonBars, explanation }: WhyDriversProps): JSX.Element {
+  const drivers = explanation.top_drivers
+  const maxImportance = Math.max(0, ...drivers.map((driver) => driver.importance))
+  return (
+    <div className={styles.whyGroup} data-testid={`forecast-why-drivers-${horizonBars}`}>
+      <h4 className={styles.whyGroupTitle}>{horizonLabel(horizonBars)} ahead — top drivers</h4>
+      {drivers.length === 0 ? (
+        <p className={styles.muted}>
+          no scored out-of-sample folds at this horizon — no importances were measured
+        </p>
+      ) : (
+        <ol className={styles.driverList}>
+          {drivers.map((driver) => (
+            <li key={driver.feature} className={styles.driverRow}>
+              <code className={styles.driverName}>{driver.feature}</code>
+              <span className={styles.track} aria-hidden="true">
+                <span
+                  className={styles.driverFill}
+                  style={{ width: `${driverWidth(driver.importance, maxImportance)}%` }}
+                />
+              </span>
+              <span className={styles.driverValue}>{SKILL_FORMAT.format(driver.importance)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+function driverWidth(importance: number, maxImportance: number): number {
+  if (maxImportance <= 0 || importance <= 0) return 0
+  return (importance / maxImportance) * 100
 }
 
 interface HorizonBlockProps {
