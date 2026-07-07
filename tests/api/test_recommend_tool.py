@@ -37,6 +37,7 @@ import market_analyser.advisor
 from market_analyser.api.mcp_tools import recommend as recommend_tool
 from market_analyser.api.mcp_tools.recommend import (
     RECOMMEND_DESCRIPTION,
+    RecommendationExplanationArtifact,
     _recommend_response,
 )
 from market_analyser.backtest.result import BacktestMetrics
@@ -420,6 +421,82 @@ class TestEventEmission:
         assert (
             self._failing_run_envelopes("backfill via get_ohlcv", provider=_StubProvider([])) == []
         )
+
+
+class TestExplanationArtifact:
+    """Plan 0063 phase 2 done-when (tool half): the advice explanation JSON —
+    fused verdict (with its full trace) + per-leg inputs — persists under
+    `runs_dir/advice/…`, round-trips, and is re-run-stable modulo the
+    documented run-provenance exceptions; without a `runs_dir` nothing is
+    written and the trace still rides the wire."""
+
+    def test_wired_runs_dir_writes_advice_explanation(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _patch_legs(monkeypatch)
+        rec = _run(runs_dir=tmp_path)
+
+        stamp = NOW.strftime("%Y%m%dT%H%M%S%fZ")
+        target = tmp_path / "advice" / f"{stamp}-SYN" / "explanation.json"
+        assert target.is_file()
+        artifact = RecommendationExplanationArtifact.model_validate_json(
+            target.read_text(encoding="utf-8")
+        )
+        assert artifact.symbol == "SYN"
+        assert artifact.timeframe == "1d"
+        assert artifact.strategy_id == "rsi"
+        assert artifact.started_at == NOW
+        # The fused verdict persists whole — trace included — and matches the
+        # returned recommendation exactly.
+        assert artifact.recommendation == rec
+        assert artifact.recommendation.basis.checks
+        # The per-leg inputs are exactly what fuse() consumed.
+        assert artifact.inputs.forecast == _forecast_result(
+            prob_up=0.60,
+            prob_down=0.25,
+            prob_flat=0.15,
+            beats_baseline=True,
+            edge_strength="clear",
+        )
+        assert artifact.inputs.walk_forward == _walk_forward_result(0.8)
+        assert artifact.inputs.signals == (_signal_evaluation("long"),)
+        assert artifact.inputs.last_close == BARS[-1].close
+        assert artifact.inputs.snapshot.symbol == "SYN"
+
+    def test_rerun_artifact_identical_modulo_started_at_and_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _patch_legs(monkeypatch)
+        _run(runs_dir=tmp_path)
+        _run(runs_dir=tmp_path, now=NOW + timedelta(seconds=1))
+
+        files = sorted(tmp_path.glob("advice/*/explanation.json"))
+        assert len(files) == 2
+        first, second = (
+            RecommendationExplanationArtifact.model_validate_json(file.read_text(encoding="utf-8"))
+            for file in files
+        )
+        assert first.started_at != second.started_at
+        assert first.model_dump(exclude={"started_at"}) == second.model_dump(exclude={"started_at"})
+
+    def test_unwired_runs_dir_writes_nothing_and_trace_rides_the_wire(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_legs(monkeypatch)
+        rec, envelopes = _run_draining_bus()  # no runs_dir wired
+
+        assert rec.basis.checks  # the trace travels regardless
+        payload_checks = envelopes[0].payload["recommendation"]["basis"]["checks"]
+        assert payload_checks
+        assert [check["check"] for check in payload_checks] == [
+            check.check for check in rec.basis.checks
+        ]
+        # A recorded fact's None threshold is an absent key on the wire
+        # (exclude_none), never a null — the renderer Zod's `.nullish()` shape.
+        vote = next(check for check in payload_checks if check["check"] == "live vote: rsi")
+        assert "threshold" not in vote
+        assert vote["actual"] == "long"
+        assert vote["passed"] is True
 
 
 class TestBoundaryValidation:

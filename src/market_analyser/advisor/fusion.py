@@ -15,6 +15,12 @@ of the agreeing strategies** (an edge for a strategy that did not vote backs
 nothing). Each failed leg becomes a named blocker in the flat recommendation's
 rationale — an honest "no actionable edge", never a fabricated call.
 
+**Every gate is recorded** (Plan 0063, ADR-0058): `basis.checks` carries the
+structured fusion trace — leg, check, threshold, actual, outcome — in a fixed
+deterministic order, on directional and flat verdicts alike, so any verdict is
+replayable line by line (directional exactly when every check passed). The
+trace records the decision; it never alters it.
+
 **Conviction is derived, never invented** (the plan's open question, resolved
 here as the documented monotone mapping):
 
@@ -41,7 +47,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-from market_analyser.advisor.models import BasisValue, Recommendation, RecommendationBasis
+from market_analyser.advisor.models import (
+    BasisValue,
+    FusionCheck,
+    Recommendation,
+    RecommendationBasis,
+)
 from market_analyser.analysis.types import ConditionSnapshot
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
@@ -190,11 +201,167 @@ def _require_consistent_inputs(
             )
 
 
+def _build_checks(
+    *,
+    snapshot: ConditionSnapshot,
+    signals: Sequence[SignalEvaluation],
+    walk_forward: WalkForwardResult | None,
+    forecast: ForecastResult,
+    forecast_dir: _Directional | None,
+    conflict: bool,
+    signal_dir: _Directional | None,
+    long_ids: Sequence[str],
+    short_ids: Sequence[str],
+    sharpe_mean: float | None,
+) -> tuple[FusionCheck, ...]:
+    """The structured fusion trace (Plan 0063, ADR-0058): every gate, in a
+    fixed deterministic order, with the real threshold-vs-actual values.
+
+    The invariant the trace guarantees (pinned by the replayability test):
+    **the verdict is directional exactly when every check passed** — each
+    `fuse()` blocker maps to at least one failed check, and recorded facts
+    with no pass bar (alignment, which raises before any verdict exists;
+    the condition snapshot; individual signal votes; the calibrated
+    probability behind a directional argmax) always pass."""
+
+    scope = f"{snapshot.symbol}/{snapshot.timeframe}"
+    as_of = snapshot.as_of.isoformat()
+    checks: list[FusionCheck] = [
+        # Alignment is enforced by raising before any verdict exists, so an
+        # emitted trace always records it as passed — the gate ran, and only
+        # aligned inputs ever reach a Recommendation.
+        FusionCheck(
+            leg="alignment",
+            check="inputs share symbol/timeframe",
+            threshold=scope,
+            actual=scope,
+            passed=True,
+        ),
+        FusionCheck(
+            leg="alignment",
+            check="inputs share the as-of bar",
+            threshold=as_of,
+            actual=as_of,
+            passed=True,
+        ),
+        FusionCheck(
+            leg="conditions",
+            check="condition snapshot read",
+            threshold=None,
+            actual=(
+                f"trend={snapshot.trend}, momentum={snapshot.momentum}, "
+                f"volume={snapshot.volume_stance}"
+            ),
+            passed=True,
+        ),
+    ]
+
+    probs_shipped = forecast.prob_up is not None
+    directional_prob = (
+        forecast.prob_up
+        if forecast_dir == "long"
+        else forecast.prob_down
+        if forecast_dir == "short"
+        else None
+    )
+    checks.extend(
+        (
+            FusionCheck(
+                leg="forecast",
+                check="probabilities shipped (baseline beaten out-of-sample)",
+                threshold=True,
+                actual=probs_shipped,
+                passed=probs_shipped,
+            ),
+            FusionCheck(
+                leg="forecast",
+                check="argmax direction is directional",
+                threshold="long or short",
+                actual=forecast_dir if forecast_dir is not None else "none",
+                passed=forecast_dir is not None,
+            ),
+            FusionCheck(
+                leg="forecast",
+                check="calibrated P(direction)",
+                threshold=None,
+                actual=directional_prob,
+                passed=directional_prob is not None,
+            ),
+        )
+    )
+
+    checks.extend(
+        FusionCheck(
+            leg="signal",
+            check=f"live vote: {s.strategy_id}",
+            threshold=None,
+            actual=s.current_position,
+            passed=True,
+        )
+        for s in sorted(signals, key=lambda s: s.strategy_id)
+    )
+    agreeing_ids: Sequence[str] = (
+        long_ids if signal_dir == "long" else short_ids if signal_dir == "short" else ()
+    )
+    checks.extend(
+        (
+            FusionCheck(
+                leg="signal",
+                check="no conflicting live votes",
+                threshold=False,
+                actual=conflict,
+                passed=not conflict,
+            ),
+            FusionCheck(
+                leg="signal",
+                check="at least one directional live vote",
+                threshold="long or short",
+                actual=signal_dir if signal_dir is not None else "none",
+                passed=signal_dir is not None,
+            ),
+            FusionCheck(
+                leg="signal",
+                check="live direction agrees with the forecast direction",
+                threshold=forecast_dir if forecast_dir is not None else "none",
+                actual=signal_dir if signal_dir is not None else "none",
+                passed=forecast_dir is not None and signal_dir == forecast_dir,
+            ),
+            FusionCheck(
+                leg="backtest",
+                check="walk-forward basis supplied",
+                threshold=True,
+                actual=walk_forward is not None,
+                passed=walk_forward is not None,
+            ),
+            FusionCheck(
+                leg="backtest",
+                check="backtested edge positive (sharpe_mean > 0)",
+                threshold=0.0,
+                actual=sharpe_mean,
+                passed=sharpe_mean is not None and sharpe_mean > 0.0,
+            ),
+            FusionCheck(
+                leg="backtest",
+                check="walk-forward strategy among the agreeing votes",
+                threshold=walk_forward.strategy_id if walk_forward is not None else None,
+                actual=", ".join(agreeing_ids) if agreeing_ids else "none",
+                passed=(
+                    walk_forward is not None
+                    and signal_dir is not None
+                    and walk_forward.strategy_id in agreeing_ids
+                ),
+            ),
+        )
+    )
+    return tuple(checks)
+
+
 def _build_basis(
     snapshot: ConditionSnapshot,
     signals: Sequence[SignalEvaluation],
     walk_forward: WalkForwardResult | None,
     forecast: ForecastResult,
+    checks: tuple[FusionCheck, ...],
 ) -> RecommendationBasis:
     conditions = [
         f"trend={snapshot.trend}",
@@ -237,6 +404,7 @@ def _build_basis(
         signals=signal_lines,
         backtest=backtest,
         forecast=forecast_summary,
+        checks=checks,
     )
 
 
@@ -295,7 +463,19 @@ def fuse(
             "which is not among the agreeing signals"
         )
 
-    basis = _build_basis(snapshot, signals, walk_forward, forecast)
+    checks = _build_checks(
+        snapshot=snapshot,
+        signals=signals,
+        walk_forward=walk_forward,
+        forecast=forecast,
+        forecast_dir=forecast_dir,
+        conflict=conflict,
+        signal_dir=signal_dir,
+        long_ids=long_ids,
+        short_ids=short_ids,
+        sharpe_mean=sharpe_mean,
+    )
+    basis = _build_basis(snapshot, signals, walk_forward, forecast, checks)
 
     if blockers:
         return Recommendation(

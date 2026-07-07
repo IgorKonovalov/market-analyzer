@@ -19,6 +19,7 @@ import pytest
 
 import market_analyser.advisor
 from market_analyser.advisor.fusion import fuse
+from market_analyser.advisor.models import Recommendation
 from market_analyser.analysis.types import (
     ConditionSnapshot,
     Level,
@@ -428,6 +429,173 @@ class TestInputValidation:
                 forecast=make_forecast(),
                 last_close=LAST_CLOSE,
             )
+
+
+def _replay_direction(rec: Recommendation) -> str:
+    """Recompute the verdict from the trace ALONE (Plan 0063's replayability
+    claim): flat if any check failed; otherwise the direction is the agreement
+    gate's actual value."""
+
+    checks = rec.basis.checks
+    assert checks  # every verdict carries a non-empty trace
+    if not all(check.passed for check in checks):
+        return "flat"
+    agreement = next(
+        check
+        for check in checks
+        if check.check == "live direction agrees with the forecast direction"
+    )
+    assert isinstance(agreement.actual, str)
+    return agreement.actual
+
+
+class TestFusionTrace:
+    """Plan 0063 phase 2 done-when: `basis.checks` is a complete, ordered,
+    numeric trace of every gate — replayable to the same verdict."""
+
+    def test_directional_trace_is_the_exact_pinned_gate_list(self) -> None:
+        """The full trace of the canonical directional case, spot-pinned
+        against hand-computed fixture values — real numbers, not just
+        non-null — in the fixed deterministic order."""
+
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"
+        snapshot = make_snapshot()
+        conditions_fact = (
+            f"trend={snapshot.trend}, momentum={snapshot.momentum}, volume={snapshot.volume_stance}"
+        )
+        assert [
+            (check.leg, check.check, check.threshold, check.actual, check.passed)
+            for check in rec.basis.checks
+        ] == [
+            ("alignment", "inputs share symbol/timeframe", "BTC-USD/1d", "BTC-USD/1d", True),
+            (
+                "alignment",
+                "inputs share the as-of bar",
+                AS_OF.isoformat(),
+                AS_OF.isoformat(),
+                True,
+            ),
+            ("conditions", "condition snapshot read", None, conditions_fact, True),
+            (
+                "forecast",
+                "probabilities shipped (baseline beaten out-of-sample)",
+                True,
+                True,
+                True,
+            ),
+            ("forecast", "argmax direction is directional", "long or short", "long", True),
+            ("forecast", "calibrated P(direction)", None, 0.60, True),
+            ("signal", "live vote: rsi", None, "long", True),
+            ("signal", "no conflicting live votes", False, False, True),
+            ("signal", "at least one directional live vote", "long or short", "long", True),
+            ("signal", "live direction agrees with the forecast direction", "long", "long", True),
+            ("backtest", "walk-forward basis supplied", True, True, True),
+            ("backtest", "backtested edge positive (sharpe_mean > 0)", 0.0, 0.8, True),
+            ("backtest", "walk-forward strategy among the agreeing votes", "rsi", "rsi", True),
+        ]
+
+    def test_directional_verdict_replays_from_the_trace_alone(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"
+        assert all(check.passed for check in rec.basis.checks)
+        assert _replay_direction(rec) == "long"
+
+    def test_one_blocker_flat_replays_and_carries_the_failing_numbers(self) -> None:
+        """A single failed leg (non-positive edge): exactly that gate fails,
+        with the real sharpe_mean as its actual — the numeric superset of the
+        one blocker string."""
+
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(sharpe_mean=-0.4),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        failed = [check for check in rec.basis.checks if not check.passed]
+        assert [(check.leg, check.check, check.threshold, check.actual) for check in failed] == [
+            ("backtest", "backtested edge positive (sharpe_mean > 0)", 0.0, -0.4),
+        ]
+        assert any("no backtested edge" in line for line in rec.rationale)
+        assert _replay_direction(rec) == "flat"
+
+    def test_all_legs_fail_flat_replays_with_every_gate_failed(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[],
+            walk_forward=None,
+            forecast=make_forecast(
+                prob_up=None,
+                prob_down=None,
+                prob_flat=None,
+                beats_baseline=False,
+                edge_strength="no_edge",
+            ),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        failed = {check.check for check in rec.basis.checks if not check.passed}
+        assert failed == {
+            "probabilities shipped (baseline beaten out-of-sample)",
+            "argmax direction is directional",
+            "calibrated P(direction)",
+            "at least one directional live vote",
+            "live direction agrees with the forecast direction",
+            "walk-forward basis supplied",
+            "backtested edge positive (sharpe_mean > 0)",
+            "walk-forward strategy among the agreeing votes",
+        }
+        assert _replay_direction(rec) == "flat"
+
+    def test_conflicting_votes_fail_the_conflict_gate_with_each_vote_recorded(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal("rsi", "long"), make_signal("macd", "short")],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        votes = [
+            (check.check, check.actual)
+            for check in rec.basis.checks
+            if check.check.startswith("live vote: ")
+        ]
+        assert votes == [("live vote: macd", "short"), ("live vote: rsi", "long")]
+        conflict_gate = next(
+            check for check in rec.basis.checks if check.check == "no conflicting live votes"
+        )
+        assert conflict_gate.actual is True and conflict_gate.passed is False
+        assert _replay_direction(rec) == "flat"
+
+    def test_trace_order_is_deterministic_across_runs(self) -> None:
+        def run() -> list[dict[str, object]]:
+            return [
+                check.model_dump(mode="json")
+                for check in fuse(
+                    snapshot=make_snapshot(),
+                    signals=[make_signal(), make_signal("macd", "long", fresh=False)],
+                    walk_forward=make_walk_forward(sharpe_mean=-0.4),
+                    forecast=make_forecast(),
+                    last_close=LAST_CLOSE,
+                ).basis.checks
+            ]
+
+        assert run() == run()
 
 
 def test_advisor_imports_only_analyst_outputs() -> None:

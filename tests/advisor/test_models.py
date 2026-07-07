@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from market_analyser.advisor.models import Recommendation, RecommendationBasis
+from market_analyser.advisor.models import FusionCheck, Recommendation, RecommendationBasis
 
 AS_OF = datetime(2026, 6, 1, tzinfo=UTC)
 
@@ -68,6 +68,84 @@ class TestRecommendationBasis:
             conditions=["trend=up"], signals=[], backtest=None, forecast=None
         )
         assert basis.conditions == ["trend=up"]
+
+    def test_checks_default_empty_and_do_not_satisfy_non_emptiness(self) -> None:
+        """Plan 0063: `checks` is additive (defaulted) and a trace alone is not
+        a basis — the ADR-0029 non-emptiness rule still needs a real leg."""
+
+        assert _full_basis().checks == ()
+        with pytest.raises(ValidationError, match="must not be empty"):
+            RecommendationBasis(
+                conditions=[],
+                signals=[],
+                backtest=None,
+                forecast=None,
+                checks=(
+                    FusionCheck(
+                        leg="forecast",
+                        check="probabilities shipped (baseline beaten out-of-sample)",
+                        threshold=True,
+                        actual=False,
+                        passed=False,
+                    ),
+                ),
+            )
+
+
+class TestFusionCheck:
+    def test_constructs_with_real_threshold_and_actual(self) -> None:
+        check = FusionCheck(
+            leg="backtest",
+            check="backtested edge positive (sharpe_mean > 0)",
+            threshold=0.0,
+            actual=0.8,
+            passed=True,
+        )
+        assert check.threshold == 0.0
+        assert check.actual == 0.8
+
+    def test_leg_admits_only_the_five_fusion_legs(self) -> None:
+        bad_leg: dict[str, Any] = {
+            "leg": "orders",
+            "check": "x",
+            "threshold": None,
+            "actual": None,
+            "passed": True,
+        }
+        with pytest.raises(ValidationError):
+            FusionCheck(**bad_leg)
+
+    def test_frozen_and_extra_forbidden(self) -> None:
+        check = FusionCheck(
+            leg="signal", check="live vote: rsi", threshold=None, actual="long", passed=True
+        )
+        with pytest.raises(ValidationError):
+            check.passed = False
+        extra_field: dict[str, Any] = {
+            "leg": "signal",
+            "check": "x",
+            "threshold": None,
+            "actual": None,
+            "passed": True,
+            "extra": "y",
+        }
+        with pytest.raises(ValidationError):
+            FusionCheck(**extra_field)
+
+    def test_wire_dump_strips_none_threshold_and_actual(self) -> None:
+        """`exclude_none` semantics the renderer Zod relies on: a recorded
+        fact's None threshold/actual are absent keys, never nulls."""
+
+        check = FusionCheck(
+            leg="signal", check="live vote: rsi", threshold=None, actual="long", passed=True
+        )
+        wire = check.model_dump(mode="json", exclude_none=True)
+        assert wire == {
+            "leg": "signal",
+            "check": "live vote: rsi",
+            "actual": "long",
+            "passed": True,
+        }
 
 
 class TestRecommendation:

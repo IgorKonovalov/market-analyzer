@@ -50,6 +50,7 @@ interface DumpedSchemas {
   RecommendationCompletedPayloadV1: JsonSchema
   Recommendation: JsonSchema
   RecommendationBasis: JsonSchema
+  FusionCheck: JsonSchema
   ForecastCompletedPayloadV1: JsonSchema
   MultiHorizonForecastResult: JsonSchema
   HorizonForecast: JsonSchema
@@ -77,7 +78,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    RecommendationCompletedPayloadV1, ForecastCompletedPayloadV1,',
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
-    'from market_analyser.advisor.models import Recommendation, RecommendationBasis',
+    'from market_analyser.advisor.models import (',
+    '    FusionCheck, Recommendation, RecommendationBasis,',
+    ')',
     'from market_analyser.forecast.result import (',
     '    MultiHorizonForecastResult, HorizonForecast,',
     '    ForecastProvenance, SeriesInput,',
@@ -104,6 +107,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "RecommendationCompletedPayloadV1": RecommendationCompletedPayloadV1.model_json_schema(),',
     '    "Recommendation": Recommendation.model_json_schema(),',
     '    "RecommendationBasis": RecommendationBasis.model_json_schema(),',
+    '    "FusionCheck": FusionCheck.model_json_schema(),',
     '    "ForecastCompletedPayloadV1": ForecastCompletedPayloadV1.model_json_schema(),',
     '    "MultiHorizonForecastResult": MultiHorizonForecastResult.model_json_schema(),',
     '    "HorizonForecast": HorizonForecast.model_json_schema(),',
@@ -592,17 +596,45 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
   it('RecommendationBasis fields match (backtest/forecast nullable, absent on the wire when None)', () => {
     expect(propertyNames(dumped.RecommendationBasis)).toEqual([
       'backtest',
+      'checks',
       'conditions',
       'forecast',
       'signals',
     ])
     // Same required-but-nullable shape as Recommendation's levels: schema-
     // required, wire-absent for a flat call missing that leg → TS optional.
+    // `checks` (Plan 0063 — the deliberate ADR-0029 pin move) has a non-None
+    // default (`()`) → not in `required`, but it is never None so
+    // `exclude_none` keeps it on the wire — the TS marks it required (the
+    // ForecastProvenance.series_inputs shape).
     expect(requiredNames(dumped.RecommendationBasis)).toEqual([
       'backtest',
       'conditions',
       'forecast',
       'signals',
     ])
+  })
+
+  it('FusionCheck fields match (threshold/actual nullable, absent when None; leg closed set)', () => {
+    expect(propertyNames(dumped.FusionCheck)).toEqual([
+      'actual',
+      'check',
+      'leg',
+      'passed',
+      'threshold',
+    ])
+    // No defaults → every field schema-required. The TS still marks
+    // `threshold`/`actual` optional: they are None-valued for a recorded fact
+    // with no pass bar and the bus dumps with `exclude_none`.
+    expect(requiredNames(dumped.FusionCheck)).toEqual([
+      'actual',
+      'check',
+      'leg',
+      'passed',
+      'threshold',
+    ])
+    expect(literalValues(dumped.FusionCheck, 'leg')).toEqual(
+      ['alignment', 'backtest', 'conditions', 'forecast', 'signal'].sort(),
+    )
   })
 })

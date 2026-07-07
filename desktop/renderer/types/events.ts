@@ -152,17 +152,34 @@ export interface SignalEvaluatedPayloadV1 {
  * pydantic `BasisValue` (flat scalars only, never nested dumps). */
 export type BasisValue = number | string | boolean | null
 
+/** Mirror of the pydantic `FusionCheck` (Plan 0063 / ADR-0058): one recorded
+ * gate of the fusion trace — leg, check name, the real threshold-vs-actual
+ * values, and the outcome. `threshold`/`actual` are required-but-nullable
+ * `BasisValue`s (None marks a recorded fact with no pass bar, e.g. an
+ * individual signal vote) and `exclude_none`-stripped from the wire — hence
+ * optional here. The verdict is directional exactly when every check passed. */
+export interface FusionCheck {
+  leg: 'forecast' | 'signal' | 'backtest' | 'conditions' | 'alignment'
+  check: string
+  threshold?: BasisValue
+  actual?: BasisValue
+  passed: boolean
+}
+
 /** Mirror of the pydantic `RecommendationBasis` (Plan 0038 / ADR-0029): what
- * backed the call. All four fields are declared without defaults in pydantic
- * (so the JSON schema marks them required), but `backtest`/`forecast` may be
- * `None` — and the bus dumps with `exclude_none`, so on the wire those keys
- * are ABSENT (not null) when a flat recommendation lacks that leg. Hence
- * optional here. */
+ * backed the call. The original four fields are declared without defaults in
+ * pydantic (so the JSON schema marks them required), but `backtest`/`forecast`
+ * may be `None` — and the bus dumps with `exclude_none`, so on the wire those
+ * keys are ABSENT (not null) when a flat recommendation lacks that leg. Hence
+ * optional here. `checks` (Plan 0063) has a non-None default (`()`), so like
+ * `ForecastProvenance.series_inputs` it is not schema-required but is ALWAYS
+ * present on the wire — hence required here. */
 export interface RecommendationBasis {
   conditions: string[]
   signals: string[]
   backtest?: Record<string, BasisValue> | null
   forecast?: Record<string, BasisValue> | null
+  checks: FusionCheck[]
 }
 
 /** Mirror of the pydantic `Recommendation` (Plan 0038 / ADR-0029): the one

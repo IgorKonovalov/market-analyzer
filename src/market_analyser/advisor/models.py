@@ -35,6 +35,26 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 BasisValue = float | int | str | bool | None
 
 
+class FusionCheck(BaseModel):
+    """One recorded gate of the fusion trace (Plan 0063, ADR-0058).
+
+    ``leg`` names which analyst leg the gate belongs to; ``check`` is the
+    human-readable gate name; ``threshold`` and ``actual`` carry the real
+    values the gate compared (scalars only — the ADR-0046 small-wire grain;
+    ``threshold`` is ``None`` for a recorded fact that has no pass bar, e.g.
+    an individual signal vote); ``passed`` is the outcome. The full ordered
+    tuple of these makes any verdict — directional or flat — replayable line
+    by line: the verdict is directional exactly when every check passed."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    leg: Literal["forecast", "signal", "backtest", "conditions", "alignment"]
+    check: str
+    threshold: BasisValue
+    actual: BasisValue
+    passed: bool
+
+
 class RecommendationBasis(BaseModel):
     """What backed the call — ADR-0029's mandatory basis.
 
@@ -46,6 +66,13 @@ class RecommendationBasis(BaseModel):
     `Recommendation`, which sees the direction). An entirely empty basis is
     invalid at construction: there is no such thing as a groundless
     recommendation, flat included.
+
+    `checks` (Plan 0063, ADR-0058) is the structured fusion trace: every gate
+    `fuse()` evaluated, in a fixed deterministic order, with the real
+    threshold-vs-actual values behind each pass/fail. It is the numeric
+    superset of the rationale strings and travels on directional and flat
+    verdicts alike (defaulted so pre-0063 constructors stay valid; it does
+    not count toward basis non-emptiness).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -54,6 +81,10 @@ class RecommendationBasis(BaseModel):
     signals: list[str]
     backtest: dict[str, BasisValue] | None
     forecast: dict[str, BasisValue] | None
+    # Appended after forecast to keep the wire-stable field order (the
+    # ForecastProvenance appended-fields precedent) — Plan 0063's deliberate,
+    # versioned move of the ADR-0029 field-set pins.
+    checks: tuple[FusionCheck, ...] = ()
 
     @model_validator(mode="after")
     def _require_non_empty(self) -> RecommendationBasis:
@@ -135,4 +166,4 @@ class Recommendation(BaseModel):
         return self
 
 
-__all__ = ["BasisValue", "Recommendation", "RecommendationBasis"]
+__all__ = ["BasisValue", "FusionCheck", "Recommendation", "RecommendationBasis"]

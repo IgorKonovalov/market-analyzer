@@ -236,12 +236,16 @@ def create_mcp_components(
     # Shares the forecast models_dir so an accepted forecast model persists once.
     # Publishes `recommendation.completed v1` (Plan 0039) so the viewer's
     # Recommendations view renders the advisory call live.
+    # Plan 0063 (ADR-0058): with a runs_dir wired the tool also persists the
+    # per-call advice explanation (verdict + trace + leg inputs) under
+    # runs_dir/advice/…; the trace itself always rides the wire.
     register_recommend(
         server,
         provider=provider,
         backfill_coordinator=backfill_coordinator,
         event_bus=event_bus,
         models_dir=forecast_models_dir,
+        runs_dir=runs_dir,
     )
 
     if backtest_runs_repository is not None and runs_dir is not None:

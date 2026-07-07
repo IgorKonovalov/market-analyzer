@@ -35,6 +35,20 @@ const LONG_REC: Recommendation = {
     signals: ['rsi long on last closed bar'],
     backtest: { sharpe_mean: 0.8, n_splits: 5 },
     forecast: { prob_up: 0.6, beats_baseline: true },
+    // Plan 0063: the fusion trace always rides the wire (rendering it is
+    // phase 3). A trace-bearing envelope must survive the dispatcher's Zod
+    // parse — including a recorded fact whose None threshold is an absent
+    // key, exactly as the bus's exclude_none dump produces.
+    checks: [
+      { leg: 'signal', check: 'live vote: rsi', actual: 'long', passed: true },
+      {
+        leg: 'backtest',
+        check: 'backtested edge positive (sharpe_mean > 0)',
+        threshold: 0,
+        actual: 0.8,
+        passed: true,
+      },
+    ],
   },
   label: 'advisory',
   as_of_bar_ts: '2026-01-15T00:00:00+00:00',
@@ -58,6 +72,7 @@ const FLAT_REC: Recommendation = {
     conditions: ['trend: sideways'],
     signals: ['macd flat'],
     forecast: { beats_baseline: false },
+    checks: [],
   },
   label: 'advisory',
   as_of_bar_ts: '2026-01-10T15:00:00+00:00',

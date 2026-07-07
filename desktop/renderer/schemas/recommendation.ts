@@ -25,13 +25,26 @@ import type { RecommendationCompletedPayloadV1 } from '../types/events'
 /** Mirror of the pydantic `BasisValue` grain: flat scalars only. */
 const basisValueSchema = z.union([z.number(), z.string(), z.boolean(), z.null()])
 
+/** One recorded fusion gate (Plan 0063 / ADR-0058). `threshold`/`actual` are
+ * `exclude_none`-stripped from the wire when None (a recorded fact with no
+ * pass bar) — hence `.nullish()`. */
+const fusionCheckSchema = z.object({
+  leg: z.enum(['forecast', 'signal', 'backtest', 'conditions', 'alignment']),
+  check: z.string(),
+  threshold: basisValueSchema.nullish(),
+  actual: basisValueSchema.nullish(),
+  passed: z.boolean(),
+})
+
 /** `backtest`/`forecast` are absent on the wire (exclude_none) when a flat
- * recommendation lacks that leg — hence `.nullish()`, not `.nullable()`. */
+ * recommendation lacks that leg — hence `.nullish()`, not `.nullable()`.
+ * `checks` (Plan 0063) has a non-None default and is always present. */
 const recommendationBasisSchema = z.object({
   conditions: z.array(z.string()),
   signals: z.array(z.string()),
   backtest: z.record(basisValueSchema).nullish(),
   forecast: z.record(basisValueSchema).nullish(),
+  checks: z.array(fusionCheckSchema),
 })
 
 const recommendationSchema = z.object({
