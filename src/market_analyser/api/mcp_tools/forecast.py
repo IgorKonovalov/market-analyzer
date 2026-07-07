@@ -47,7 +47,8 @@ still computes and returns, it is simply not cached to disk.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -61,6 +62,13 @@ from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
 from market_analyser.events import EventBus, ForecastCompletedPayloadV1
 from market_analyser.forecast.exogenous import MetricAsOfLookup
+from market_analyser.forecast.explain import (
+    ForecastExplanation,
+    build_forecast_explanation_artifact,
+    explain_horizon,
+    feature_names_for_set,
+    summarize_explanation,
+)
 from market_analyser.forecast.features import (
     FEATURE_SET_ID,
     FeatureRow,
@@ -92,7 +100,7 @@ from market_analyser.forecast.result import (
     SeriesInput,
 )
 from market_analyser.forecast.tiers import select_feature_tier
-from market_analyser.forecast.validation import ForecastValidation, validate
+from market_analyser.forecast.validation import ForecastValidation, ScoredFold, validate
 
 # The horizon set for daily bars (ADR-0054: next-day / ~1w / ~1mo). Every other
 # timeframe keeps next-bar only for now (plan phase 3).
@@ -110,6 +118,24 @@ EDGE_MARGIN_THRESHOLD = 0.02
 # all (Plan 0061 phase 2): every v1-on-fallback result says why, the unwired
 # case included.
 FALLBACK_REASON_UNWIRED = "metric store not wired"
+
+# Path components of the explanation artifact are derived from user input
+# (symbol); anything outside this conservative set is replaced so the path is
+# valid on every filesystem (Windows included: ^GSPC and ES=F both sanitise).
+_UNSAFE_PATH_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _fs_safe(component: str) -> str:
+    return _UNSAFE_PATH_CHARS.sub("_", component)
+
+
+def _explanation_artifact_rel_path(symbol: str, timeframe: str, started_at: datetime) -> str:
+    """The `runs_dir`-relative path of one forecast call's explanation JSON
+    (Plan 0063, ADR-0058). ``started_at`` (with the path itself) is one of the
+    two documented run-provenance exceptions to byte-identical re-runs."""
+
+    stamp = started_at.strftime("%Y%m%dT%H%M%S%fZ")
+    return f"forecast/{stamp}-{_fs_safe(symbol)}-{_fs_safe(timeframe)}/explanation.json"
 
 
 def _classify_edge(validation: ForecastValidation) -> tuple[float | None, EdgeStrength]:
@@ -281,9 +307,21 @@ def _compute_multi_horizon_forecast(
     seed: int,
     models_dir: Path | None,
     metric_lookup: MetricAsOfLookup | None,
+    explanation_artifact_path: str | None = None,
+    explanation_sink: list[ForecastExplanation] | None = None,
 ) -> MultiHorizonForecastResult:
     """The deterministic, CPU-bound Plan 0059 core: build one feature matrix,
     then validate / train / gate / (persist) each horizon independently.
+
+    Plan 0063: every horizon is also **explained** — seeded out-of-sample
+    permutation importances over the walk-forward's own scored folds (captured
+    via ``scored_fold_sink``, never re-trained, never the final fit). Each
+    trained block's provenance carries the compact `ExplanationSummary` (top
+    drivers + ``explanation_artifact_path``, the caller-supplied
+    ``runs_dir``-relative location — ``None`` when no ``runs_dir`` is wired,
+    in which case the drivers still ride the wire). ``explanation_sink``
+    collects the full per-horizon `ForecastExplanation`s, one per block in
+    block order, for the caller's artifact writer.
 
     With a metric store wired the matrix comes from the ADR-0057 tier ladder
     (`select_feature_tier`): the richest of ``v2-full → v2-deep → v1`` whose
@@ -318,9 +356,11 @@ def _compute_multi_horizon_forecast(
     as_of_bar_ts = predict_row.event_ts if predict_row is not None else bars[-1].event_ts
     lib_versions = model_lib_versions()
 
+    feature_names = feature_names_for_set(feature_set_id)
     blocks: list[HorizonForecast] = []
     for horizon in horizons:
         label_params = LabelParams(horizon_bars=horizon, flat_band=flat_band)
+        scored_folds: list[ScoredFold] = []
         validation = validate(
             bars,
             horizon_bars=horizon,
@@ -328,7 +368,18 @@ def _compute_multi_horizon_forecast(
             n_splits=n_splits,
             model_params=model_params,
             feature_rows=rows,
+            scored_fold_sink=scored_folds,
         )
+        explanation = explain_horizon(
+            horizon_bars=horizon,
+            feature_set_id=feature_set_id,
+            feature_names=feature_names,
+            scored_folds=scored_folds,
+            predict_row=predict_row,
+            seed=seed,
+        )
+        if explanation_sink is not None:
+            explanation_sink.append(explanation)
         labels = build_labels(bars, label_params)
         train_rows, train_labels = align_samples(rows, labels)
         trainable = (
@@ -371,6 +422,7 @@ def _compute_multi_horizon_forecast(
             lib_versions=lib_versions,
             series_inputs=series_inputs,
             fallback_reason=fallback_reason,
+            explanation=summarize_explanation(explanation, artifact=explanation_artifact_path),
         )
 
         dist = predict_proba(model, [predict_row])[0]
@@ -411,6 +463,16 @@ def _compute_multi_horizon_forecast(
     )
 
 
+def _write_explanation_artifact(artifact_json: str, runs_dir: Path, rel_path: str) -> None:
+    """Persist one call's explanation JSON at ``runs_dir / rel_path`` (Plan
+    0063). Plain write, no tmp-dir ceremony: the directory is unique per call
+    (wall-clock stamp), so there is no concurrent writer to race."""
+
+    target = runs_dir / rel_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(artifact_json, encoding="utf-8")
+
+
 async def _multi_forecast_response(
     *,
     provider: MarketDataProvider,
@@ -425,10 +487,18 @@ async def _multi_forecast_response(
     flat_band: float,
     n_splits: int,
     seed: int,
+    runs_dir: Path | None = None,
 ) -> MultiHorizonForecastResult:
     """Body of `forecast`: validate, fetch, then offload the model work.
     Publishes the `forecast.completed v1` envelope exactly once, only after a
-    successful computation (Plan 0037)."""
+    successful computation (Plan 0037).
+
+    Plan 0063: with a ``runs_dir`` wired, the complete explanation JSON is
+    persisted under ``runs_dir/forecast/…`` **before** the publish (a failed
+    write leaves the bus untouched, like every other raise above it) and each
+    block's provenance summary names the artifact's relative path. Without a
+    ``runs_dir`` no artifact is written and the summary's ``artifact`` is
+    ``None`` — the top drivers still ride the wire."""
 
     _require_non_empty_symbol(symbol)
     _require_supported_timeframe(timeframe)
@@ -454,6 +524,17 @@ async def _multi_forecast_response(
             "backfill via get_ohlcv first",
         )
 
+    # Wall-clock is confined to run provenance (the artifact's stamp + path,
+    # the documented ADR-0018-style exceptions); the computation itself stays
+    # clock-free.
+    started_at = datetime.now(UTC) if runs_dir is not None else None
+    artifact_rel_path = (
+        _explanation_artifact_rel_path(symbol, timeframe, started_at)
+        if started_at is not None
+        else None
+    )
+
+    explanations: list[ForecastExplanation] = []
     result = await asyncio.to_thread(
         _compute_multi_horizon_forecast,
         bars=bars,
@@ -465,7 +546,18 @@ async def _multi_forecast_response(
         seed=seed,
         models_dir=models_dir,
         metric_lookup=metric_lookup,
+        explanation_artifact_path=artifact_rel_path,
+        explanation_sink=explanations,
     )
+
+    if runs_dir is not None and started_at is not None and artifact_rel_path is not None:
+        artifact = build_forecast_explanation_artifact(result, explanations, started_at=started_at)
+        await asyncio.to_thread(
+            _write_explanation_artifact,
+            artifact.model_dump_json(indent=2),
+            runs_dir,
+            artifact_rel_path,
+        )
 
     # Publish AFTER a successful computation — every raise above this line
     # leaves the bus untouched (zero envelopes on failure). A no-edge horizon
@@ -482,12 +574,16 @@ def register_forecast(
     event_bus: EventBus,
     models_dir: Path | None,
     metric_lookup: MetricAsOfLookup | None = None,
+    runs_dir: Path | None = None,
 ) -> None:
     """Bind `forecast` to `server`. The provider, event bus, models_dir and
     metric store are captured by closure so the tool body keeps the parameter
     list FastMCP introspects for the schema. ``metric_lookup`` (the ADR-0051
     as_of surface) enables the v2 exogenous feature set; without it the tool
-    computes on the v1 set and says so in its provenance."""
+    computes on the v1 set and says so in its provenance. ``runs_dir`` (Plan
+    0063, ADR-0058) enables the per-call explanation artifact under
+    ``runs_dir/forecast/…``; without it the explanation summary still rides
+    the wire, only the full JSON is skipped."""
 
     @server.tool(description=FORECAST_DESCRIPTION)
     async def forecast(
@@ -513,6 +609,7 @@ def register_forecast(
             flat_band=flat_band,
             n_splits=n_splits,
             seed=seed,
+            runs_dir=runs_dir,
         )
 
 

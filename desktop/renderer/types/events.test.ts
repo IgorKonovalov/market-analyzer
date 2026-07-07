@@ -57,6 +57,8 @@ interface DumpedSchemas {
   FoldSkill: JsonSchema
   ForecastProvenance: JsonSchema
   SeriesInput: JsonSchema
+  ExplanationDriver: JsonSchema
+  ExplanationSummary: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -79,6 +81,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     'from market_analyser.forecast.result import (',
     '    MultiHorizonForecastResult, HorizonForecast,',
     '    ForecastProvenance, SeriesInput,',
+    '    ExplanationDriver, ExplanationSummary,',
     ')',
     'from market_analyser.forecast.validation import ForecastValidation, FoldSkill',
     'print(json.dumps({',
@@ -108,6 +111,8 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "FoldSkill": FoldSkill.model_json_schema(),',
     '    "ForecastProvenance": ForecastProvenance.model_json_schema(),',
     '    "SeriesInput": SeriesInput.model_json_schema(),',
+    '    "ExplanationDriver": ExplanationDriver.model_json_schema(),',
+    '    "ExplanationSummary": ExplanationSummary.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -540,6 +545,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
 
   it('ForecastProvenance fields match (series_inputs defaulted, never None, always on the wire)', () => {
     expect(propertyNames(dumped.ForecastProvenance)).toEqual([
+      'explanation',
       'fallback_reason',
       'feature_set_id',
       'lib_versions',
@@ -553,6 +559,8 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     // required (the TrendlineSpec.style shape). `fallback_reason` (Plan 0061)
     // is defaulted AND nullable — None when the v2 set genuinely ran, then
     // `exclude_none`-stripped from the wire — so the TS marks it optional.
+    // `explanation` (Plan 0063) follows the same defaulted-and-nullable shape:
+    // absent only when no explanation was computed for the block.
     expect(requiredNames(dumped.ForecastProvenance)).toEqual([
       'feature_set_id',
       'lib_versions',
@@ -560,6 +568,20 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'seed',
       'training_cutoff',
     ])
+  })
+
+  it('ExplanationDriver fields match (both required — a bare (feature, importance) pair)', () => {
+    expect(propertyNames(dumped.ExplanationDriver)).toEqual(['feature', 'importance'])
+    expect(requiredNames(dumped.ExplanationDriver)).toEqual(['feature', 'importance'])
+  })
+
+  it('ExplanationSummary fields match (artifact defaulted+nullable, absent without a runs_dir)', () => {
+    expect(propertyNames(dumped.ExplanationSummary)).toEqual(['artifact', 'top_drivers'])
+    // `top_drivers` has no default → schema-required and always on the wire
+    // (empty array when the horizon had no scored folds). `artifact` is
+    // defaulted AND nullable — None without a runs_dir, then
+    // `exclude_none`-stripped — so the TS marks it optional.
+    expect(requiredNames(dumped.ExplanationSummary)).toEqual(['top_drivers'])
   })
 
   it('SeriesInput fields match (last_point_ts nullable, absent when the series had no point)', () => {

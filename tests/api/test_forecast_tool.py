@@ -75,11 +75,14 @@ from market_analyser.data.types import (
     SymbolInfo,
 )
 from market_analyser.events import Envelope, EventBus
+from market_analyser.forecast import explain as explain_module
 from market_analyser.forecast import validation as validation_module
 from market_analyser.forecast.exogenous import build_exogenous_columns
+from market_analyser.forecast.explain import TOP_N_DRIVERS, ForecastExplanationArtifact
 from market_analyser.forecast.features import (
     EXOGENOUS_SERIES_IDS_V2,
     EXOGENOUS_SERIES_IDS_V2_DEEP,
+    FEATURE_NAMES,
     FEATURE_SET_ID,
     FEATURE_SET_ID_V2,
     FEATURE_SET_ID_V2_DEEP,
@@ -541,8 +544,10 @@ def test_wired_but_starved_store_falls_back_to_v1_with_stated_reason() -> None:
 
 def test_v2_run_keeps_fallback_reason_absent_and_wire_stable() -> None:
     """A store with enough joined history runs v2 with `fallback_reason=None`,
-    and the field is absent from the `exclude_none` wire dump — the existing
-    v2 provenance dump does not move (the 0052 additive-field precedent)."""
+    and the field is absent from the `exclude_none` wire dump. The pinned
+    field set is the pre-0061 v2 set plus `explanation` — Plan 0063's
+    **deliberate, versioned** move of this exact-field-set pin (every trained
+    block now carries the ADR-0058 summary); nothing else moves."""
 
     engine = make_engine(":memory:")
     apply_migrations(engine)
@@ -573,7 +578,8 @@ def test_v2_run_keeps_fallback_reason_absent_and_wire_stable() -> None:
     assert block.provenance.fallback_reason is None
     wire = block.provenance.model_dump(mode="json", exclude_none=True)
     assert "fallback_reason" not in wire
-    # The exact pre-0061 v2 wire field set, byte-for-byte unmoved.
+    # The exact v2 wire field set: the pre-0061 six plus Plan 0063's
+    # `explanation` — the deliberate pin move, not drift.
     assert set(wire) == {
         "model_version",
         "feature_set_id",
@@ -581,6 +587,7 @@ def test_v2_run_keeps_fallback_reason_absent_and_wire_stable() -> None:
         "seed",
         "lib_versions",
         "series_inputs",
+        "explanation",
     }
 
 
@@ -672,6 +679,149 @@ def test_multi_horizon_result_is_deterministic() -> None:
 def test_description_documents_multi_horizon_surface() -> None:
     assert "horizons" in FORECAST_DESCRIPTION
     assert "series_inputs" in FORECAST_DESCRIPTION
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0063 phase 1: the explanation summary + persisted artifact.             #
+# --------------------------------------------------------------------------- #
+
+
+def test_importances_computed_only_on_oos_fold_slices(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Structure assertion for the done-when's "only out-of-sample": the
+    permutation runs once per scored fold, each over exactly that fold's
+    test-slice row count and each against a distinct fold estimator — never
+    once-over-everything against the final full-data fit (which trains on the
+    whole aligned sample set and is never handed to the permutation)."""
+
+    calls: list[tuple[int, int]] = []
+    from sklearn.inspection import permutation_importance as real_permutation_importance
+
+    def spy(estimator: Any, x: Any, y: Any, **kwargs: Any) -> Any:
+        calls.append((id(estimator), len(x)))
+        return real_permutation_importance(estimator, x, y, **kwargs)
+
+    monkeypatch.setattr(explain_module, "permutation_importance", spy)
+
+    result = _compute_multi_horizon_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1,),
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=None,
+    )
+
+    (block,) = result.horizons
+    scored = [fold for fold in block.validation.folds if fold.model_skill is not None]
+    assert scored  # the fixture genuinely scores folds
+    # One permutation per scored fold, over exactly that fold's OOS slice —
+    # never a single pass over the pooled/full sample set.
+    assert [n_rows for _, n_rows in calls] == [fold.n_test for fold in scored]
+    assert len({estimator_id for estimator_id, _ in calls}) == len(calls)
+    pooled = sum(fold.n_test for fold in scored)
+    assert all(n_rows < pooled for _, n_rows in calls)
+
+
+def test_explanation_summary_rides_wire_without_runs_dir() -> None:
+    """Done-when: with `runs_dir` unwired the artifact is not written and
+    `explanation.artifact` is None, while the top drivers still ride the wire
+    — exactly the top-N head of the ordered ranking, drawn from the selected
+    tier's frozen feature names."""
+
+    result = _compute_multi_horizon_forecast(
+        bars=list(BARS),
+        symbol="SYN",
+        timeframe="1d",
+        horizons=(1,),
+        flat_band=0.001,
+        n_splits=5,
+        seed=1729,
+        models_dir=None,
+        metric_lookup=None,
+    )
+
+    (block,) = result.horizons
+    assert block.provenance is not None
+    summary = block.provenance.explanation
+    assert summary is not None
+    assert summary.artifact is None
+    assert 0 < len(summary.top_drivers) <= TOP_N_DRIVERS
+    importances = [driver.importance for driver in summary.top_drivers]
+    assert importances == sorted(importances, reverse=True)
+    assert {driver.feature for driver in summary.top_drivers} <= set(FEATURE_NAMES)
+
+    wire = block.provenance.model_dump(mode="json", exclude_none=True)
+    assert "artifact" not in wire["explanation"]  # exclude_none strips the None path
+    assert wire["explanation"]["top_drivers"] == [
+        {"feature": driver.feature, "importance": driver.importance}
+        for driver in summary.top_drivers
+    ]
+
+
+def test_wired_runs_dir_writes_explanation_artifact(tmp_path: Path) -> None:
+    """Done-when: with a `runs_dir` wired the complete explanation JSON lands
+    at the summary's stated relative path, round-trips through the explanation
+    model, agrees with the wire summary, and a re-run's artifact is identical
+    modulo the documented run-provenance exceptions (`started_at` + the
+    artifact path it names)."""
+
+    result, envelopes = _run_draining_bus(runs_dir=tmp_path, horizons=[1])
+    assert len(envelopes) == 1  # the artifact write happens before the publish
+
+    (block,) = result.horizons
+    assert block.provenance is not None
+    summary = block.provenance.explanation
+    assert summary is not None
+    rel_path = summary.artifact
+    assert rel_path is not None
+    assert rel_path.startswith("forecast/")
+    assert rel_path.endswith("/explanation.json")
+
+    target = tmp_path / Path(rel_path)
+    assert target.is_file()
+    artifact = ForecastExplanationArtifact.model_validate_json(target.read_text(encoding="utf-8"))
+
+    assert artifact.symbol == "SYN"
+    assert artifact.timeframe == "1d"
+    assert artifact.feature_set_id == result.feature_set_id
+    assert artifact.as_of_bar_ts == result.as_of_bar_ts
+    (record,) = artifact.horizons
+    assert record.horizon_bars == 1
+    assert record.validation == block.validation  # the fold table travels whole
+    assert record.provenance == block.provenance
+    # The wire summary is exactly the head of the artifact's full ranking.
+    assert [(driver.feature, driver.importance) for driver in summary.top_drivers] == [
+        (fi.feature, fi.mean) for fi in record.explanation.importances[:TOP_N_DRIVERS]
+    ]
+
+    # Re-run the identical call: the explanation content is byte-identical
+    # modulo `started_at` and the artifact path (the two documented run-
+    # provenance exceptions — the path also appears nested in the provenance
+    # summary, so it is excluded on both sides).
+    result_2, _ = _run_draining_bus(runs_dir=tmp_path, horizons=[1])
+    (block_2,) = result_2.horizons
+    assert block_2.provenance is not None
+    assert block_2.provenance.explanation is not None
+    rel_path_2 = block_2.provenance.explanation.artifact
+    assert rel_path_2 is not None
+    artifact_2 = ForecastExplanationArtifact.model_validate_json(
+        (tmp_path / Path(rel_path_2)).read_text(encoding="utf-8")
+    )
+    (record_2,) = artifact_2.horizons
+    assert record_2.explanation == record.explanation
+    assert record_2.validation == record.validation
+    assert record_2.provenance is not None
+    assert record.provenance is not None
+    provenance_exclusions = {"explanation": {"artifact"}}
+    assert record_2.provenance.model_dump(exclude=provenance_exclusions) == (
+        record.provenance.model_dump(exclude=provenance_exclusions)
+    )
+    assert artifact_2.model_dump(exclude={"started_at", "horizons"}) == (
+        artifact.model_dump(exclude={"started_at", "horizons"})
+    )
 
 
 # --------------------------------------------------------------------------- #

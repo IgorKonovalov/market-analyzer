@@ -23,6 +23,33 @@ from market_analyser.forecast.validation import ForecastValidation
 EdgeStrength = Literal["no_edge", "marginal", "clear"]
 
 
+class ExplanationDriver(BaseModel):
+    """One ``(feature, importance)`` pair of the compact explanation summary
+    (Plan 0063, ADR-0058): the feature's name in its frozen-set spelling and its
+    mean out-of-sample permutation importance across the scored walk-forward
+    folds. Association within the validated model, not causation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    feature: str
+    importance: float
+
+
+class ExplanationSummary(BaseModel):
+    """The compact ADR-0058 explanation that rides the wire beside the number
+    it explains: the top-N validated drivers (ordered, importance descending)
+    and the ``runs_dir``-relative path of the complete explanation artifact.
+    ``artifact`` is ``None`` (wire-absent under ``exclude_none``) when the
+    sidecar has no ``runs_dir`` — the drivers still travel; only the full JSON
+    is skipped. ``top_drivers`` is empty when the horizon had no scored
+    out-of-sample folds to measure (stated in the artifact's ``note``)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    top_drivers: tuple[ExplanationDriver, ...]
+    artifact: str | None = None
+
+
 class SeriesInput(BaseModel):
     """Provenance for one exogenous metric series a forecast consumed (Plan
     0059, ADR-0054): the registered ``series_id`` and the timestamp of the
@@ -43,7 +70,11 @@ class ForecastProvenance(BaseModel):
     ``fallback_reason`` (Plan 0061, ADR-0056) says *why* a v1 set was used when
     the v2 set was the goal — the store was unwired, or wired but too starved
     for the requested walk-forward — and is ``None`` (wire-absent under the
-    bus's ``exclude_none`` dump) when the v2 set genuinely ran."""
+    bus's ``exclude_none`` dump) when the v2 set genuinely ran.
+    ``explanation`` (Plan 0063, ADR-0058) is the compact "why this number"
+    summary — top out-of-sample drivers plus the full artifact's path — and is
+    ``None`` (wire-absent) only when no explanation was computed for the
+    block."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -59,6 +90,10 @@ class ForecastProvenance(BaseModel):
     # Appended after series_inputs, same wire-stability discipline; defaulted
     # so pre-0061 constructors stay valid and the v2 path's dumps do not move.
     fallback_reason: str | None = None
+    # Appended after fallback_reason, same wire-stability discipline (Plan 0063
+    # — a deliberate, versioned move of the 0061 exact-field-set pin); defaulted
+    # so pre-0063 constructors stay valid.
+    explanation: ExplanationSummary | None = None
 
 
 class ForecastResult(BaseModel):
@@ -127,6 +162,8 @@ class MultiHorizonForecastResult(BaseModel):
 
 __all__ = [
     "EdgeStrength",
+    "ExplanationDriver",
+    "ExplanationSummary",
     "ForecastProvenance",
     "ForecastResult",
     "HorizonForecast",

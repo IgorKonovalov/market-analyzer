@@ -17,6 +17,10 @@
  * `ForecastProvenance.fallback_reason` (Plan 0061) is ABSENT when the v2 set
  * genuinely ran and a plain sentence when a v1 fallback happened (store
  * unwired, or wired but too starved for the requested walk-forward).
+ * `ForecastProvenance.explanation` (Plan 0063 / ADR-0058) is ABSENT when no
+ * explanation was computed; inside it, `artifact` (the runs_dir-relative path
+ * of the full explanation JSON) is ABSENT when the sidecar has no runs_dir —
+ * the top drivers still travel.
  *
  * The schema is `satisfies`-pinned to the hand-written TS mirror in
  * `types/events.ts`, so the compiler rejects drift between the two; the
@@ -52,6 +56,16 @@ const forecastValidationSchema = z.object({
   folds: z.array(foldSkillSchema),
 })
 
+const explanationDriverSchema = z.object({
+  feature: z.string(),
+  importance: z.number(),
+})
+
+const explanationSummarySchema = z.object({
+  top_drivers: z.array(explanationDriverSchema),
+  artifact: z.string().nullish(),
+})
+
 const forecastProvenanceSchema = z.object({
   model_version: z.string().min(1),
   feature_set_id: z.string().min(1),
@@ -60,6 +74,7 @@ const forecastProvenanceSchema = z.object({
   lib_versions: z.record(z.string()),
   series_inputs: z.array(seriesInputSchema),
   fallback_reason: z.string().nullish(),
+  explanation: explanationSummarySchema.nullish(),
 })
 
 /** A probability is only a probability in [0, 1] — anything else is malformed

@@ -235,6 +235,27 @@ export interface ForecastValidation {
   folds: FoldSkill[]
 }
 
+/** Mirror of the pydantic `ExplanationDriver` (Plan 0063 / ADR-0058): one
+ * (feature, importance) pair of the compact explanation summary — the mean
+ * out-of-sample permutation importance across the scored walk-forward folds.
+ * Association within the validated model, not causation. */
+export interface ExplanationDriver {
+  feature: string
+  importance: number
+}
+
+/** Mirror of the pydantic `ExplanationSummary` (Plan 0063 / ADR-0058): the
+ * compact "why" riding beside the forecast — the top-N drivers (ordered,
+ * importance descending; empty when the horizon had no scored folds) and the
+ * runs_dir-relative path of the complete explanation JSON. `artifact` has a
+ * None default (no runs_dir wired) and is `exclude_none`-stripped from the
+ * wire — hence optional here; it is a provenance fact for display, never a
+ * renderer filesystem target. */
+export interface ExplanationSummary {
+  top_drivers: ExplanationDriver[]
+  artifact?: string | null
+}
+
 /** Mirror of the pydantic `ForecastProvenance` (ADR-0040 / ADR-0054): the audit
  * trail that makes a forecast reproducible. `series_inputs` has a non-None
  * default (`()`), so like `TrendlineSpec.style` it is not schema-required but
@@ -242,7 +263,9 @@ export interface ForecastValidation {
  * required here. `fallback_reason` (Plan 0061) says why a v1 feature set was
  * used (store unwired, or wired but too starved for the requested
  * walk-forward); None when the v2 set genuinely ran, and then
- * `exclude_none`-stripped from the wire — hence optional here. */
+ * `exclude_none`-stripped from the wire — hence optional here. `explanation`
+ * (Plan 0063) is the compact ADR-0058 explanation summary, defaulted None and
+ * wire-absent only when no explanation was computed — hence optional too. */
 export interface ForecastProvenance {
   model_version: string
   feature_set_id: string
@@ -252,6 +275,7 @@ export interface ForecastProvenance {
   lib_versions: Record<string, string>
   series_inputs: SeriesInput[]
   fallback_reason?: string | null
+  explanation?: ExplanationSummary | null
 }
 
 /** Mirror of the pydantic `HorizonForecast` (Plan 0059 / ADR-0054): one

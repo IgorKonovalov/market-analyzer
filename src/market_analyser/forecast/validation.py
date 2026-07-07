@@ -39,6 +39,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
 
@@ -48,6 +49,7 @@ from market_analyser.forecast.features import FeatureRow, build_feature_rows
 from market_analyser.forecast.labels import Direction, LabelParams, build_labels
 from market_analyser.forecast.model import (
     ModelParams,
+    TrainedModel,
     align_samples,
     predict_proba,
     train,
@@ -57,6 +59,21 @@ from market_analyser.forecast.model import (
 class ForecastValidationError(ValueError):
     """Raised when the validation configuration is invalid for the bar series
     (e.g. fewer than two folds, or more folds than bars)."""
+
+
+@dataclass(frozen=True)
+class ScoredFold:
+    """One walk-forward fold that actually trained and scored, captured for
+    downstream out-of-sample analysis (Plan 0063, ADR-0058: permutation
+    importances are computed on exactly these fold models over exactly these
+    test slices — never on a final full-data fit). Not a pydantic model: it
+    holds the live fitted estimator. Capturing happens inside the walk-forward
+    itself, so no fold is ever re-trained to be explained."""
+
+    fold_index: int
+    model: TrainedModel
+    test_rows: list[FeatureRow]
+    test_labels: list[Direction]
 
 
 class FoldSkill(BaseModel):
@@ -149,6 +166,7 @@ def validate(
     n_splits: int = 5,
     model_params: ModelParams | None = None,
     feature_rows: Sequence[FeatureRow | None] | None = None,
+    scored_fold_sink: list[ScoredFold] | None = None,
 ) -> ForecastValidation:
     """Run expanding-window walk-forward validation and return the baseline-gated
     verdict.
@@ -157,6 +175,11 @@ def validate(
     (Plan 0059: the v2 matrix is built once per call and shared across the
     horizon set — the exogenous as-of join is the expensive step). When omitted
     the v1 matrix is built from ``bars``, the Plan 0036 behaviour.
+
+    ``scored_fold_sink`` (Plan 0063) optionally captures every fold that trained
+    and scored — the fitted fold model plus its out-of-sample test slice — so
+    explainability can measure the *validated* models without re-training them.
+    Capture does not alter the verdict in any way.
 
     Raises `ForecastValidationError` when ``n_splits`` is invalid for the series
     (``< 2`` — at least one seed fold plus one scored fold are required — or larger
@@ -205,6 +228,15 @@ def validate(
             continue
 
         model = train(train_rows, train_labels, params)
+        if scored_fold_sink is not None:
+            scored_fold_sink.append(
+                ScoredFold(
+                    fold_index=fold_index,
+                    model=model,
+                    test_rows=test_rows,
+                    test_labels=test_labels,
+                )
+            )
         model_preds = [_argmax_direction(dist) for dist in predict_proba(model, test_rows)]
         persistence_preds = _persistence_predictions(test_rows, closes, horizon_bars, flat_band)
         majority = _majority_class(train_labels)
@@ -253,5 +285,6 @@ __all__ = [
     "FoldSkill",
     "ForecastValidation",
     "ForecastValidationError",
+    "ScoredFold",
     "validate",
 ]
