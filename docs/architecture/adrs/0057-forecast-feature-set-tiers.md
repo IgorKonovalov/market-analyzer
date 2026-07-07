@@ -1,6 +1,6 @@
 # ADR-0057 — Forecast feature sets tier by historical depth; the richest eligible tier trains
 
-> **Status:** proposed (accepts at Plan 0062's close)
+> **Status:** accepted (Plan 0062 close, 2026-07-07)
 > **Date:** 2026-07-06
 > **Related plan(s):** [0062](../plans/0062-tiered-forecast-feature-sets.md) (implements)
 > **Related ADRs:** [ADR-0054](0054-exogenous-forecast-features-multi-horizon.md) (the lag-1 join + row-drop rules this tiers — not an amendment: both rules hold unchanged *within* every tier), [ADR-0030](0030-forecasting-subsystem.md) (the four invariants, all preserved), [ADR-0051](0051-historized-metric-series-contract.md) (the per-series history-depth asymmetry this responds to), [ADR-0056](0056-self-warming-metric-store.md) (the accrual clock whose warm-up this stops waiting on), [ADR-0040](0040-forecasting-model-artifacts.md) (per-tier `feature_set_id` flows into `model_version` unchanged)
