@@ -18,6 +18,7 @@ const CATEGORIES: readonly GlossaryCategory[] = [
   'recommendation',
   'condition',
   'indicator',
+  'overlay',
 ]
 const RECORD_KEYS = new Set(['term', 'category', 'howComputed', 'whatItMeans', 'formulaAnchor'])
 
@@ -162,4 +163,26 @@ it('the indicator-category keys equal exactly the frozen feature-name union', ()
     .filter((key) => term(key)?.category === 'indicator')
     .sort()
   expect(indicatorKeys).toEqual([...EXPECTED_INDICATOR_KEYS].sort())
+})
+
+// The chart overlay-legend vocabulary (Plan 0065 phase 2) — the overlay kinds
+// that actually render a legend row today (the OVERLAY_REGISTRY-supported kinds:
+// ema / sma / supertrend). rsi/macd/bbands are reserved-but-unsupported
+// OverlayKinds the chart logs-and-skips, so they draw no label to explain; a
+// later "OHLCV chart controls" followup adds them when they render. A DISTINCT
+// category from `indicator` on purpose: chart-legend copy, not a forecast
+// feature, so it is deliberately excluded from the phase-3 FEATURE_NAMES pin.
+const EXPECTED_OVERLAY_KEYS = ['ema', 'sma', 'supertrend']
+
+it('the overlay-category keys equal exactly the chart overlay-kind vocabulary', () => {
+  const overlayKeys = glossaryKeys()
+    .filter((key) => term(key)?.category === 'overlay')
+    .sort()
+  expect(overlayKeys).toEqual([...EXPECTED_OVERLAY_KEYS].sort())
+})
+
+it('overlay keys are disjoint from indicator keys (distinct vocabularies)', () => {
+  const indicator = new Set(glossaryKeys().filter((key) => term(key)?.category === 'indicator'))
+  const overlap = EXPECTED_OVERLAY_KEYS.filter((key) => indicator.has(key))
+  expect(overlap).toEqual([])
 })

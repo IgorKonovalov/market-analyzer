@@ -17,6 +17,7 @@
  * in this panel; if the user wants them on the price chart, the agent can push
  * labeled `price_line` overlays through the existing chart channel.
  */
+import { GlossaryTerm } from '../components/GlossaryTerm'
 import { formatDateTime } from '../lib/format'
 import type { BasisValue, FusionCheck, Recommendation } from '../types/events'
 import styles from './RecommendationsView.module.css'
@@ -94,7 +95,9 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
 
       <dl className={styles.grid}>
         <div className={styles.row}>
-          <dt>Direction</dt>
+          <dt>
+            <GlossaryTerm termKey="direction">Direction</GlossaryTerm>
+          </dt>
           <dd
             data-testid="recommendation-direction"
             data-direction={recommendation.direction}
@@ -105,7 +108,9 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
         </div>
 
         <div className={styles.row}>
-          <dt>Conviction</dt>
+          <dt>
+            <GlossaryTerm termKey="conviction">Conviction</GlossaryTerm>
+          </dt>
           <dd>
             <span
               className={styles.conviction}
@@ -128,7 +133,9 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
           <dl className={styles.grid}>
             {recommendation.entry_zone != null && (
               <div className={styles.row}>
-                <dt>Entry zone (advisory)</dt>
+                <dt>
+                  <GlossaryTerm termKey="entry_zone">Entry zone</GlossaryTerm> (advisory)
+                </dt>
                 <dd data-testid="recommendation-entry">
                   {PRICE_FORMAT.format(recommendation.entry_zone[0])} –{' '}
                   {PRICE_FORMAT.format(recommendation.entry_zone[1])}
@@ -137,7 +144,9 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
             )}
             {recommendation.stop != null && (
               <div className={styles.row}>
-                <dt>Stop (advisory)</dt>
+                <dt>
+                  <GlossaryTerm termKey="stop">Stop</GlossaryTerm> (advisory)
+                </dt>
                 <dd data-testid="recommendation-stop">
                   {PRICE_FORMAT.format(recommendation.stop)}
                 </dd>
@@ -145,7 +154,12 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
             )}
             {recommendation.targets.length > 0 && (
               <div className={styles.row}>
-                <dt>Target{recommendation.targets.length === 1 ? '' : 's'} (advisory)</dt>
+                <dt>
+                  <GlossaryTerm termKey="targets">
+                    Target{recommendation.targets.length === 1 ? '' : 's'}
+                  </GlossaryTerm>{' '}
+                  (advisory)
+                </dt>
                 <dd data-testid="recommendation-targets">
                   {recommendation.targets.map((t) => PRICE_FORMAT.format(t)).join(', ')}
                 </dd>
@@ -228,7 +242,9 @@ function ChecksTable({ checks }: ChecksTableProps): JSX.Element {
         <tbody>
           {checks.map((check) => (
             <tr key={`${check.leg}:${check.check}`} data-passed={check.passed}>
-              <td className={styles.checkLeg}>{check.leg}</td>
+              <td className={styles.checkLeg}>
+                <GlossaryTerm termKey={check.leg}>{check.leg}</GlossaryTerm>
+              </td>
               <td>{check.check}</td>
               <td className={styles.checkValue}>{formatBasisValue(check.threshold ?? null)}</td>
               <td className={styles.checkValue}>{formatBasisValue(check.actual ?? null)}</td>
@@ -288,7 +304,9 @@ function BasisFacts({ label, facts, testId }: BasisFactsProps): JSX.Element {
         <dl className={styles.factList}>
           {Object.entries(facts).map(([key, value]) => (
             <div key={key} className={styles.factRow}>
-              <dt>{key}</dt>
+              <dt>
+                <GlossaryTerm termKey={key}>{key}</GlossaryTerm>
+              </dt>
               <dd>{formatBasisValue(value)}</dd>
             </div>
           ))}

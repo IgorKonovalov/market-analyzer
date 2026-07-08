@@ -14,7 +14,7 @@
  */
 import glossaryJson from './glossary.json'
 
-export type GlossaryCategory = 'forecast' | 'recommendation' | 'condition' | 'indicator'
+export type GlossaryCategory = 'forecast' | 'recommendation' | 'condition' | 'indicator' | 'overlay'
 
 export interface GlossaryRecord {
   /** Display name shown as the tooltip card's heading (e.g. "Conviction"). */

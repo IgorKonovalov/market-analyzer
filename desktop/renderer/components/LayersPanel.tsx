@@ -6,6 +6,7 @@
  * visibility state and passes the resolved layer list down; no sidecar/IPC/schema
  * touch.
  */
+import { GlossaryTerm } from './GlossaryTerm'
 import styles from './LayersPanel.module.css'
 
 export interface ChartLayer {
@@ -17,6 +18,10 @@ export interface ChartLayer {
   kind: 'overlay' | 'marker' | 'price_line' | 'span' | 'trendline'
   /** Per-item toggle; defaults true; never persisted. */
   visible: boolean
+  /** Glossary key for an on-hover definition (Plan 0065) — set on indicator
+   * overlays (the overlay kind: 'ema' / 'sma' / 'supertrend'). Absent for
+   * markers / price-lines / spans / trendlines, which render a plain label. */
+  glossaryKey?: string
 }
 
 export interface LayersPanelProps {
@@ -46,7 +51,13 @@ export function LayersPanel({ layers, onToggle }: LayersPanelProps): JSX.Element
                 style={{ backgroundColor: layer.color }}
                 aria-hidden="true"
               />
-              <span className={styles.layerLabel}>{layer.label}</span>
+              <span className={styles.layerLabel}>
+                {layer.glossaryKey ? (
+                  <GlossaryTerm termKey={layer.glossaryKey}>{layer.label}</GlossaryTerm>
+                ) : (
+                  layer.label
+                )}
+              </span>
             </label>
           </li>
         ))}

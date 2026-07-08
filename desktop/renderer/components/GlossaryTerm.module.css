@@ -1,0 +1,84 @@
+.wrapper {
+  position: relative;
+  display: inline;
+}
+
+/* The focusable, screen-reader-addressable trigger. A dotted underline + help
+   cursor is the visible affordance; it carries no button/link semantics. */
+.trigger {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+  text-decoration-color: var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  outline-offset: 2px;
+}
+
+.trigger:hover {
+  text-decoration-color: var(--color-accent);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+}
+
+/* The dual-hat card. Portaled to <body> and kept in the DOM (so aria-describedby
+   always resolves and is announced on focus); its left/top are set inline from
+   the trigger's rect, and only its VISUAL reveal is gated by data-visible. */
+.card {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: 320px;
+  padding: var(--space-3);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  color: var(--color-fg);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-normal);
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.card[data-visible='true'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cardTerm {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.cardHow,
+.cardMeaning {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cardHow {
+  color: var(--color-fg);
+}
+
+.cardMeaning {
+  color: var(--color-fg-muted);
+}
+
+/* Small over-line label naming each hat. */
+.cardHat {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+}

@@ -354,5 +354,23 @@
     "category": "indicator",
     "howComputed": "The CoinMetrics BTC MVRV ratio (market value over realised value), read lag-1.",
     "whatItMeans": "On-chain valuation — aggregate unrealised profit. Historically high at cycle tops, low at bottoms; a slow context, not timing."
+  },
+  "ema": {
+    "term": "EMA",
+    "category": "overlay",
+    "howComputed": "Exponential Moving Average of close over the chosen period — a weighted average that reacts faster to recent bars than a simple average.",
+    "whatItMeans": "A smoothed trend line. Price above it leans bullish, below bearish; the shorter the period, the more closely it hugs price."
+  },
+  "sma": {
+    "term": "SMA",
+    "category": "overlay",
+    "howComputed": "Simple Moving Average of close over the chosen period — the unweighted mean of the last N closes.",
+    "whatItMeans": "A smoothed trend line that weights every bar equally, so it lags more than an EMA but is steadier."
+  },
+  "supertrend": {
+    "term": "Supertrend",
+    "category": "overlay",
+    "howComputed": "An ATR-based trailing-stop line (period 10, multiplier 3): it sits below price in an uptrend and above it in a downtrend, flipping when price pierces the band.",
+    "whatItMeans": "A trend-following stop-and-direction guide. The line's side of price marks the current trend; a flip marks a potential trend change."
   }
 }

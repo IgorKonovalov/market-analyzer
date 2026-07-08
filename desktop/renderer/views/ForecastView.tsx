@@ -25,6 +25,7 @@
  * rendered as plain text, never a link (the renderer never touches the
  * filesystem).
  */
+import { GlossaryTerm } from '../components/GlossaryTerm'
 import { formatDateTime } from '../lib/format'
 import type {
   ExplanationSummary,
@@ -123,7 +124,8 @@ export function ForecastView({ forecast }: Props): JSX.Element {
           as of {formatDateTime(forecast.as_of_bar_ts)} UTC (last bar the features saw)
         </p>
         <p className={styles.featureSet} data-testid="forecast-feature-set">
-          feature set <code>{forecast.feature_set_id}</code>
+          <GlossaryTerm termKey="feature_set_id">feature set</GlossaryTerm>{' '}
+          <code>{forecast.feature_set_id}</code>
           {seriesInputs.length === 0 ? (
             <span className={styles.muted}>
               {' '}
@@ -211,7 +213,10 @@ function WhyDrivers({ horizonBars, explanation }: WhyDriversProps): JSX.Element 
   const maxImportance = Math.max(0, ...drivers.map((driver) => driver.importance))
   return (
     <div className={styles.whyGroup} data-testid={`forecast-why-drivers-${horizonBars}`}>
-      <h4 className={styles.whyGroupTitle}>{horizonLabel(horizonBars)} ahead — top drivers</h4>
+      <h4 className={styles.whyGroupTitle}>
+        {horizonLabel(horizonBars)} ahead —{' '}
+        <GlossaryTerm termKey="permutation_importance">top drivers</GlossaryTerm>
+      </h4>
       {drivers.length === 0 ? (
         <p className={styles.muted}>
           no scored out-of-sample folds at this horizon — no importances were measured
@@ -220,7 +225,9 @@ function WhyDrivers({ horizonBars, explanation }: WhyDriversProps): JSX.Element 
         <ol className={styles.driverList}>
           {drivers.map((driver) => (
             <li key={driver.feature} className={styles.driverRow}>
-              <code className={styles.driverName}>{driver.feature}</code>
+              <GlossaryTerm termKey={driver.feature}>
+                <code className={styles.driverName}>{driver.feature}</code>
+              </GlossaryTerm>
               <span className={styles.track} aria-hidden="true">
                 <span
                   className={styles.driverFill}
@@ -267,7 +274,7 @@ function HorizonBlock({ block }: HorizonBlockProps): JSX.Element {
           data-testid={`forecast-edge-${block.horizon_bars}`}
           data-strength={block.edge_strength}
         >
-          {EDGE_LABEL[block.edge_strength]}
+          <GlossaryTerm termKey="edge_strength">{EDGE_LABEL[block.edge_strength]}</GlossaryTerm>
         </span>
       </header>
 
@@ -286,11 +293,11 @@ function HorizonBlock({ block }: HorizonBlockProps): JSX.Element {
       )}
 
       <p className={styles.skillLine} data-testid={`forecast-skill-${block.horizon_bars}`}>
-        out-of-sample skill{' '}
+        out-of-sample <GlossaryTerm termKey="skill">skill</GlossaryTerm>{' '}
         <span className={styles.skillValue}>
           {validation.skill != null ? SKILL_FORMAT.format(validation.skill) : 'unscored'}
         </span>{' '}
-        vs baseline{' '}
+        vs <GlossaryTerm termKey="baseline_skill">baseline</GlossaryTerm>{' '}
         <span className={styles.skillValue}>
           {validation.baseline_skill != null
             ? SKILL_FORMAT.format(validation.baseline_skill)
@@ -299,13 +306,15 @@ function HorizonBlock({ block }: HorizonBlockProps): JSX.Element {
         {block.edge_margin != null && (
           <span className={styles.muted}>
             {' '}
-            (margin {block.edge_margin >= 0 ? '+' : ''}
+            (<GlossaryTerm termKey="edge_margin">margin</GlossaryTerm>{' '}
+            {block.edge_margin >= 0 ? '+' : ''}
             {SKILL_FORMAT.format(block.edge_margin)})
           </span>
         )}
         <span className={styles.muted}>
           {' '}
-          · {validation.n_scored} scored bars across {validation.n_splits} folds
+          · {validation.n_scored} <GlossaryTerm termKey="n_scored">scored bars</GlossaryTerm> across{' '}
+          {validation.n_splits} <GlossaryTerm termKey="n_splits">folds</GlossaryTerm>
         </span>
       </p>
 
@@ -342,7 +351,9 @@ function ProbBar({ block, label, kind, prob }: ProbBarProps): JSX.Element {
   const emphasis = barEmphasis(block, prob)
   return (
     <div className={styles.probRow}>
-      <dt className={styles.probLabel}>{label}</dt>
+      <dt className={styles.probLabel}>
+        <GlossaryTerm termKey={`prob_${kind}`}>{label}</GlossaryTerm>
+      </dt>
       <dd className={styles.probCell}>
         <span className={styles.track} aria-hidden="true">
           <span

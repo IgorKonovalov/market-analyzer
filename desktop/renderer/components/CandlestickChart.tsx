@@ -919,6 +919,9 @@ export function CandlestickChart({
         color: overlaySeriesColor(spec, container),
         kind: 'overlay',
         visible: !hidden.has(id),
+        // The overlay kind keys the glossary tooltip (Plan 0065) — ema/sma/
+        // supertrend resolve; a future unsupported kind degrades to plain text.
+        glossaryKey: spec.kind,
       })
     }
     for (const direction of new Set((annotations ?? []).map((a) => a.kind))) {

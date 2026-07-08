@@ -46,3 +46,52 @@ it('fires onToggle with the row id when a checkbox is clicked', () => {
   fireEvent.click(within(screen.getByTestId('layer-row:pline:R1')).getByRole('checkbox'))
   expect(onToggle).toHaveBeenCalledWith('pline:R1')
 })
+
+// Plan 0065 phase 2: an indicator overlay carries a glossaryKey, so its legend
+// label gets an on-hover/on-focus definition; markers/price-lines do not.
+const GLOSSARY_LAYERS: ChartLayer[] = [
+  {
+    id: 'overlay:ema:20',
+    label: 'EMA(20)',
+    color: '#2563eb',
+    kind: 'overlay',
+    visible: true,
+    glossaryKey: 'ema',
+  },
+  {
+    id: 'marker:bullish',
+    label: 'Bullish markers',
+    color: '#16a34a',
+    kind: 'marker',
+    visible: true,
+  },
+]
+
+it('wraps an indicator-overlay label in a glossary trigger and leaves a marker label plain', () => {
+  render(<LayersPanel layers={GLOSSARY_LAYERS} onToggle={() => {}} />)
+
+  const overlayRow = screen.getByTestId('layer-row:overlay:ema:20')
+  const trigger = within(overlayRow).getByText('EMA(20)', { selector: '[data-glossary-term]' })
+  expect(trigger).toHaveAttribute('data-glossary-term', 'ema')
+
+  const markerRow = screen.getByTestId('layer-row:marker:bullish')
+  expect(markerRow.querySelector('[data-glossary-term]')).toBeNull()
+  expect(markerRow).toHaveTextContent('Bullish markers')
+})
+
+it('surfaces the overlay definition card on focus', () => {
+  render(<LayersPanel layers={GLOSSARY_LAYERS} onToggle={() => {}} />)
+  const trigger = screen.getByText('EMA(20)', { selector: '[data-glossary-term]' })
+  fireEvent.focus(trigger)
+  const card = document.getElementById(trigger.getAttribute('aria-describedby') ?? '')
+  expect(card).not.toBeNull()
+  expect(card).toHaveAttribute('data-visible', 'true')
+  expect(card?.textContent).toMatch(/Exponential Moving Average/)
+})
+
+it('still toggles an overlay layer via its checkbox (legend interactivity untouched)', () => {
+  const onToggle = jest.fn()
+  render(<LayersPanel layers={GLOSSARY_LAYERS} onToggle={onToggle} />)
+  fireEvent.click(screen.getByLabelText('Toggle EMA(20)'))
+  expect(onToggle).toHaveBeenCalledWith('overlay:ema:20')
+})

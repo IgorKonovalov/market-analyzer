@@ -17,7 +17,7 @@
  */
 import '@testing-library/jest-dom'
 
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 
 import { dispatchEnvelope } from '../hooks/useEventStream'
 import type { Recommendation, RecommendationCompletedEnvelope } from '../types/events'
@@ -164,13 +164,18 @@ it('renders the advisory label prominently (ADR-0029 acceptance criterion)', () 
 
 it('offers NO submit/buy/sell/trade control anywhere — the ADR-0025 boundary as a test', () => {
   const { container } = render(<RecommendationsView recommendation={LONG_REC} />)
-  // No interactive control of any kind exists in the view: nothing to click,
-  // nothing to type into, nothing that could ever place an order.
+  // No ACTION control of any kind exists in the view: nothing to click that
+  // could ever place an order. (Plan 0065 / ADR-0060: informational glossary
+  // triggers are permitted — asserted below — but they take no action.)
   expect(
     container.querySelectorAll('button, input, select, textarea, a, [role="button"]'),
   ).toHaveLength(0)
   // And no action language that invites one.
   expect(container.textContent ?? '').not.toMatch(/\b(submit|buy|sell|execute|broker)\b/i)
+  // The only focusable additions are sanctioned glossary disclosure triggers.
+  const focusable = Array.from(container.querySelectorAll('[tabindex]'))
+  expect(focusable.length).toBeGreaterThan(0)
+  for (const el of focusable) expect(el).toHaveAttribute('data-glossary-term')
 })
 
 it('does not style a low-conviction recommendation as a strong call', () => {
@@ -262,11 +267,42 @@ it('renders exactly today’s view when the trace is empty (no regression)', () 
   expect(screen.queryByTestId('recommendation-checks')).not.toBeInTheDocument()
 })
 
-it('the checks table adds NO interactive element — the ADR-0025 no-action posture holds with a trace rendered', () => {
+it('the checks table adds only glossary triggers — no ACTION control, no summary (ADR-0060 re-scope)', () => {
   const { container } = render(<RecommendationsView recommendation={FLAT_REC} />)
+  // The trace's leg cells become glossary triggers; still zero action controls
+  // and no disclosure `summary` (the fusion trace is never behind an expansion).
   expect(
     container.querySelectorAll('button, input, select, textarea, a, [role="button"], summary'),
   ).toHaveLength(0)
+  const focusable = Array.from(container.querySelectorAll('[tabindex]'))
+  expect(focusable.length).toBeGreaterThan(0)
+  for (const el of focusable) expect(el).toHaveAttribute('data-glossary-term')
+})
+
+it('wraps recommendation terms in glossary triggers and surfaces the dual-hat card on focus', () => {
+  const { container } = render(<RecommendationsView recommendation={LONG_REC} />)
+  const keys = Array.from(container.querySelectorAll('[data-glossary-term]')).map((el) =>
+    el.getAttribute('data-glossary-term'),
+  )
+  // The done-when terms: conviction, a fusion leg, sharpe_mean, and the levels.
+  expect(keys).toEqual(
+    expect.arrayContaining([
+      'conviction',
+      'backtest',
+      'sharpe_mean',
+      'entry_zone',
+      'stop',
+      'targets',
+    ]),
+  )
+
+  const conviction = container.querySelector('[data-glossary-term="conviction"]') as HTMLElement
+  fireEvent.focus(conviction)
+  const card = document.getElementById(conviction.getAttribute('aria-describedby') ?? '')
+  expect(card).not.toBeNull()
+  expect(card).toHaveAttribute('data-visible', 'true')
+  expect(card?.textContent).toMatch(/How it.s computed/)
+  expect(card?.textContent).toMatch(/What it means/)
 })
 
 it('shows a clear placeholder before any recommendation arrives', () => {

@@ -26,7 +26,7 @@
  */
 import '@testing-library/jest-dom'
 
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 
 import { dispatchEnvelope } from '../hooks/useEventStream'
 import type {
@@ -371,13 +371,41 @@ it('renders drivers without an artifact line when the sidecar had no runs direct
   expect(screen.queryByTestId('forecast-why-artifact')).not.toBeInTheDocument()
 })
 
-it('adds zero interactive elements beyond the Why expand/collapse control (no-action posture)', () => {
+// Plan 0065 phase 2 (ADR-0060) re-scopes this deliberately: the panel gains
+// focusable glossary triggers (informational disclosure), but the no-*action*
+// guarantee still holds and is still asserted — zero action controls, and every
+// [tabindex] addition is a sanctioned glossary trigger, plus the one Why control.
+it('adds only glossary disclosure triggers and the Why control — never an ACTION control (ADR-0060)', () => {
   const { container } = render(<ForecastView forecast={EXPLAINED_FORECAST} />)
+  // Still zero action controls: nothing to click that could ever act.
   expect(
     container.querySelectorAll('button, input, select, textarea, a, [role="button"]'),
   ).toHaveLength(0)
-  // Exactly one disclosure control — the Forecast "Why" — and nothing else.
+  // The only focusable-by-tabindex additions are informational glossary triggers.
+  const focusable = Array.from(container.querySelectorAll('[tabindex]'))
+  expect(focusable.length).toBeGreaterThan(0)
+  for (const el of focusable) expect(el).toHaveAttribute('data-glossary-term')
+  // Exactly one native disclosure control — the Forecast "Why" — and nothing else.
   expect(container.querySelectorAll('summary')).toHaveLength(1)
+})
+
+it('wraps forecast terms in glossary triggers and surfaces the dual-hat card on focus', () => {
+  const { container } = render(<ForecastView forecast={EXPLAINED_FORECAST} />)
+  const keys = Array.from(container.querySelectorAll('[data-glossary-term]')).map((el) =>
+    el.getAttribute('data-glossary-term'),
+  )
+  // The done-when terms: a metric, a verdict, and a feature-driver indicator.
+  expect(keys).toEqual(expect.arrayContaining(['skill', 'edge_strength', 'funding_rate']))
+
+  const skill = container.querySelector('[data-glossary-term="skill"]') as HTMLElement
+  fireEvent.focus(skill)
+  const card = document.getElementById(skill.getAttribute('aria-describedby') ?? '')
+  expect(card).not.toBeNull()
+  expect(card).toHaveAttribute('role', 'tooltip')
+  expect(card).toHaveAttribute('data-visible', 'true')
+  // Both hats are present in the card.
+  expect(card?.textContent).toMatch(/How it.s computed/)
+  expect(card?.textContent).toMatch(/What it means/)
 })
 
 it('shows a clear placeholder before any forecast arrives', () => {
