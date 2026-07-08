@@ -15,7 +15,7 @@
 
 Markers already solve exactly this shape of problem with a **dedicated channel** (`chart.highlight`, gated to the active chart) plus a **recompute trigger** (`POST /scan_patterns`, which the renderer can fire on demand). Trendlines were the odd one out, coupled to the chart-mount event instead of owning their own channel.
 
-The forces: keep the drawing primitive from ADR-0049 unchanged (it is correct — the bug is upstream of the draw); stop coupling derived geometry to the chart-reset event; and make "the patterns I see reflect the bars I'm looking at" true without inventing a persistence table for derived data.
+The forces: stop coupling derived geometry to the chart-reset event, and make "the patterns I see reflect the bars I'm looking at" true without inventing a persistence table for derived data. This ADR's decision is orthogonal to the draw path — it changes *how the specs travel and how often they regenerate*, not the pixel math. (ADR-0049's primitive did turn out to carry one genuine draw-path bug: its time→x mapping used grid-snapped `timeToCoordinate`, which returns `null` for any endpoint not exactly on a loaded bar — projected necklines, forming bounds reaching the right edge, or anchors outside the loaded window — so those segments were dropped. That is fixed in Plan 0064 phase 1, independently of this ADR; see the plan's Context §1 for the empirical reproduction. The `TrendlineSpec`/`TrendPoint` types, role→colour mapping, and legend-row model are untouched.)
 
 ## Decision
 
@@ -55,4 +55,4 @@ Give detected geometry a persistence table and a poll so it survives reload exac
 
 ## Notes
 
-This ADR is proposed alongside Plan 0064 and accepts at that plan's close ceremony (the ADR-0029/0054 cadence). ADR-0049's primitive, `TrendlineSpec`/`TrendPoint` types, and legend-row model are untouched — this ADR changes only *how the specs travel to the renderer and how often they are regenerated*, not how they are drawn.
+This ADR is proposed alongside Plan 0064 and accepts at that plan's close ceremony (the ADR-0029/0054 cadence). This ADR changes only *how the specs travel to the renderer and how often they are regenerated*, not how they are drawn; `TrendlineSpec`/`TrendPoint` types, role→colour mapping, and the legend-row model are untouched. The one draw-path change in Plan 0064 — the phase-1 off-grid time→x fix in the trendline primitive (see the plan's Context §1) — is orthogonal to this decision and does not alter the primitive's public contract.
