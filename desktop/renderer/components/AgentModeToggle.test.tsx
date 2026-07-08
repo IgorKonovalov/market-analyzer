@@ -10,7 +10,7 @@ import '@testing-library/jest-dom'
 
 import { fireEvent, render, screen } from '@testing-library/react'
 
-import { AgentModeToggle } from './AgentModeToggle'
+import { AgentModeToggle, AGENT_MODE_HELP } from './AgentModeToggle'
 
 it('renders an accessible switch with a stable testid and label', () => {
   render(<AgentModeToggle enabled={false} setEnabled={jest.fn()} />)
@@ -53,4 +53,14 @@ it('lives in the chart-header region, not the sidebar', () => {
   render(<AgentModeToggle enabled={false} setEnabled={jest.fn()} />)
   const toggle = screen.getByRole('switch', { name: 'Toggle agent mode' })
   expect(toggle).toHaveAttribute('data-region', 'chart-header-right')
+})
+
+it('exposes accessible copy: agent mode gates gesture forwarding, not overlay visibility (Plan 0064)', () => {
+  render(<AgentModeToggle enabled={false} setEnabled={jest.fn()} />)
+  const toggle = screen.getByRole('switch', { name: 'Toggle agent mode' })
+  // The clarifying help is the switch's accessible description (via `title`),
+  // and names both what it controls and what it does NOT.
+  expect(toggle).toHaveAccessibleDescription(AGENT_MODE_HELP)
+  expect(AGENT_MODE_HELP).toMatch(/gesture forwarding only/i)
+  expect(AGENT_MODE_HELP).toMatch(/overlays.*always render regardless/i)
 })
