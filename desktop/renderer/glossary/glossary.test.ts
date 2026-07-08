@@ -1,0 +1,165 @@
+/**
+ * Plan 0065 phase 1 done-when: the glossary content and its contract.
+ *
+ * Defends: every record carries a non-empty `term`, a valid `category`, and BOTH
+ * hats (`howComputed` + `whatItMeans`) — the shape validator demonstrably REJECTS
+ * a record missing either hat; the `formulaAnchor` lives only on the two computed
+ * terms the Python accuracy test pins (conviction, edge_strength); the typed
+ * `term(key)` accessor resolves a present key and returns `undefined` for an
+ * absent one; the full in-scope term set is present (the plan's spot-check); and
+ * the `indicator`-category keys equal exactly the frozen feature-name union — the
+ * TS-side mirror of phase 3's cross-language bidirectional pin.
+ */
+import glossaryJson from './glossary.json'
+import { glossaryKeys, term, type GlossaryCategory, type GlossaryRecord } from './types'
+
+const CATEGORIES: readonly GlossaryCategory[] = [
+  'forecast',
+  'recommendation',
+  'condition',
+  'indicator',
+]
+const RECORD_KEYS = new Set(['term', 'category', 'howComputed', 'whatItMeans', 'formulaAnchor'])
+
+const rawGlossary = glossaryJson as Record<string, Record<string, unknown>>
+
+/** Validate one record; returns the list of problems (empty = valid). Used both
+ * to prove every real record is well-formed and — against synthetic bad input —
+ * to prove the validator actually rejects a record missing either hat. */
+function validateRecord(value: Record<string, unknown>): string[] {
+  const problems: string[] = []
+  const nonEmptyString = (field: string): void => {
+    const v = value[field]
+    if (typeof v !== 'string' || v.trim() === '')
+      problems.push(`${field} must be a non-empty string`)
+  }
+  nonEmptyString('term')
+  nonEmptyString('howComputed')
+  nonEmptyString('whatItMeans')
+  if (!CATEGORIES.includes(value.category as GlossaryCategory)) {
+    problems.push(`category must be one of ${CATEGORIES.join(' / ')}`)
+  }
+  if ('formulaAnchor' in value) {
+    const anchor = value.formulaAnchor
+    if (typeof anchor !== 'string' || anchor.trim() === '') {
+      problems.push('formulaAnchor, when present, must be a non-empty string')
+    }
+  }
+  for (const k of Object.keys(value)) {
+    if (!RECORD_KEYS.has(k)) problems.push(`unexpected field ${k}`)
+  }
+  return problems
+}
+
+it('every record carries a non-empty term, a valid category, and both hats', () => {
+  const failures: string[] = []
+  for (const [key, record] of Object.entries(rawGlossary)) {
+    const problems = validateRecord(record)
+    if (problems.length > 0) failures.push(`${key}: ${problems.join('; ')}`)
+  }
+  expect(failures).toEqual([])
+})
+
+it('the shape validator rejects a record missing either hat', () => {
+  const base: GlossaryRecord = {
+    term: 'X',
+    category: 'forecast',
+    howComputed: 'computed',
+    whatItMeans: 'meaning',
+  }
+  expect(validateRecord({ ...base, howComputed: '' })).toContain(
+    'howComputed must be a non-empty string',
+  )
+  const missingTraderHat: Record<string, unknown> = {
+    term: base.term,
+    category: base.category,
+    howComputed: base.howComputed,
+  }
+  expect(validateRecord(missingTraderHat)).toContain('whatItMeans must be a non-empty string')
+})
+
+it('exposes a typed term(key) accessor: present keys resolve, absent keys are undefined', () => {
+  const conviction = term('conviction')
+  expect(conviction).toBeDefined()
+  expect(conviction?.term).toBe('Conviction')
+  expect(conviction?.category).toBe('recommendation')
+  expect(term('no_such_term_key')).toBeUndefined()
+})
+
+it('carries a formulaAnchor on exactly the two computed terms the accuracy test pins', () => {
+  const anchored = glossaryKeys().filter((key) => term(key)?.formulaAnchor != null)
+  expect(anchored.sort()).toEqual(['conviction', 'edge_strength'])
+  expect(term('conviction')?.formulaAnchor).toBe('conviction_mapping')
+  expect(term('edge_strength')?.formulaAnchor).toBe('edge_margin_threshold')
+})
+
+it('resolves the full in-scope term set (the plan spot-check)', () => {
+  const required = [
+    // derived metrics / verdicts
+    'conviction',
+    'edge_strength',
+    'skill',
+    'baseline_skill',
+    'prob_up',
+    'sharpe_mean',
+    'entry_zone',
+    'stop',
+    'targets',
+    // the five fusion legs
+    'alignment',
+    'conditions',
+    'forecast',
+    'signal',
+    'backtest',
+    // condition terms
+    'trend',
+    'momentum',
+    // representative feature-driver indicators used on the Forecast tab
+    'rsi_14',
+    'mayer_multiple',
+    'funding_rate',
+  ]
+  const missing = required.filter((key) => term(key) === undefined)
+  expect(missing).toEqual([])
+})
+
+// The frozen feature-name union — FEATURE_NAMES ∪ FEATURE_NAMES_V2 ∪
+// FEATURE_NAMES_V2_DEEP from src/market_analyser/forecast/features.py. Phase 3's
+// Python test pins this bidirectionally cross-language; this mirror keeps the JS
+// suite honest and makes an add/drop fail here too. Edit both when a feature moves.
+const EXPECTED_INDICATOR_KEYS = [
+  'ret_1',
+  'ret_5',
+  'rsi_14',
+  'macd',
+  'macd_signal',
+  'macd_hist',
+  'bb_pct_b',
+  'atr_pct',
+  'adx',
+  'plus_di',
+  'minus_di',
+  'supertrend_dir',
+  'ema20_dist',
+  'ema50_dist',
+  'donchian_pos',
+  'rel_volume',
+  'halving_phase',
+  'days_since_halving',
+  'mayer_multiple',
+  'dist_200w_ma',
+  'fng_value',
+  'fng_delta_7',
+  'btc_dominance',
+  'dominance_delta_7',
+  'funding_rate',
+  'oi_delta_7',
+  'mvrv',
+]
+
+it('the indicator-category keys equal exactly the frozen feature-name union', () => {
+  const indicatorKeys = glossaryKeys()
+    .filter((key) => term(key)?.category === 'indicator')
+    .sort()
+  expect(indicatorKeys).toEqual([...EXPECTED_INDICATOR_KEYS].sort())
+})

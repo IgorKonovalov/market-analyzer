@@ -1,6 +1,6 @@
 # 0065 — Glossary hover-explanations for the forecast, recommendation & condition surfaces
 
-> **Status:** approved (2026-07-08, user — "approve all plans, do not start work"). Not started; awaits an implementer session's "go".
+> **Status:** in-progress (started 2026-07-08 — ui-builder phases 1–2).
 > **Created:** 2026-07-08
 > **Owner skill(s):** ui-builder, dev, human
 > **Related ADRs:** [ADR-0060](../adrs/0060-glossary-tooltip-interaction-posture.md) (paired — proposed, accepts at this plan's close; the informational-tooltip relaxation of the no-interactive-element posture), [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the advisory panels whose posture this scopes an exception to), [ADR-0025](../adrs/0025-trade-execution-feasibility.md) (the no-action posture the exception must preserve), [ADR-0058](../adrs/0058-forecast-recommendation-explainability.md) (the explanation surfaces this annotates), [ADR-0046](../adrs/0046-mcp-large-result-delivery.md) (the small-wire posture the delivery choice respects — no per-payload glossary on the wire)

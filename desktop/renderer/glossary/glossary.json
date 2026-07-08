@@ -1,0 +1,358 @@
+{
+  "edge_strength": {
+    "term": "Edge strength",
+    "category": "forecast",
+    "howComputed": "no_edge when the out-of-sample baseline gate fails; otherwise clear when skill − baseline_skill ≥ EDGE_MARGIN_THRESHOLD, and marginal below it.",
+    "whatItMeans": "How comfortably the model beat a naive baseline. Treat a high probability under 'marginal' as thin evidence, not near-certainty.",
+    "formulaAnchor": "edge_margin_threshold"
+  },
+  "skill": {
+    "term": "Skill",
+    "category": "forecast",
+    "howComputed": "Out-of-sample directional accuracy from purged walk-forward validation — the fraction of held-out bars whose direction the model called correctly.",
+    "whatItMeans": "How often the model was right on data it never trained on. Compare it to the baseline, not to 50% — beating the baseline is the bar that matters."
+  },
+  "baseline_skill": {
+    "term": "Baseline skill",
+    "category": "forecast",
+    "howComputed": "The same out-of-sample accuracy for a naive baseline — the stronger of persistence (next = current) and majority-class — scored on the identical held-out bars.",
+    "whatItMeans": "The score to beat. A model only has an edge when its skill clears this; a skill of 0.55 means nothing if the baseline also scores 0.55."
+  },
+  "prob_up": {
+    "term": "P(up)",
+    "category": "forecast",
+    "howComputed": "The model's calibrated probability that the next move over the horizon is up, shown only when the horizon beat its baseline out-of-sample.",
+    "whatItMeans": "The chance of an up-move as the validated model sees it. A value near one-third is barely better than a three-way coin-flip; only a decisive value under a clear edge reads as conviction."
+  },
+  "prob_down": {
+    "term": "P(down)",
+    "category": "forecast",
+    "howComputed": "The model's calibrated probability that the next move over the horizon is down, shown only when the horizon beat its baseline out-of-sample.",
+    "whatItMeans": "The chance of a down-move as the validated model sees it. Read it beside P(up) and P(flat) — the three sum to one across the outcomes."
+  },
+  "prob_flat": {
+    "term": "P(flat)",
+    "category": "forecast",
+    "howComputed": "The model's calibrated probability that price is roughly unchanged over the horizon, shown only when the horizon beat its baseline out-of-sample.",
+    "whatItMeans": "The chance of no decisive move. A high P(flat) is the model saying 'no clear direction', which is itself information."
+  },
+  "edge_margin": {
+    "term": "Edge margin",
+    "category": "forecast",
+    "howComputed": "skill − baseline_skill when both were scored, otherwise blank.",
+    "whatItMeans": "By how much the model beat the baseline. A tiny positive margin is a marginal edge; the sign and size are what separate 'clear' from 'marginal'."
+  },
+  "n_scored": {
+    "term": "Scored bars",
+    "category": "forecast",
+    "howComputed": "The number of out-of-sample bars scored across all walk-forward folds at this horizon.",
+    "whatItMeans": "How much held-out evidence the skill number rests on. A high accuracy over a handful of bars is not yet a track record."
+  },
+  "n_splits": {
+    "term": "Folds",
+    "category": "forecast",
+    "howComputed": "The number of purged walk-forward folds the model was validated across.",
+    "whatItMeans": "How many independent out-of-sample windows the edge held up over. More folds means the result is less likely a single lucky stretch."
+  },
+  "horizon_bars": {
+    "term": "Horizon",
+    "category": "forecast",
+    "howComputed": "The forecast horizon, in bars of the result's timeframe (e.g. 21 bars on a 1d series ≈ a month ahead).",
+    "whatItMeans": "How far ahead this block looks. Edge at one horizon says nothing about another — each is trained and gated on its own."
+  },
+  "beats_baseline": {
+    "term": "Beats baseline",
+    "category": "forecast",
+    "howComputed": "True when the model's out-of-sample skill cleared the baseline gate at this horizon.",
+    "whatItMeans": "The go/no-go for showing probabilities. When false, no probability is shown at all — an honest 'don't know' rather than a fabricated number."
+  },
+  "feature_set_id": {
+    "term": "Feature set",
+    "category": "forecast",
+    "howComputed": "A stable hash of the ordered feature set the model was trained on (e.g. price-only v1, or a v2 tier that adds cycle and on-chain inputs).",
+    "whatItMeans": "Which inputs the forecast saw. A v1 id means exogenous series weren't available and the model ran on price-derived features only."
+  },
+  "model_version": {
+    "term": "Model version",
+    "category": "forecast",
+    "howComputed": "A content hash over the training-data cutoff, feature set, and library versions — the identity of the exact trained model.",
+    "whatItMeans": "Provenance for reproducibility. Two forecasts with the same model_version came from the same trained model; a change means something upstream moved."
+  },
+  "permutation_importance": {
+    "term": "Driver importance",
+    "category": "forecast",
+    "howComputed": "Out-of-sample permutation importance: how much the model's validated skill drops when one feature's values are shuffled.",
+    "whatItMeans": "Which inputs the model leaned on — association within the validated model, not causation. Correlated inputs share the credit, so read the ranking, not the exact numbers."
+  },
+  "conviction": {
+    "term": "Conviction",
+    "category": "recommendation",
+    "howComputed": "P(direction) × clamp(sharpe_mean / SHARPE_FULL_CREDIT, 0, 1) — the calibrated forecast probability of the called direction times the walk-forward edge credit (linear up to SHARPE_FULL_CREDIT, zero at or below zero Sharpe).",
+    "whatItMeans": "How strongly the app backs this call. Low by construction when either the forecast edge is marginal or the backtest is thin — it is derived, never invented, and a flat call has zero.",
+    "formulaAnchor": "conviction_mapping"
+  },
+  "direction": {
+    "term": "Direction",
+    "category": "recommendation",
+    "howComputed": "long or short only when the forecast, at least one agreeing live signal, and a positive walk-forward edge all point the same way; otherwise flat.",
+    "whatItMeans": "The advisory stance. 'flat — no actionable edge' is a real answer, not a missing one: at least one leg didn't line up."
+  },
+  "entry_zone": {
+    "term": "Entry zone",
+    "category": "recommendation",
+    "howComputed": "A band of ±ENTRY_BAND_ATR (a quarter ATR) around the last close — chart geometry, not a prediction.",
+    "whatItMeans": "Where the call considers an entry actionable, for your judgement. Advisory only — nothing here places an order."
+  },
+  "stop": {
+    "term": "Stop",
+    "category": "recommendation",
+    "howComputed": "Beyond the nearest opposing support/resistance level with an ATR buffer, falling back to STOP_ATR (2 ATRs) from the last close when no level sits there.",
+    "whatItMeans": "A suggested invalidation level derived from volatility and structure — advisory, sized to where the idea would be wrong, not a guarantee."
+  },
+  "targets": {
+    "term": "Targets",
+    "category": "recommendation",
+    "howComputed": "The nearest favouring support/resistance level, falling back to TARGET_ATR (2 ATRs) from the last close when none exists.",
+    "whatItMeans": "Advisory objective(s) from chart structure — where price might travel if the call works, not a promise it will."
+  },
+  "sharpe_mean": {
+    "term": "Sharpe (mean)",
+    "category": "recommendation",
+    "howComputed": "The mean out-of-sample Sharpe ratio across the strategy's walk-forward folds (risk-adjusted return: mean return over its standard deviation).",
+    "whatItMeans": "The backtested edge, averaged over held-out windows. At or above SHARPE_FULL_CREDIT it earns full conviction credit; near zero is thin; negative blocks a directional call."
+  },
+  "sharpe_std": {
+    "term": "Sharpe (std)",
+    "category": "recommendation",
+    "howComputed": "The standard deviation of the per-fold Sharpe ratios across the walk-forward folds.",
+    "whatItMeans": "How much the edge wobbled fold to fold. A high spread beside a decent mean means the edge is inconsistent, not dependable."
+  },
+  "total_return_mean": {
+    "term": "Total return (mean)",
+    "category": "recommendation",
+    "howComputed": "The mean of the per-fold total returns across the walk-forward folds.",
+    "whatItMeans": "The average out-of-sample return the strategy produced per validation window — a plain-return companion to the Sharpe."
+  },
+  "total_return_std": {
+    "term": "Total return (std)",
+    "category": "recommendation",
+    "howComputed": "The standard deviation of the per-fold total returns.",
+    "whatItMeans": "How variable those returns were across folds. Wide swings mean the average hides a bumpy ride."
+  },
+  "strategy_id": {
+    "term": "Strategy",
+    "category": "recommendation",
+    "howComputed": "The identifier of the strategy whose live signal and walk-forward edge back this call.",
+    "whatItMeans": "Which strategy's edge this rests on. The backtested edge only counts when this same strategy also voted the called direction live."
+  },
+  "alignment": {
+    "term": "Alignment (leg)",
+    "category": "recommendation",
+    "howComputed": "The fusion gate checking that every input — snapshot, forecast, signals, backtest — shares the same symbol, timeframe, and as-of bar.",
+    "whatItMeans": "A consistency guard. It always passes on a shown call, because mismatched inputs are rejected before any recommendation is formed."
+  },
+  "conditions": {
+    "term": "Conditions (leg)",
+    "category": "recommendation",
+    "howComputed": "The fusion leg that records the read condition snapshot — trend, momentum, and volume stance — at the as-of bar.",
+    "whatItMeans": "The market backdrop the call was formed against. It's context that always registers, not a pass/fail hurdle."
+  },
+  "forecast": {
+    "term": "Forecast (leg)",
+    "category": "recommendation",
+    "howComputed": "The fusion leg gating on the calibrated forecast: probabilities must have shipped (baseline beaten) and their argmax must be directional.",
+    "whatItMeans": "Whether the model's probability supports a direction. A no-edge or flat forecast fails this leg and forces a flat call."
+  },
+  "signal": {
+    "term": "Signal (leg)",
+    "category": "recommendation",
+    "howComputed": "The fusion leg gating on live strategy signals: at least one must imply the called direction, none may conflict, and it must agree with the forecast.",
+    "whatItMeans": "Whether a live strategy actually points the same way. Conflicting or absent signals block a directional call."
+  },
+  "backtest": {
+    "term": "Backtest (leg)",
+    "category": "recommendation",
+    "howComputed": "The fusion leg gating on the walk-forward edge: a basis must exist, sharpe_mean must be positive, and it must belong to one of the agreeing strategies.",
+    "whatItMeans": "Whether the direction has a real, out-of-sample track record behind it — not just a live hunch."
+  },
+  "trend": {
+    "term": "Trend",
+    "category": "condition",
+    "howComputed": "The snapshot's trend classification from the trailing moving-average structure and slope (e.g. up / down / sideways).",
+    "whatItMeans": "The prevailing direction of price. A call is easier to trust when the trend, momentum, and live signal agree."
+  },
+  "momentum": {
+    "term": "Momentum",
+    "category": "condition",
+    "howComputed": "The snapshot's momentum classification from trailing oscillators (RSI/MACD stance) at the as-of bar.",
+    "whatItMeans": "Whether the move is gaining or losing steam. Rising momentum supports continuation; fading momentum warns of stalling."
+  },
+  "volume_stance": {
+    "term": "Volume stance",
+    "category": "condition",
+    "howComputed": "The snapshot's volume classification — recent volume relative to its trailing average.",
+    "whatItMeans": "Whether participation is confirming the move. A breakout on light volume is weaker than one on heavy volume."
+  },
+  "ret_1": {
+    "term": "1-bar return",
+    "category": "indicator",
+    "howComputed": "Trailing one-bar return: close[i] / close[i−1] − 1.",
+    "whatItMeans": "The most recent bar's percentage change — the shortest-term momentum input the model sees."
+  },
+  "ret_5": {
+    "term": "5-bar return",
+    "category": "indicator",
+    "howComputed": "Trailing five-bar return: close[i] / close[i−5] − 1.",
+    "whatItMeans": "Short-horizon momentum over the last five bars — smoother than the one-bar return."
+  },
+  "rsi_14": {
+    "term": "RSI (14)",
+    "category": "indicator",
+    "howComputed": "Wilder's 14-period Relative Strength Index, a 0–100 oscillator of average gains versus losses.",
+    "whatItMeans": "Overbought/oversold pressure. Above ~70 is stretched high, below ~30 stretched low — a condition, not a trigger."
+  },
+  "macd": {
+    "term": "MACD line",
+    "category": "indicator",
+    "howComputed": "The MACD line: the 12-period EMA minus the 26-period EMA of close.",
+    "whatItMeans": "Trend-following momentum. Above zero leans bullish, below zero bearish; its slope shows momentum shifting."
+  },
+  "macd_signal": {
+    "term": "MACD signal",
+    "category": "indicator",
+    "howComputed": "The 9-period EMA of the MACD line.",
+    "whatItMeans": "A smoothed reference for the MACD line; crossings of the two are the classic momentum signal."
+  },
+  "macd_hist": {
+    "term": "MACD histogram",
+    "category": "indicator",
+    "howComputed": "The MACD histogram: MACD line minus its signal line.",
+    "whatItMeans": "How fast momentum is changing. Growing bars mean momentum accelerating; shrinking bars, fading."
+  },
+  "bb_pct_b": {
+    "term": "Bollinger %B",
+    "category": "indicator",
+    "howComputed": "%B: where close sits inside the 20-period Bollinger band — (close − lower) / (upper − lower).",
+    "whatItMeans": "Position within the volatility envelope. Above 1 is outside the upper band (stretched up), below 0 outside the lower (stretched down)."
+  },
+  "atr_pct": {
+    "term": "ATR %",
+    "category": "indicator",
+    "howComputed": "Average True Range as a fraction of price: ATR(14) / close.",
+    "whatItMeans": "Recent volatility, scaled to price. Higher means wider swings — useful for sizing stops and reading risk."
+  },
+  "adx": {
+    "term": "ADX",
+    "category": "indicator",
+    "howComputed": "The 14-period Average Directional Index, a 0–100 measure of trend strength (direction-agnostic).",
+    "whatItMeans": "How strong the trend is, not which way. Above ~25 is a trending market; low values mean chop where trend signals misfire."
+  },
+  "plus_di": {
+    "term": "+DI",
+    "category": "indicator",
+    "howComputed": "The +DI component of the 14-period directional-movement system — the strength of upward movement.",
+    "whatItMeans": "Upward directional pressure. When it leads −DI, buyers are in control."
+  },
+  "minus_di": {
+    "term": "−DI",
+    "category": "indicator",
+    "howComputed": "The −DI component of the 14-period directional-movement system — the strength of downward movement.",
+    "whatItMeans": "Downward directional pressure. When it leads +DI, sellers are in control."
+  },
+  "supertrend_dir": {
+    "term": "Supertrend direction",
+    "category": "indicator",
+    "howComputed": "The Supertrend direction at period 10: +1 in an uptrend, −1 in a downtrend.",
+    "whatItMeans": "A discrete trend-following stance. It flips with the ATR-based trailing stop, so it lags but filters noise."
+  },
+  "ema20_dist": {
+    "term": "EMA20 distance",
+    "category": "indicator",
+    "howComputed": "Distance of close from its 20-period EMA, as a fraction: (close − EMA20) / close.",
+    "whatItMeans": "How far price has stretched from its short-term mean. Large values often precede a snap-back."
+  },
+  "ema50_dist": {
+    "term": "EMA50 distance",
+    "category": "indicator",
+    "howComputed": "Distance of close from its 50-period EMA, as a fraction: (close − EMA50) / close.",
+    "whatItMeans": "Stretch from the medium-term mean — a slower, more structural version of the 20-period distance."
+  },
+  "donchian_pos": {
+    "term": "Donchian position",
+    "category": "indicator",
+    "howComputed": "Position of close within the 20-period Donchian channel: (close − lower) / (upper − lower).",
+    "whatItMeans": "Where price sits in its recent range. Near 1 is pushing recent highs (breakout territory); near 0, recent lows."
+  },
+  "rel_volume": {
+    "term": "Relative volume",
+    "category": "indicator",
+    "howComputed": "Relative volume: volume[i] / SMA(volume, 20)[i].",
+    "whatItMeans": "Participation versus the recent norm. Above 1 means heavier-than-usual trade — moves on high relative volume carry more weight."
+  },
+  "halving_phase": {
+    "term": "Halving phase",
+    "category": "indicator",
+    "howComputed": "Fraction of the Bitcoin halving cycle elapsed at the bar's date, in [0, 1].",
+    "whatItMeans": "Where we are in BTC's ~4-year supply cycle — a slow macro-timing context, not a short-term signal."
+  },
+  "days_since_halving": {
+    "term": "Days since halving",
+    "category": "indicator",
+    "howComputed": "Days since the most recent Bitcoin halving at the bar's UTC date.",
+    "whatItMeans": "Raw cycle age. Historically, distance from a halving has tracked broad phases of the BTC cycle."
+  },
+  "mayer_multiple": {
+    "term": "Mayer Multiple",
+    "category": "indicator",
+    "howComputed": "close / SMA200 of daily closes.",
+    "whatItMeans": "Price relative to its long trend. Historically stretched when high, historically cheap when low — a valuation context, not a trigger."
+  },
+  "dist_200w_ma": {
+    "term": "200-week MA distance",
+    "category": "indicator",
+    "howComputed": "close / SMA1400 (≈200-week MA) of daily closes − 1.",
+    "whatItMeans": "Distance from the multi-year mean — a very slow cycle-valuation gauge; extremes have marked long-cycle tops and bottoms."
+  },
+  "fng_value": {
+    "term": "Fear & Greed",
+    "category": "indicator",
+    "howComputed": "The Fear & Greed index (0–100), read lag-1 from the metric store.",
+    "whatItMeans": "Crowd sentiment. Extreme fear and extreme greed are contrarian context — associated with turns, not a guarantee of one."
+  },
+  "fng_delta_7": {
+    "term": "Fear & Greed Δ7",
+    "category": "indicator",
+    "howComputed": "Change in the Fear & Greed value over 7 bars: fng[i] − fng[i−7] (both lag-1).",
+    "whatItMeans": "How fast sentiment is swinging. Rapid shifts flag a changing mood before the level itself looks extreme."
+  },
+  "btc_dominance": {
+    "term": "BTC dominance",
+    "category": "indicator",
+    "howComputed": "Bitcoin's share of total crypto market cap, in percent, read lag-1.",
+    "whatItMeans": "Whether capital is concentrating in BTC or rotating into alts — a market-structure backdrop."
+  },
+  "dominance_delta_7": {
+    "term": "BTC dominance Δ7",
+    "category": "indicator",
+    "howComputed": "Change in BTC dominance over 7 bars: dominance[i] − dominance[i−7].",
+    "whatItMeans": "The direction of capital rotation. Rising dominance often accompanies risk-off within crypto."
+  },
+  "funding_rate": {
+    "term": "Funding rate",
+    "category": "indicator",
+    "howComputed": "The Binance BTCUSDT perpetual funding rate, read lag-1.",
+    "whatItMeans": "What leveraged longs pay shorts (or vice versa). Persistently high positive funding flags crowded longs — a squeeze risk."
+  },
+  "oi_delta_7": {
+    "term": "Open interest Δ7",
+    "category": "indicator",
+    "howComputed": "Fractional change in open interest over 7 bars: OI[i] / OI[i−7] − 1.",
+    "whatItMeans": "Whether leverage is building or unwinding. Rising OI into a move means conviction; falling OI, position-closing."
+  },
+  "mvrv": {
+    "term": "MVRV",
+    "category": "indicator",
+    "howComputed": "The CoinMetrics BTC MVRV ratio (market value over realised value), read lag-1.",
+    "whatItMeans": "On-chain valuation — aggregate unrealised profit. Historically high at cycle tops, low at bottoms; a slow context, not timing."
+  }
+}
