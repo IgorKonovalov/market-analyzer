@@ -10,11 +10,15 @@ active-chart-gated (ADR-0059), like `highlight_pattern`: it draws onto the chart
 already showing that symbol/timeframe rather than mounting one, so a subsequent
 `chart.show` can no longer race and wipe the lines.
 
-Hits are *derived* data: nothing is persisted; reopening the viewer re-runs the
-detection. The math is the pure `analysis.chart_patterns.detect_chart_patterns`
-(trailing, deterministic — ADR-0048). The body is factored out as
-`_detect_chart_patterns_response` so the fetch + filter + empty-cache paths are
-unit-testable on a single event loop (no live MCP server needed).
+Hits are *derived* data: nothing is persisted. The renderer re-derives them from
+the current bars — the `POST /scan_chart_patterns` route runs this exact
+detection on chart load / visible-range change (Plan 0064 phase 5), so reopening
+the viewer or panning re-runs the detection rather than reading a stale cache.
+The math is the pure `analysis.chart_patterns.detect_chart_patterns` (trailing,
+deterministic — ADR-0048). The body is factored out as
+`_detect_chart_patterns_response` so both entry points (this tool and the route)
+share one core and the fetch + filter + empty-cache paths are unit-testable on a
+single event loop (no live MCP server needed).
 """
 
 from __future__ import annotations

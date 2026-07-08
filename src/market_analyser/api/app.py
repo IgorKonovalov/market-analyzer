@@ -41,6 +41,7 @@ from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.news import router as news_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
 from market_analyser.api.routes.quote import router as quote_router
+from market_analyser.api.routes.scan_chart_patterns import router as scan_chart_patterns_router
 from market_analyser.api.routes.scan_patterns import router as scan_patterns_router
 from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
@@ -536,6 +537,11 @@ def create_app(
     # posts the visible range; markers arrive via `/events`, mirroring the
     # `scan_patterns` MCP tool through the same pure core (Plan 0049).
     app.include_router(scan_patterns_router)
+    # `POST /scan_chart_patterns` (Plan 0064): the trendline sibling of
+    # `/scan_patterns` — sweeps classical chart patterns over the visible range
+    # and publishes `chart.trendlines` on the bus; the renderer fires it on chart
+    # load / range change so the lines track the bars on screen (ADR-0059).
+    app.include_router(scan_chart_patterns_router)
 
     if annotations_repository is not None:
         app.include_router(annotations_router)
