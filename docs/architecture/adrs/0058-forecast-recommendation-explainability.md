@@ -1,6 +1,6 @@
 # 0058 — Forecast & recommendation explainability contract
 
-> **Status:** proposed — accepts at [Plan 0063](../plans/0063-forecast-recommendation-explainability.md) close
+> **Status:** accepted (2026-07-08, at [Plan 0063](../plans/done/0063-forecast-recommendation-explainability.md) close)
 > **Created:** 2026-07-06
 > **Related:** [ADR-0030](0030-forecasting-subsystem.md) (honest uncertainty — this extends it from *how sure* to *why*), [ADR-0040](0040-forecasting-model-artifacts.md) (the provenance trail this enriches), [ADR-0054](0054-exogenous-forecast-features-multi-horizon.md) (the v2 feature set whose sources get ranked), [ADR-0029](0029-advisory-recommendation-boundary.md) (the recommendation whose basis becomes replayable), [ADR-0046](0046-mcp-large-result-delivery.md) (the small-wire posture that forces the delivery split), [ADR-0018](0018-backtest-result-schema.md) (the determinism discipline the explanation inherits), [ADR-0057](0057-forecast-feature-set-tiers.md) (tiered feature-set selection — whichever tier trains, its features are what get ranked)
 
