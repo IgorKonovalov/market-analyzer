@@ -47,15 +47,12 @@ from market_analyser.advisor.fusion import fuse
 from market_analyser.advisor.models import Recommendation
 from market_analyser.analysis.snapshot import condition_snapshot
 from market_analyser.analysis.types import ConditionSnapshot
+from market_analyser.api.mcp_tools._artifacts import _fs_safe, _write_explanation_artifact
 from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_supported_timeframe,
 )
-from market_analyser.api.mcp_tools.forecast import (
-    _compute_forecast,
-    _fs_safe,
-    _write_explanation_artifact,
-)
+from market_analyser.api.mcp_tools.forecast import _compute_forecast
 from market_analyser.backtest import evaluate_signals as evaluate_signals_core
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward import walk_forward

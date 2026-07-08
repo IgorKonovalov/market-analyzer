@@ -219,10 +219,12 @@ def _build_checks(
 
     The invariant the trace guarantees (pinned by the replayability test):
     **the verdict is directional exactly when every check passed** — each
-    `fuse()` blocker maps to at least one failed check, and recorded facts
-    with no pass bar (alignment, which raises before any verdict exists;
-    the condition snapshot; individual signal votes; the calibrated
-    probability behind a directional argmax) always pass."""
+    `fuse()` blocker maps to at least one failed check, and the genuinely
+    unconditional facts (alignment, which raises before any verdict exists;
+    the condition snapshot; individual signal votes) always pass. The
+    calibrated-P(direction) gate is not unconditional: it mirrors the
+    "argmax direction is directional" gate — passing iff the argmax is
+    directional — so it never fails in isolation, only alongside that gate."""
 
     scope = f"{snapshot.symbol}/{snapshot.timeframe}"
     as_of = snapshot.as_of.isoformat()
