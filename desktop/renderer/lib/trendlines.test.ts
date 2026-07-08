@@ -15,6 +15,8 @@ import type { TrendlineSpec } from '../types/events'
 import {
   TrendlinePrimitive,
   computeTrendlineSegments,
+  resolveTimeX,
+  timeToFractionalLogical,
   trendlineColor,
   type TrendlineColors,
 } from './trendlines'
@@ -118,11 +120,68 @@ describe('computeTrendlineSegments', () => {
   })
 })
 
-/** Minimal `SeriesAttachedParameter` stub wiring the same converters in. */
+// Plan 0064 phase 1: the off-grid time→x fallback. `timeToCoordinate` is
+// null-for-off-grid; these helpers map an anchor time onto the bar-grid logical
+// scale (interpolating/extrapolating) so projected/extended lines still draw.
+describe('timeToFractionalLogical', () => {
+  const barTimes = [toUtc(T1), toUtc(T2), toUtc(T3)] // logical 0/1/2, 2-day spacing
+
+  it('returns the integer logical for an exact bar time', () => {
+    expect(timeToFractionalLogical(toUtc(T1), barTimes)).toBe(0)
+    expect(timeToFractionalLogical(toUtc(T2), barTimes)).toBe(1)
+    expect(timeToFractionalLogical(toUtc(T3), barTimes)).toBe(2)
+  })
+
+  it('interpolates a time between two bars', () => {
+    // 2026-05-14 is one day into the two-day T1→T2 gap → half a logical unit.
+    expect(timeToFractionalLogical(toUtc('2026-05-14T00:00:00Z'), barTimes)).toBeCloseTo(0.5)
+  })
+
+  it('extrapolates before the first bar (negative logical)', () => {
+    expect(timeToFractionalLogical(toUtc('2026-05-11T00:00:00Z'), barTimes)).toBeCloseTo(-1)
+  })
+
+  it('extrapolates beyond the last bar', () => {
+    expect(timeToFractionalLogical(toUtc('2026-05-19T00:00:00Z'), barTimes)).toBeCloseTo(3)
+  })
+})
+
+describe('resolveTimeX', () => {
+  const barTimes = [toUtc(T1), toUtc(T2), toUtc(T3)]
+  const grid = (t: UTCTimestamp): number | null =>
+    t === toUtc(T1) ? 100 : t === toUtc(T2) ? 160 : t === toUtc(T3) ? 220 : null
+  const logical = (l: number): number => 100 + 60 * l
+
+  it('uses the direct grid coordinate when the time is on a bar', () => {
+    expect(resolveTimeX(toUtc(T2), grid, barTimes, logical)).toBe(160)
+  })
+
+  it('interpolates via the logical scale for an off-grid time', () => {
+    expect(resolveTimeX(toUtc('2026-05-14T00:00:00Z'), grid, barTimes, logical)).toBeCloseTo(130)
+  })
+
+  it('extrapolates beyond the last bar', () => {
+    expect(resolveTimeX(toUtc('2026-05-19T00:00:00Z'), grid, barTimes, logical)).toBeCloseTo(280)
+  })
+
+  it('returns null only on a degenerate grid (< 2 bars) — the sole surviving skip', () => {
+    expect(resolveTimeX(toUtc('2026-05-14T00:00:00Z'), () => null, [toUtc(T1)], logical)).toBeNull()
+  })
+})
+
+// A realistic 3-bar grid consistent with `timeToX`: bars at T1/T2/T3 sit at
+// logical 0/1/2 and x 100/160/220, so `logicalToCoordinate(l) = 100 + 60*l`
+// agrees with `timeToX` at the integer logicals and extrapolates off-grid.
+const BAR_TIMES: UTCTimestamp[] = [toUtc(T1), toUtc(T2), toUtc(T3)]
+const logicalToCoordinate = (l: number): number => 100 + 60 * l
+
+/** Minimal `SeriesAttachedParameter` stub wiring the same converters in, plus
+ * the bar grid (`series.data()`) and `logicalToCoordinate` the off-grid time
+ * fallback reads. */
 function attachStub(primitive: TrendlinePrimitive): void {
   const param = {
-    chart: { timeScale: () => ({ timeToCoordinate: timeToX }) },
-    series: { priceToCoordinate: priceToY },
+    chart: { timeScale: () => ({ timeToCoordinate: timeToX, logicalToCoordinate }) },
+    series: { priceToCoordinate: priceToY, data: () => BAR_TIMES.map((t) => ({ time: t })) },
     requestUpdate: () => {},
   } as unknown as SeriesAttachedParameter<Time>
   primitive.attached(param)
@@ -161,6 +220,38 @@ describe('TrendlinePrimitive', () => {
     expect(primitive.paneViews()).toHaveLength(0)
     primitive.setVisible(true)
     expect(primitive.paneViews()).toHaveLength(1)
+  })
+
+  it('draws an OFF-GRID / beyond-range trendline via the bar-grid logical fallback (Plan 0064 phase 1)', () => {
+    // The live failure: a neckline whose endpoints are NOT exact bar times — one
+    // between two loaded bars, one past the last loaded bar. `timeToCoordinate`
+    // returns null for both, so pre-fix the whole segment was skipped (0
+    // segments). The fallback resolves them off the bar-grid logical scale.
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    const offGrid: TrendlineSpec = {
+      points: [
+        { ts: '2026-05-14T00:00:00Z', price: 10 }, // between T1/T2 → logical 0.5 → x 130
+        { ts: '2026-05-19T00:00:00Z', price: 20 }, // 2 days past T3 → logical 3 → x 280
+      ],
+      role: 'neckline',
+      style: 'solid',
+      pattern: 'head_shoulders',
+    }
+    primitive.setTrendlines([offGrid])
+    const segments = primitive.currentSegments()
+    expect(segments).toHaveLength(1)
+    // priceToY: 120 - 4*price → price 10 = y 80, price 20 = y 40.
+    expect(segments[0]).toMatchObject({ x1: 130, y1: 80, x2: 280, y2: 40 })
+  })
+
+  it('still draws an ON-GRID trendline unchanged (non-regression)', () => {
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    primitive.setTrendlines([NECKLINE]) // anchors on T1/T2 → direct grid path
+    expect(primitive.currentSegments()).toEqual([
+      expect.objectContaining({ x1: 100, y1: 80, x2: 160, y2: 40 }),
+    ])
   })
 
   it('recolours in place via setColors (theme flip path)', () => {

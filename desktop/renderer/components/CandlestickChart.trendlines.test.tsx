@@ -24,19 +24,34 @@ import type { TrendlineSpec } from '../types/events'
 let mockTrendlinePrimitive: TrendlinePrimitive | null = null
 
 jest.mock('lightweight-charts', () => {
-  // Stubbed scales: every time maps to a fixed x, every price to y = price.
+  // Stubbed scales modelling the real contract (Plan 0064 phase 1): the 3 loaded
+  // BARS sit at logical 0/1/2 and x 100/160/220; `timeToCoordinate` resolves ONLY
+  // those exact bar times (null-for-off-grid), while `logicalToCoordinate`
+  // interpolates/extrapolates linearly — so off-grid anchors route through the
+  // fallback. Price maps to y = price.
+  const toSec = (iso: string): number => Math.floor(new Date(iso).getTime() / 1000)
+  const BAR_TIMES = [
+    toSec('2026-04-13T00:00:00+00:00'),
+    toSec('2026-04-14T00:00:00+00:00'),
+    toSec('2026-04-15T00:00:00+00:00'),
+  ]
   const timeScale = {
     fitContent: jest.fn(),
     getVisibleLogicalRange: jest.fn(() => null),
     setVisibleLogicalRange: jest.fn(),
     subscribeVisibleLogicalRangeChange: jest.fn(),
     unsubscribeVisibleLogicalRangeChange: jest.fn(),
-    timeToCoordinate: jest.fn((t: number) => (t > 0 ? 50 : null)),
+    timeToCoordinate: jest.fn((t: number) => {
+      const i = BAR_TIMES.indexOf(t)
+      return i >= 0 ? 100 + 60 * i : null
+    }),
+    logicalToCoordinate: jest.fn((l: number) => 100 + 60 * l),
   }
   const series = {
     setData: jest.fn(),
     setMarkers: jest.fn(),
     applyOptions: jest.fn(),
+    data: jest.fn(() => BAR_TIMES.map((t) => ({ time: t }))),
     priceToCoordinate: jest.fn((p: number) => p),
     attachPrimitive: jest.fn((p: TrendlinePrimitive) => {
       // Two primitives attach (span band + trendlines); keep the trendline one,
@@ -120,6 +135,26 @@ it('renders a forming hit dashed and a confirmed hit solid (segment style state)
   const segments = mockTrendlinePrimitive?.currentSegments() ?? []
   expect(segments).toHaveLength(2)
   expect(segments.map((s) => s.dashed)).toEqual([true, false])
+})
+
+// Plan 0064 phase 1: a trendline whose endpoints are OFF the loaded bar grid
+// (one between bars, one past the last bar) — the live failure. Pre-fix
+// `timeToCoordinate` null-skipped both endpoints and drew nothing; the bar-grid
+// logical fallback now resolves them so the line still strokes.
+const OFF_GRID: TrendlineSpec = {
+  points: [
+    { ts: '2026-04-14T12:00:00+00:00', price: 100 }, // between bars 14 and 15
+    { ts: '2026-04-18T00:00:00+00:00', price: 104 }, // 3 days past the last bar
+  ],
+  role: 'neckline',
+  style: 'solid',
+  pattern: 'head_shoulders',
+}
+
+it('draws an off-grid / beyond-range trendline via the bar-grid fallback (Plan 0064 phase 1)', () => {
+  render(<CandlestickChart bars={BARS} trendlines={[OFF_GRID]} />)
+  const segments = mockTrendlinePrimitive?.currentSegments() ?? []
+  expect(segments).toHaveLength(1)
 })
 
 it('shows NO trendline row and NO pane view when there are no trendlines', () => {

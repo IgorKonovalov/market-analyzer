@@ -6,12 +6,17 @@
  * system and tracks pan/zoom for free.
  *
  * Unlike the span band (time-only), a trendline needs the PRICE axis too, so the
- * pixel math maps each anchor through both `timeScale().timeToCoordinate` and
- * the candle series' `priceToCoordinate` — the primitive therefore depends on
- * the candle series being attached and non-empty, and `currentSegments()`
- * returns `[]` until `attached()` has run (the `currentRects`-empty-until-
- * attached pattern); on an empty series `priceToCoordinate` yields `null` and
- * every segment is skipped.
+ * pixel math maps each anchor through both the time axis and the candle series'
+ * `priceToCoordinate`. `currentSegments()` returns `[]` until `attached()` has
+ * run (the `currentRects`-empty-until-attached pattern).
+ *
+ * On the time axis, `timeScale().timeToCoordinate` is null-for-off-grid: it
+ * resolves ONLY times that land exactly on a loaded bar, so a projected neckline
+ * or a bound reaching past the last bar would be dropped (Plan 0064 phase 1 /
+ * ADR-0059). `resolveTimeX` fixes that: on a `null` it interpolates/extrapolates
+ * x from the loaded bar grid through the LOGICAL scale — matching how
+ * `priceToCoordinate` extrapolates on the price axis — so an anchor only fails
+ * to map on a genuinely empty/degenerate chart (< 2 bars).
  *
  * `style` is the forming-vs-confirmed cue: `dashed` = forming, `solid` =
  * confirmed. Colours resolve from the theme tokens by role (never hardcoded in
@@ -26,6 +31,7 @@ import type {
   ISeriesPrimitive,
   ISeriesPrimitivePaneRenderer,
   ISeriesPrimitivePaneView,
+  Logical,
   SeriesAttachedParameter,
   SeriesPrimitivePaneViewZOrder,
   Time,
@@ -134,6 +140,79 @@ export function computeTrendlineSegments(
   return segments
 }
 
+/**
+ * Map an anchor time to a fractional logical index against ascending bar times:
+ * integer `i` at `barTimes[i]`, linearly interpolated between neighbours, and
+ * linearly EXTRAPOLATED beyond either end using the edge spacing (so a
+ * projected neckline or a bound past the last bar still gets a logical). The
+ * caller guarantees `barTimes.length >= 2`.
+ */
+export function timeToFractionalLogical(
+  t: UTCTimestamp,
+  barTimes: ReadonlyArray<UTCTimestamp>,
+): number {
+  const last = barTimes.length - 1
+  if (t <= barTimes[0]) {
+    const span = barTimes[1] - barTimes[0]
+    return span === 0 ? 0 : (t - barTimes[0]) / span
+  }
+  if (t >= barTimes[last]) {
+    const span = barTimes[last] - barTimes[last - 1]
+    return span === 0 ? last : last + (t - barTimes[last]) / span
+  }
+  // Binary search for the bracket `barTimes[lo] <= t < barTimes[lo + 1]`.
+  let lo = 0
+  let hi = last
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1
+    if (barTimes[mid] <= t) lo = mid
+    else hi = mid
+  }
+  const span = barTimes[hi] - barTimes[lo]
+  return span === 0 ? lo : lo + (t - barTimes[lo]) / span
+}
+
+/**
+ * Resolve an anchor time to an x pixel coordinate. Fast path: the chart's
+ * grid-snapped `timeToCoordinate`, which is non-null ONLY for a time that lands
+ * exactly on a loaded bar. Off-grid / beyond-range times (a projected neckline,
+ * a forming bound reaching the right edge, an anchor outside the loaded window)
+ * make `timeToCoordinate` return `null`; we then interpolate/extrapolate x from
+ * the loaded bar grid through the LOGICAL scale — `logicalToCoordinate`
+ * extrapolates for out-of-range logicals, mirroring how `priceToCoordinate`
+ * extrapolates on the price axis, so a sloped line still strokes (clipped
+ * naturally by the canvas). Returns `null` only when the chart genuinely can't
+ * place the time: an empty/degenerate grid (< 2 bars) — the sole surviving
+ * skip case, NOT a blanket widening.
+ */
+export function resolveTimeX(
+  t: UTCTimestamp,
+  timeToCoordinate: (t: UTCTimestamp) => number | null,
+  barTimes: ReadonlyArray<UTCTimestamp>,
+  logicalToCoordinate: (logical: number) => number | null,
+): number | null {
+  const direct = timeToCoordinate(t)
+  if (direct !== null) return direct
+  if (barTimes.length < 2) return null
+  const frac = timeToFractionalLogical(t, barTimes)
+  const lo = Math.floor(frac)
+  const xLo = logicalToCoordinate(lo)
+  const xHi = logicalToCoordinate(lo + 1)
+  if (xLo === null || xHi === null) return null
+  return xLo + (frac - lo) * (xHi - xLo)
+}
+
+/** Ascending numeric (UTCTimestamp) times of the loaded candle bars. The candle
+ * series is always keyed by `UTCTimestamp` (see `toLightweightBar`), so
+ * non-numeric/whitespace items are defensively skipped. */
+function barTimesFromSeries(data: ReadonlyArray<{ time: unknown }>): UTCTimestamp[] {
+  const times: UTCTimestamp[] = []
+  for (const d of data) {
+    if (typeof d.time === 'number') times.push(d.time as UTCTimestamp)
+  }
+  return times
+}
+
 // The renderer's canvas target — the minimal slice of fancy-canvas'
 // `CanvasRenderingTarget2D` we use (same local-typing rationale as spans.ts).
 interface MediaCoordinateScope {
@@ -232,15 +311,24 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
 
   /** Current pixel segments (media coords) — read by the pane renderer and
    * asserted directly in tests via stubbed time/price scales. Empty until
-   * attached (and empty-series anchors are skipped: `priceToCoordinate`
-   * returns `null` until the candle series has data). */
+   * attached. Off-grid anchor times (which grid-snapped `timeToCoordinate`
+   * returns `null` for) are resolved through the bar-grid logical fallback in
+   * `resolveTimeX`, so projected/extended lines still draw; the price axis
+   * extrapolates natively via `priceToCoordinate`. */
   currentSegments(): TrendlineSegment[] {
     const timeScale = this.chart?.timeScale()
     const series = this.series
     if (!timeScale || !series) return []
+    const barTimes = barTimesFromSeries(series.data())
     return computeTrendlineSegments(
       this.specs,
-      (t) => timeScale.timeToCoordinate(t),
+      (t) =>
+        resolveTimeX(
+          t,
+          (tt) => timeScale.timeToCoordinate(tt),
+          barTimes,
+          (logical) => timeScale.logicalToCoordinate(logical as Logical),
+        ),
       (p) => series.priceToCoordinate(p),
       this.colors,
     )
