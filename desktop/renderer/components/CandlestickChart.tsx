@@ -38,6 +38,7 @@ import type { IPriceLine } from 'lightweight-charts'
 
 import { ApiError, api, toLightweightBar } from '../api/client'
 import { useChartGestures } from '../hooks/useChartGestures'
+import { useChartPatternRecompute } from '../hooks/useChartPatternRecompute'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import {
   DEFAULT_MARKER_COLORS,
@@ -278,6 +279,19 @@ function priceLineColor(spec: OverlaySpec, colors: ChartColors): string {
   return colors.markerClicked
 }
 
+/** The chart's current visible [from, to] window as ISO strings, or null when
+ * the chart has no data / no resolvable numeric range yet. Shared by the
+ * pattern-scan triggers (markers + trendlines). */
+function visibleRangeIso(chart: IChartApi): { range_start: string; range_end: string } | null {
+  const range = chart.timeScale().getVisibleRange()
+  const toIso = (t: Time): string | null =>
+    typeof t === 'number' ? new Date(t * 1000).toISOString() : null
+  const rangeStart = range ? toIso(range.from) : null
+  const rangeEnd = range ? toIso(range.to) : null
+  if (rangeStart === null || rangeEnd === null) return null
+  return { range_start: rangeStart, range_end: rangeEnd }
+}
+
 export function CandlestickChart({
   bars,
   annotations,
@@ -352,6 +366,10 @@ export function CandlestickChart({
   }, [])
   // "Scan patterns" trigger state (Plan 0049 phase 8). Ephemeral, never persisted.
   const [scanStatus, setScanStatus] = useState<ScanStatus>({ kind: 'idle' })
+  // "Scan chart patterns" (trendline) trigger state (Plan 0064 phase 5). Only the
+  // MANUAL button surfaces this; the mount/range auto-recompute stays silent so a
+  // pan doesn't flicker a status label. Ephemeral, never persisted.
+  const [chartScanStatus, setChartScanStatus] = useState<ScanStatus>({ kind: 'idle' })
 
   // Sweep the chart's CURRENT visible range (not the full buffer) for patterns via
   // POST /scan_patterns; the markers come back over SSE (no second draw path). The
@@ -379,6 +397,47 @@ export function CandlestickChart({
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Pattern scan failed'
       setScanStatus({ kind: 'error', message })
+    }
+  }, [symbol, timeframe])
+
+  // Recompute the chart-pattern TRENDLINES for the current visible range via
+  // POST /scan_chart_patterns (Plan 0064 phase 5, ADR-0059). The lines come back
+  // over SSE as a `chart.trendlines` event — this only fires the trigger. Silent
+  // (no status churn): used by the mount + debounced-range auto-recompute so the
+  // lines track the bars on screen and survive a reload. Bearer via the typed
+  // client — never a raw fetch.
+  const recomputeTrendlines = useCallback(async (): Promise<void> => {
+    const chart = chartRef.current
+    if (!chart || !symbol || !timeframe) return
+    const range = visibleRangeIso(chart)
+    if (range === null) return
+    try {
+      await api.scanChartPatterns({ symbol, timeframe, ...range })
+    } catch (err) {
+      // Auto-recompute is best-effort: a failed refresh just leaves the current
+      // lines in place. Log, don't surface (the manual trigger reports errors).
+      console.warn('[CandlestickChart] trendline recompute failed', err)
+    }
+  }, [symbol, timeframe])
+
+  // Manual "Scan chart patterns" trigger (Plan 0064 phase 5): same sweep as the
+  // auto-recompute but status-tracked for button feedback. Kept distinct from
+  // "Scan patterns" (candlestick markers) — marker glyphs and chart-pattern
+  // geometry are conceptually separate layers.
+  const scanChartPatternsVisibleRange = useCallback(async (): Promise<void> => {
+    const chart = chartRef.current
+    if (!chart || !symbol || !timeframe) return
+    const range = visibleRangeIso(chart)
+    if (range === null) return
+    setChartScanStatus({ kind: 'scanning' })
+    try {
+      const ack = await api.scanChartPatterns({ symbol, timeframe, ...range })
+      setChartScanStatus(
+        ack.published && ack.count > 0 ? { kind: 'done', count: ack.count } : { kind: 'empty' },
+      )
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Chart-pattern scan failed'
+      setChartScanStatus({ kind: 'error', message })
     }
   }, [symbol, timeframe])
 
@@ -711,6 +770,17 @@ export function CandlestickChart({
     onReachLeftEdge: onReachLeftEdge ?? NOOP,
   })
 
+  // Recompute chart-pattern trendlines on mount + debounced visible-range settle
+  // (Plan 0064 phase 5, ADR-0059) so the lines are re-derived for the bars on
+  // screen and return after a reload. Called after the chart-creation effect so
+  // `chartRef` is populated on mount; gated off until symbol+timeframe are known.
+  useChartPatternRecompute(chartRef, {
+    enabled: symbol !== undefined && timeframe !== undefined,
+    onRecompute: () => {
+      void recomputeTrendlines()
+    },
+  })
+
   // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049). The reconcile
   // lives in the hook — not inline — per the god-component mitigation; like the
   // sibling hooks above, called after the chart-creation effect so `seriesRef`
@@ -994,6 +1064,30 @@ export function CandlestickChart({
         {scanStatus.kind === 'error' && (
           <span data-testid="scan-patterns-error" role="alert" className={styles.scanError}>
             {scanStatus.message}
+          </span>
+        )}
+        <button
+          type="button"
+          data-testid="scan-chart-patterns-button"
+          className={styles.scanButton}
+          onClick={scanChartPatternsVisibleRange}
+          disabled={chartScanStatus.kind === 'scanning' || !symbol || !timeframe}
+        >
+          {chartScanStatus.kind === 'scanning' ? 'Scanning…' : 'Scan chart patterns'}
+        </button>
+        {chartScanStatus.kind === 'done' && (
+          <span data-testid="scan-chart-patterns-status" className={styles.scanStatus}>
+            {chartScanStatus.count} pattern{chartScanStatus.count === 1 ? '' : 's'}
+          </span>
+        )}
+        {chartScanStatus.kind === 'empty' && (
+          <span data-testid="scan-chart-patterns-status" className={styles.scanStatus}>
+            No chart patterns in view
+          </span>
+        )}
+        {chartScanStatus.kind === 'error' && (
+          <span data-testid="scan-chart-patterns-error" role="alert" className={styles.scanError}>
+            {chartScanStatus.message}
           </span>
         )}
       </div>

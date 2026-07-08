@@ -55,6 +55,8 @@ const EMIT = new Set([
   'QuoteResponse',
   'ScanPatternsRequest',
   'ScanPatternsResponse',
+  'ScanChartPatternsRequest',
+  'ScanChartPatternsResponse',
   'WatchOut',
   'AlertOut',
   'AlertsPage',

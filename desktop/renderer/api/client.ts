@@ -29,6 +29,8 @@ import type { Bar } from '../types/sidecar/bar'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 import type { NewsResponse } from '../types/sidecar/news-response'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
+import type { ScanChartPatternsRequest } from '../types/sidecar/scan-chart-patterns-request'
+import type { ScanChartPatternsResponse } from '../types/sidecar/scan-chart-patterns-response'
 import type { ScanPatternsRequest } from '../types/sidecar/scan-patterns-request'
 import type { ScanPatternsResponse } from '../types/sidecar/scan-patterns-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
@@ -240,6 +242,23 @@ export const api = {
    */
   scanPatterns(req: ScanPatternsRequest): Promise<ScanPatternsResponse> {
     return callJson<ScanPatternsResponse>('/scan_patterns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
+  },
+  /**
+   * Sweep the chart's current visible range for classical chart PATTERNS (necklines,
+   * triangle/wedge bounds) — the trendline sibling of `scanPatterns` (Plan 0064,
+   * ADR-0059). Hits the renderer-bearer-gated `POST /scan_chart_patterns`; the
+   * trendlines arrive on the `/events` SSE stream as a `chart.trendlines` event
+   * (this returns only the `{published, count}` ack). Same pure core as the
+   * `detect_chart_patterns` MCP tool, so the UI recompute and agent triggers emit
+   * identical geometry. The renderer fires this on chart load / range change so the
+   * lines track the bars on screen (derived, never persisted).
+   */
+  scanChartPatterns(req: ScanChartPatternsRequest): Promise<ScanChartPatternsResponse> {
+    return callJson<ScanChartPatternsResponse>('/scan_chart_patterns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
