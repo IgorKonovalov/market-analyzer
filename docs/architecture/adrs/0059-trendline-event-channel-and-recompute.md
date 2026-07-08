@@ -1,6 +1,6 @@
 # ADR-0059 — Trendlines on a dedicated event channel, recomputed on chart load
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0064 close, 2026-07-08)
 > **Date:** 2026-07-08
 > **Related plan(s):** 0064-chart-pattern-trendline-rendering
 > **Related ADRs:** partially supersedes the wire-shape decision of [0049](0049-chart-trendline-overlay-primitive.md) (trendlines carried on `chart.show`/`chart.update`); follows the dedicated-channel precedent of `chart.highlight` markers ([0045](0045-candlestick-pattern-span-delivery.md)); rides the event stream of [0017](0017-live-ui-updates-via-sse.md)

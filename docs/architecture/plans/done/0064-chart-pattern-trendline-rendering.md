@@ -1,9 +1,9 @@
 # 0064 — Chart-pattern trendlines: render, decouple, recompute
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-07-08. All six phases on `main`, no branch, migration-free: `9a93e48` (ui-builder ph1, off-grid time→x fallback) → `5496a59` (dev ph2, dedicated `chart.trendlines v1`) → `4e80004` (dev ph3, `POST /scan_chart_patterns`) → `f3329d6` (ui-builder ph4, renderer event path + preserve semantics) → `495405b` (ui-builder ph5, recompute-on-load/range + manual trigger) → `a08ef3c` (ui-builder ph6, agent-mode copy). Architect prep `915b4f6` corrected the ph1 root cause. Clean Mode 4 — no blockers, no majors, no minors; two cosmetic nits (component off-grid test asserts segment length only, endpoints pinned in the sibling `lib` test; recompute hook's implicit range-change dependency on symbol swap). Every done-when read at the assertion level: the ph1 **red→green gate** (an off-grid neckline — anchors between bars and past the last bar — yields exactly one segment with concrete coords `{x1:130,x2:280}` via the logical fallback; pre-fix both anchors mapped `null` → 0 segments), the `trendlines`-field removal from `ChartShow`/`ChartUpdate` (`model_fields` + `extra="forbid"` ValidationError), `detect` publishing exactly one `chart.trendlines` (empty range publishes nothing), the route's **401-without-bearer** gate + tool-parity, the active-chart-gated reducer (preserve on same symbol/tf, clear on switch), and recompute mount + debounced-coalesce + manual button + no-call-when-symbol/tf-absent. Close-time gates green: 47 plan Python specs, 94 renderer specs, `mypy --strict` + ruff clean. **ADR-0059 accepted at close.**
 > **Created:** 2026-07-08
 > **Owner skill(s):** ui-builder, dev
-> **Related ADRs:** [0059](../adrs/0059-trendline-event-channel-and-recompute.md) (proposed, accepts at this plan's close), [0049](0049-chart-trendline-overlay-primitive.md) (trendline primitive), [0048](../adrs/0048-classical-chart-pattern-detection.md) (detection), [0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE)
+> **Related ADRs:** [0059](../adrs/0059-trendline-event-channel-and-recompute.md) (accepted at this plan's close 2026-07-08), [0049](0049-chart-trendline-overlay-primitive.md) (trendline primitive), [0048](../adrs/0048-classical-chart-pattern-detection.md) (detection), [0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE)
 
 ## TL;DR
 
