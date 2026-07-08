@@ -88,14 +88,12 @@ export interface ChartShowPayloadV1 {
   range_start: string
   range_end: string
   overlays?: OverlaySpec[] | null
-  trendlines?: TrendlineSpec[] | null
 }
 
 export interface ChartUpdatePayloadV1 {
   symbol: string
   timeframe: string
   overlays?: OverlaySpec[] | null
-  trendlines?: TrendlineSpec[] | null
   range_start?: string | null
   range_end?: string | null
   focus_bar?: string | null
@@ -105,6 +103,16 @@ export interface ChartHighlightPayloadV1 {
   symbol: string
   timeframe: string
   markers: Marker[]
+}
+
+/** Mirror of the pydantic `ChartTrendlinesPayloadV1` (ADR-0059 / Plan 0064):
+ * sloped pattern lines on their OWN channel — moved off `chart.show`/`chart.update`
+ * so a plain `chart.show` can't wipe them. Active-chart-gated in the reducer like
+ * `chart.highlight`; recomputed from current bars (never persisted). */
+export interface ChartTrendlinesPayloadV1 {
+  symbol: string
+  timeframe: string
+  trendlines: TrendlineSpec[]
 }
 
 export interface RunCompletedPayloadV1 {
@@ -383,6 +391,7 @@ export type EnvelopeType =
   | 'chart.show'
   | 'chart.update'
   | 'chart.highlight'
+  | 'chart.trendlines'
   | 'run.completed'
   | 'signal.evaluated'
   | 'recommendation.completed'
@@ -407,6 +416,10 @@ export type ChartUpdateEnvelope = Envelope<ChartUpdatePayloadV1> & {
 }
 export type ChartHighlightEnvelope = Envelope<ChartHighlightPayloadV1> & {
   type: 'chart.highlight'
+  version: 1
+}
+export type ChartTrendlinesEnvelope = Envelope<ChartTrendlinesPayloadV1> & {
+  type: 'chart.trendlines'
   version: 1
 }
 export type RunCompletedEnvelope = Envelope<RunCompletedPayloadV1> & {

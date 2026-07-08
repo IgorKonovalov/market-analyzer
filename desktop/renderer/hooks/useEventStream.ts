@@ -41,6 +41,7 @@ import type {
   AlertTriggeredPayloadV1,
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
+  ChartTrendlinesPayloadV1,
   ChartUpdatePayloadV1,
   Envelope,
   ForecastCompletedPayloadV1,
@@ -58,6 +59,7 @@ export interface EventStreamHandlers {
   onChartShow?: (payload: ChartShowPayloadV1) => void
   onChartUpdate?: (payload: ChartUpdatePayloadV1) => void
   onChartHighlight?: (payload: ChartHighlightPayloadV1) => void
+  onChartTrendlines?: (payload: ChartTrendlinesPayloadV1) => void
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
   onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
   onRecommendationCompleted?: (payload: RecommendationCompletedPayloadV1) => void
@@ -80,6 +82,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'chart.show': 1,
   'chart.update': 1,
   'chart.highlight': 1,
+  'chart.trendlines': 1,
   'run.completed': 1,
   'signal.evaluated': 1,
   'recommendation.completed': 1,
@@ -235,6 +238,9 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
       return
     case 'chart.highlight':
       handlers.onChartHighlight?.(envelope.payload as ChartHighlightPayloadV1)
+      return
+    case 'chart.trendlines':
+      handlers.onChartTrendlines?.(envelope.payload as ChartTrendlinesPayloadV1)
       return
     case 'run.completed':
       handlers.onRunCompleted?.(envelope.payload as RunCompletedPayloadV1)

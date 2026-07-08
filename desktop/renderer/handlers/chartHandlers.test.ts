@@ -6,6 +6,7 @@
 import {
   applyChartHighlight,
   applyChartShow,
+  applyChartTrendlines,
   applyChartUpdate,
   chartReducer,
   initialChartState,
@@ -60,24 +61,41 @@ describe('applyChartShow', () => {
     expect(next.overlays).toEqual([])
   })
 
-  it('carries trendlines from the payload; missing trendlines reset to [] (Plan 0052)', () => {
-    const prev = { ...baseState(), trendlines: [{ ...NECKLINE, pattern: 'stale' }] }
-    const withLines = applyChartShow(prev, {
+  it('PRESERVES trendlines on a same-chart show, CLEARS them on a symbol/timeframe switch (Plan 0064/ADR-0059)', () => {
+    const prev = {
+      ...baseState(),
       symbol: 'ES=F',
-      timeframe: '1d',
-      range_start: '2026-04-20T00:00:00+00:00',
-      range_end: '2026-05-20T00:00:00+00:00',
+      timeframe: '1d' as const,
       trendlines: [NECKLINE],
-    })
-    expect(withLines.trendlines).toEqual([NECKLINE])
+    }
 
-    const withoutLines = applyChartShow(prev, {
+    // Same symbol+timeframe (e.g. an overlay/range refresh) → lines survive; the
+    // recompute path keeps them current, so `chart.show` must not wipe them.
+    const sameChart = applyChartShow(prev, {
       symbol: 'ES=F',
       timeframe: '1d',
       range_start: '2026-04-20T00:00:00+00:00',
       range_end: '2026-05-20T00:00:00+00:00',
     })
-    expect(withoutLines.trendlines).toEqual([])
+    expect(sameChart.trendlines).toEqual([NECKLINE])
+
+    // Different symbol → the geometry no longer belongs; clear it.
+    const switched = applyChartShow(prev, {
+      symbol: 'MSFT',
+      timeframe: '1d',
+      range_start: '2026-04-20T00:00:00+00:00',
+      range_end: '2026-05-20T00:00:00+00:00',
+    })
+    expect(switched.trendlines).toEqual([])
+
+    // Different timeframe on the same symbol → also a switch → clear.
+    const tfSwitch = applyChartShow(prev, {
+      symbol: 'ES=F',
+      timeframe: '1h',
+      range_start: '2026-04-20T00:00:00+00:00',
+      range_end: '2026-05-20T00:00:00+00:00',
+    })
+    expect(tfSwitch.trendlines).toEqual([])
   })
 
   it.each(['15m', '4h', '1w'])(
@@ -147,23 +165,24 @@ describe('applyChartUpdate', () => {
     expect(next.range_end).toBe('2026-05-20T00:00:00+00:00')
   })
 
-  it('leaves trendlines unchanged when the payload omits them; replaces when supplied (Plan 0052)', () => {
+  it('preserves trendlines on a continuation update; clears them on a different-chart update (Plan 0064)', () => {
     const prev = { ...baseState(), trendlines: [NECKLINE] }
-    const omitted = applyChartUpdate(prev, {
+    // `chart.update` no longer carries trendlines. A continuation update leaves
+    // the existing lines untouched (they ride `...prev`).
+    const continuation = applyChartUpdate(prev, {
       symbol: prev.symbol,
       timeframe: prev.timeframe,
       overlays: [{ kind: 'ema', period: 50 }],
     })
-    // Missing key means "leave unchanged" (exclude_none wire rule).
-    expect(omitted.trendlines).toEqual([NECKLINE])
+    expect(continuation.trendlines).toEqual([NECKLINE])
 
-    const confirmed: TrendlineSpec = { ...NECKLINE, style: 'solid' }
-    const replaced = applyChartUpdate(prev, {
-      symbol: prev.symbol,
-      timeframe: prev.timeframe,
-      trendlines: [confirmed],
+    // A different-chart update falls back to chart.show semantics → clear.
+    const otherChart = applyChartUpdate(prev, {
+      symbol: 'MSFT',
+      timeframe: '1h',
+      overlays: [{ kind: 'ema', period: 50 }],
     })
-    expect(replaced.trendlines).toEqual([confirmed])
+    expect(otherChart.trendlines).toEqual([])
   })
 
   it('out-of-order: update for a different symbol falls back to chart.show semantics', () => {
@@ -250,6 +269,77 @@ describe('applyChartHighlight', () => {
     })
     expect(next.liveHighlights).toHaveLength(2)
     expect(next.liveHighlights.map((m) => m.pattern)).toEqual(['hammer', 'bullish_engulfing'])
+  })
+})
+
+describe('applyChartTrendlines (Plan 0064/ADR-0059)', () => {
+  it('adds the lines when the payload matches the active chart', () => {
+    const prev = baseState()
+    const next = applyChartTrendlines(prev, {
+      symbol: prev.symbol,
+      timeframe: prev.timeframe,
+      trendlines: [NECKLINE],
+    })
+    expect(next.trendlines).toEqual([NECKLINE])
+  })
+
+  it('drops trendlines for a non-active chart (symbol OR timeframe mismatch)', () => {
+    const prev = { ...baseState(), trendlines: [NECKLINE] }
+    const symbolMismatch = applyChartTrendlines(prev, {
+      symbol: 'MSFT',
+      timeframe: prev.timeframe,
+      trendlines: [{ ...NECKLINE, style: 'solid' }],
+    })
+    expect(symbolMismatch).toBe(prev) // unchanged reference
+
+    const tfMismatch = applyChartTrendlines(prev, {
+      symbol: prev.symbol,
+      timeframe: '1h',
+      trendlines: [{ ...NECKLINE, style: 'solid' }],
+    })
+    expect(tfMismatch).toBe(prev)
+  })
+
+  it('replaces the current lines with the payload set (last recompute wins)', () => {
+    const prev = { ...baseState(), trendlines: [NECKLINE] }
+    const confirmed: TrendlineSpec = { ...NECKLINE, style: 'solid' }
+    const next = applyChartTrendlines(prev, {
+      symbol: prev.symbol,
+      timeframe: prev.timeframe,
+      trendlines: [confirmed],
+    })
+    expect(next.trendlines).toEqual([confirmed])
+  })
+
+  it('a same-chart chart.show AFTER trendlines preserves them; a switch clears them', () => {
+    let state = applyChartTrendlines(baseState(), {
+      symbol: 'AAPL',
+      timeframe: '1d',
+      trendlines: [NECKLINE],
+    })
+    // Plain same-chart show (no trendline concept on the wire) must not wipe them.
+    state = chartReducer(state, {
+      kind: 'event/chart.show',
+      payload: {
+        symbol: 'AAPL',
+        timeframe: '1d',
+        range_start: '2026-04-20T00:00:00+00:00',
+        range_end: '2026-05-20T00:00:00+00:00',
+      },
+    })
+    expect(state.trendlines).toEqual([NECKLINE])
+
+    // A switch clears.
+    state = chartReducer(state, {
+      kind: 'event/chart.show',
+      payload: {
+        symbol: 'MSFT',
+        timeframe: '1d',
+        range_start: '2026-04-20T00:00:00+00:00',
+        range_end: '2026-05-20T00:00:00+00:00',
+      },
+    })
+    expect(state.trendlines).toEqual([])
   })
 })
 

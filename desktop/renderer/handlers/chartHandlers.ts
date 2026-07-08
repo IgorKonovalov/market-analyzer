@@ -24,6 +24,7 @@ import { DEFAULT_TIMEFRAME, KNOWN_TIMEFRAMES, type Timeframe } from '../lib/time
 import type {
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
+  ChartTrendlinesPayloadV1,
   ChartUpdatePayloadV1,
   Marker,
   OverlaySpec,
@@ -38,10 +39,11 @@ export interface ChartState {
   /** ISO 8601 UTC end of the visible range, inclusive. */
   range_end: string
   overlays: OverlaySpec[]
-  /** Sloped trendlines from `chart.show`/`chart.update` (Plan 0052, ADR-0049).
-   * Same merge rule as `overlays`: a missing key on an update means "leave
-   * unchanged"; cleared on a symbol/timeframe switch (the geometry belongs to
-   * the chart it was computed for). */
+  /** Sloped trendlines from the dedicated `chart.trendlines` event (ADR-0059,
+   * Plan 0064). No longer carried on `chart.show`/`chart.update`: a same-chart
+   * `chart.show` PRESERVES them (the recompute refreshes them), and only a
+   * symbol/timeframe switch clears them (the geometry belongs to the chart it
+   * was computed for). */
   trendlines: TrendlineSpec[]
   /** Live markers from `chart.highlight` envelopes. Deduplicated by
    * `(event_ts, pattern, kind)` (Plan 0049) so distinct same-bar patterns
@@ -54,6 +56,7 @@ export type ChartAction =
   | { kind: 'event/chart.show'; payload: ChartShowPayloadV1 }
   | { kind: 'event/chart.update'; payload: ChartUpdatePayloadV1 }
   | { kind: 'event/chart.highlight'; payload: ChartHighlightPayloadV1 }
+  | { kind: 'event/chart.trendlines'; payload: ChartTrendlinesPayloadV1 }
   | { kind: 'ui/set-symbol'; symbol: string }
   | { kind: 'ui/set-timeframe'; timeframe: Timeframe }
   | { kind: 'ui/refresh'; nowIso: string; lookbackDays: number }
@@ -83,14 +86,20 @@ function dedupHighlights(existing: Marker[], incoming: Marker[]): Marker[] {
   return additions.length === 0 ? existing : [...existing, ...additions]
 }
 
-export function applyChartShow(_prev: ChartState, payload: ChartShowPayloadV1): ChartState {
+export function applyChartShow(prev: ChartState, payload: ChartShowPayloadV1): ChartState {
+  // `chart.show` no longer carries trendlines (ADR-0059). Preserve the existing
+  // lines on a same-chart show (an overlay/range refresh) — the recompute path
+  // keeps them current — and clear them only on a genuine symbol/timeframe
+  // switch, where the old geometry no longer belongs.
+  const sameChart =
+    prev.symbol === payload.symbol && prev.timeframe === asTimeframe(payload.timeframe)
   return {
     symbol: payload.symbol,
     timeframe: asTimeframe(payload.timeframe),
     range_start: payload.range_start,
     range_end: payload.range_end,
     overlays: payload.overlays ?? [],
-    trendlines: payload.trendlines ?? [],
+    trendlines: sameChart ? prev.trendlines : [],
     liveHighlights: [],
   }
 }
@@ -109,7 +118,9 @@ export function applyChartUpdate(prev: ChartState, payload: ChartUpdatePayloadV1
       range_start: payload.range_start ?? prev.range_start,
       range_end: payload.range_end ?? prev.range_end,
       overlays: payload.overlays ?? [],
-      trendlines: payload.trendlines ?? [],
+      // A different chart: drop the prior geometry (`chart.update` no longer
+      // carries trendlines — the recompute path re-derives them for the new chart).
+      trendlines: [],
       liveHighlights: [],
     }
   }
@@ -117,7 +128,6 @@ export function applyChartUpdate(prev: ChartState, payload: ChartUpdatePayloadV1
   return {
     ...prev,
     overlays: payload.overlays ?? prev.overlays,
-    trendlines: payload.trendlines ?? prev.trendlines,
     range_start: payload.range_start ?? prev.range_start,
     range_end: payload.range_end ?? prev.range_end,
   }
@@ -137,6 +147,19 @@ export function applyChartHighlight(
   return { ...prev, liveHighlights: merged }
 }
 
+export function applyChartTrendlines(
+  prev: ChartState,
+  payload: ChartTrendlinesPayloadV1,
+): ChartState {
+  if (prev.symbol !== payload.symbol || prev.timeframe !== payload.timeframe) {
+    // Trendlines are for a non-active chart — drop (ADR-0059, mirroring
+    // `applyChartHighlight`). The renderer's recompute fires against the active
+    // chart, so the active chart gets its own lines.
+    return prev
+  }
+  return { ...prev, trendlines: payload.trendlines }
+}
+
 export function chartReducer(state: ChartState, action: ChartAction): ChartState {
   switch (action.kind) {
     case 'event/chart.show':
@@ -145,6 +168,8 @@ export function chartReducer(state: ChartState, action: ChartAction): ChartState
       return applyChartUpdate(state, action.payload)
     case 'event/chart.highlight':
       return applyChartHighlight(state, action.payload)
+    case 'event/chart.trendlines':
+      return applyChartTrendlines(state, action.payload)
     case 'ui/set-symbol':
       if (state.symbol === action.symbol) return state
       return { ...state, symbol: action.symbol, liveHighlights: [], trendlines: [] }

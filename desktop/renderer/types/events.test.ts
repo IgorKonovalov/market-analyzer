@@ -38,6 +38,7 @@ interface DumpedSchemas {
   ChartShowPayloadV1: JsonSchema
   ChartUpdatePayloadV1: JsonSchema
   ChartHighlightPayloadV1: JsonSchema
+  ChartTrendlinesPayloadV1: JsonSchema
   RunCompletedPayloadV1: JsonSchema
   GapWindow: JsonSchema
   OhlcvBackfillStartedPayloadV1: JsonSchema
@@ -71,7 +72,8 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    OverlaySpec, Marker,',
     '    TrendPoint, TrendlineSpec,',
     '    ChartShowPayloadV1, ChartUpdatePayloadV1,',
-    '    ChartHighlightPayloadV1, RunCompletedPayloadV1,',
+    '    ChartHighlightPayloadV1, ChartTrendlinesPayloadV1,',
+    '    RunCompletedPayloadV1,',
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
     '    SignalEvaluatedPayloadV1, AlertTriggeredPayloadV1,',
@@ -95,6 +97,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "ChartShowPayloadV1": ChartShowPayloadV1.model_json_schema(),',
     '    "ChartUpdatePayloadV1": ChartUpdatePayloadV1.model_json_schema(),',
     '    "ChartHighlightPayloadV1": ChartHighlightPayloadV1.model_json_schema(),',
+    '    "ChartTrendlinesPayloadV1": ChartTrendlinesPayloadV1.model_json_schema(),',
     '    "RunCompletedPayloadV1": RunCompletedPayloadV1.model_json_schema(),',
     '    "GapWindow": GapWindow.model_json_schema(),',
     '    "OhlcvBackfillStartedPayloadV1": OhlcvBackfillStartedPayloadV1.model_json_schema(),',
@@ -231,14 +234,13 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     // are pinned by the property-name + required checks above.
   })
 
-  it('ChartShowPayloadV1 fields match (trendlines additive, Plan 0052)', () => {
+  it('ChartShowPayloadV1 fields match (trendlines REMOVED, Plan 0064/ADR-0059)', () => {
     expect(propertyNames(dumped.ChartShowPayloadV1)).toEqual([
       'overlays',
       'range_end',
       'range_start',
       'symbol',
       'timeframe',
-      'trendlines',
     ])
     expect(requiredNames(dumped.ChartShowPayloadV1)).toEqual([
       'range_end',
@@ -248,7 +250,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     ])
   })
 
-  it('ChartUpdatePayloadV1 fields match (all optional except symbol+timeframe)', () => {
+  it('ChartUpdatePayloadV1 fields match (trendlines REMOVED; all optional except symbol+timeframe)', () => {
     expect(propertyNames(dumped.ChartUpdatePayloadV1)).toEqual([
       'focus_bar',
       'overlays',
@@ -256,7 +258,6 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'range_start',
       'symbol',
       'timeframe',
-      'trendlines',
     ])
     expect(requiredNames(dumped.ChartUpdatePayloadV1)).toEqual(['symbol', 'timeframe'])
   })
@@ -271,6 +272,19 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'markers',
       'symbol',
       'timeframe',
+    ])
+  })
+
+  it('ChartTrendlinesPayloadV1 fields match (dedicated channel, Plan 0064/ADR-0059)', () => {
+    expect(propertyNames(dumped.ChartTrendlinesPayloadV1)).toEqual([
+      'symbol',
+      'timeframe',
+      'trendlines',
+    ])
+    expect(requiredNames(dumped.ChartTrendlinesPayloadV1)).toEqual([
+      'symbol',
+      'timeframe',
+      'trendlines',
     ])
   })
 
