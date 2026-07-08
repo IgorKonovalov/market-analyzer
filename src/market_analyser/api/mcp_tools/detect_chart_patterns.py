@@ -1,13 +1,14 @@
 """`detect_chart_patterns` MCP tool (Plan 0052 phase 2, ADR-0048, ADR-0049).
 
 Detects classical chart patterns (head & shoulders, doubles, triangles, wedges)
-over cached bars AND auto-draws their defining geometry in one call: publishes a
-single `chart.show v1` event carrying one `TrendlineSpec` per hit line — the
-neckline of an H&S / double, the two bounding trendlines of a triangle / wedge —
-with `style="dashed"` for `forming` hits and `"solid"` for `confirmed` ones
-(the renderer's provisional-vs-fact cue). `chart.show` (not `chart.update`) so
-the one call also mounts the symbol/timeframe and window when no chart is up
-yet, mirroring `detect_levels`.
+over cached bars AND draws their defining geometry in one call: publishes a
+single `chart.trendlines v1` event carrying one `TrendlineSpec` per hit line —
+the neckline of an H&S / double, the two bounding trendlines of a triangle /
+wedge — with `style="dashed"` for `forming` hits and `"solid"` for `confirmed`
+ones (the renderer's provisional-vs-fact cue). The event is layer-only and
+active-chart-gated (ADR-0059), like `highlight_pattern`: it draws onto the chart
+already showing that symbol/timeframe rather than mounting one, so a subsequent
+`chart.show` can no longer race and wipe the lines.
 
 Hits are *derived* data: nothing is persisted; reopening the viewer re-runs the
 detection. The math is the pure `analysis.chart_patterns.detect_chart_patterns`
@@ -33,7 +34,7 @@ from market_analyser.api.mcp_tools._validation import (
 )
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.timeframes import supported_timeframes_label
-from market_analyser.events import ChartShowPayloadV1, EventBus, TrendlineSpec, TrendPoint
+from market_analyser.events import ChartTrendlinesPayloadV1, EventBus, TrendlineSpec, TrendPoint
 
 _PATTERN_STATES = ("forming", "confirmed")
 
@@ -44,8 +45,9 @@ DETECT_CHART_PATTERNS_DESCRIPTION = (
     "rising/falling wedges over confirmed swing pivots, returns the typed hits "
     "as data (pattern, forming/confirmed state, direction, pivots, defining "
     "lines, measured-move target, strength), AND publishes a single "
-    "`chart.show v1` event carrying one trendline per hit line (dashed = "
-    "forming, solid = confirmed). Strictly trailing: a hit at bar i reads only "
+    "`chart.trendlines v1` event carrying one trendline per hit line (dashed = "
+    "forming, solid = confirmed) onto the chart already showing that "
+    "symbol/timeframe. Strictly trailing: a hit at bar i reads only "
     "bars up to i; `forming` means the geometry is complete but the breakout "
     "close has not happened, `confirmed` means a close broke the "
     "neckline/trendline by the ATR-scaled margin. Optional `patterns` / "
@@ -95,7 +97,11 @@ async def _detect_chart_patterns_response(
 ) -> dict[str, Any]:
     """Body of the `detect_chart_patterns` tool: validate at the boundary, read
     cached bars through the provider, run detection off-thread, filter, and
-    publish one `chart.show` event when there is anything to draw."""
+    publish one `chart.trendlines` event when there is anything to draw.
+
+    Shared by the `POST /scan_chart_patterns` route (Plan 0064 phase 3), which is
+    why the fetch + filter + empty-cache paths live here rather than in the tool
+    closure."""
 
     _require_non_empty_symbol(symbol)
     _require_supported_timeframe(timeframe)
@@ -126,23 +132,21 @@ async def _detect_chart_patterns_response(
         return {
             "hits": [],
             "event_published": False,
-            "type": "chart.show",
-            "version": ChartShowPayloadV1.VERSION,
+            "type": "chart.trendlines",
+            "version": ChartTrendlinesPayloadV1.VERSION,
             "count": 0,
         }
-    payload = ChartShowPayloadV1(
+    payload = ChartTrendlinesPayloadV1(
         symbol=symbol,
         timeframe=timeframe,
-        range_start=range_start,
-        range_end=range_end,
         trendlines=_hit_trendlines(hits),
     )
-    event_bus.publish("chart.show", payload)
+    event_bus.publish("chart.trendlines", payload)
     return {
         "hits": [hit.model_dump(mode="json") for hit in hits],
         "event_published": True,
-        "type": "chart.show",
-        "version": ChartShowPayloadV1.VERSION,
+        "type": "chart.trendlines",
+        "version": ChartTrendlinesPayloadV1.VERSION,
         "count": len(hits),
     }
 

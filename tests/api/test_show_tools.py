@@ -50,6 +50,7 @@ from market_analyser.data.types import (
 from market_analyser.events import (
     ChartHighlightPayloadV1,
     ChartShowPayloadV1,
+    ChartTrendlinesPayloadV1,
     ChartUpdatePayloadV1,
     Envelope,
     EventBus,
@@ -797,15 +798,37 @@ def test_supertrend_overlay_rejects_price_line_fields() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Plan 0052 ph2: TrendlineSpec + the additive `trendlines` field (ADR-0049)   #
-# Pure-pydantic round-trips — no live server needed.                          #
+# Plan 0064 ph2: TrendlineSpec moves to the dedicated `chart.trendlines v1`     #
+# event; the `trendlines` field is REMOVED from chart.show/chart.update         #
+# (ADR-0059). Pure-pydantic round-trips — no live server needed.                #
 # --------------------------------------------------------------------------- #
 
 
-def test_chart_payloads_without_trendlines_wire_unchanged() -> None:
-    """Adding the optional `trendlines` field leaves a payload that doesn't set
-    it byte-identical on the wire — `exclude_none` drops the unset field, so
-    no `chart.show`/`chart.update` version bump (the Marker span precedent)."""
+def test_chart_show_and_update_no_longer_declare_trendlines() -> None:
+    """The `trendlines` field is gone from `chart.show`/`chart.update` — with
+    `extra="forbid"`, passing it is now a validation error, and it never appears
+    on the wire (ADR-0059: trendlines own their channel now)."""
+    assert "trendlines" not in ChartShowPayloadV1.model_fields
+    assert "trendlines" not in ChartUpdatePayloadV1.model_fields
+
+    spec = TrendlineSpec(
+        points=[
+            TrendPoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=99.0),
+            TrendPoint(ts=datetime(2026, 5, 5, tzinfo=UTC), price=100.0),
+        ],
+        style="dashed",
+    )
+    with pytest.raises(ValidationError):
+        ChartShowPayloadV1(
+            symbol="AAPL",
+            timeframe="1d",
+            range_start=datetime(2026, 4, 20, tzinfo=UTC),
+            range_end=datetime(2026, 5, 20, tzinfo=UTC),
+            trendlines=[spec],  # type: ignore[call-arg]
+        )
+    with pytest.raises(ValidationError):
+        ChartUpdatePayloadV1(symbol="AAPL", timeframe="1d", trendlines=[spec])  # type: ignore[call-arg]
+
     show = ChartShowPayloadV1(
         symbol="AAPL",
         timeframe="1d",
@@ -820,16 +843,13 @@ def test_chart_payloads_without_trendlines_wire_unchanged() -> None:
         "range_end": "2026-05-20T00:00:00Z",
         "overlays": [{"kind": "ema", "period": 20}],
     }
-    update = ChartUpdatePayloadV1(symbol="AAPL", timeframe="1d")
-    assert update.model_dump(mode="json", exclude_none=True) == {
-        "symbol": "AAPL",
-        "timeframe": "1d",
-    }
 
 
-def test_trendline_spec_round_trips_on_chart_show() -> None:
-    """A two-anchor dashed neckline rides `chart.show v1` intact and keeps a
-    clean wire (unset `label` dropped by `exclude_none`)."""
+def test_trendline_spec_round_trips_on_chart_trendlines() -> None:
+    """A two-anchor dashed neckline rides the dedicated `chart.trendlines v1`
+    payload intact; the payload carries symbol/timeframe/trendlines only (no
+    range), version 1, and keeps a clean wire (`exclude_none` drops unset
+    `label`)."""
     spec = TrendlineSpec(
         points=[
             TrendPoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=99.0),
@@ -839,24 +859,24 @@ def test_trendline_spec_round_trips_on_chart_show() -> None:
         style="dashed",
         pattern="head_shoulders",
     )
-    payload = ChartShowPayloadV1(
-        symbol="AAPL",
-        timeframe="1d",
-        range_start=datetime(2026, 4, 20, tzinfo=UTC),
-        range_end=datetime(2026, 5, 20, tzinfo=UTC),
-        trendlines=[spec],
-    )
-    reparsed = ChartShowPayloadV1.model_validate(payload.model_dump())
-    assert reparsed.trendlines is not None
+    payload = ChartTrendlinesPayloadV1(symbol="AAPL", timeframe="1d", trendlines=[spec])
+    assert ChartTrendlinesPayloadV1.VERSION == 1
+    reparsed = ChartTrendlinesPayloadV1.model_validate(payload.model_dump())
     assert reparsed.trendlines[0] == spec
-    assert spec.model_dump(mode="json", exclude_none=True) == {
-        "points": [
-            {"ts": "2026-04-25T00:00:00Z", "price": 99.0},
-            {"ts": "2026-05-05T00:00:00Z", "price": 100.0},
+    assert payload.model_dump(mode="json", exclude_none=True) == {
+        "symbol": "AAPL",
+        "timeframe": "1d",
+        "trendlines": [
+            {
+                "points": [
+                    {"ts": "2026-04-25T00:00:00Z", "price": 99.0},
+                    {"ts": "2026-05-05T00:00:00Z", "price": 100.0},
+                ],
+                "role": "neckline",
+                "style": "dashed",
+                "pattern": "head_shoulders",
+            }
         ],
-        "role": "neckline",
-        "style": "dashed",
-        "pattern": "head_shoulders",
     }
 
 

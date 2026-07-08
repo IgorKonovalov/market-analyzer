@@ -169,8 +169,9 @@ def create_mcp_components(
     # Derived, not persisted — no repo dep.
     register_detect_levels(server, provider=provider, event_bus=event_bus)
     # Classical chart patterns (Plan 0052): detect H&S/doubles/triangles/wedges
-    # and auto-draw their necklines/trendlines via one `chart.show` carrying
-    # TrendlineSpecs (dashed=forming, solid=confirmed). Derived, not persisted.
+    # and draw their necklines/trendlines via one layer-only `chart.trendlines`
+    # event carrying TrendlineSpecs (dashed=forming, solid=confirmed; ADR-0059).
+    # Derived, not persisted.
     register_detect_chart_patterns(server, provider=provider, event_bus=event_bus)
 
     # Live-signal evaluator (Plan 0026): resolves a strategy, fetches fresh bars

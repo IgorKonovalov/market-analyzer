@@ -1,10 +1,13 @@
 """Plan 0052 phase 2: the `detect_chart_patterns` MCP tool.
 
 `detect_chart_patterns` runs classical-pattern detection over cached bars and
-publishes ONE `chart.show v1` event carrying one `TrendlineSpec` per hit line
-(anchored on the real pivot endpoints, `dashed` for forming / `solid` for
-confirmed) — detect and draw in a single call. It is *derived* data: nothing is
-persisted (the tool takes no repository at all).
+publishes ONE `chart.trendlines v1` event carrying one `TrendlineSpec` per hit
+line (anchored on the real pivot endpoints, `dashed` for forming / `solid` for
+confirmed) — detect and draw in a single call. The event is layer-only and
+active-chart-gated (ADR-0059, Plan 0064): it draws onto the chart already
+showing that symbol/timeframe, never mounting one, so no `chart.show` race can
+wipe the lines. It is *derived* data: nothing is persisted (the tool takes no
+repository at all).
 
 These exercise the factored `_detect_chart_patterns_response` body directly on
 a single event loop with a real `EventBus` and a stub provider — no live MCP
@@ -173,11 +176,12 @@ def _run_detect(
     )
 
 
-def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_show() -> None:
+def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_trendlines() -> None:
     """On the seeded H&S fixture: the typed hit list comes back as data AND
-    exactly one `chart.show v1` event lands on the bus, its trendlines carrying
-    the expected neckline anchor `(ts, price)` points with `style` matching
-    each hit's state (dashed=forming, solid=confirmed)."""
+    exactly one `chart.trendlines v1` event lands on the bus, its trendlines
+    carrying the expected neckline anchor `(ts, price)` points with `style`
+    matching each hit's state (dashed=forming, solid=confirmed). The layer-only
+    payload carries symbol/timeframe/trendlines and NO range fields."""
 
     bus = EventBus()
     sub = bus.subscribe()
@@ -186,7 +190,7 @@ def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_show() -> No
 
     # --- returned data: the forming + confirmed hits ------------------------- #
     assert ack["event_published"] is True
-    assert ack["type"] == "chart.show"
+    assert ack["type"] == "chart.trendlines"
     hits = ack["hits"]
     assert isinstance(hits, list)
     assert ack["count"] == len(hits) == 2
@@ -197,13 +201,14 @@ def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_show() -> No
     assert all(h["direction"] == "bearish" for h in hits)
     assert all("action" not in h and "buy" not in h and "sell" not in h for h in hits)
 
-    # --- the bus: exactly one chart.show, trendline anchors + styles --------- #
+    # --- the bus: exactly one chart.trendlines, anchors + styles ------------- #
     events = _drain(sub)
     assert len(events) == 1
     env = events[0]
-    assert env.type == "chart.show"
+    assert env.type == "chart.trendlines"
     assert env.payload["symbol"] == "AAPL"
     assert env.payload["timeframe"] == "1d"
+    assert "range_start" not in env.payload and "range_end" not in env.payload
     trendlines = env.payload["trendlines"]
     assert isinstance(trendlines, list)
     assert len(trendlines) == 2  # one neckline per hit (forming + confirmed)

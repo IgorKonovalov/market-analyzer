@@ -1,6 +1,6 @@
 # 0064 — Chart-pattern trendlines: render, decouple, recompute
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-08
 > **Owner skill(s):** ui-builder, dev
 > **Related ADRs:** [0059](../adrs/0059-trendline-event-channel-and-recompute.md) (proposed, accepts at this plan's close), [0049](0049-chart-trendline-overlay-primitive.md) (trendline primitive), [0048](../adrs/0048-classical-chart-pattern-detection.md) (detection), [0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE)

@@ -141,10 +141,9 @@ class TrendlineSpec(BaseModel):
     """A sloped multi-point line on the chart (ADR-0049, Plan 0052): a
     head-and-shoulders neckline or one bounding trendline of a triangle/wedge.
 
-    Carried as the optional `trendlines` field on `chart.show`/`chart.update`
-    payloads — additive and `exclude_none`'d, so payloads without trendlines
-    are byte-unchanged on the wire and the payload version does not bump
-    (exactly how the `Marker` span fields landed). `style` is the
+    Carried on the dedicated `chart.trendlines v1` event (ADR-0059, Plan 0064) —
+    its own channel, so a `chart.show` can no longer wipe the lines and they are
+    recomputed from current bars rather than persisted. `style` is the
     forming-vs-confirmed cue (`dashed` = forming, `solid` = confirmed);
     `role`/`pattern` give the renderer theming and identity."""
 
@@ -175,7 +174,6 @@ class ChartShowPayloadV1(BaseModel):
     range_start: datetime
     range_end: datetime
     overlays: list[OverlaySpec] | None = None
-    trendlines: list[TrendlineSpec] | None = None
 
 
 class ChartUpdatePayloadV1(BaseModel):
@@ -187,7 +185,6 @@ class ChartUpdatePayloadV1(BaseModel):
     symbol: str
     timeframe: str
     overlays: list[OverlaySpec] | None = None
-    trendlines: list[TrendlineSpec] | None = None
     range_start: datetime | None = None
     range_end: datetime | None = None
     focus_bar: datetime | None = None
@@ -202,6 +199,24 @@ class ChartHighlightPayloadV1(BaseModel):
     symbol: str
     timeframe: str
     markers: list[Marker]
+
+
+class ChartTrendlinesPayloadV1(BaseModel):
+    """`chart.trendlines v1` payload: layer sloped pattern lines onto the chart
+    already showing `symbol`/`timeframe` (ADR-0059, Plan 0064).
+
+    Trendlines live on their OWN channel — not on `chart.show`/`chart.update` —
+    so a plain `chart.show` can no longer wipe them and they are recomputed from
+    current bars (never persisted). Active-chart-gated in the renderer exactly
+    like `chart.highlight`: the reducer applies it only when `symbol`+`timeframe`
+    match the chart on screen."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    trendlines: list[TrendlineSpec]
 
 
 class RunCompletedPayloadV1(BaseModel):
@@ -448,6 +463,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.show": ChartShowPayloadV1,
     "chart.update": ChartUpdatePayloadV1,
     "chart.highlight": ChartHighlightPayloadV1,
+    "chart.trendlines": ChartTrendlinesPayloadV1,
     "run.completed": RunCompletedPayloadV1,
     "signal.evaluated": SignalEvaluatedPayloadV1,
     "recommendation.completed": RecommendationCompletedPayloadV1,
