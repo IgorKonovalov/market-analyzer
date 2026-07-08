@@ -65,7 +65,12 @@ import {
   supertrendBands,
 } from '../lib/overlays'
 import { PatternSpanPrimitive, SPAN_LAYER_ID, SPAN_LAYER_LABEL, markersToSpans } from '../lib/spans'
-import { TRENDLINE_LAYER_ID, TRENDLINE_LAYER_LABEL } from '../lib/trendlines'
+import {
+  TRENDLINE_LAYER_ID,
+  TRENDLINE_LAYER_LABEL,
+  TrendlinePrimitive,
+  readTrendlineColors,
+} from '../lib/trendlines'
 import { useTrendlines } from '../hooks/useTrendlines'
 import {
   getStoredTheme,
@@ -329,6 +334,12 @@ export function CandlestickChart({
   // Multi-bar pattern span band (Plan 0049 phase 7): one series primitive,
   // attached at mount, fed spans/colors/visibility by the spans effect below.
   const spanPrimitiveRef = useRef<PatternSpanPrimitive | null>(null)
+  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049): attached at mount
+  // alongside the span band — NOT inside `useTrendlines` — so its lifecycle is
+  // tied to the chart's and it always rides the LIVE series (Plan 0064 follow-up:
+  // the hook-attach stranded it on a discarded chart under StrictMode). Fed by
+  // `useTrendlines` below.
+  const trendlinePrimitiveRef = useRef<TrendlinePrimitive | null>(null)
   // Always-on volume series (Plan 0027 phase 3).
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -544,6 +555,13 @@ export function CandlestickChart({
     series.attachPrimitive(spanPrimitive)
     spanPrimitiveRef.current = spanPrimitive
 
+    // Attach the trendline primitive once, here (not in `useTrendlines`), so it
+    // rides the live series for the chart's whole life and is disposed by
+    // `chart.remove()` — the same lifecycle as the span band (Plan 0064 fix).
+    const trendlinePrimitive = new TrendlinePrimitive(readTrendlineColors(container))
+    series.attachPrimitive(trendlinePrimitive)
+    trendlinePrimitiveRef.current = trendlinePrimitive
+
     chartRef.current = chart
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
@@ -563,6 +581,7 @@ export function CandlestickChart({
       chartRef.current = null
       seriesRef.current = null
       spanPrimitiveRef.current = null
+      trendlinePrimitiveRef.current = null
       volumeSeriesRef.current = null
       volumeMaSeriesRef.current = null
       vwapSeriesRef.current = null
@@ -781,11 +800,11 @@ export function CandlestickChart({
     },
   })
 
-  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049). The reconcile
-  // lives in the hook — not inline — per the god-component mitigation; like the
-  // sibling hooks above, called after the chart-creation effect so `seriesRef`
-  // is populated on mount.
-  useTrendlines(containerRef, seriesRef, { trendlines, hidden, effectiveTheme })
+  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049). The primitive is
+  // attached in the chart-creation effect above (Plan 0064 fix); this hook only
+  // FEEDS it specs/colours/visibility. Called after that effect so the ref is
+  // populated on mount.
+  useTrendlines(containerRef, trendlinePrimitiveRef, { trendlines, hidden, effectiveTheme })
 
   // Markers (annotation markers + the clicked-bar affordance) are themed: their
   // colors resolve from the DOM tokens, so they recolor when `effectiveTheme`

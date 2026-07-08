@@ -4,26 +4,32 @@
  * god-component debt (the 0047/0049 decomposition follow-up), so this lands as
  * a hook, not inline effects.
  *
- * Owns the `TrendlinePrimitive` lifecycle: attaches it to the candle series
- * lazily on first run, then feeds it specs, theme-resolved colours, and the
- * legend-row visibility on every change. The primitive is disposed by
- * `chart.remove()` on unmount (the chart owns its primitives, same as the span
- * band) — no detach here, which would race the component's cleanup order.
+ * FEEDS an already-attached `TrendlinePrimitive` its specs, theme-resolved
+ * colours, and legend-row visibility on every change. It does NOT attach the
+ * primitive: the primitive is created and `attachPrimitive`'d in the component's
+ * chart-creation effect (mirroring the span band), so its lifecycle is tied to
+ * the chart's — attached to the LIVE series, disposed by `chart.remove()`, and
+ * re-created on any chart re-mount (incl. React StrictMode's dev double-invoke).
  *
- * MUST be called after the component's chart-creation effect so that, on
- * mount, `seriesRef` is populated before this effect runs (the same ordering
- * contract as `useChartGestures` / `useLazyHistoryTrigger`).
+ * This is deliberate: attaching inside the hook (guarded by a "once" ref with no
+ * cleanup) stranded the primitive on a discarded chart under StrictMode / chart
+ * re-creation — it computed segments against stale objects but the live chart
+ * had no primitive to paint, so trendlines never drew (Plan 0064 follow-up). The
+ * span band never had this bug because it is created in the chart-creation
+ * effect; trendlines now follow the same pattern.
+ *
+ * MUST be called after the component's chart-creation effect so that, on mount,
+ * `trendlinePrimitiveRef` is populated before this effect runs.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import type { RefObject } from 'react'
-import type { ISeriesApi } from 'lightweight-charts'
 
 import type { EffectiveTheme } from '../lib/theme'
 import { TRENDLINE_LAYER_ID, TrendlinePrimitive, readTrendlineColors } from '../lib/trendlines'
 import type { TrendlineSpec } from '../types/events'
 
 export interface UseTrendlinesParams {
-  /** The trendline specs to draw (from `chart.show`/`chart.update`). */
+  /** The trendline specs to draw (from the `chart.trendlines` event). */
   trendlines: ReadonlyArray<TrendlineSpec>
   /** The chart's hidden-layer id set; this hook reads `TRENDLINE_LAYER_ID`. */
   hidden: ReadonlySet<string>
@@ -33,25 +39,17 @@ export interface UseTrendlinesParams {
 
 export function useTrendlines(
   containerRef: RefObject<HTMLDivElement>,
-  seriesRef: RefObject<ISeriesApi<'Candlestick'>>,
+  trendlinePrimitiveRef: RefObject<TrendlinePrimitive>,
   { trendlines, hidden, effectiveTheme }: UseTrendlinesParams,
 ): void {
-  const primitiveRef = useRef<TrendlinePrimitive | null>(null)
-
   useEffect(() => {
-    const series = seriesRef.current
+    const primitive = trendlinePrimitiveRef.current
     const container = containerRef.current
-    if (!series || !container) return
-    let primitive = primitiveRef.current
-    if (primitive === null) {
-      primitive = new TrendlinePrimitive(readTrendlineColors(container))
-      series.attachPrimitive(primitive)
-      primitiveRef.current = primitive
-    }
+    if (!primitive || !container) return
     // Recolours in place on a theme flip (`effectiveTheme` in the deps re-runs
     // the token read); the primitive persists — no remount, no re-attach.
     primitive.setColors(readTrendlineColors(container))
     primitive.setTrendlines(trendlines)
     primitive.setVisible(!hidden.has(TRENDLINE_LAYER_ID))
-  }, [containerRef, seriesRef, trendlines, hidden, effectiveTheme])
+  }, [containerRef, trendlinePrimitiveRef, trendlines, hidden, effectiveTheme])
 }
