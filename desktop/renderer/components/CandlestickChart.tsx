@@ -21,7 +21,7 @@
  * spec assert against that — NOT the reducer's overlay list — so a render
  * regression that loses a series cannot pass.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ColorType, TickMarkType, createChart } from 'lightweight-charts'
 import type {
   IChartApi,
@@ -69,6 +69,7 @@ import {
   TRENDLINE_LAYER_ID,
   TRENDLINE_LAYER_LABEL,
   TrendlinePrimitive,
+  dedupeTrendlines,
   readTrendlineColors,
 } from '../lib/trendlines'
 import { useTrendlines } from '../hooks/useTrendlines'
@@ -375,6 +376,11 @@ export function CandlestickChart({
       return next
     })
   }, [])
+  // Collapse the redundant forming(dashed)+confirmed(solid) twin of each geometry
+  // (Plan 0067 phase 1 / ADR-0061) before anything consumes the specs — the
+  // primitive draws these, and the legend counts from them. Memoised so a stable
+  // `trendlines` reference doesn't re-run the downstream effects.
+  const visibleTrendlines = useMemo(() => dedupeTrendlines(trendlines), [trendlines])
   // "Scan patterns" trigger state (Plan 0049 phase 8). Ephemeral, never persisted.
   const [scanStatus, setScanStatus] = useState<ScanStatus>({ kind: 'idle' })
   // "Scan chart patterns" (trendline) trigger state (Plan 0064 phase 5). Only the
@@ -804,7 +810,11 @@ export function CandlestickChart({
   // attached in the chart-creation effect above (Plan 0064 fix); this hook only
   // FEEDS it specs/colours/visibility. Called after that effect so the ref is
   // populated on mount.
-  useTrendlines(containerRef, trendlinePrimitiveRef, { trendlines, hidden, effectiveTheme })
+  useTrendlines(containerRef, trendlinePrimitiveRef, {
+    trendlines: visibleTrendlines,
+    hidden,
+    effectiveTheme,
+  })
 
   // Markers (annotation markers + the clicked-bar affordance) are themed: their
   // colors resolve from the DOM tokens, so they recolor when `effectiveTheme`
@@ -964,10 +974,11 @@ export function CandlestickChart({
       })
     }
     // One row for ALL trendlines (Plan 0052 phase 4), mirroring the span row;
-    // only present when at least one trendline exists. Unchecking it hides
-    // every line and leaves the other layers untouched (useTrendlines reads
-    // `hidden`). Neutral swatch — the row governs lines of mixed role colours.
-    if (trendlines.length > 0) {
+    // only present when at least one (deduped) trendline exists. Unchecking it
+    // hides every line and leaves the other layers untouched (useTrendlines reads
+    // `hidden`). Neutral swatch — the row governs lines of mixed pattern colours
+    // (Plan 0067 phase 3 replaces this single row with per-(type,state) rows).
+    if (visibleTrendlines.length > 0) {
       next.push({
         id: TRENDLINE_LAYER_ID,
         label: TRENDLINE_LAYER_LABEL,
@@ -977,7 +988,7 @@ export function CandlestickChart({
       })
     }
     setLayers(next)
-  }, [overlays, annotations, trendlines, hidden, effectiveTheme])
+  }, [overlays, annotations, visibleTrendlines, hidden, effectiveTheme])
 
   // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a labelled
   // marker's text and/or each overlay line's name + value at that bar. Reads only

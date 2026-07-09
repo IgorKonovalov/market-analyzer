@@ -1,6 +1,6 @@
 # 0067 — Trendline pattern identification: colour by type, de-clutter, hover + grouped legend
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-08
 > **Owner skill(s):** ui-builder
 > **Related ADRs:** [0061](../adrs/0061-trendline-pattern-identity-and-colour.md) (proposed, accepts at this plan's close — the colour-model + identity decision), [0049](../adrs/0049-chart-trendline-overlay-primitive.md) (trendline primitive, colour-by-role being amended), [0059](../adrs/0059-trendline-event-channel-and-recompute.md) (delivery channel), [0060](../adrs/0060-glossary-tooltip-interaction-posture.md) (hover-tooltip posture)

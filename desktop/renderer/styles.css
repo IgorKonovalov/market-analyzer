@@ -91,6 +91,21 @@
   --marker-bullish: #16a34a;
   --marker-bearish: #dc2626;
   --marker-neutral: #64748b;
+
+  /* Trendline categorical palette (Plan 0067 / ADR-0061): one distinct hue per
+   * chart-pattern type so a pattern's lines read as one shape. Light values —
+   * darker/saturated shades legible on the light chart background. Read by
+   * CandlestickChart via computed styles (canvas can't resolve var()). Keep in
+   * sync with the dark blocks below and `TRENDLINE_COLOR_FALLBACK`. */
+  --trendline-head-shoulders: #e03131;
+  --trendline-inverse-head-shoulders: #e8590c;
+  --trendline-double-top: #ae3ec9;
+  --trendline-double-bottom: #2f9e44;
+  --trendline-ascending-triangle: #099268;
+  --trendline-descending-triangle: #c2255c;
+  --trendline-symmetrical-triangle: #1971c2;
+  --trendline-rising-wedge: #6741d9;
+  --trendline-falling-wedge: #0c8599;
 }
 
 /* Dark palette — explicit choice; wins over `prefers-color-scheme`. */
@@ -134,6 +149,18 @@
   --marker-bullish: #4ade80;
   --marker-bearish: #f87171;
   --marker-neutral: #94a3b8;
+
+  /* Trendline categorical palette — dark (mirror of the light block). Lighter,
+   * brighter shades read against the dark chart background. */
+  --trendline-head-shoulders: #ff8787;
+  --trendline-inverse-head-shoulders: #ffa94d;
+  --trendline-double-top: #da77f2;
+  --trendline-double-bottom: #69db7c;
+  --trendline-ascending-triangle: #38d9a9;
+  --trendline-descending-triangle: #f06595;
+  --trendline-symmetrical-triangle: #4dabf7;
+  --trendline-rising-wedge: #b197fc;
+  --trendline-falling-wedge: #3bc9db;
 }
 
 /* System-follow dark — applies only when the user has made no explicit choice
@@ -176,6 +203,17 @@
     --marker-bullish: #4ade80;
     --marker-bearish: #f87171;
     --marker-neutral: #94a3b8;
+
+    /* Trendline categorical palette — dark (mirror of the explicit block). */
+    --trendline-head-shoulders: #ff8787;
+    --trendline-inverse-head-shoulders: #ffa94d;
+    --trendline-double-top: #da77f2;
+    --trendline-double-bottom: #69db7c;
+    --trendline-ascending-triangle: #38d9a9;
+    --trendline-descending-triangle: #f06595;
+    --trendline-symmetrical-triangle: #4dabf7;
+    --trendline-rising-wedge: #b197fc;
+    --trendline-falling-wedge: #3bc9db;
   }
 }
 

@@ -4,10 +4,11 @@
  *
  * `computeTrendlineSegments` maps anchor pairs to pixel segments via stubbed
  * time→x / price→y converters, skipping a segment whose either endpoint maps
- * off-screen and colouring by role token — canvas-free, the `spans.test.ts`
- * precedent. The primitive tests pin the forming/confirmed styling (dashed vs
- * solid on its segment state) and the empty-until-attached / visibility
- * behaviour.
+ * off-screen and colouring by PATTERN-TYPE token (Plan 0067 / ADR-0061) —
+ * canvas-free, the `spans.test.ts` precedent. `dedupeTrendlines` collapses the
+ * forming(dashed)+confirmed(solid) twin. The primitive tests pin the
+ * forming/confirmed styling (dashed vs solid on its segment state) and the
+ * empty-until-attached / visibility behaviour.
  */
 import type { SeriesAttachedParameter, Time, UTCTimestamp } from 'lightweight-charts'
 
@@ -15,6 +16,7 @@ import type { TrendlineSpec } from '../types/events'
 import {
   TrendlinePrimitive,
   computeTrendlineSegments,
+  dedupeTrendlines,
   resolveTimeX,
   timeToFractionalLogical,
   trendlineColor,
@@ -22,10 +24,16 @@ import {
 } from './trendlines'
 
 const COLORS: TrendlineColors = {
-  bullish: '#00ff00',
-  bearish: '#ff0000',
-  neutral: '#888888',
-  accent: '#0000ff',
+  head_shoulders: '#111111',
+  inverse_head_shoulders: '#222222',
+  double_top: '#333333',
+  double_bottom: '#444444',
+  ascending_triangle: '#555555',
+  descending_triangle: '#666666',
+  symmetrical_triangle: '#777777',
+  rising_wedge: '#888888',
+  falling_wedge: '#999999',
+  neutral: '#aaaaaa',
 }
 
 const T1 = '2026-05-13T00:00:00Z'
@@ -103,20 +111,88 @@ describe('computeTrendlineSegments', () => {
     expect(segments.map((s) => s.dashed)).toEqual([true, false])
   })
 
-  it('colours by role token: neckline=accent, upper=bearish, lower=bullish, none=neutral', () => {
-    expect(trendlineColor('neckline', COLORS)).toBe(COLORS.accent)
-    expect(trendlineColor('upper_trendline', COLORS)).toBe(COLORS.bearish)
-    expect(trendlineColor('lower_trendline', COLORS)).toBe(COLORS.bullish)
+  it('colours by pattern type: a distinct colour per type, neutral for unknown/absent', () => {
+    expect(trendlineColor('head_shoulders', COLORS)).toBe(COLORS.head_shoulders)
+    expect(trendlineColor('symmetrical_triangle', COLORS)).toBe(COLORS.symmetrical_triangle)
+    expect(trendlineColor('falling_wedge', COLORS)).toBe(COLORS.falling_wedge)
+    // Every known type maps to its own hue (no two collide).
+    const known = [
+      'head_shoulders',
+      'inverse_head_shoulders',
+      'double_top',
+      'double_bottom',
+      'ascending_triangle',
+      'descending_triangle',
+      'symmetrical_triangle',
+      'rising_wedge',
+      'falling_wedge',
+    ]
+    expect(new Set(known.map((p) => trendlineColor(p, COLORS))).size).toBe(known.length)
+    // Unknown / absent pattern → the stable neutral hue.
+    expect(trendlineColor('not_a_pattern', COLORS)).toBe(COLORS.neutral)
     expect(trendlineColor(null, COLORS)).toBe(COLORS.neutral)
     expect(trendlineColor(undefined, COLORS)).toBe(COLORS.neutral)
 
+    // A spec's drawn segment carries its pattern colour, regardless of role.
     const segments = computeTrendlineSegments(
-      [{ ...NECKLINE, role: 'lower_trendline' }],
+      [{ ...NECKLINE, pattern: 'double_bottom', role: 'lower_trendline' }],
       timeToX,
       priceToY,
       COLORS,
     )
-    expect(segments[0].color).toBe(COLORS.bullish)
+    expect(segments[0].color).toBe(COLORS.double_bottom)
+  })
+})
+
+describe('dedupeTrendlines', () => {
+  const geom = [
+    { ts: T1, price: 10 },
+    { ts: T2, price: 20 },
+  ]
+
+  it('drops a dashed spec whose points match a solid spec of the same pattern (keeps the solid)', () => {
+    const solid: TrendlineSpec = { points: geom, style: 'solid', pattern: 'rising_wedge' }
+    const dashedTwin: TrendlineSpec = { points: geom, style: 'dashed', pattern: 'rising_wedge' }
+    const out = dedupeTrendlines([dashedTwin, solid])
+    expect(out).toEqual([solid])
+  })
+
+  it('leaves a forming-only (dashed, no solid twin) spec intact', () => {
+    const formingOnly: TrendlineSpec = { points: geom, style: 'dashed', pattern: 'double_top' }
+    expect(dedupeTrendlines([formingOnly])).toEqual([formingOnly])
+  })
+
+  it('leaves a confirmed-only (solid) spec intact', () => {
+    const confirmedOnly: TrendlineSpec = { points: geom, style: 'solid', pattern: 'double_top' }
+    expect(dedupeTrendlines([confirmedOnly])).toEqual([confirmedOnly])
+  })
+
+  it('does NOT collapse a dashed spec of DIFFERENT geometry from the solid', () => {
+    const solid: TrendlineSpec = { points: geom, style: 'solid', pattern: 'rising_wedge' }
+    // Same pattern, different anchor prices → distinct geometry, not a twin.
+    const otherDashed: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 11 },
+        { ts: T2, price: 21 },
+      ],
+      style: 'dashed',
+      pattern: 'rising_wedge',
+    }
+    const out = dedupeTrendlines([solid, otherDashed])
+    expect(out).toEqual([solid, otherDashed])
+  })
+
+  it('preserves order of the surviving specs', () => {
+    const a: TrendlineSpec = { points: geom, style: 'solid', pattern: 'head_shoulders' }
+    const b: TrendlineSpec = {
+      points: [
+        { ts: T2, price: 5 },
+        { ts: T3, price: 6 },
+      ],
+      style: 'dashed',
+      pattern: 'falling_wedge',
+    }
+    expect(dedupeTrendlines([a, b])).toEqual([a, b])
   })
 })
 
@@ -257,9 +333,9 @@ describe('TrendlinePrimitive', () => {
   it('recolours in place via setColors (theme flip path)', () => {
     const primitive = new TrendlinePrimitive(COLORS)
     attachStub(primitive)
-    primitive.setTrendlines([NECKLINE])
-    expect(primitive.currentSegments()[0].color).toBe(COLORS.accent)
-    primitive.setColors({ ...COLORS, accent: '#123456' })
+    primitive.setTrendlines([NECKLINE]) // pattern head_shoulders → its type hue
+    expect(primitive.currentSegments()[0].color).toBe(COLORS.head_shoulders)
+    primitive.setColors({ ...COLORS, head_shoulders: '#123456' })
     expect(primitive.currentSegments()[0].color).toBe('#123456')
   })
 })

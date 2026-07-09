@@ -19,10 +19,13 @@
  * to map on a genuinely empty/degenerate chart (< 2 bars).
  *
  * `style` is the forming-vs-confirmed cue: `dashed` = forming, `solid` =
- * confirmed. Colours resolve from the theme tokens by role (never hardcoded in
- * the draw path): a lower trendline reads support-like (bullish token), an
- * upper trendline resistance-like (bearish token), a neckline uses the accent
- * token, and a roleless line the neutral token.
+ * confirmed. Colours resolve from the theme tokens by PATTERN TYPE (Plan 0067 /
+ * ADR-0061, superseding ADR-0049's role→colour): every line of one pattern (a
+ * triangle's two bounds, a head-and-shoulders' neckline) shares one categorical
+ * hue, so same-coloured lines read as one shape; a roleless/unknown pattern
+ * uses the neutral token. Role is still on the wire but no longer drives colour.
+ * The redundant forming(dashed)+confirmed(solid) twin of one geometry is
+ * collapsed by `dedupeTrendlines` before drawing (the caller applies it).
  *
  * The pixel math lives in the pure, canvas-free `computeTrendlineSegments` so
  * it is unit-testable; the renderer's `draw` only strokes the segments.
@@ -38,58 +41,107 @@ import type {
   UTCTimestamp,
 } from 'lightweight-charts'
 
-import type { TrendlineRole, TrendlineSpec } from '../types/events'
+import type { TrendlineSpec } from '../types/events'
 
 /** Single legend row id/label controlling ALL trendlines (Plan 0052 phase 4),
  * mirroring the span layer's `SPAN_LAYER_ID` pattern. */
 export const TRENDLINE_LAYER_ID = 'trendlines'
 export const TRENDLINE_LAYER_LABEL = 'Trendlines'
 
-/** Theme-resolved colours the trendline roles map onto. Same shape discipline
- * as `MarkerColors`: resolved from the DOM tokens by the caller, passed in. */
-export interface TrendlineColors {
-  /** `--marker-bullish` — lower trendlines (support-like). */
-  bullish: string
-  /** `--marker-bearish` — upper trendlines (resistance-like). */
-  bearish: string
-  /** `--marker-neutral` — roleless lines. */
+/** The classical chart-pattern types the detector emits (mirror of
+ * `CHART_PATTERNS` in `analysis/chart_patterns.py`) — the categorical colour
+ * key (Plan 0067 / ADR-0061). Order is the palette-token order in styles.css. */
+export const TRENDLINE_PATTERN_TYPES = [
+  'head_shoulders',
+  'inverse_head_shoulders',
+  'double_top',
+  'double_bottom',
+  'ascending_triangle',
+  'descending_triangle',
+  'symmetrical_triangle',
+  'rising_wedge',
+  'falling_wedge',
+] as const
+export type TrendlinePatternType = (typeof TRENDLINE_PATTERN_TYPES)[number]
+
+/** Theme-resolved categorical palette: one distinct hue per pattern type, plus a
+ * stable neutral for an unknown/absent pattern (Plan 0067 / ADR-0061). Resolved
+ * from the DOM tokens by the caller and passed in — same discipline as before,
+ * but keyed by pattern type rather than role. */
+export type TrendlineColors = Record<TrendlinePatternType, string> & {
+  /** Fallback hue for a roleless/unknown pattern. */
   neutral: string
-  /** `--marker-clicked` (the accent) — necklines. */
-  accent: string
 }
 
 // Light-theme fallbacks for when a token is unset — e.g. in jsdom unit tests
-// where styles.css isn't loaded. At runtime the tokens in styles.css win.
+// where styles.css isn't loaded. At runtime the tokens in styles.css win. These
+// mirror the `--trendline-*` light values in styles.css.
 const TRENDLINE_COLOR_FALLBACK: TrendlineColors = {
-  bullish: '#16a34a',
-  bearish: '#dc2626',
+  head_shoulders: '#e03131',
+  inverse_head_shoulders: '#e8590c',
+  double_top: '#ae3ec9',
+  double_bottom: '#2f9e44',
+  ascending_triangle: '#099268',
+  descending_triangle: '#c2255c',
+  symmetrical_triangle: '#1971c2',
+  rising_wedge: '#6741d9',
+  falling_wedge: '#0c8599',
   neutral: '#64748b',
-  accent: '#2563eb',
 }
 
-/** Resolve the trendline palette off the themed DOM (lightweight-charts/canvas
- * can't resolve `var(--x)` strings), falling back to the light defaults. */
+/** The `--trendline-<pattern>` CSS-variable name for a pattern type
+ * (underscores → hyphens), e.g. `head_shoulders` → `--trendline-head-shoulders`. */
+function patternToken(type: TrendlinePatternType): string {
+  return `--trendline-${type.replaceAll('_', '-')}`
+}
+
+/** Resolve the categorical trendline palette off the themed DOM (lightweight-
+ * charts/canvas can't resolve `var(--x)` strings), falling back to the light
+ * defaults. Reads one `--trendline-<pattern>` token per type plus the neutral. */
 export function readTrendlineColors(el: HTMLElement): TrendlineColors {
   const c = getComputedStyle(el)
   const v = (name: string, fallback: string): string => c.getPropertyValue(name).trim() || fallback
-  return {
-    bullish: v('--marker-bullish', TRENDLINE_COLOR_FALLBACK.bullish),
-    bearish: v('--marker-bearish', TRENDLINE_COLOR_FALLBACK.bearish),
+  const colors = {
     neutral: v('--marker-neutral', TRENDLINE_COLOR_FALLBACK.neutral),
-    accent: v('--marker-clicked', TRENDLINE_COLOR_FALLBACK.accent),
+  } as TrendlineColors
+  for (const type of TRENDLINE_PATTERN_TYPES) {
+    colors[type] = v(patternToken(type), TRENDLINE_COLOR_FALLBACK[type])
   }
+  return colors
 }
 
-/** Role → theme token. Exported for the legend swatch (the row's colour must
- * equal the colour the lines are drawn with). */
+/** Pattern type → theme token. Exported for the legend swatch (the row's colour
+ * must equal the colour the lines are drawn with). An unknown/absent pattern
+ * falls back to the stable neutral hue. */
 export function trendlineColor(
-  role: TrendlineRole | null | undefined,
+  pattern: string | null | undefined,
   colors: TrendlineColors,
 ): string {
-  if (role === 'neckline') return colors.accent
-  if (role === 'upper_trendline') return colors.bearish
-  if (role === 'lower_trendline') return colors.bullish
+  if (pattern != null && (TRENDLINE_PATTERN_TYPES as readonly string[]).includes(pattern)) {
+    return colors[pattern as TrendlinePatternType]
+  }
   return colors.neutral
+}
+
+/** Geometry identity of a spec for the forming/confirmed collapse: same pattern
+ * + same anchor points ⇒ same geometry (the detector emits a dashed `forming`
+ * and a solid `confirmed` spec with identical `points`). */
+function geometryKey(s: TrendlineSpec): string {
+  return `${s.pattern ?? 'unknown'}|${s.points.map((p) => `${p.ts}@${p.price}`).join(';')}`
+}
+
+/**
+ * Collapse the redundant forming(dashed)+confirmed(solid) twin (Plan 0067 /
+ * ADR-0061): when a `solid` spec exists for a geometry, drop its `dashed` twin —
+ * confirmed subsumes forming with no information loss. Forming-only and
+ * confirmed-only geometries are both kept. Pure and order-preserving.
+ */
+export function dedupeTrendlines(specs: readonly TrendlineSpec[]): TrendlineSpec[] {
+  const confirmedGeoms = new Set<string>()
+  for (const s of specs) {
+    if (s.style === 'solid') confirmedGeoms.add(geometryKey(s))
+  }
+  return specs.filter((s) => !(s.style === 'dashed' && confirmedGeoms.has(geometryKey(s))))
 }
 
 function toUtcSeconds(iso: string): UTCTimestamp {
@@ -102,7 +154,7 @@ export interface TrendlineSegment {
   y1: number
   x2: number
   y2: number
-  /** Colour resolved from the spec's role token. */
+  /** Colour resolved from the spec's pattern-type token. */
   color: string
   /** `style === "dashed"` → forming; solid → confirmed. */
   dashed: boolean
@@ -124,7 +176,7 @@ export function computeTrendlineSegments(
 ): TrendlineSegment[] {
   const segments: TrendlineSegment[] = []
   for (const spec of specs) {
-    const color = trendlineColor(spec.role, colors)
+    const color = trendlineColor(spec.pattern, colors)
     const dashed = spec.style === 'dashed'
     for (let i = 0; i + 1 < spec.points.length; i += 1) {
       const a = spec.points[i]
