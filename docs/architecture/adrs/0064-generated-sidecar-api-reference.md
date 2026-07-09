@@ -1,13 +1,13 @@
 # 0064 — Generated sidecar API reference from live introspection, CI-gated
 
-> **Status:** proposed — accepts at Plan 0070 close
+> **Status:** accepted (Plan 0070 close 2026-07-09)
 > **Date:** 2026-07-09
 > **Related plan:** [0070-sidecar-api-reference-generator](../plans/0070-sidecar-api-reference-generator.md)
 > **Related ADRs:** [0014](0014-mcp-as-second-sidecar-protocol.md) (MCP surface), [0017](0017-live-ui-updates-via-sse.md) (SSE events), [0046](0046-mcp-large-result-delivery.md) (why we don't ship full schemas on the wire)
 
 ## Status
 
-Proposed. Accepts at the close of Plan 0070.
+Accepted at the close of Plan 0070 (2026-07-09). The `src/market_analyser/apiref/` generator ships: introspects the fully-wired MCP registry + FastAPI OpenAPI + event `TYPE_REGISTRY`, renders deterministic markdown under `docs/reference/`, and gates freshness in CI via `apiref --check`.
 
 ## Context
 

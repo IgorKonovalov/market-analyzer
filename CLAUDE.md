@@ -80,6 +80,10 @@ docs/architecture/
 ├── diagrams/     # mermaid in standalone .md files
 └── roadmap.md    # aspirational direction — not committed scope
 
+docs/reference/   # GENERATED, CI-gated API reference — every MCP tool / REST route / SSE event
+                  # (params, return/payload shapes, source links). Do not hand-edit; regenerate
+                  # with `pnpm gen:api-docs` (or `uv run python -m market_analyser.apiref`). ADR-0064.
+
 src/market_analyser/
 ├── api/          # FastAPI app + routes — dev owns
 ├── data/         # MarketDataProvider Protocol, adapters — dev owns
@@ -87,7 +91,8 @@ src/market_analyser/
 ├── strategies/   # strategy-author owns
 ├── backtest/     # backtester owns
 ├── analysis/     # market-analyst's deps (patterns, indicators surface — to be authored)
-└── advisor/      # Recommendation model + fusion (dev owns the code; the `advisor` skill consumes it via the `recommend` tool)
+├── advisor/      # Recommendation model + fusion (dev owns the code; the `advisor` skill consumes it via the `recommend` tool)
+└── apiref/       # dev owns — introspects the live sidecar → generates docs/reference/ (ADR-0064)
 
 desktop/          # ui-builder owns end-to-end (Electron main + preload + React renderer)
 
