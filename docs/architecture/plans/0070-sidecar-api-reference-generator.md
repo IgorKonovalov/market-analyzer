@@ -1,6 +1,6 @@
 # 0070 — Sidecar API reference generator
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-09
 > **Owner skill(s):** dev
 > **Related ADRs:** [0064-generated-sidecar-api-reference](../adrs/0064-generated-sidecar-api-reference.md) (paired — accepts at this plan's close), [0014](../adrs/0014-mcp-as-second-sidecar-protocol.md), [0017](../adrs/0017-live-ui-updates-via-sse.md), [0046](../adrs/0046-mcp-large-result-delivery.md)

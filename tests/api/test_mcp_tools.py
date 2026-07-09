@@ -38,7 +38,6 @@ from market_analyser.annotations.types import AnnotationKind
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.types import (
-    AccountHoldings,
     Bar,
     MacroContext,
     MarketSentimentSample,
@@ -565,82 +564,17 @@ EXPECTED_FULL_TOOLSET = {
 }
 
 
-def test_full_toolset_registration_is_exhaustive(provider: _BarsProvider, tmp_path: Path) -> None:
+def test_full_toolset_registration_is_exhaustive(tmp_path: Path) -> None:
+    # The fully-wired construction (every conditional dependency present) lives in
+    # `apiref.wiring` as one source of truth, shared with the reference generator
+    # (Plan 0070). `build_wired_mcp_server` returns the `FastMCP` instance; its
+    # public async `list_tools()` is the same surface the agent sees.
     import anyio
-    from mcp.types import ListToolsRequest, ListToolsResult
 
-    from market_analyser.api.mcp_app import create_mcp_components
-    from market_analyser.api.ui_events.buffer import UIEventBuffer
-    from market_analyser.defi.models import DefiPosition
-    from market_analyser.defi.tx_models import DecodedTx
-    from market_analyser.events import EventBus
-    from market_analyser.persistence.defi_tx_repository import DefiTxRepository
-    from market_analyser.persistence.repositories.backtest_runs import BacktestRunsRepository
-    from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
-    from market_analyser.persistence.repositories.watches import (
-        AlertsRepository,
-        WatchesRepository,
-    )
+    from market_analyser.apiref.wiring import build_wired_mcp_server
 
-    class _NullWalletSource:
-        def fetch_positions(self, address: str) -> list[DefiPosition]:
-            return []
-
-    class _NullTxSource:
-        def fetch_transactions(
-            self, address: str, *, min_mined_at: datetime | None = None
-        ) -> list[DecodedTx]:
-            return []
-
-    class _NullPriceSource:
-        def fetch_price(self, *, chain: str, address: str | None, ts: int) -> float | None:
-            return None
-
-    class _NullDerivativesSource:
-        def fetch_series(
-            self, series_id: str, start: int | None = None, end: int | None = None
-        ) -> list[object]:
-            return []
-
-        def fetch_open_interest_sample(self, series_id: str) -> object | None:
-            return None
-
-    class _NullAccountSource:
-        def fetch_account_holdings(self) -> AccountHoldings:
-            return AccountHoldings(
-                venue="binance", spot=[], futures=[], as_of=datetime(2026, 1, 1, tzinfo=UTC)
-            )
-
-    engine = make_engine(":memory:")
-    try:
-        apply_migrations(engine)
-        session_factory = make_session_factory(engine)
-        session_manager, _asgi = create_mcp_components(
-            provider=provider,
-            annotations_repository=AnnotationsRepository(session_factory),
-            event_bus=EventBus(),
-            ui_event_buffer=UIEventBuffer(),
-            backtest_runs_repository=BacktestRunsRepository(session_factory),
-            runs_dir=tmp_path / "runs",
-            wallet_positions_sources={"zerion": _NullWalletSource()},
-            lp_detail_sources=None,
-            tx_history_sources={"zerion": _NullTxSource()},
-            defi_tx_repository=DefiTxRepository(session_factory),
-            historical_price_source=_NullPriceSource(),
-            metric_points_repository=MetricPointsRepository(session_factory),
-            derivatives_source=_NullDerivativesSource(),  # type: ignore[arg-type]
-            watches_repository=WatchesRepository(session_factory),
-            alerts_repository=AlertsRepository(session_factory),
-            account_holdings_sources={"binance": _NullAccountSource()},
-            manual_positions_path=tmp_path / "portfolio.json",
-        )
-        handler = session_manager.app.request_handlers[ListToolsRequest]
-        result = anyio.run(handler, ListToolsRequest(method="tools/list"))
-        tools_result = result.root
-        assert isinstance(tools_result, ListToolsResult)
-        names = {tool.name for tool in tools_result.tools}
-    finally:
-        engine.dispose()
+    server = build_wired_mcp_server(tmp_path / "runs")
+    names = {tool.name for tool in anyio.run(server.list_tools)}
     assert names == EXPECTED_FULL_TOOLSET, (
         f"missing: {sorted(EXPECTED_FULL_TOOLSET - names)}; "
         f"unexpected: {sorted(names - EXPECTED_FULL_TOOLSET)}"
