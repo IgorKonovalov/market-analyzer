@@ -1,6 +1,6 @@
 # 0068 — Chart style settings: user-overridable colours, line widths, and candle type
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-08
 > **Owner skill(s):** ui-builder
 > **Related ADRs:** [0062](../adrs/0062-user-chart-style-overrides.md) (proposed, accepts at this plan's close — the store + persistence + resolution decision), [0039](../adrs/0039-renderer-theming-localstorage.md) (renderer-owned presentation prefs in localStorage — this extends the convention), [0049](../adrs/0049-chart-trendline-overlay-primitive.md) / [0061](../adrs/0061-trendline-pattern-identity-and-colour.md) (trendline colour — deliberately out of scope)
