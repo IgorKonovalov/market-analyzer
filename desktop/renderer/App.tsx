@@ -25,6 +25,7 @@ import { chartReducer, initialChartState, DEFAULT_LOOKBACK_DAYS } from './handle
 import { notifyRunCompleted } from './handlers/runCompletedBus'
 import { useBacktestResult } from './hooks/useBacktestResult'
 import { useEventStream } from './hooks/useEventStream'
+import { useLocale } from './hooks/useLocalePref'
 import styles from './App.module.css'
 import { AlertToaster } from './components/AlertToaster'
 import { ThemeToggle } from './components/ThemeToggle'
@@ -84,6 +85,9 @@ declare global {
 }
 
 export function App(): JSX.Element {
+  // Subscribe to the locale at the root so any `setLocale` re-renders the whole
+  // tree and every `t()`-keyed surface flips on the spot (Plan 0069 phase 3).
+  const locale = useLocale()
   const [view, setView] = useState<View>('chart')
   const [chartState, dispatch] = useReducer(chartReducer, undefined, () =>
     initialChartState(new Date().toISOString()),
@@ -187,7 +191,7 @@ export function App(): JSX.Element {
   const onBackToRecent = (): void => setView('recent-backtests')
 
   return (
-    <main className="appShell">
+    <main className="appShell" lang={locale}>
       <header className="appHeader">
         <h1>market-analyser</h1>
         <nav className={styles.nav} aria-label={t('app.nav.primaryLabel')}>

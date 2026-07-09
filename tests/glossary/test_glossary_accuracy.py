@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from market_analyser.advisor.fusion import SHARPE_FULL_CREDIT
 from market_analyser.api.mcp_tools.forecast import EDGE_MARGIN_THRESHOLD
@@ -39,9 +40,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GLOSSARY_PATH = _REPO_ROOT / "desktop" / "renderer" / "glossary" / "glossary.json"
 
 
-def _load_glossary() -> dict[str, dict[str, str]]:
+# Plan 0069 phase 3 made the three prose fields (term / howComputed /
+# whatItMeans) locale-keyed `{ "en": ..., "ru"?: ... }`; category / formulaAnchor
+# stay flat strings. So a record's values are heterogeneous (str | dict).
+def _load_glossary() -> dict[str, dict[str, Any]]:
     with _GLOSSARY_PATH.open(encoding="utf-8") as handle:
-        data: dict[str, dict[str, str]] = json.load(handle)
+        data: dict[str, dict[str, Any]] = json.load(handle)
     return data
 
 
@@ -70,8 +74,11 @@ def test_glossary_parses_and_every_record_carries_both_hats() -> None:
     """A smoke guard: a malformed record fails here, not cryptically downstream."""
     assert GLOSSARY, "glossary.json is empty"
     for key, record in GLOSSARY.items():
-        for field in ("term", "category", "howComputed", "whatItMeans"):
-            assert record.get(field), f"{key}: missing or empty {field}"
+        assert record.get("category"), f"{key}: missing or empty category"
+        for field in ("term", "howComputed", "whatItMeans"):
+            prose = record.get(field)
+            assert isinstance(prose, dict), f"{key}: {field} must be a localized object"
+            assert prose.get("en"), f"{key}: missing or empty {field}.en"
 
 
 def test_indicator_keys_equal_the_frozen_feature_name_union() -> None:
@@ -117,7 +124,9 @@ def test_formula_anchored_terms_reference_their_canonical_constant() -> None:
             continue
         assert anchor in _ANCHOR_TO_CONSTANT, f"{key}: unknown formulaAnchor {anchor!r}"
         symbol = _ANCHOR_TO_CONSTANT[anchor]
-        assert symbol in record["howComputed"], (
+        # The canonical constant is named in the authored English prose (`ru` is a
+        # translation and need not carry the English symbol name).
+        assert symbol in record["howComputed"]["en"], (
             f"{key}: howComputed does not reference its canonical constant {symbol}"
         )
         used_anchors.add(anchor)

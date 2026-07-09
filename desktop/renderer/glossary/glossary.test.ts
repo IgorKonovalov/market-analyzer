@@ -11,7 +11,7 @@
  * TS-side mirror of phase 3's cross-language bidirectional pin.
  */
 import glossaryJson from './glossary.json'
-import { glossaryKeys, term, type GlossaryCategory, type GlossaryRecord } from './types'
+import { glossaryKeys, localize, term, type GlossaryCategory, type GlossaryRecord } from './types'
 
 const CATEGORIES: readonly GlossaryCategory[] = [
   'forecast',
@@ -29,14 +29,29 @@ const rawGlossary = glossaryJson as Record<string, Record<string, unknown>>
  * to prove the validator actually rejects a record missing either hat. */
 function validateRecord(value: Record<string, unknown>): string[] {
   const problems: string[] = []
-  const nonEmptyString = (field: string): void => {
+  // Prose fields are locale-keyed `{ en, ru? }` (Plan 0069 phase 3): `en` is
+  // mandatory and non-empty; `ru` is optional (authored in phase 6) but, when
+  // present, must be a non-empty string; no other locale keys are allowed.
+  const localizedProse = (field: string): void => {
     const v = value[field]
-    if (typeof v !== 'string' || v.trim() === '')
-      problems.push(`${field} must be a non-empty string`)
+    if (typeof v !== 'object' || v === null) {
+      problems.push(`${field} must be a localized { en, ru? } object`)
+      return
+    }
+    const obj = v as Record<string, unknown>
+    if (typeof obj.en !== 'string' || obj.en.trim() === '') {
+      problems.push(`${field}.en must be a non-empty string`)
+    }
+    if ('ru' in obj && (typeof obj.ru !== 'string' || obj.ru.trim() === '')) {
+      problems.push(`${field}.ru, when present, must be a non-empty string`)
+    }
+    for (const k of Object.keys(obj)) {
+      if (k !== 'en' && k !== 'ru') problems.push(`${field} has an unexpected locale ${k}`)
+    }
   }
-  nonEmptyString('term')
-  nonEmptyString('howComputed')
-  nonEmptyString('whatItMeans')
+  localizedProse('term')
+  localizedProse('howComputed')
+  localizedProse('whatItMeans')
   if (!CATEGORIES.includes(value.category as GlossaryCategory)) {
     problems.push(`category must be one of ${CATEGORIES.join(' / ')}`)
   }
@@ -63,28 +78,44 @@ it('every record carries a non-empty term, a valid category, and both hats', () 
 
 it('the shape validator rejects a record missing either hat', () => {
   const base: GlossaryRecord = {
-    term: 'X',
+    term: { en: 'X' },
     category: 'forecast',
-    howComputed: 'computed',
-    whatItMeans: 'meaning',
+    howComputed: { en: 'computed' },
+    whatItMeans: { en: 'meaning' },
   }
-  expect(validateRecord({ ...base, howComputed: '' })).toContain(
-    'howComputed must be a non-empty string',
+  expect(validateRecord({ ...base, howComputed: { en: '' } })).toContain(
+    'howComputed.en must be a non-empty string',
   )
   const missingTraderHat: Record<string, unknown> = {
     term: base.term,
     category: base.category,
     howComputed: base.howComputed,
   }
-  expect(validateRecord(missingTraderHat)).toContain('whatItMeans must be a non-empty string')
+  expect(validateRecord(missingTraderHat)).toContain(
+    'whatItMeans must be a localized { en, ru? } object',
+  )
 })
 
 it('exposes a typed term(key) accessor: present keys resolve, absent keys are undefined', () => {
   const conviction = term('conviction')
   expect(conviction).toBeDefined()
-  expect(conviction?.term).toBe('Conviction')
+  expect(localize(conviction!.term, 'en')).toBe('Conviction')
   expect(conviction?.category).toBe('recommendation')
   expect(term('no_such_term_key')).toBeUndefined()
+})
+
+describe('localize (per-field locale fallback)', () => {
+  it('returns the ru text when the field carries a ru translation', () => {
+    expect(localize({ en: 'Conviction', ru: 'Уверенность' }, 'ru')).toBe('Уверенность')
+  })
+
+  it('falls back to en when ru is absent — never to the key', () => {
+    expect(localize({ en: 'Conviction' }, 'ru')).toBe('Conviction')
+  })
+
+  it('returns en for the en locale even when ru is present', () => {
+    expect(localize({ en: 'Conviction', ru: 'Уверенность' }, 'en')).toBe('Conviction')
+  })
 })
 
 it('carries a formulaAnchor on exactly the two computed terms the accuracy test pins', () => {

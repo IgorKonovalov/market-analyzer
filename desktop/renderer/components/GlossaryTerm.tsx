@@ -22,7 +22,8 @@
 import { useCallback, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-import { term } from '../glossary/types'
+import { localize, term } from '../glossary/types'
+import { useLocalePref } from '../hooks/useLocalePref'
 import { t } from '../lib/i18n'
 import styles from './GlossaryTerm.module.css'
 
@@ -41,6 +42,7 @@ const CARD_GAP = 6
 
 export function GlossaryTerm({ termKey, children, className }: Props): JSX.Element {
   const record = term(termKey)
+  const [locale] = useLocalePref()
   const tooltipId = useId()
   const triggerRef = useRef<HTMLSpanElement>(null)
   const [visible, setVisible] = useState(false)
@@ -102,14 +104,14 @@ export function GlossaryTerm({ termKey, children, className }: Props): JSX.Eleme
           data-testid={`glossary-card:${termKey}`}
           style={{ left: coords.left, top: coords.top }}
         >
-          <span className={styles.cardTerm}>{record.term}</span>
+          <span className={styles.cardTerm}>{localize(record.term, locale)}</span>
           <span className={styles.cardHow}>
             <span className={styles.cardHat}>{t('glossary.howComputedLabel')}</span>
-            {record.howComputed}
+            {localize(record.howComputed, locale)}
           </span>
           <span className={styles.cardMeaning}>
             <span className={styles.cardHat}>{t('glossary.whatItMeansLabel')}</span>
-            {record.whatItMeans}
+            {localize(record.whatItMeans, locale)}
           </span>
         </span>,
         document.body,

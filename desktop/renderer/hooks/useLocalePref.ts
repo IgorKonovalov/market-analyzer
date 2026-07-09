@@ -14,9 +14,18 @@ import { useCallback, useSyncExternalStore } from 'react'
 import { getStoredLocale, setLocale, subscribeLocale, type Locale } from '../lib/i18n'
 
 export function useLocalePref(): readonly [Locale, (locale: Locale) => void] {
-  const locale = useSyncExternalStore<Locale>(subscribeLocale, getStoredLocale, () => 'en')
+  const locale = useLocale()
   const set = useCallback((next: Locale): void => {
     setLocale(next)
   }, [])
   return [locale, set] as const
+}
+
+/**
+ * Read-only locale subscription. Mounted once at the App root so a `setLocale`
+ * re-renders the whole tree and every `t()`-keyed surface re-localizes on the
+ * spot — not only the controls that also need the setter (Plan 0069 phase 3).
+ */
+export function useLocale(): Locale {
+  return useSyncExternalStore<Locale>(subscribeLocale, getStoredLocale, () => 'en')
 }

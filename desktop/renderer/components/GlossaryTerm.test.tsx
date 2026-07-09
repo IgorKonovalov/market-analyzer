@@ -14,11 +14,20 @@ import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 import { GlossaryTerm } from './GlossaryTerm'
-import { term } from '../glossary/types'
+import * as glossary from '../glossary/types'
+import { localize, term } from '../glossary/types'
+import { setLocale } from '../lib/i18n'
 
 function trigger(): HTMLElement {
   return screen.getByText('Conviction', { selector: '[data-glossary-term]' })
 }
+
+afterEach(() => {
+  // Locale-mutating tests below persist `ma.locale`; reset so the default-en
+  // tests are not order-dependent, and drop any `term` spy.
+  window.localStorage.clear()
+  jest.restoreAllMocks()
+})
 
 it('renders the child label with a focusable, ARIA-addressable trigger', () => {
   render(<GlossaryTerm termKey="conviction">Conviction</GlossaryTerm>)
@@ -39,9 +48,9 @@ it('reveals the dual-hat card on hover and hides it on mouse-leave', () => {
 
   expect(card).toHaveAttribute('data-visible', 'false')
   // Both hats are present in the card (announced via aria-describedby regardless
-  // of the visual reveal).
-  expect(card).toHaveTextContent(record!.howComputed)
-  expect(card).toHaveTextContent(record!.whatItMeans)
+  // of the visual reveal). Default locale is en.
+  expect(card).toHaveTextContent(localize(record!.howComputed, 'en'))
+  expect(card).toHaveTextContent(localize(record!.whatItMeans, 'en'))
 
   fireEvent.mouseEnter(trigger())
   expect(card).toHaveAttribute('data-visible', 'true')
@@ -77,4 +86,21 @@ it('degrades an unknown key to plain text — no trigger, no tooltip, no crash',
   expect(container).toHaveTextContent('plain label')
   expect(container.querySelector('[data-glossary-term]')).toBeNull()
   expect(container.querySelector('[role="tooltip"]')).toBeNull()
+})
+
+it('renders ru prose under the ru locale, falling back to en per field (Plan 0069 phase 3)', () => {
+  setLocale('ru')
+  // A term whose trader hat has no ru translation exercises per-field fallback.
+  jest.spyOn(glossary, 'term').mockReturnValue({
+    term: { en: 'Conviction', ru: 'Уверенность' },
+    category: 'recommendation',
+    howComputed: { en: 'derived from the fusion', ru: 'выводится из слияния' },
+    whatItMeans: { en: 'how convinced the call is' },
+  })
+  render(<GlossaryTerm termKey="conviction">Уверенность</GlossaryTerm>)
+  const card = screen.getByRole('tooltip', { hidden: true })
+  expect(card).toHaveTextContent('Уверенность') // term: ru
+  expect(card).toHaveTextContent('выводится из слияния') // howComputed: ru
+  expect(card).toHaveTextContent('how convinced the call is') // whatItMeans: en fallback
+  expect(card).not.toHaveTextContent('derived from the fusion') // ru won, en hidden
 })
