@@ -57,7 +57,7 @@ schema test in `tests/alerts/test_scheduler.py` pin this).
 | `condition` | string | yes | — |
 | `values` | object | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `chart.highlight`
 
@@ -73,7 +73,7 @@ schema test in `tests/alerts/test_scheduler.py` pin this).
 | `timeframe` | string | yes | — |
 | `markers` | array[Marker] | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `chart.show`
 
@@ -91,7 +91,7 @@ schema test in `tests/alerts/test_scheduler.py` pin this).
 | `range_end` | string (date-time) | yes | — |
 | `overlays` | array[OverlaySpec] \| null | no | `None` |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `chart.trendlines`
 
@@ -114,7 +114,7 @@ match the chart on screen.
 | `timeframe` | string | yes | — |
 | `trendlines` | array[TrendlineSpec] | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `chart.update`
 
@@ -133,7 +133,7 @@ match the chart on screen.
 | `range_end` | string (date-time) \| null | no | `None` |
 | `focus_bar` | string (date-time) \| null | no | `None` |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `chart.update_dropped`
 
@@ -148,7 +148,7 @@ this, not to consume the contents of the dropped frames.
 
 No payload fields.
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `defi.pnl_completed`
 
@@ -168,7 +168,7 @@ the engine does (never a confident partial number, ADR-0036).
 | `realized_usd` | number \| null | yes | — |
 | `unrealized_usd` | number \| null | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `defi.pnl_failed`
 
@@ -187,7 +187,7 @@ exception, not the wire).
 | `reason` | enum["rate_limited", "upstream_unavailable", "malformed_response"] | yes | — |
 | `message` | string | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `defi.pnl_started`
 
@@ -203,7 +203,7 @@ wire (ADR-0038 discipline).
 | --- | --- | --- | --- |
 | `wallet` | string | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `defi.scan_completed`
 
@@ -220,7 +220,7 @@ positions were found; `position_count` is the total across all chains.
 | `chains` | array[string] | yes | — |
 | `position_count` | integer | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `defi.scan_failed`
 
@@ -241,7 +241,7 @@ from any one source's error taxonomy.
 | `reason` | enum["rate_limited", "upstream_unavailable", "malformed_response"] | yes | — |
 | `message` | string | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `defi.scan_progress`
 
@@ -258,7 +258,7 @@ emitted between `scan_started` and `scan_completed` for a non-empty wallet.
 | `chain` | string | yes | — |
 | `position_count` | integer | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `defi.scan_started`
 
@@ -276,7 +276,7 @@ discipline). `chains` is the set of chains being scanned.
 | `wallet` | string | yes | — |
 | `chains` | array[string] | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `forecast.completed`
 
@@ -299,7 +299,7 @@ never a recommendation (ADR-0029).
 | --- | --- | --- | --- |
 | `forecast` | MultiHorizonForecastResult | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `ohlcv.backfill_failed`
 
@@ -317,7 +317,7 @@ literal set is closed so the renderer can branch on it exhaustively.
 | `reason` | enum["rate_limited", "upstream_unavailable", "unknown_symbol", "history_exceeded"] | yes | — |
 | `message` | string | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `ohlcv.backfill_started`
 
@@ -334,7 +334,7 @@ Emitted before the upstream call so the renderer can show its spinner.
 | `timeframe` | string | yes | — |
 | `gaps` | array[GapWindow] | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `ohlcv.backfilled`
 
@@ -353,7 +353,7 @@ Emitted before the upstream call so the renderer can show its spinner.
 | `range_end` | string (date-time) | yes | — |
 | `bars_added` | integer | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `recommendation.completed`
 
@@ -375,7 +375,7 @@ payload validates is safe to render as advice-and-only-advice.
 | --- | --- | --- | --- |
 | `recommendation` | Recommendation | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `run.completed`
 
@@ -391,7 +391,7 @@ payload validates is safe to render as advice-and-only-advice.
 | `run_id` | string | yes | — |
 | `artifact_path` | string | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
 ## `signal.evaluated`
 
@@ -412,4 +412,4 @@ never a recommendation.
 | --- | --- | --- | --- |
 | `evaluation` | SignalEvaluation | yes | — |
 
-**Source:** [`src/market_analyser/events/__init__.py`](../../src/market_analyser/events/__init__.py)
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)

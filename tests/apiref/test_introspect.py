@@ -85,7 +85,7 @@ def test_introspect_events_covers_registry(tmp_path: Path) -> None:
     chart_show = next(event for event in events if event.kind == "chart.show")
     assert chart_show.version == 1
     assert chart_show.source_model == "ChartShowPayloadV1"
-    assert chart_show.source_path == "src/market_analyser/events/__init__.py"
+    assert chart_show.source_path == "src/market_analyser/events/payloads.py"
     field_names = {field.name for field in chart_show.payload_fields}
     assert {"symbol", "timeframe", "range_start", "range_end"} <= field_names
 
