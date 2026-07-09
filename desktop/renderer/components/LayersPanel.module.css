@@ -50,8 +50,19 @@
 }
 
 .layerLabel {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-fg);
+}
+
+/* Instance count on a grouped trendline row (Plan 0067 phase 3): a muted,
+   tabular-numeric badge pinned to the right of the label. */
+.count {
+  flex: 0 0 auto;
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-xs);
 }

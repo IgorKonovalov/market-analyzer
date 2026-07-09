@@ -145,6 +145,45 @@ export function dedupeTrendlines(specs: readonly TrendlineSpec[]): TrendlineSpec
   return specs.filter((s) => !(s.style === 'dashed' && confirmedGeoms.has(geometryKey(s))))
 }
 
+/** Human-readable names for the classical chart-pattern types the detector emits
+ * (mirror of `CHART_PATTERNS`). Keyed by the wire `pattern` value; shared by the
+ * hover tooltip and the grouped legend so they read identically. */
+const PATTERN_DISPLAY_NAMES: Record<string, string> = {
+  head_shoulders: 'Head & shoulders',
+  inverse_head_shoulders: 'Inverse head & shoulders',
+  double_top: 'Double top',
+  double_bottom: 'Double bottom',
+  ascending_triangle: 'Ascending triangle',
+  descending_triangle: 'Descending triangle',
+  symmetrical_triangle: 'Symmetrical triangle',
+  rising_wedge: 'Rising wedge',
+  falling_wedge: 'Falling wedge',
+}
+
+/** Display name for a pattern type; "Trendline" for an unknown/absent pattern. */
+export function patternDisplayName(pattern: string | null | undefined): string {
+  return (pattern != null && PATTERN_DISPLAY_NAMES[pattern]) || 'Trendline'
+}
+
+/** The legend/highlight grouping key of a spec — one row per (pattern type,
+ * state) (Plan 0067 phase 3 / ADR-0061). `style` encodes state (solid=confirmed,
+ * dashed=forming), so `${pattern}|${style}` groups a triangle's two solid bounds
+ * into one row while keeping a forming twin separate. */
+export function patternStateKey(s: TrendlineSpec): string {
+  return `${s.pattern ?? 'unknown'}|${s.style}`
+}
+
+/** The `hidden`-set / legend-row layer id for a trendline group, namespaced
+ * under `TRENDLINE_LAYER_ID` so it never collides with an overlay/marker id. */
+export function trendlineGroupLayerId(key: string): string {
+  return `${TRENDLINE_LAYER_ID}:${key}`
+}
+
+/** State word for a spec's `style`, for the legend row and the tooltip. */
+export function trendlineStateLabel(style: TrendlineSpec['style']): string {
+  return style === 'dashed' ? 'forming' : 'confirmed'
+}
+
 function toUtcSeconds(iso: string): UTCTimestamp {
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp
 }
@@ -159,6 +198,12 @@ export interface TrendlineSegment {
   color: string
   /** `style === "dashed"` → forming; solid → confirmed. */
   dashed: boolean
+  /** Highlight emphasis (Plan 0067 phase 3): this segment belongs to the
+   * hovered legend group — drawn thicker at full opacity. */
+  emphasis?: boolean
+  /** Highlight dim (Plan 0067 phase 3): a highlight is active and this segment
+   * is NOT in the hovered group — drawn at reduced opacity. */
+  dimmed?: boolean
 }
 
 /**
@@ -339,7 +384,11 @@ class TrendlinePaneRenderer implements ISeriesPrimitivePaneRenderer {
       for (const seg of this.segments) {
         ctx.save()
         ctx.strokeStyle = seg.color
-        ctx.lineWidth = 2
+        // Highlight (Plan 0067 phase 3): the hovered group's lines draw thicker
+        // at full opacity, the rest dim to a wash. `save`/`restore` isolate the
+        // alpha/width per segment.
+        ctx.lineWidth = seg.emphasis ? 3 : 2
+        ctx.globalAlpha = seg.dimmed ? 0.2 : 1
         ctx.setLineDash(seg.dashed ? [6, 4] : [])
         ctx.beginPath()
         ctx.moveTo(seg.x1, seg.y1)
@@ -376,6 +425,9 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
   private specs: ReadonlyArray<TrendlineSpec> = []
   private colors: TrendlineColors
   private visible = true
+  // The hovered legend group's `patternStateKey`, or null when nothing is
+  // highlighted (Plan 0067 phase 3): matching lines draw emphasised, the rest dim.
+  private highlightKey: string | null = null
   private chart: SeriesAttachedParameter<Time>['chart'] | null = null
   private series: SeriesAttachedParameter<Time>['series'] | null = null
   private requestUpdate: (() => void) | null = null
@@ -416,6 +468,19 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.()
   }
 
+  /** Highlight the legend group with this `patternStateKey` (its lines emphasise,
+   * the rest dim), or clear with `null` (Plan 0067 phase 3). */
+  setHighlightedGroup(key: string | null): void {
+    if (this.highlightKey === key) return
+    this.highlightKey = key
+    this.requestUpdate?.()
+  }
+
+  /** The currently highlighted group key, or null. Exposed for tests/assertions. */
+  highlightedGroup(): string | null {
+    return this.highlightKey
+  }
+
   /** Current pixel segments (media coords) — read by the pane renderer and
    * asserted directly in tests via stubbed time/price scales. Empty until
    * attached. Off-grid anchor times (which grid-snapped `timeToCoordinate`
@@ -423,7 +488,18 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
    * `resolveTimeX`, so projected/extended lines still draw; the price axis
    * extrapolates natively via `priceToCoordinate`. */
   currentSegments(): TrendlineSegment[] {
-    return this.currentSegmentsBySpec().flat()
+    const groups = this.currentSegmentsBySpec()
+    if (this.highlightKey === null) return groups.flat()
+    // A highlight is active: emphasise the hovered group's segments, dim the rest
+    // (Plan 0067 phase 3). Per-spec grouping lets us tag by `patternStateKey`.
+    const out: TrendlineSegment[] = []
+    this.specs.forEach((spec, i) => {
+      const match = patternStateKey(spec) === this.highlightKey
+      for (const seg of groups[i]) {
+        out.push(match ? { ...seg, emphasis: true } : { ...seg, dimmed: true })
+      }
+    })
+    return out
   }
 
   /** Pixel segments grouped per spec (parallel to `this.specs`) so a hit test

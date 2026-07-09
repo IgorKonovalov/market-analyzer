@@ -10,7 +10,8 @@ import { GlossaryTerm } from './GlossaryTerm'
 import styles from './LayersPanel.module.css'
 
 export interface ChartLayer {
-  /** Stable id: `overlay:ema:20` | `marker:bullish` | `pline:<label>`. */
+  /** Stable id: `overlay:ema:20` | `marker:bullish` | `pline:<label>` |
+   * `trendlines:<pattern>|<style>`. */
   id: string
   label: string
   /** Resolved colour — equals the colour the chart drew the layer with. */
@@ -22,21 +23,45 @@ export interface ChartLayer {
    * overlays (the overlay kind: 'ema' / 'sma' / 'supertrend'). Absent for
    * markers / price-lines / spans / trendlines, which render a plain label. */
   glossaryKey?: string
+  /** Instance count for a grouped row (Plan 0067 phase 3): the number of lines
+   * in a trendline (pattern type, state) group. Absent on ungrouped rows. */
+  count?: number
+  /** Highlight key for a trendline group (Plan 0067 phase 3): hovering the row
+   * emphasises this group's lines on the chart. Absent on non-highlightable rows. */
+  highlightKey?: string
 }
 
 export interface LayersPanelProps {
   layers: ChartLayer[]
   onToggle: (id: string) => void
+  /** Hover-to-highlight callback (Plan 0067 phase 3): fired with a trendline
+   * group's `highlightKey` on row enter and `null` on leave. Optional — rows
+   * without a `highlightKey` never call it. */
+  onHighlight?: (key: string | null) => void
 }
 
-export function LayersPanel({ layers, onToggle }: LayersPanelProps): JSX.Element | null {
+export function LayersPanel({
+  layers,
+  onToggle,
+  onHighlight,
+}: LayersPanelProps): JSX.Element | null {
   if (layers.length === 0) return null
   return (
     <aside className={styles.panel} aria-label="Chart layers" data-testid="layers-panel">
       <h2 className={styles.heading}>Layers</h2>
       <ul className={styles.list}>
         {layers.map((layer) => (
-          <li key={layer.id} className={styles.row} data-testid={`layer-row:${layer.id}`}>
+          <li
+            key={layer.id}
+            className={styles.row}
+            data-testid={`layer-row:${layer.id}`}
+            onMouseEnter={
+              layer.highlightKey !== undefined
+                ? () => onHighlight?.(layer.highlightKey ?? null)
+                : undefined
+            }
+            onMouseLeave={layer.highlightKey !== undefined ? () => onHighlight?.(null) : undefined}
+          >
             <label className={styles.label}>
               <input
                 type="checkbox"
@@ -58,6 +83,11 @@ export function LayersPanel({ layers, onToggle }: LayersPanelProps): JSX.Element
                   layer.label
                 )}
               </span>
+              {layer.count !== undefined && (
+                <span className={styles.count} data-testid={`layer-count:${layer.id}`}>
+                  {layer.count}
+                </span>
+              )}
             </label>
           </li>
         ))}

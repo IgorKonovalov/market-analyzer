@@ -19,10 +19,14 @@ import {
   computeTrendlineSegments,
   dedupeTrendlines,
   nearestTrendlineGroup,
+  patternDisplayName,
+  patternStateKey,
   pointSegmentDistance,
   resolveTimeX,
   timeToFractionalLogical,
   trendlineColor,
+  trendlineGroupLayerId,
+  trendlineStateLabel,
   type TrendlineColors,
   type TrendlineSegment,
 } from './trendlines'
@@ -197,6 +201,39 @@ describe('dedupeTrendlines', () => {
       pattern: 'falling_wedge',
     }
     expect(dedupeTrendlines([a, b])).toEqual([a, b])
+  })
+})
+
+describe('trendline grouping helpers (Plan 0067 phase 3)', () => {
+  const line = (pattern: string | null, style: 'solid' | 'dashed'): TrendlineSpec => ({
+    points: [
+      { ts: T1, price: 10 },
+      { ts: T2, price: 20 },
+    ],
+    style,
+    pattern,
+  })
+
+  it('patternStateKey keys by pattern + style; unknown pattern folds to "unknown"', () => {
+    expect(patternStateKey(line('rising_wedge', 'solid'))).toBe('rising_wedge|solid')
+    expect(patternStateKey(line('rising_wedge', 'dashed'))).toBe('rising_wedge|dashed')
+    expect(patternStateKey(line(null, 'solid'))).toBe('unknown|solid')
+  })
+
+  it('trendlineGroupLayerId namespaces the key under the trendline layer', () => {
+    expect(trendlineGroupLayerId('rising_wedge|solid')).toBe('trendlines:rising_wedge|solid')
+  })
+
+  it('patternDisplayName maps known types and falls back to "Trendline"', () => {
+    expect(patternDisplayName('head_shoulders')).toBe('Head & shoulders')
+    expect(patternDisplayName('symmetrical_triangle')).toBe('Symmetrical triangle')
+    expect(patternDisplayName('mystery')).toBe('Trendline')
+    expect(patternDisplayName(null)).toBe('Trendline')
+  })
+
+  it('trendlineStateLabel reads solid as confirmed, dashed as forming', () => {
+    expect(trendlineStateLabel('solid')).toBe('confirmed')
+    expect(trendlineStateLabel('dashed')).toBe('forming')
   })
 })
 
@@ -432,5 +469,26 @@ describe('TrendlinePrimitive', () => {
     const hit = primitive.hitTest(130, 60)
     expect(hit).toMatchObject({ externalId: 'trendlines:0', zOrder: 'top', cursorStyle: 'pointer' })
     expect(primitive.hitTest(130, 200)).toBeNull()
+  })
+
+  // Plan 0067 phase 3: hovering a legend group emphasises its lines, dims the rest.
+  it('setHighlightedGroup emphasises the matching group and dims the rest', () => {
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    const hs: TrendlineSpec = { ...NECKLINE, pattern: 'head_shoulders', style: 'solid' }
+    const dt: TrendlineSpec = { ...NECKLINE, pattern: 'double_top', style: 'solid' }
+    primitive.setTrendlines([hs, dt])
+    // No highlight → no emphasis/dim flags on any segment.
+    expect(primitive.currentSegments().every((s) => !s.emphasis && !s.dimmed)).toBe(true)
+
+    primitive.setHighlightedGroup('head_shoulders|solid')
+    expect(primitive.highlightedGroup()).toBe('head_shoulders|solid')
+    const segs = primitive.currentSegments()
+    expect(segs[0]).toMatchObject({ emphasis: true }) // hs matches → emphasised
+    expect(segs[1]).toMatchObject({ dimmed: true }) // dt → dimmed
+    expect(segs[0].dimmed).toBeUndefined()
+
+    primitive.setHighlightedGroup(null)
+    expect(primitive.currentSegments().every((s) => !s.emphasis && !s.dimmed)).toBe(true)
   })
 })

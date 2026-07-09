@@ -67,11 +67,14 @@ import {
 } from '../lib/overlays'
 import { PatternSpanPrimitive, SPAN_LAYER_ID, SPAN_LAYER_LABEL, markersToSpans } from '../lib/spans'
 import {
-  TRENDLINE_LAYER_ID,
-  TRENDLINE_LAYER_LABEL,
   TrendlinePrimitive,
   dedupeTrendlines,
+  patternDisplayName,
+  patternStateKey,
   readTrendlineColors,
+  trendlineColor,
+  trendlineGroupLayerId,
+  trendlineStateLabel,
 } from '../lib/trendlines'
 import { useTrendlines } from '../hooks/useTrendlines'
 import {
@@ -382,6 +385,18 @@ export function CandlestickChart({
   // primitive draws these, and the legend counts from them. Memoised so a stable
   // `trendlines` reference doesn't re-run the downstream effects.
   const visibleTrendlines = useMemo(() => dedupeTrendlines(trendlines), [trendlines])
+  // Legend visibility is per (pattern type, state) group (Plan 0067 phase 3):
+  // drop the specs whose group row is unchecked before drawing. The legend rows
+  // themselves are still built from the full deduped set (so hidden groups list
+  // and can be re-enabled).
+  const shownTrendlines = useMemo(
+    () => visibleTrendlines.filter((s) => !hidden.has(trendlineGroupLayerId(patternStateKey(s)))),
+    [visibleTrendlines, hidden],
+  )
+  // Hovered trendline legend group (Plan 0067 phase 3): its `patternStateKey`, or
+  // null. Threaded into the primitive so hovering a row emphasises that group's
+  // lines and dims the rest. Ephemeral, never persisted.
+  const [highlightedTrendlineKey, setHighlightedTrendlineKey] = useState<string | null>(null)
   // "Scan patterns" trigger state (Plan 0049 phase 8). Ephemeral, never persisted.
   const [scanStatus, setScanStatus] = useState<ScanStatus>({ kind: 'idle' })
   // "Scan chart patterns" (trendline) trigger state (Plan 0064 phase 5). Only the
@@ -812,8 +827,8 @@ export function CandlestickChart({
   // FEEDS it specs/colours/visibility. Called after that effect so the ref is
   // populated on mount.
   useTrendlines(containerRef, trendlinePrimitiveRef, {
-    trendlines: visibleTrendlines,
-    hidden,
+    trendlines: shownTrendlines,
+    highlightKey: highlightedTrendlineKey,
     effectiveTheme,
   })
 
@@ -974,18 +989,32 @@ export function CandlestickChart({
         visible: !hidden.has(SPAN_LAYER_ID),
       })
     }
-    // One row for ALL trendlines (Plan 0052 phase 4), mirroring the span row;
-    // only present when at least one (deduped) trendline exists. Unchecking it
-    // hides every line and leaves the other layers untouched (useTrendlines reads
-    // `hidden`). Neutral swatch — the row governs lines of mixed pattern colours
-    // (Plan 0067 phase 3 replaces this single row with per-(type,state) rows).
-    if (visibleTrendlines.length > 0) {
+    // Grouped trendline rows (Plan 0067 phase 3 / ADR-0061): one row per
+    // (pattern type, state) present, each with its type-colour swatch, instance
+    // count, per-group visibility, and a highlight key for hover. Built from the
+    // deduped set so a hidden group still lists (to re-enable). Replaces the
+    // single "Trendlines" row.
+    const trendlineColors = readTrendlineColors(container)
+    const groups = new Map<
+      string,
+      { pattern: string | null | undefined; style: TrendlineSpec['style']; count: number }
+    >()
+    for (const spec of visibleTrendlines) {
+      const key = patternStateKey(spec)
+      const existing = groups.get(key)
+      if (existing) existing.count += 1
+      else groups.set(key, { pattern: spec.pattern, style: spec.style, count: 1 })
+    }
+    for (const [key, group] of groups) {
+      const id = trendlineGroupLayerId(key)
       next.push({
-        id: TRENDLINE_LAYER_ID,
-        label: TRENDLINE_LAYER_LABEL,
-        color: colors.markerNeutral,
+        id,
+        label: `${patternDisplayName(group.pattern)} (${trendlineStateLabel(group.style)})`,
+        color: trendlineColor(group.pattern, trendlineColors),
         kind: 'trendline',
-        visible: !hidden.has(TRENDLINE_LAYER_ID),
+        visible: !hidden.has(id),
+        count: group.count,
+        highlightKey: key,
       })
     }
     setLayers(next)
@@ -1185,7 +1214,11 @@ export function CandlestickChart({
             containerHeight={containerRef.current?.clientHeight ?? 0}
           />
         )}
-        <LayersPanel layers={layers} onToggle={toggleLayer} />
+        <LayersPanel
+          layers={layers}
+          onToggle={toggleLayer}
+          onHighlight={setHighlightedTrendlineKey}
+        />
       </div>
     </div>
   )

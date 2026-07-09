@@ -6,8 +6,10 @@
  * `setTrendlines`) AND invokes its `attached()` with stubbed time/price scales,
  * so we can assert against the primitive's actual segment state: a forming hit
  * renders dashed and a confirmed hit solid; trendlines produce a pane view and
- * a "Trendlines" legend row; unchecking the row removes the lines and
- * re-checking restores them; and no trendlines → no row, no view.
+ * one grouped legend row per (pattern type, state) with an instance count
+ * (Plan 0067 phase 3); unchecking a group's row removes exactly that group's
+ * lines and re-checking restores them; hovering a row highlights that group; and
+ * no trendlines → no rows, no view.
  *
  * The pixel-coordinate math itself is covered canvas-free in
  * `lib/trendlines.test.ts`.
@@ -123,11 +125,12 @@ beforeEach(() => {
   mockTrendlinePrimitive = null
 })
 
-it('draws trendlines (one pane view) and a Trendlines legend row', () => {
+it('draws trendlines (one pane view) and a legend row per (pattern type, state)', () => {
   render(<CandlestickChart bars={BARS} trendlines={[FORMING, CONFIRMED]} />)
   expect(mockTrendlinePrimitive).not.toBeNull()
   expect(mockTrendlinePrimitive?.paneViews()).toHaveLength(1)
-  expect(screen.getByTestId('layer-row:trendlines')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:trendlines:head_shoulders|dashed')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:trendlines:double_top|solid')).toBeInTheDocument()
 })
 
 it('renders a forming hit dashed and a confirmed hit solid (segment style state)', () => {
@@ -157,23 +160,59 @@ it('draws an off-grid / beyond-range trendline via the bar-grid fallback (Plan 0
   expect(segments).toHaveLength(1)
 })
 
-it('shows NO trendline row and NO pane view when there are no trendlines', () => {
+it('shows NO trendline rows and NO pane view when there are no trendlines', () => {
   render(<CandlestickChart bars={BARS} />)
   expect(mockTrendlinePrimitive).not.toBeNull() // attached once, idle
   expect(mockTrendlinePrimitive?.paneViews()).toHaveLength(0)
-  expect(screen.queryByTestId('layer-row:trendlines')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('layer-row:trendlines:head_shoulders|dashed')).not.toBeInTheDocument()
 })
 
-it('unchecking the trendline row removes the lines; re-checking restores them', () => {
+it("unchecking a group's row removes exactly that group's lines; re-checking restores them", () => {
   render(<CandlestickChart bars={BARS} trendlines={[FORMING, CONFIRMED]} />)
-  expect(mockTrendlinePrimitive?.paneViews()).toHaveLength(1)
+  // Two groups, one line each → two drawn segments.
+  expect(mockTrendlinePrimitive?.currentSegments()).toHaveLength(2)
 
   const checkbox = (): HTMLElement =>
-    within(screen.getByTestId('layer-row:trendlines')).getByRole('checkbox')
+    within(screen.getByTestId('layer-row:trendlines:head_shoulders|dashed')).getByRole('checkbox')
 
   fireEvent.click(checkbox())
-  expect(mockTrendlinePrimitive?.paneViews()).toHaveLength(0)
+  // Only the head_shoulders forming group is removed; the confirmed double-top
+  // line remains (group-granular visibility).
+  expect(mockTrendlinePrimitive?.currentSegments()).toHaveLength(1)
 
   fireEvent.click(checkbox())
-  expect(mockTrendlinePrimitive?.paneViews()).toHaveLength(1)
+  expect(mockTrendlinePrimitive?.currentSegments()).toHaveLength(2)
+})
+
+// Two distinct-geometry forming H&S necklines (no solid twin → both survive
+// dedupe) collapse into ONE (head_shoulders, forming) row with count 2.
+const FORMING_B: TrendlineSpec = {
+  points: [
+    { ts: '2026-04-13T00:00:00+00:00', price: 90 },
+    { ts: '2026-04-15T00:00:00+00:00', price: 94 },
+  ],
+  role: 'neckline',
+  style: 'dashed',
+  pattern: 'head_shoulders',
+}
+
+it('lists one row per (pattern type, state) with the instance count', () => {
+  render(<CandlestickChart bars={BARS} trendlines={[FORMING, FORMING_B, CONFIRMED]} />)
+  expect(screen.getByTestId('layer-count:trendlines:head_shoulders|dashed')).toHaveTextContent('2')
+  expect(screen.getByTestId('layer-count:trendlines:double_top|solid')).toHaveTextContent('1')
+  // The row also names the pattern + state.
+  expect(screen.getByTestId('layer-row:trendlines:double_top|solid')).toHaveTextContent(
+    'Double top (confirmed)',
+  )
+})
+
+it("hovering a group's row highlights that group; leaving clears it", () => {
+  render(<CandlestickChart bars={BARS} trendlines={[FORMING, CONFIRMED]} />)
+  const row = screen.getByTestId('layer-row:trendlines:head_shoulders|dashed')
+
+  fireEvent.mouseEnter(row)
+  expect(mockTrendlinePrimitive?.highlightedGroup()).toBe('head_shoulders|dashed')
+
+  fireEvent.mouseLeave(row)
+  expect(mockTrendlinePrimitive?.highlightedGroup()).toBeNull()
 })

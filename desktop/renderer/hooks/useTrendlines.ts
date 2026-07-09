@@ -25,14 +25,18 @@ import { useEffect } from 'react'
 import type { RefObject } from 'react'
 
 import type { EffectiveTheme } from '../lib/theme'
-import { TRENDLINE_LAYER_ID, TrendlinePrimitive, readTrendlineColors } from '../lib/trendlines'
+import { TrendlinePrimitive, readTrendlineColors } from '../lib/trendlines'
 import type { TrendlineSpec } from '../types/events'
 
 export interface UseTrendlinesParams {
-  /** The trendline specs to draw (from the `chart.trendlines` event). */
+  /** The trendline specs to draw — already deduped AND filtered to the groups
+   * whose legend rows are checked (Plan 0067 phase 3): visibility is per-(pattern
+   * type, state) group, so the component removes hidden groups before feeding
+   * them here rather than toggling a single global flag. */
   trendlines: ReadonlyArray<TrendlineSpec>
-  /** The chart's hidden-layer id set; this hook reads `TRENDLINE_LAYER_ID`. */
-  hidden: ReadonlySet<string>
+  /** The hovered legend group's `patternStateKey`, or null — the primitive
+   * emphasises its lines and dims the rest (Plan 0067 phase 3). */
+  highlightKey: string | null
   /** Re-resolves the colour tokens off the DOM when the theme flips. */
   effectiveTheme: EffectiveTheme
 }
@@ -40,7 +44,7 @@ export interface UseTrendlinesParams {
 export function useTrendlines(
   containerRef: RefObject<HTMLDivElement>,
   trendlinePrimitiveRef: RefObject<TrendlinePrimitive>,
-  { trendlines, hidden, effectiveTheme }: UseTrendlinesParams,
+  { trendlines, highlightKey, effectiveTheme }: UseTrendlinesParams,
 ): void {
   useEffect(() => {
     const primitive = trendlinePrimitiveRef.current
@@ -50,6 +54,6 @@ export function useTrendlines(
     // the token read); the primitive persists — no remount, no re-attach.
     primitive.setColors(readTrendlineColors(container))
     primitive.setTrendlines(trendlines)
-    primitive.setVisible(!hidden.has(TRENDLINE_LAYER_ID))
-  }, [containerRef, trendlinePrimitiveRef, trendlines, hidden, effectiveTheme])
+    primitive.setHighlightedGroup(highlightKey)
+  }, [containerRef, trendlinePrimitiveRef, trendlines, highlightKey, effectiveTheme])
 }
