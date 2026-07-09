@@ -502,7 +502,7 @@ def test_backtest_timeframe_enum_is_the_annualizable_registry_subset() -> None:
     from typing import get_args
 
     from market_analyser.annotations.types import SUPPORTED_TIMEFRAMES
-    from market_analyser.api.mcp_tools.run_backtest import BACKTEST_TIMEFRAME
+    from market_analyser.api.mcp_tools._shared.backtest_timeframe import BACKTEST_TIMEFRAME
     from market_analyser.backtest.metrics import _TIMEFRAME_BARS_PER_YEAR
 
     backtest_set = set(get_args(BACKTEST_TIMEFRAME))

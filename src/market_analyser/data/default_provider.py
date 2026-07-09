@@ -217,22 +217,20 @@ class DefaultMarketDataProvider:
                     f"[{start.isoformat()}, {end.isoformat()}] — "
                     f"refusing remote fetch (anti-lookahead)",
                 )
-            return cached
+            return _merge_gaps(cached, [], start, end)
 
         cached = self._repo.get_bars(symbol, timeframe, start, end)
         gaps = _coverage_gaps(cached, start, end, _min_fetch_span(timeframe))
         if not gaps:
             return cached
-        merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
+        fetched_batches: list[Sequence[Bar]] = []
         for gap_start, gap_end in gaps:
             fetched = adapter.fetch_ohlcv(symbol, timeframe, gap_start, gap_end, now=_now())
             if not fetched:
                 continue
             self._repo.upsert_bars(list(fetched))
-            for bar in fetched:
-                if start <= bar.event_ts <= end:
-                    merged[bar.event_ts] = bar
-        return sorted(merged.values(), key=lambda b: b.event_ts)
+            fetched_batches.append(fetched)
+        return _merge_gaps(cached, fetched_batches, start, end)
 
     def coverage(
         self,
@@ -317,7 +315,7 @@ class DefaultMarketDataProvider:
         if not gaps:
             return BackfillResult(bars=list(cached), partial_reason=None, message=None)
 
-        merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
+        fetched_batches: list[Sequence[Bar]] = []
         failures: list[UpstreamDataError] = []
         for gap_start, gap_end in gaps:
             try:
@@ -328,11 +326,9 @@ class DefaultMarketDataProvider:
             if not fetched:
                 continue
             self._repo.upsert_bars(list(fetched))
-            for bar in fetched:
-                if start <= bar.event_ts <= end:
-                    merged[bar.event_ts] = bar
+            fetched_batches.append(fetched)
 
-        result_bars = sorted(merged.values(), key=lambda b: b.event_ts)
+        result_bars = _merge_gaps(cached, fetched_batches, start, end)
         if failures and len(failures) == len(gaps):
             # Every gap failed — nothing was fetched. Stay loud.
             raise failures[0]
@@ -499,6 +495,31 @@ def _now() -> datetime:
     provider remains the single owner of the seam; monkeypatched by tests to
     freeze time (cf. the adapters' own `_now`)."""
     return datetime.now(tz=UTC)
+
+
+def _merge_gaps(
+    cached: Sequence[Bar],
+    fetched: Sequence[Sequence[Bar]],
+    start: datetime,
+    end: datetime,
+) -> list[Bar]:
+    """The anti-lookahead merge, in one place (Plan 0072 phase 3).
+
+    Combine the cached bars with every fetched batch's bars, keyed by
+    `event_ts` (a later fetched bar wins over an earlier one and over cached),
+    keeping only fetched bars inside the requested `[start, end]` window, and
+    return them sorted ascending by `event_ts`. Cached bars are already
+    window-bounded by the repository query, so only fetched bars are filtered.
+
+    This is the determinism-critical loop `get_ohlcv`, `get_ohlcv_with_status`,
+    and the `as_of` read all share; extracting it keeps the merge-and-sort
+    byte-identical across the three paths rather than copy-pasted."""
+    merged: dict[datetime, Bar] = {bar.event_ts: bar for bar in cached}
+    for batch in fetched:
+        for bar in batch:
+            if start <= bar.event_ts <= end:
+                merged[bar.event_ts] = bar
+    return sorted(merged.values(), key=lambda b: b.event_ts)
 
 
 def _coverage_gaps(

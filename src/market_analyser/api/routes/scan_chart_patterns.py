@@ -29,7 +29,9 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from market_analyser.api.mcp_tools.detect_chart_patterns import _detect_chart_patterns_response
+from market_analyser.api.mcp_tools._shared.chart_patterns_response import (
+    _detect_chart_patterns_response,
+)
 from market_analyser.data._http import ResilientHttpError
 from market_analyser.data.errors import (
     RateLimitedError,

@@ -25,10 +25,10 @@ from itertools import pairwise
 
 import pytest
 
-from market_analyser.api.mcp_tools.detect_chart_patterns import (
+from market_analyser.api.mcp_tools._shared.chart_patterns_response import (
     _detect_chart_patterns_response,
-    register_detect_chart_patterns,
 )
+from market_analyser.api.mcp_tools.detect_chart_patterns import register_detect_chart_patterns
 from market_analyser.data.types import (
     Bar,
     MacroContext,

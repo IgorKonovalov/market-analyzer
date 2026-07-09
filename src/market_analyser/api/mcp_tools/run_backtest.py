@@ -24,10 +24,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from market_analyser.api.mcp_tools._shared.backtest_timeframe import BACKTEST_TIMEFRAME
 from market_analyser.backtest.engine import run as engine_run
 from market_analyser.backtest.persistence import persist
 from market_analyser.contracts.strategy import discover
@@ -36,14 +37,6 @@ from market_analyser.events import EventBus, RunCompletedPayloadV1
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
-
-# The timeframe set the backtest tools accept at the MCP boundary — the
-# data-registry-supported set (Plan 0025), now that metrics annualize all of it
-# (Plan 0050 phase 1). The unsupported `1m` (no such data timeframe) is dropped.
-# `compare_strategies` and `walk_forward_backtest` import this same alias so the
-# three tools cannot drift; a test pins `get_args(BACKTEST_TIMEFRAME)` equal to
-# `SUPPORTED_TIMEFRAMES` (the data registry's canonical set).
-BACKTEST_TIMEFRAME = Literal["15m", "1h", "4h", "1d", "1w"]
 
 
 def register_run_backtest(
@@ -144,4 +137,4 @@ def register_run_backtest(
         }
 
 
-__all__ = ["BACKTEST_TIMEFRAME", "register_run_backtest"]
+__all__ = ["register_run_backtest"]

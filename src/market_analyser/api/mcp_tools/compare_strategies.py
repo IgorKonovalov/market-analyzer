@@ -32,11 +32,11 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict
 
+from market_analyser.api.mcp_tools._shared.backtest_timeframe import BACKTEST_TIMEFRAME
 from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_ordered_range,
 )
-from market_analyser.api.mcp_tools.run_backtest import BACKTEST_TIMEFRAME
 from market_analyser.backtest.engine import run as engine_run
 from market_analyser.backtest.result import BacktestMetrics
 from market_analyser.contracts.strategy import discover

@@ -358,6 +358,72 @@ def _build_checks(
     return tuple(checks)
 
 
+def _blockers_from_checks(
+    checks: tuple[FusionCheck, ...],
+    *,
+    forecast_dir: _Directional | None,
+    signal_dir: _Directional | None,
+    long_ids: Sequence[str],
+    short_ids: Sequence[str],
+    sharpe_mean: float | None,
+    walk_forward: WalkForwardResult | None,
+) -> list[str]:
+    """Derive the flat verdict's named blockers from the failed trace rows
+    (Plan 0072 phase 3).
+
+    `_build_checks` is the single source of truth for *which* gates failed, so a
+    blocker can no longer drift from its gate (finding (e)): a blocker appears
+    iff its gate failed. Each leg reports its root-cause failure once — the elif
+    chains mirror `_build_checks`' gate order, and a downstream gate that fails
+    only because an upstream one did (the agreement gate when the forecast has no
+    direction; the strategy gate when no direction was voted) is subsumed,
+    exactly as the hand-written blocker chain did before. The message strings
+    (which embed the failing values) are the only thing computed here; the
+    decision of whether to emit is the check's `passed` flag."""
+
+    failed = {(c.leg, c.check) for c in checks if not c.passed}
+    blockers: list[str] = []
+
+    # Forecast: a missing probability vs a shipped-but-flat argmax.
+    if ("forecast", "probabilities shipped (baseline beaten out-of-sample)") in failed:
+        blockers.append("forecast shows no edge over baseline (no probability shipped)")
+    elif ("forecast", "argmax direction is directional") in failed:
+        blockers.append("forecast direction is flat or undecided")
+
+    # Signal: conflict, then absence, then disagreement (only a real blocker when
+    # the forecast itself has a direction to disagree with — otherwise the
+    # forecast leg already blocks and the agreement gate fails only in sympathy).
+    if ("signal", "no conflicting live votes") in failed:
+        blockers.append(f"live signals conflict: long={long_ids}, short={short_ids}")
+    elif ("signal", "at least one directional live vote") in failed:
+        blockers.append("no live strategy signal implies a direction")
+    elif (
+        "signal",
+        "live direction agrees with the forecast direction",
+    ) in failed and forecast_dir is not None:
+        blockers.append(
+            f"live signals ({signal_dir}) disagree with the forecast direction ({forecast_dir})"
+        )
+
+    # Backtest: missing basis, then non-positive edge, then an edge backing a
+    # non-agreeing strategy (only meaningful once a direction was actually voted).
+    if ("backtest", "walk-forward basis supplied") in failed:
+        blockers.append("no walk-forward backtest basis supplied")
+    elif ("backtest", "backtested edge positive (sharpe_mean > 0)") in failed:
+        blockers.append(f"no backtested edge: walk-forward sharpe_mean={sharpe_mean}")
+    elif (
+        ("backtest", "walk-forward strategy among the agreeing votes") in failed
+        and signal_dir is not None
+        and walk_forward is not None
+    ):
+        blockers.append(
+            f"walk-forward edge is for {walk_forward.strategy_id!r}, "
+            "which is not among the agreeing signals"
+        )
+
+    return blockers
+
+
 def _build_basis(
     snapshot: ConditionSnapshot,
     signals: Sequence[SignalEvaluation],
@@ -437,34 +503,11 @@ def fuse(
     sharpe_mean = _sharpe_mean(walk_forward)
     edge_factor = _edge_factor(sharpe_mean)
 
-    # Every leg must agree for a directional call; each failed leg is a named
-    # blocker so the flat verdict explains itself (ADR-0029 honest uncertainty).
-    blockers: list[str] = []
-    if forecast_dir is None:
-        if forecast.prob_up is None:
-            blockers.append("forecast shows no edge over baseline (no probability shipped)")
-        else:
-            blockers.append("forecast direction is flat or undecided")
-    if conflict:
-        blockers.append(f"live signals conflict: long={long_ids}, short={short_ids}")
-    elif signal_dir is None:
-        blockers.append("no live strategy signal implies a direction")
-    elif forecast_dir is not None and signal_dir != forecast_dir:
-        blockers.append(
-            f"live signals ({signal_dir}) disagree with the forecast direction ({forecast_dir})"
-        )
-    if walk_forward is None:
-        blockers.append("no walk-forward backtest basis supplied")
-    elif edge_factor <= 0.0:
-        blockers.append(f"no backtested edge: walk-forward sharpe_mean={sharpe_mean}")
-    elif signal_dir is not None and walk_forward.strategy_id not in (
-        long_ids if signal_dir == "long" else short_ids
-    ):
-        blockers.append(
-            f"walk-forward edge is for {walk_forward.strategy_id!r}, "
-            "which is not among the agreeing signals"
-        )
-
+    # Every leg must agree for a directional call. The structured trace records
+    # every gate; the flat verdict's named blockers are derived FROM the failed
+    # trace rows (single source of truth — finding (e)), so a blocker and its
+    # gate cannot drift. The invariant stays: directional iff no blocker iff
+    # every check passed (ADR-0029 honest uncertainty; ADR-0058 replayability).
     checks = _build_checks(
         snapshot=snapshot,
         signals=signals,
@@ -476,6 +519,15 @@ def fuse(
         long_ids=long_ids,
         short_ids=short_ids,
         sharpe_mean=sharpe_mean,
+    )
+    blockers = _blockers_from_checks(
+        checks,
+        forecast_dir=forecast_dir,
+        signal_dir=signal_dir,
+        long_ids=long_ids,
+        short_ids=short_ids,
+        sharpe_mean=sharpe_mean,
+        walk_forward=walk_forward,
     )
     basis = _build_basis(snapshot, signals, walk_forward, forecast, checks)
 

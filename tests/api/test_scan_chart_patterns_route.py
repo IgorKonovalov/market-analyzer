@@ -22,7 +22,9 @@ from itertools import pairwise
 from fastapi.testclient import TestClient
 
 from market_analyser.api.app import create_app
-from market_analyser.api.mcp_tools.detect_chart_patterns import _detect_chart_patterns_response
+from market_analyser.api.mcp_tools._shared.chart_patterns_response import (
+    _detect_chart_patterns_response,
+)
 from market_analyser.data.errors import UnknownSymbolError
 from market_analyser.data.types import (
     Bar,
