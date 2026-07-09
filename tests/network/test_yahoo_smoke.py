@@ -2,7 +2,10 @@
 is skipped in CI by default. Run locally with `uv run pytest -m network`.
 
 Asserts the in-house Yahoo Chart fetcher returns >=5 daily bars for AAPL over
-the last 7 days — the plan's smoke threshold.
+the last 10 days. The window is 10 calendar days rather than 7 (Plan 0072
+phase 5): a 7-day window over a holiday week yields fewer than 5 trading days
+and the smoke flakes on the calendar, not on the fetcher — 10 days clears >=5
+trading days even with a long holiday weekend inside it.
 """
 
 from __future__ import annotations
@@ -18,9 +21,9 @@ from market_analyser.data.adapters.yahoo import YahooAdapter
 def test_yahoo_aapl_returns_at_least_five_bars() -> None:
     adapter = YahooAdapter()
     end = datetime.now(tz=UTC)
-    start = end - timedelta(days=7)
+    start = end - timedelta(days=10)
     bars = adapter.fetch_ohlcv("AAPL", "1d", start, end)
-    assert len(bars) >= 5, f"expected >=5 bars for AAPL 1d in last 7d, got {len(bars)}"
+    assert len(bars) >= 5, f"expected >=5 bars for AAPL 1d in last 10d, got {len(bars)}"
     for bar in bars:
         assert bar.symbol == "AAPL"
         assert bar.source == "yahoo"

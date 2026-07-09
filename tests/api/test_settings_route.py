@@ -281,6 +281,7 @@ def test_renderer_bearer_unaffected_by_rotation(client: TestClient) -> None:
         },
         headers=_renderer_headers(),
     )
-    # The stub provider returns [], so the route returns 200 with an empty list —
-    # the assertion is "renderer bearer still works", not data shape.
-    assert ohlcv.status_code != 401
+    # The stub provider returns [], so the route returns 200 with an empty list.
+    # Assert the exact 200, not merely "not 401": a 5xx would slip past a
+    # `!= 401` check, and the stub makes the success status deterministic.
+    assert ohlcv.status_code == 200
