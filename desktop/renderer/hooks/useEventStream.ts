@@ -22,10 +22,14 @@
  *     supervisor's `refresh()` coalesces concurrent calls upstream, so the
  *     renderer is allowed to be optimistic about firing.
  *
- * Reconnection between events is left to the browser's `EventSource`
- * implementation (per ADR-0017's `retry:` hint from the server). The hook
- * surfaces the connection state (`open` | `connecting` | `reconnecting`).
- * On unmount we call `EventSource.close()`.
+ * Reconnection re-mints (ADR-0066): the stream authenticates with a
+ * short-lived, single-use ticket in the URL, so the browser's native
+ * `EventSource` auto-reconnect — which replays the same (now-consumed) URL —
+ * would 401-loop forever. The hook therefore closes the `EventSource` on
+ * `onerror` and schedules its own reconnect, which mints a FRESH ticketed URL
+ * (`api.buildEventsUrl()`) before reopening. The hook surfaces the connection
+ * state (`open` | `connecting` | `reconnecting`) and closes the stream (and
+ * cancels any pending reconnect) on unmount.
  *
  * The hook does NOT inject `EventSource` via a factory prop — tests install
  * a mock on `globalThis.EventSource` so production code stays free of test
@@ -103,6 +107,12 @@ const KNOWN_VERSIONS: Record<string, number> = {
 const ERROR_THRESHOLD = 3
 const ERROR_WINDOW_MS = 10_000
 
+// Delay before a manual reconnect attempt. Native `EventSource` auto-reconnect
+// is disabled (a single-use ticket can't be replayed — ADR-0066), so the hook
+// re-mints and reopens itself after this backoff, in the spirit of the server's
+// `retry:` hint.
+const RECONNECT_DELAY_MS = 3000
+
 function isEnvelope(value: unknown): value is Envelope<unknown> {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
@@ -152,33 +162,31 @@ export function useEventStream(handlers: EventStreamHandlers): UseEventStreamRes
     }
   }, [])
 
-  // Effect 2: open / re-open the EventSource whenever the URL changes. The
-  // cleanup closes the previous instance; React runs cleanup before the next
-  // effect, so we never have two open at once.
+  // Effect 2: open the EventSource for the current URL, then own reconnection
+  // ourselves. A single-use ticket (ADR-0066) is consumed on open, so native
+  // auto-reconnect (same URL) is useless — on error we close and schedule a
+  // reconnect that mints a FRESH ticketed URL. The cleanup closes the current
+  // instance and cancels any pending reconnect; React runs cleanup before the
+  // next effect, so a URL change (config refresh) never leaves two open.
   useEffect(() => {
     if (url === null) return
-    const es = new EventSource(url)
+
+    let es: EventSource | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let disposed = false
     const errorTimestamps: number[] = []
     let refreshFired = false
 
-    es.onopen = (): void => {
-      setState('open')
-      // Successful reconnection resets the failure window.
-      errorTimestamps.length = 0
-      refreshFired = false
-    }
-    es.onerror = (): void => {
-      // EventSource fires `onerror` both on transient drops (it will then
-      // reconnect itself per the server's `retry:` hint) and on fatal
-      // failures (auth reject, etc.). We report `reconnecting` either way
-      // — the user-visible meaning is the same: stream not currently live.
-      setState('reconnecting')
+    const recordFailure = (): void => {
       const now = Date.now()
       errorTimestamps.push(now)
       // Drop timestamps older than the rolling window.
       while (errorTimestamps.length > 0 && now - errorTimestamps[0] > ERROR_WINDOW_MS) {
         errorTimestamps.shift()
       }
+      // 3 failures within the window with no intervening `onopen` is enough
+      // evidence the sidecar is genuinely gone — ask the main process to
+      // re-attach, once per window (the supervisor coalesces upstream).
       if (errorTimestamps.length >= ERROR_THRESHOLD && !refreshFired) {
         refreshFired = true
         errorTimestamps.length = 0
@@ -187,23 +195,69 @@ export function useEventStream(handlers: EventStreamHandlers): UseEventStreamRes
         })
       }
     }
-    es.onmessage = (ev: MessageEvent<string>): void => {
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(ev.data)
-      } catch {
-        console.warn('[useEventStream] dropping non-JSON message')
-        return
-      }
-      if (!isEnvelope(parsed)) {
-        console.warn('[useEventStream] dropping malformed envelope', parsed)
-        return
-      }
-      dispatchEnvelope(parsed, handlersRef.current)
+
+    const scheduleReconnect = (): void => {
+      if (disposed || reconnectTimer !== null) return
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        void reconnect()
+      }, RECONNECT_DELAY_MS)
     }
 
+    const reconnect = async (): Promise<void> => {
+      if (disposed) return
+      let fresh: string
+      try {
+        fresh = await api.buildEventsUrl() // mints a fresh single-use ticket
+      } catch (err) {
+        console.warn('[useEventStream] failed to mint SSE ticket for reconnect', err)
+        recordFailure()
+        scheduleReconnect()
+        return
+      }
+      if (!disposed) openStream(fresh)
+    }
+
+    const openStream = (streamUrl: string): void => {
+      es = new EventSource(streamUrl)
+      es.onopen = (): void => {
+        setState('open')
+        // Successful (re)connection resets the failure window.
+        errorTimestamps.length = 0
+        refreshFired = false
+      }
+      es.onerror = (): void => {
+        // `onerror` fires on both transient drops and fatal failures; either
+        // way the ticket in this URL is spent, so we don't let the browser
+        // retry it. Report `reconnecting`, close, and re-mint on a backoff.
+        setState('reconnecting')
+        recordFailure()
+        es?.close()
+        es = null
+        scheduleReconnect()
+      }
+      es.onmessage = (ev: MessageEvent<string>): void => {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(ev.data)
+        } catch {
+          console.warn('[useEventStream] dropping non-JSON message')
+          return
+        }
+        if (!isEnvelope(parsed)) {
+          console.warn('[useEventStream] dropping malformed envelope', parsed)
+          return
+        }
+        dispatchEnvelope(parsed, handlersRef.current)
+      }
+    }
+
+    openStream(url)
+
     return () => {
-      es.close()
+      disposed = true
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer)
+      es?.close()
     }
   }, [url])
 

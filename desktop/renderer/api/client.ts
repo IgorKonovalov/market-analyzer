@@ -33,6 +33,7 @@ import type { ScanChartPatternsRequest } from '../types/sidecar/scan-chart-patte
 import type { ScanChartPatternsResponse } from '../types/sidecar/scan-chart-patterns-response'
 import type { ScanPatternsRequest } from '../types/sidecar/scan-patterns-request'
 import type { ScanPatternsResponse } from '../types/sidecar/scan-patterns-response'
+import type { SseTicketResponse } from '../types/sidecar/sse-ticket-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import type { AgentModeState } from '../types/ui-events'
 import type { AlertsPage } from '../types/sidecar/alerts-page'
@@ -335,16 +336,25 @@ export const api = {
     return getSidecarConfig().then((c) => c.port)
   },
   /**
-   * Build the SSE stream URL for `useEventStream` to hand to `new EventSource(...)`.
-   * The renderer bearer must be passed as `?token=` because `EventSource` cannot
-   * send custom `Authorization` headers (ADR-0017). The query path is only
-   * accepted on `/events` by the sidecar and the access log is suppressed.
+   * Exchange the renderer bearer for a short-lived, single-use SSE ticket
+   * (ADR-0066). Bearer-gated like every other route — `callJson` injects it as
+   * an `Authorization` header. The ticket is consumed the moment the stream is
+   * opened, so a fresh one is minted for every connect AND every reconnect.
    */
-  buildEventsUrl(): Promise<string> {
-    return getSidecarConfig().then(
-      ({ port, secretToken }) =>
-        `http://127.0.0.1:${port}/events?token=${encodeURIComponent(secretToken)}`,
-    )
+  mintEventsTicket(): Promise<SseTicketResponse> {
+    return callJson<SseTicketResponse>('/events/ticket', { method: 'POST' })
+  },
+  /**
+   * Build a ready-to-open SSE stream URL for `useEventStream` to hand to
+   * `new EventSource(...)`. `EventSource` cannot set an `Authorization` header,
+   * so the stream authenticates with a **ticket** in the query string — never
+   * the durable bearer, which never appears in a URL again (ADR-0066). Each
+   * call mints a fresh single-use ticket; the caller re-invokes to reconnect.
+   */
+  async buildEventsUrl(): Promise<string> {
+    const { port } = await getSidecarConfig()
+    const { ticket } = await api.mintEventsTicket()
+    return `http://127.0.0.1:${port}/events?ticket=${encodeURIComponent(ticket)}`
   },
 } as const
 

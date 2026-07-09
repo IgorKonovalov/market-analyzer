@@ -21,7 +21,11 @@ export function prodCsp(sidecarPort: number): string {
     "default-src 'self'",
     `script-src 'self' ${THEME_BOOTSTRAP_HASH}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",
+    // `img-src 'self' data:` — no `https:`. The renderer draws only bundled
+    // assets, data-URI icons, and canvas charts; nothing legitimately loads a
+    // remote image, so admitting arbitrary `https:` hosts was an unused
+    // image-beacon channel (Plan 0072 phase 6 / audit finding (h)).
+    "img-src 'self' data:",
     `connect-src 'self' http://127.0.0.1:${sidecarPort}`,
   ].join('; ')
 }

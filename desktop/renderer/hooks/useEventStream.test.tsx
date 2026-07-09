@@ -1,8 +1,8 @@
 /**
- * Plan 0007 phase 4 done-when for `useEventStream`. Six assertions, one per
- * behavioural claim in the plan:
- *   1. On mount, hook constructs `EventSource` with URL of the form
- *      `http://127.0.0.1:<port>/events?token=<bearer>`.
+ * Plan 0007 phase 4 done-when for `useEventStream` (URL auth updated to the
+ * ADR-0066 ticket in Plan 0072 phase 6). Assertions, one per behavioural claim:
+ *   1. On mount, hook mints a ticket and constructs `EventSource` with URL of
+ *      the form `http://127.0.0.1:<port>/events?ticket=<ticket>`.
  *   2. A `chart.show v1` message dispatches to the `chart.show` handler with
  *      the parsed payload.
  *   3. A `chart.update v1` envelope dispatches to the `chart.update` handler.
@@ -70,6 +70,36 @@ beforeEach(() => {
   ;(globalThis as unknown as { EventSource: unknown }).EventSource = eventSourceCtor
 })
 
+// ---------- ticket-mint fetch mock (ADR-0066) ----------------------------- //
+// `buildEventsUrl()` now POSTs `/events/ticket` (through the real `client.ts`)
+// before building the stream URL, so we mock `fetch` to hand back a fresh,
+// deterministic ticket per mint. `mintedTickets` lets a spec assert the exact
+// ticket that ended up in the EventSource URL.
+
+let mintedTickets: string[] = []
+
+beforeEach(() => {
+  mintedTickets = []
+  let counter = 0
+  ;(globalThis as unknown as { fetch: unknown }).fetch = jest.fn(
+    async (input: unknown, init?: { method?: string }) => {
+      const urlStr = typeof input === 'string' ? input : String(input)
+      if (urlStr.includes('/events/ticket') && init?.method === 'POST') {
+        const ticket = `sse-ticket-${++counter}`
+        mintedTickets.push(ticket)
+        const body = { ticket, expires_in_seconds: 10 }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => body,
+          text: async () => JSON.stringify(body),
+        }
+      }
+      return { ok: true, status: 200, json: async () => ({}), text: async () => '{}' }
+    },
+  )
+})
+
 // ---------- window.api mock ----------------------------------------------- //
 
 const FAKE_PORT = 53221
@@ -114,14 +144,18 @@ async function waitForStream(): Promise<MockEventSourceInstance> {
 // ---------- specs --------------------------------------------------------- //
 
 describe('useEventStream', () => {
-  it('constructs an EventSource with /events?token=<bearer> on mount', async () => {
+  it('mints a ticket and constructs an EventSource with /events?ticket=<ticket> on mount', async () => {
     render(<Harness handlers={{}} />)
     await waitForStream()
 
     expect(eventSourceCtor).toHaveBeenCalledTimes(1)
-    expect(eventSourceCtor).toHaveBeenCalledWith(
-      `http://127.0.0.1:${FAKE_PORT}/events?token=${encodeURIComponent(FAKE_TOKEN)}`,
+    expect(mintedTickets).toHaveLength(1)
+    // The durable bearer never appears in the URL (ADR-0066) — only the ticket.
+    const url = eventSourceCtor.mock.calls[0][0]
+    expect(url).toBe(
+      `http://127.0.0.1:${FAKE_PORT}/events?ticket=${encodeURIComponent(mintedTickets[0])}`,
     )
+    expect(url).not.toContain(FAKE_TOKEN)
   })
 
   it('dispatches chart.show v1 to the chart.show handler with the parsed payload', async () => {
@@ -202,6 +236,43 @@ describe('useEventStream', () => {
     expect(results.at(-1)?.state).toBe('reconnecting')
   })
 
+  it('reconnects by minting a FRESH ticket and opening a new EventSource (ADR-0066)', async () => {
+    // The crux of Plan 0072 phase 6: a single-use ticket is spent on open, so
+    // reconnection must re-mint rather than replay the dead URL.
+    jest.useFakeTimers()
+    try {
+      render(<Harness handlers={{}} />)
+      // Flush the initial async mint + open under fake timers.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0)
+      })
+      expect(eventSourceCtor).toHaveBeenCalledTimes(1)
+      const firstES = lastEventSource!
+      const firstTicket = mintedTickets.at(-1)!
+
+      // An error consumes the ticket; the hook closes and schedules a reconnect.
+      await act(async () => {
+        firstES._fireError()
+      })
+      expect(firstES.close).toHaveBeenCalled()
+      expect(eventSourceCtor).toHaveBeenCalledTimes(1) // not yet — waiting on backoff
+
+      // Advance past the reconnect backoff: the timer fires, re-mints, reopens.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(3000)
+      })
+
+      expect(eventSourceCtor).toHaveBeenCalledTimes(2)
+      const secondES = lastEventSource!
+      expect(secondES).not.toBe(firstES)
+      const secondTicket = mintedTickets.at(-1)!
+      expect(secondTicket).not.toBe(firstTicket) // a genuinely fresh ticket
+      expect(secondES.url).toContain(`ticket=${encodeURIComponent(secondTicket)}`)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   it('closes the EventSource on unmount', async () => {
     const { unmount } = render(<Harness handlers={{}} />)
     const es = await waitForStream()
@@ -256,7 +327,7 @@ describe('useEventStream — phase 4.4 refresh + failure-driven recovery', () =>
     capturedListener(status)
   }
 
-  it('on refreshed config change, closes the previous EventSource and opens a new one with the new port+token', async () => {
+  it('on refreshed config change, closes the previous EventSource and opens a new one on the new port with a fresh ticket', async () => {
     render(<Harness handlers={{}} />)
     // Wait for the first EventSource. The URL reflects whatever `cached` was
     // when render mounted — could be FAKE_PORT/FAKE_TOKEN, could be values
@@ -265,8 +336,8 @@ describe('useEventStream — phase 4.4 refresh + failure-driven recovery', () =>
     const firstES = lastEventSource!
     expect(firstES.close).not.toHaveBeenCalled()
 
-    // Pick refreshed values guaranteed different from the cache so the URL
-    // visibly changes.
+    // Pick a refreshed port guaranteed different from the cache so the URL
+    // visibly changes. The bearer moves too, but never into the URL.
     const NEW_PORT = 61234
     const NEW_TOKEN = 'refreshed-bearer-with-special&=chars'
 
@@ -277,9 +348,11 @@ describe('useEventStream — phase 4.4 refresh + failure-driven recovery', () =>
     await waitFor(() => expect(eventSourceCtor).toHaveBeenCalledTimes(2))
     const secondES = lastEventSource!
     expect(secondES).not.toBe(firstES)
+    // New port in the host, a freshly-minted ticket in the query, no bearer.
     expect(secondES.url).toBe(
-      `http://127.0.0.1:${NEW_PORT}/events?token=${encodeURIComponent(NEW_TOKEN)}`,
+      `http://127.0.0.1:${NEW_PORT}/events?ticket=${encodeURIComponent(mintedTickets.at(-1)!)}`,
     )
+    expect(secondES.url).not.toContain(NEW_TOKEN)
     // Prior instance closed by the effect cleanup before the new one opened.
     expect(firstES.close).toHaveBeenCalledTimes(1)
   })

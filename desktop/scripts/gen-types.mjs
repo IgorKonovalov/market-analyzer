@@ -60,6 +60,7 @@ const EMIT = new Set([
   'WatchOut',
   'AlertOut',
   'AlertsPage',
+  'SseTicketResponse',
 ])
 
 const HEADER = [

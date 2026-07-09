@@ -41,4 +41,10 @@ describe('prod CSP admits the theme bootstrap by hash', () => {
   it('pins connect-src to the given sidecar port', () => {
     expect(csp).toContain("connect-src 'self' http://127.0.0.1:54321")
   })
+
+  it('does not admit arbitrary https: hosts in img-src (Plan 0072 phase 6)', () => {
+    const imgSrc = csp.split('; ').find((d) => d.startsWith('img-src'))
+    expect(imgSrc).toBe("img-src 'self' data:")
+    expect(imgSrc).not.toContain('https:')
+  })
 })
