@@ -15,7 +15,7 @@ import '@testing-library/jest-dom'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { SettingsView } from './SettingsView'
-import { getChartStyleOverrides, resetChartStyle } from '../lib/chartStyle'
+import { getCandleType, getChartStyleOverrides, resetChartStyle } from '../lib/chartStyle'
 
 const INITIAL_SECRET = 'a'.repeat(64)
 const ROTATED_SECRET = 'b'.repeat(64)
@@ -340,6 +340,60 @@ describe('SettingsView — Chart style controls (Plan 0068 phase 3)', () => {
     expect(screen.getByTestId('chart-style-width-vwap')).toHaveAccessibleName('Width')
     // The "Editing <theme>" indicator is a live region.
     expect(screen.getByTestId('chart-style-editing-theme')).toHaveAttribute('aria-live', 'polite')
+  })
+})
+
+describe('SettingsView — Candle type control (Plan 0068 phase 4)', () => {
+  const candleRadio = (name: string): HTMLInputElement =>
+    screen.getByRole('radio', { name }) as HTMLInputElement
+
+  it('selecting a candle type writes it to the store', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('candle-type-control')
+
+    fireEvent.click(candleRadio('Line'))
+
+    expect(getCandleType()).toBe('line')
+    expect(candleRadio('Line').checked).toBe(true)
+  })
+
+  it('disables the candle up/down colour controls and shows a note in Line mode', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('candle-type-control')
+
+    // Candle mode: up/down enabled, no note.
+    expect(screen.getByTestId('chart-style-color-candleUp')).not.toBeDisabled()
+    expect(screen.queryByTestId('candle-type-note')).toBeNull()
+
+    fireEvent.click(candleRadio('Line'))
+
+    // Line mode: up + down colour controls inert, note explains the single colour.
+    expect(screen.getByTestId('chart-style-color-candleUp')).toBeDisabled()
+    expect(screen.getByTestId('chart-style-color-candleDown')).toBeDisabled()
+    expect(screen.getByTestId('candle-type-note')).toBeInTheDocument()
+    // A non-candle element (VWAP) stays editable.
+    expect(screen.getByTestId('chart-style-color-vwap')).not.toBeDisabled()
+  })
+
+  it('Reset chart style also clears the candle type back to candles', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('candle-type-control')
+    fireEvent.click(candleRadio('Area'))
+    expect(getCandleType()).toBe('area')
+
+    fireEvent.click(screen.getByTestId('chart-style-reset'))
+
+    expect(getCandleType()).toBe('candles')
+    expect(candleRadio('Candles').checked).toBe(true)
   })
 })
 

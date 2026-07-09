@@ -21,7 +21,7 @@
  * spec assert against that — NOT the reducer's overlay list — so a render
  * regression that loses a series cannot pass.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ColorType, TickMarkType, createChart } from 'lightweight-charts'
 import type {
   IChartApi,
@@ -84,7 +84,13 @@ import {
   subscribeEffective,
   type EffectiveTheme,
 } from '../lib/theme'
-import { resolveChartStyle, subscribeChartStyle, type ResolvedChartStyle } from '../lib/chartStyle'
+import {
+  getCandleType,
+  resolveChartStyle,
+  subscribeChartStyle,
+  type CandleSeriesType,
+  type ResolvedChartStyle,
+} from '../lib/chartStyle'
 import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
@@ -157,6 +163,89 @@ const OBV_SCALE_ID = 'obv'
 const PRICE_SCALE_MARGINS = { top: 0.05, bottom: 0.4 }
 const VOLUME_SCALE_MARGINS = { top: 0.82, bottom: 0 }
 const OBV_SCALE_MARGINS = { top: 0.62, bottom: 0.22 }
+
+// The main price series across the four render modes (Plan 0068 phase 4). A
+// candle-type change rebuilds the chart (the series type is fixed at creation),
+// so the whole creation effect re-runs with a fresh series of this type.
+type MainSeries = ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area'>
+
+/** The `__test_chart_render__` kind reported for the main series of each type. */
+function mainSeriesKind(type: CandleSeriesType): string {
+  switch (type) {
+    case 'bars':
+      return 'bar'
+    case 'line':
+      return 'line'
+    case 'area':
+      return 'area'
+    case 'candles':
+    default:
+      return 'candlestick'
+  }
+}
+
+/** Create the main price series for the chosen render type. Colours are applied
+ * separately by `applyMainColors` so creation and the restyle effect share one
+ * colour source. Line/area ride the main price scale (as candles do by default). */
+function createMainSeries(chart: IChartApi, type: CandleSeriesType): MainSeries {
+  const common = { priceLineVisible: false, lastValueVisible: false }
+  switch (type) {
+    case 'bars':
+      return chart.addBarSeries({})
+    case 'line':
+      return chart.addLineSeries({ priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
+    case 'area':
+      return chart.addAreaSeries({ priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
+    case 'candles':
+    default:
+      return chart.addCandlestickSeries({})
+  }
+}
+
+/** Apply the resolved colours to the main series for its render type. Candles/bars
+ * take up/down (+ wick/border) colours; line/area have no up/down concept, so the
+ * single line colour maps from `candleUp` (ADR-0062: the up/down/wick controls are
+ * inert then, and the Settings UI disables them). */
+function applyMainColors(series: MainSeries, type: CandleSeriesType, colors: ChartColors): void {
+  if (type === 'bars') {
+    ;(series as ISeriesApi<'Bar'>).applyOptions({
+      upColor: colors.candleUp,
+      downColor: colors.candleDown,
+    })
+  } else if (type === 'line') {
+    ;(series as ISeriesApi<'Line'>).applyOptions({ color: colors.candleUp })
+  } else if (type === 'area') {
+    ;(series as ISeriesApi<'Area'>).applyOptions({
+      lineColor: colors.candleUp,
+      topColor: colors.candleUp,
+      bottomColor: 'transparent',
+    })
+  } else {
+    ;(series as ISeriesApi<'Candlestick'>).applyOptions({
+      upColor: colors.candleUp,
+      downColor: colors.candleDown,
+      wickUpColor: colors.candleUp,
+      wickDownColor: colors.candleDown,
+      borderUpColor: colors.candleUp,
+      borderDownColor: colors.candleDown,
+    })
+  }
+}
+
+/** Push the bars onto the main series in the shape its render type expects:
+ * OHLC for candles/bars, a single `value` (close) for line/area. */
+function setMainData(series: MainSeries, type: CandleSeriesType, bars: Bar[]): void {
+  if (type === 'line' || type === 'area') {
+    ;(series as ISeriesApi<'Line'>).setData(
+      bars.map((b) => {
+        const d = toLightweightBar(b)
+        return { time: d.time, value: d.close }
+      }),
+    )
+  } else {
+    ;(series as ISeriesApi<'Candlestick'>).setData(bars.map(toLightweightBar))
+  }
+}
 
 declare global {
   interface Window {
@@ -295,7 +384,9 @@ export function CandlestickChart({
 }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  // The main price series — its concrete type (candlestick / bar / line / area)
+  // is chosen at creation from `candleType` (Plan 0068 phase 4).
+  const seriesRef = useRef<MainSeries | null>(null)
   // First-bar timestamp (ms) of the previous render, to detect left-side growth.
   const prevFirstTsRef = useRef<number | null>(null)
   // The `bars` reference from the previous bars-effect run. The effect also runs
@@ -349,6 +440,13 @@ export function CandlestickChart({
   // effects key on it so a user override re-resolves and re-applies in place — no
   // remount, mirroring the theme-recolor path.
   const [styleVersion, setStyleVersion] = useState(0)
+  // The candle series-type (Plan 0068 phase 4). Unlike colour/width, a change here
+  // REBUILDS the chart (the series type is fixed at creation): the creation effect
+  // keys on it, and the data / marker / primitive effects + the chart-subscribing
+  // hooks re-run so everything re-attaches to the fresh series. Only re-renders
+  // when the type actually changes (getCandleType is a stable primitive snapshot),
+  // so a colour/width mutation doesn't trigger a rebuild.
+  const candleType = useSyncExternalStore(subscribeChartStyle, getCandleType, getCandleType)
   // Ephemeral hover-tooltip state (Plan 0047 phase 8): the crosshair content +
   // its position within the chart area. Null while not hovering a labelled bar
   // or an overlay line. Never persisted, never round-tripped to the sidecar.
@@ -467,7 +565,9 @@ export function CandlestickChart({
   const syncTestRenderHook = useCallback((): void => {
     const kinds: Array<{ kind: string; period?: number | null }> = []
     if (seriesRef.current !== null) {
-      kinds.push({ kind: 'candlestick' })
+      // Read the type from the store (not a dep) so this stays a stable callback;
+      // a candle-type change rebuilds via the creation effect, which calls this.
+      kinds.push({ kind: mainSeriesKind(getCandleType()) })
     }
     // Always-on volume series, between the candlestick and the agent overlays.
     if (volumeSeriesRef.current !== null) kinds.push({ kind: 'volume' })
@@ -511,14 +611,8 @@ export function CandlestickChart({
       },
       autoSize: true,
     })
-    const series = chart.addCandlestickSeries({
-      upColor: colors.candleUp,
-      downColor: colors.candleDown,
-      wickUpColor: colors.candleUp,
-      wickDownColor: colors.candleDown,
-      borderUpColor: colors.candleUp,
-      borderDownColor: colors.candleDown,
-    })
+    const series = createMainSeries(chart, candleType)
+    applyMainColors(series, candleType, colors)
 
     // Always-on volume series (Plan 0027 phase 3). Created once at mount; their
     // data is pushed in the bars effect. Disposed by `chart.remove()` on unmount
@@ -604,7 +698,10 @@ export function CandlestickChart({
       supertrendMap.clear()
       syncTestRenderHook()
     }
-  }, [syncTestRenderHook])
+    // `candleType` rebuilds the chart (series type is fixed at creation); the data
+    // / marker / primitive effects + chart-subscribing hooks key on it too, so they
+    // re-run and re-attach to the fresh series in the same commit (Plan 0068 ph4).
+  }, [syncTestRenderHook, candleType])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -622,7 +719,7 @@ export function CandlestickChart({
     const grewOnLeft = prevFirstMs !== null && newFirstMs !== null && newFirstMs < prevFirstMs
     const rangeBeforePrepend = grewOnLeft ? chart.timeScale().getVisibleLogicalRange() : null
 
-    candlestick.setData(bars.map(toLightweightBar))
+    setMainData(candlestick, candleType, bars)
     barCountRef.current = bars.length
 
     // Always-on volume series, derived client-side from the same `bars`. Empty
@@ -741,7 +838,9 @@ export function CandlestickChart({
     prevBarsRef.current = bars
     prevFirstTsRef.current = newFirstMs
     syncTestRenderHook()
-  }, [bars, overlays, hidden, syncTestRenderHook])
+    // `candleType` re-runs this after a rebuild so the fresh main series (and the
+    // recreated overlay/supertrend series) get their data pushed (Plan 0068 ph4).
+  }, [bars, overlays, hidden, syncTestRenderHook, candleType])
 
   // Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`
   // into the chart's CURRENT (forming) bar via `series.update()` — close tracks
@@ -761,14 +860,20 @@ export function CandlestickChart({
     const asOfMs = new Date(quote.as_of).getTime()
     // Outside the forming bar's [start, start + period) window → leave every bar.
     if (asOfMs < lastStartMs || asOfMs >= lastStartMs + periodMs) return
-    series.update({
-      time: Math.floor(lastStartMs / 1000) as UTCTimestamp,
-      open: last.open,
-      high: Math.max(last.high, quote.price),
-      low: Math.min(last.low, quote.price),
-      close: quote.price,
-    })
-  }, [quote, bars, timeframe])
+    const time = Math.floor(lastStartMs / 1000) as UTCTimestamp
+    if (candleType === 'line' || candleType === 'area') {
+      // Line/area track a single value (the forming close).
+      ;(series as ISeriesApi<'Line'>).update({ time, value: quote.price })
+    } else {
+      ;(series as ISeriesApi<'Candlestick'>).update({
+        time,
+        open: last.open,
+        high: Math.max(last.high, quote.price),
+        low: Math.min(last.low, quote.price),
+        close: quote.price,
+      })
+    }
+  }, [quote, bars, timeframe, candleType])
 
   // Monthly axis ticks (Plan 0050 phase 7): the `1mo` timeframe needs month/year
   // tick marks, not the day-level labels lightweight-charts' default emits at some
@@ -785,7 +890,8 @@ export function CandlestickChart({
         tickMarkFormatter: timeframe === '1mo' ? monthlyTickMarkFormatter : undefined,
       },
     })
-  }, [timeframe])
+    // Re-apply on a rebuild (Plan 0068 ph4) — the fresh chart needs the formatter.
+  }, [timeframe, candleType])
 
   // Pointer-gesture state machine + agent-mode POSTs (Plan 0029 phase 1).
   // Called AFTER the chart-creation effect so its gesture effect sees a
@@ -805,6 +911,7 @@ export function CandlestickChart({
   useLazyHistoryTrigger(chartRef, {
     enabled: historyTriggerEnabled && onReachLeftEdge !== undefined,
     onReachLeftEdge: onReachLeftEdge ?? NOOP,
+    rebuildToken: candleType,
   })
 
   // Recompute chart-pattern trendlines on mount + debounced visible-range settle
@@ -816,6 +923,7 @@ export function CandlestickChart({
     onRecompute: () => {
       void recomputeTrendlines()
     },
+    rebuildToken: candleType,
   })
 
   // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049). The primitive is
@@ -826,6 +934,7 @@ export function CandlestickChart({
     trendlines: shownTrendlines,
     highlightKey: highlightedTrendlineKey,
     effectiveTheme,
+    rebuildToken: candleType,
   })
 
   // Markers (annotation markers + the clicked-bar affordance) are themed: their
@@ -864,7 +973,7 @@ export function CandlestickChart({
       markers = [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
     }
     series.setMarkers(markers)
-  }, [annotations, clickedBarTs, effectiveTheme, hidden, styleVersion])
+  }, [annotations, clickedBarTs, effectiveTheme, hidden, styleVersion, candleType])
 
   // Multi-bar pattern span band (Plan 0049 phase 7): feed the span primitive the
   // current spans, theme-resolved direction colours, and the legend visibility.
@@ -883,7 +992,8 @@ export function CandlestickChart({
     })
     primitive.setSpans(markersToSpans(annotations ?? []))
     primitive.setVisible(!hidden.has(SPAN_LAYER_ID))
-  }, [annotations, effectiveTheme, hidden, styleVersion])
+    // `candleType` re-feeds the freshly-attached span primitive after a rebuild.
+  }, [annotations, effectiveTheme, hidden, styleVersion, candleType])
 
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
   // (S/R levels the agent pushes) on the candlestick series. A line toggled off
@@ -921,7 +1031,8 @@ export function CandlestickChart({
         existing.applyOptions({ color })
       }
     }
-  }, [overlays, hidden, effectiveTheme, styleVersion])
+    // `candleType` re-creates the price lines on the fresh series after a rebuild.
+  }, [overlays, hidden, effectiveTheme, styleVersion, candleType])
 
   // Build the layers-legend descriptor list (Plan 0047 phase 9): one row per
   // indicator overlay, per marker-direction group present, and per price line —
@@ -1067,7 +1178,8 @@ export function CandlestickChart({
     }
     chart.subscribeCrosshairMove(handler)
     return () => chart.unsubscribeCrosshairMove(handler)
-  }, [annotations])
+    // `candleType` re-subscribes the crosshair handler on the fresh chart (ph4).
+  }, [annotations, candleType])
 
   // Re-apply the EXISTING chart's colours + line widths when the effective theme
   // changes OR the user mutates the chart-style store (Plan 0068 phase 2). One
@@ -1089,14 +1201,7 @@ export function CandlestickChart({
         horzLines: { color: colors.border },
       },
     })
-    candlestick.applyOptions({
-      upColor: colors.candleUp,
-      downColor: colors.candleDown,
-      wickUpColor: colors.candleUp,
-      wickDownColor: colors.candleDown,
-      borderUpColor: colors.candleUp,
-      borderDownColor: colors.candleDown,
-    })
+    applyMainColors(candlestick, candleType, colors)
     volumeSeriesRef.current?.applyOptions({ color: colors.volume })
     volumeMaSeriesRef.current?.applyOptions({
       color: colors.volumeMa,
@@ -1121,7 +1226,7 @@ export function CandlestickChart({
       up.applyOptions({ color: colors.markerBullish })
       down.applyOptions({ color: colors.markerBearish })
     }
-  }, [effectiveTheme, styleVersion])
+  }, [effectiveTheme, styleVersion, candleType])
 
   // Track the effective theme; the subscription fires on an explicit theme
   // change and on an OS flip while in `system` mode. Unsubscribes on unmount.

@@ -39,21 +39,27 @@ export interface UseTrendlinesParams {
   highlightKey: string | null
   /** Re-resolves the colour tokens off the DOM when the theme flips. */
   effectiveTheme: EffectiveTheme
+  /** Changes when the chart (and thus the trendline primitive) is rebuilt (Plan
+   * 0068 phase 4: a candle-type switch). The creation effect attaches a FRESH,
+   * empty primitive on rebuild; `trendlinePrimitiveRef` is a stable object, so
+   * this token is what re-runs the feed so the new primitive gets the specs. */
+  rebuildToken?: unknown
 }
 
 export function useTrendlines(
   containerRef: RefObject<HTMLDivElement>,
   trendlinePrimitiveRef: RefObject<TrendlinePrimitive>,
-  { trendlines, highlightKey, effectiveTheme }: UseTrendlinesParams,
+  { trendlines, highlightKey, effectiveTheme, rebuildToken }: UseTrendlinesParams,
 ): void {
   useEffect(() => {
     const primitive = trendlinePrimitiveRef.current
     const container = containerRef.current
     if (!primitive || !container) return
     // Recolours in place on a theme flip (`effectiveTheme` in the deps re-runs
-    // the token read); the primitive persists — no remount, no re-attach.
+    // the token read); the primitive persists — no remount, no re-attach. On a
+    // rebuild (`rebuildToken`) it re-feeds the freshly-attached primitive.
     primitive.setColors(readTrendlineColors(container))
     primitive.setTrendlines(trendlines)
     primitive.setHighlightedGroup(highlightKey)
-  }, [containerRef, trendlinePrimitiveRef, trendlines, highlightKey, effectiveTheme])
+  }, [containerRef, trendlinePrimitiveRef, trendlines, highlightKey, effectiveTheme, rebuildToken])
 }

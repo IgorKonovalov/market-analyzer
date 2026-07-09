@@ -84,7 +84,7 @@ function timeToIso(time: Time): string | null {
  * click that lands near but not precisely on a data point still resolves. */
 function resolveOhlc(
   param: MouseEventParams,
-  series: ISeriesApi<'Candlestick'>,
+  series: ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area'>,
   bars: Bar[],
 ): { open: number; high: number; low: number; close: number } | null {
   const cd = param.seriesData.get(series) as CandlestickData | undefined
@@ -100,7 +100,9 @@ function resolveOhlc(
 export function useChartGestures(
   containerRef: RefObject<HTMLDivElement>,
   chartRef: RefObject<IChartApi | null>,
-  seriesRef: RefObject<ISeriesApi<'Candlestick'> | null>,
+  // The main series is any of the four render types (Plan 0068 phase 4); a click
+  // still resolves OHLC (from `seriesData` for candles/bars, else the `bars` prop).
+  seriesRef: RefObject<ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area'> | null>,
   { agentMode, symbol, timeframe, bars }: UseChartGesturesParams,
 ): UseChartGesturesResult {
   const [selectRangeMode, setSelectRangeMode] = useState(false)

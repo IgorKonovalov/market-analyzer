@@ -16,12 +16,15 @@ import {
   CHART_STYLE_ELEMENTS,
   MAX_LINE_WIDTH,
   MIN_LINE_WIDTH,
+  getCandleType,
   getChartStyleOverrides,
   isLineElement,
   resetChartStyle,
   resolveChartStyle,
+  setCandleType,
   setElementOverride,
   subscribeChartStyle,
+  type CandleSeriesType,
   type ChartStyleElement,
 } from '../lib/chartStyle'
 import {
@@ -51,6 +54,20 @@ const WIDTH_OPTIONS: readonly number[] = Array.from(
   (_, i) => MIN_LINE_WIDTH + i,
 )
 
+const CANDLE_TYPE_OPTIONS: ReadonlyArray<{ value: CandleSeriesType; label: string }> = [
+  { value: 'candles', label: 'Candles' },
+  { value: 'bars', label: 'OHLC bars' },
+  { value: 'line', label: 'Line' },
+  { value: 'area', label: 'Area' },
+]
+
+/** Line/area render as a single line, so the candle up/down colour controls are
+ * inert (there is no up vs down). The stored `candleUp` colour still drives the
+ * single line colour, so it's set from Candles/OHLC mode. */
+function isSingleLineType(type: CandleSeriesType): boolean {
+  return type === 'line' || type === 'area'
+}
+
 /** The effective theme (light/dark) the chart is currently showing — the set the
  * controls edit. Re-renders on an explicit theme change or an OS flip in system
  * mode (the same subscription the chart uses). */
@@ -71,8 +88,10 @@ function useChartStyleOverrides(): ReturnType<typeof getChartStyleOverrides> {
 
 export function ChartStyleControls(): JSX.Element {
   const theme = useEffectiveTheme()
-  useChartStyleOverrides() // re-render when an override or reset lands
+  useChartStyleOverrides() // re-render when an override, reset, or candle-type lands
   const themeName = theme === 'dark' ? 'Dark' : 'Light'
+  const candleType = getCandleType()
+  const singleLine = isSingleLineType(candleType)
   // Resolve current display values (defaults ⊕ overrides) for the active theme off
   // the live :root tokens. Re-runs each render; the two subscriptions above make
   // sure a theme flip or an override triggers one.
@@ -80,6 +99,43 @@ export function ChartStyleControls(): JSX.Element {
 
   return (
     <div className={styles.root}>
+      <div className={styles.field}>
+        <span className={styles.fieldLabel} id="candle-type-label">
+          Candle type
+        </span>
+        <div
+          className={styles.segmented}
+          role="radiogroup"
+          aria-labelledby="candle-type-label"
+          data-testid="candle-type-control"
+        >
+          {CANDLE_TYPE_OPTIONS.map((opt) => (
+            <label
+              key={opt.value}
+              className={styles.segment}
+              data-active={candleType === opt.value}
+              data-testid={`candle-type-option-${opt.value}`}
+            >
+              <input
+                type="radio"
+                name="candle-type"
+                className={styles.segmentInput}
+                value={opt.value}
+                checked={candleType === opt.value}
+                onChange={() => setCandleType(opt.value)}
+              />
+              {opt.label}
+            </label>
+          ))}
+        </div>
+        {singleLine && (
+          <p className={styles.note} data-testid="candle-type-note">
+            Line and Area draw a single colour (the <strong>Candle up</strong> colour). Switch to
+            Candles or OHLC bars to change it.
+          </p>
+        )}
+      </div>
+
       <p className={styles.editing} aria-live="polite" data-testid="chart-style-editing-theme">
         Editing <strong>{themeName}</strong> theme — switch theme in Appearance to edit the other
         set.
@@ -89,6 +145,9 @@ export function ChartStyleControls(): JSX.Element {
           const color = resolved.colors[element]
           const colorId = `chart-style-${element}-color`
           const widthId = `chart-style-${element}-width`
+          // Candle up/down are inert for line/area (no up vs down). Disabled, not
+          // hidden, so the roster stays stable; the note above explains why.
+          const colorDisabled = singleLine && (element === 'candleUp' || element === 'candleDown')
           return (
             <div key={element} className={styles.row}>
               <label className={styles.label} htmlFor={colorId}>
@@ -100,6 +159,7 @@ export function ChartStyleControls(): JSX.Element {
                   type="color"
                   className={styles.colorInput}
                   value={color}
+                  disabled={colorDisabled}
                   onChange={(e) => setElementOverride(theme, element, { color: e.target.value })}
                   data-testid={`chart-style-color-${element}`}
                 />

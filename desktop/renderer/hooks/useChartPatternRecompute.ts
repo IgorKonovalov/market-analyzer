@@ -27,6 +27,10 @@ export interface UseChartPatternRecomputeOptions {
   onRecompute: () => void
   /** Quiet period after the last range change before recomputing. */
   debounceMs?: number
+  /** Changes when the chart instance is rebuilt (Plan 0068 phase 4: a candle-type
+   * switch). `chartRef` is a stable object, so this token is what tells the effect
+   * to re-subscribe onto the fresh chart's time scale and re-schedule. */
+  rebuildToken?: unknown
 }
 
 export function useChartPatternRecompute(
@@ -35,6 +39,7 @@ export function useChartPatternRecompute(
     enabled,
     onRecompute,
     debounceMs = DEFAULT_RECOMPUTE_DEBOUNCE_MS,
+    rebuildToken,
   }: UseChartPatternRecomputeOptions,
 ): void {
   // Latest-value refs so the subscription registers once (and the cleanup
@@ -66,5 +71,5 @@ export function useChartPatternRecompute(
       if (timer !== null) clearTimeout(timer)
       timeScale.unsubscribeVisibleLogicalRangeChange(schedule)
     }
-  }, [chartRef])
+  }, [chartRef, rebuildToken])
 }

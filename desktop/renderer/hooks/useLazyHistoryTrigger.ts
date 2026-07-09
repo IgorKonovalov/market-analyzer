@@ -24,6 +24,10 @@ export interface UseLazyHistoryTriggerOptions {
   onReachLeftEdge: () => void
   /** Bars from logical index 0 that count as "at the left edge". */
   thresholdBars?: number
+  /** Changes when the chart instance is rebuilt (Plan 0068 phase 4: a candle-type
+   * switch). `chartRef` is a stable object, so its identity alone can't tell this
+   * effect to re-subscribe onto the fresh chart's time scale — this token does. */
+  rebuildToken?: unknown
 }
 
 export function useLazyHistoryTrigger(
@@ -32,6 +36,7 @@ export function useLazyHistoryTrigger(
     enabled,
     onReachLeftEdge,
     thresholdBars = DEFAULT_LEFT_EDGE_THRESHOLD_BARS,
+    rebuildToken,
   }: UseLazyHistoryTriggerOptions,
 ): void {
   // Latest-value refs so the subscription registers once (and the cleanup
@@ -63,5 +68,5 @@ export function useLazyHistoryTrigger(
     return () => {
       timeScale.unsubscribeVisibleLogicalRangeChange(handler)
     }
-  }, [chartRef])
+  }, [chartRef, rebuildToken])
 }
