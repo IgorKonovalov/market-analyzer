@@ -55,6 +55,26 @@ const DIRECTION_LABEL: Record<Recommendation['direction'], string> = {
   flat: 'flat — no actionable edge',
 }
 
+/**
+ * Friendly names for the forecast feature-set tiers (Plan 0066, ADR-0057). The
+ * key is the opaque `feature_set_id` content hash the sidecar ships in
+ * `basis.forecast` — mirrored here from `src/market_analyser/forecast/features.py`
+ * (`FEATURE_SET_ID` / `FEATURE_SET_ID_V2` / `FEATURE_SET_ID_V2_DEEP`). These are
+ * frozen per ADR-0057; if the feature tuples ever change the hashes change too,
+ * and an unmapped id degrades gracefully to showing the raw hash (see
+ * `ForecastBasis`). The renderer can't compute the hash, so the mirror is the
+ * only client-side path to a readable tier name.
+ */
+const FEATURE_SET_LABELS: Record<string, string> = {
+  '49c020d0794fd2a7': 'v1 (OHLCV only)',
+  '2fb15f47d51cbafa': 'v2-full',
+  '3d8643321ac2cec3': 'v2-deep',
+}
+
+/** The two forecast-basis keys (Plan 0066) rendered as a readable tier line
+ * rather than raw scalar rows — pulled out of the generic fact list. */
+const TIER_KEYS = new Set(['feature_set_id', 'fallback_reason'])
+
 export function RecommendationsView({ recommendation }: Props): JSX.Element {
   if (recommendation === null) {
     return (
@@ -200,11 +220,7 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
             facts={recommendation.basis.backtest ?? null}
             testId="basis-backtest"
           />
-          <BasisFacts
-            label="Forecast"
-            facts={recommendation.basis.forecast ?? null}
-            testId="basis-forecast"
-          />
+          <ForecastBasis facts={recommendation.basis.forecast ?? null} testId="basis-forecast" />
         </div>
       </section>
 
@@ -303,6 +319,66 @@ function BasisFacts({ label, facts, testId }: BasisFactsProps): JSX.Element {
       ) : (
         <dl className={styles.factList}>
           {Object.entries(facts).map(([key, value]) => (
+            <div key={key} className={styles.factRow}>
+              <dt>
+                <GlossaryTerm termKey={key}>{key}</GlossaryTerm>
+              </dt>
+              <dd>{formatBasisValue(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  )
+}
+
+interface ForecastBasisProps {
+  facts: Record<string, BasisValue> | null
+  testId: string
+}
+
+/**
+ * The forecast leg of the basis (Plan 0066, ADR-0057). Same scalar-fact
+ * rendering as `BasisFacts`, but the two tier keys (`feature_set_id`,
+ * `fallback_reason`) are lifted out into a readable line — "Forecast ran on the
+ * v2-deep feature set" plus the fallback sentence when a richer tier was
+ * skipped — so a reader sees which model backed the call without decoding a
+ * hash. When neither key is present the block renders exactly as it did before
+ * this plan (the remaining scalars in a plain fact list). Read-only: no
+ * interactive element, per the ADR-0025/0029 no-action posture.
+ */
+function ForecastBasis({ facts, testId }: ForecastBasisProps): JSX.Element {
+  if (facts === null) {
+    return (
+      <div className={styles.basisBlock} data-testid={testId}>
+        <h4 className={styles.basisLabel}>Forecast</h4>
+        <p className={styles.muted}>not part of this basis</p>
+      </div>
+    )
+  }
+
+  const featureSetId = typeof facts.feature_set_id === 'string' ? facts.feature_set_id : null
+  const fallbackReason = typeof facts.fallback_reason === 'string' ? facts.fallback_reason : null
+  const otherFacts = Object.entries(facts).filter(([key]) => !TIER_KEYS.has(key))
+
+  return (
+    <div className={styles.basisBlock} data-testid={testId}>
+      <h4 className={styles.basisLabel}>Forecast</h4>
+      {featureSetId !== null && (
+        <p className={styles.forecastTier} data-testid="forecast-tier">
+          {FEATURE_SET_LABELS[featureSetId] !== undefined
+            ? `Forecast ran on the ${FEATURE_SET_LABELS[featureSetId]} feature set.`
+            : `Forecast ran on feature set ${featureSetId}.`}
+        </p>
+      )}
+      {fallbackReason !== null && (
+        <p className={styles.forecastFallback} data-testid="forecast-fallback">
+          {fallbackReason}
+        </p>
+      )}
+      {otherFacts.length > 0 && (
+        <dl className={styles.factList}>
+          {otherFacts.map(([key, value]) => (
             <div key={key} className={styles.factRow}>
               <dt>
                 <GlossaryTerm termKey={key}>{key}</GlossaryTerm>

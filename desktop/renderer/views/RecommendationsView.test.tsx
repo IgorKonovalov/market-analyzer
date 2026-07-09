@@ -336,3 +336,103 @@ it('Zod-rejects a malformed payload in the dispatcher — the handler never fire
     warn.mockRestore()
   }
 })
+
+// --------------------------------------------------------------------------- //
+// Plan 0066 phase 3: show which forecast tier backed the call.                //
+// --------------------------------------------------------------------------- //
+
+const FALLBACK_SENTENCE =
+  'v2-full unavailable: 0 of 2746 bars survived the join (floor 500); trained v2-deep (1347 rows)'
+
+// A recommendation whose forecast leg ran v2-deep (a richer tier was skipped),
+// carrying the two Plan 0066 tier keys alongside the usual probabilities.
+const V2_DEEP_REC: Recommendation = {
+  ...LONG_REC,
+  basis: {
+    ...LONG_REC.basis,
+    forecast: {
+      prob_up: 0.6,
+      beats_baseline: true,
+      feature_set_id: '3d8643321ac2cec3',
+      fallback_reason: FALLBACK_SENTENCE,
+    },
+  },
+}
+
+it('names the forecast tier and shows the fallback sentence when the basis carries them (through the dispatcher)', () => {
+  const captured = throughDispatch(V2_DEEP_REC)
+  expect(captured).not.toBeNull()
+  // The two scalar keys survive the real Zod parse (open-record basis.forecast).
+  expect(captured?.basis.forecast?.feature_set_id).toBe('3d8643321ac2cec3')
+
+  render(<RecommendationsView recommendation={captured} />)
+
+  // The opaque hash is rendered as a readable tier name, not the raw id.
+  expect(screen.getByTestId('forecast-tier')).toHaveTextContent(
+    'Forecast ran on the v2-deep feature set.',
+  )
+  expect(screen.getByTestId('forecast-fallback')).toHaveTextContent(FALLBACK_SENTENCE)
+
+  // The tier keys are lifted OUT of the generic fact list: the raw hash and the
+  // scalar-key labels never show as fact rows; the other facts still do.
+  const forecastBlock = screen.getByTestId('basis-forecast')
+  expect(forecastBlock).toHaveTextContent(/prob_up/)
+  expect(forecastBlock).not.toHaveTextContent('3d8643321ac2cec3')
+  expect(forecastBlock).not.toHaveTextContent('feature_set_id')
+})
+
+it('renders exactly today’s view when the forecast tier keys are absent (no regression)', () => {
+  // LONG_REC's forecast leg carries no feature_set_id / fallback_reason.
+  const captured = throughDispatch(LONG_REC)
+  render(<RecommendationsView recommendation={captured} />)
+
+  expect(screen.queryByTestId('forecast-tier')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('forecast-fallback')).not.toBeInTheDocument()
+  // The scalar facts render exactly as before.
+  expect(screen.getByTestId('basis-forecast')).toHaveTextContent(/prob_up/)
+})
+
+it('omits the fallback sentence when a genuine v2-full run reports no fallback_reason', () => {
+  const v2FullRec: Recommendation = {
+    ...LONG_REC,
+    basis: {
+      ...LONG_REC.basis,
+      // A clean richest-tier run: feature_set_id present, no fallback_reason
+      // key (exclude_none strips the null on the wire).
+      forecast: { prob_up: 0.6, beats_baseline: true, feature_set_id: '2fb15f47d51cbafa' },
+    },
+  }
+  render(<RecommendationsView recommendation={v2FullRec} />)
+
+  expect(screen.getByTestId('forecast-tier')).toHaveTextContent(
+    'Forecast ran on the v2-full feature set.',
+  )
+  expect(screen.queryByTestId('forecast-fallback')).not.toBeInTheDocument()
+})
+
+it('degrades gracefully to the raw id for an unmapped feature_set_id', () => {
+  const unknownRec: Recommendation = {
+    ...LONG_REC,
+    basis: {
+      ...LONG_REC.basis,
+      forecast: { prob_up: 0.6, beats_baseline: true, feature_set_id: 'deadbeefdeadbeef' },
+    },
+  }
+  render(<RecommendationsView recommendation={unknownRec} />)
+
+  // An unknown hash still produces a stated line, just without a friendly name.
+  expect(screen.getByTestId('forecast-tier')).toHaveTextContent(
+    'Forecast ran on feature set deadbeefdeadbeef.',
+  )
+})
+
+it('the forecast tier line adds no interactive control (ADR-0025/0029 no-action posture)', () => {
+  const { container } = render(<RecommendationsView recommendation={V2_DEEP_REC} />)
+  // The added lines are plain text: still zero action controls anywhere, and
+  // the tier/fallback paragraphs are not focusable.
+  expect(
+    container.querySelectorAll('button, input, select, textarea, a, [role="button"], summary'),
+  ).toHaveLength(0)
+  expect(screen.getByTestId('forecast-tier')).not.toHaveAttribute('tabindex')
+  expect(screen.getByTestId('forecast-fallback')).not.toHaveAttribute('tabindex')
+})
