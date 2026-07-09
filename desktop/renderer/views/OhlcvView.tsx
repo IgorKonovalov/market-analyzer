@@ -17,6 +17,7 @@ import { AgentModeToggle } from '../components/AgentModeToggle'
 import { CandlestickChart } from '../components/CandlestickChart'
 import { SymbolPicker } from '../components/SymbolPicker'
 import { Toast } from '../components/Toast'
+import { t } from '../lib/i18n'
 import type { ChartMarker } from '../lib/markers'
 import type { Timeframe } from '../lib/timeframes'
 import { useAgentMode } from '../hooks/useAgentMode'
@@ -130,7 +131,7 @@ export function OhlcvView({
   )
 
   return (
-    <section className={styles.root} aria-label={`OHLCV view for ${symbol} ${timeframe}`}>
+    <section className={styles.root} aria-label={t('ohlcv.viewLabel', { symbol, timeframe })}>
       <header className={styles.toolbar}>
         <SymbolPicker
           symbol={symbol}
@@ -148,7 +149,7 @@ export function OhlcvView({
           // Stable accessible name across the visual states below, so assistive
           // tech (and the e2e role lookup) always see the button as "Refresh".
           // `aria-busy` carries the in-flight state to screen readers.
-          aria-label="Refresh"
+          aria-label={t('ohlcv.refresh')}
           aria-busy={isRefetching}
           data-testid="ohlcv-refresh"
           data-state={isRefetching ? 'refreshing' : justRefreshed ? 'updated' : 'idle'}
@@ -156,12 +157,12 @@ export function OhlcvView({
           {isRefetching ? (
             <>
               <span className={styles.spinnerDot} aria-hidden="true" />
-              Refreshing…
+              {t('ohlcv.refreshing')}
             </>
           ) : justRefreshed ? (
-            'Updated ✓'
+            t('ohlcv.updated')
           ) : (
-            'Refresh'
+            t('ohlcv.refresh')
           )}
         </button>
         {isBackfilling && (
@@ -169,10 +170,10 @@ export function OhlcvView({
             className={styles.backfillSpinner}
             role="status"
             data-testid="ohlcv-backfill-spinner"
-            aria-label={`Backfilling ${symbol} ${timeframe}`}
+            aria-label={t('ohlcv.backfillingLabel', { symbol, timeframe })}
           >
             <span className={styles.spinnerDot} aria-hidden="true" />
-            Backfilling…
+            {t('ohlcv.backfilling')}
           </span>
         )}
         <AgentModeToggle
@@ -184,23 +185,23 @@ export function OhlcvView({
 
       <div className={styles.body}>
         {isLoading && (
-          <div className={styles.skeleton} role="status" aria-label="Loading chart">
-            Loading {symbol} {timeframe}…
+          <div className={styles.skeleton} role="status" aria-label={t('ohlcv.loadingChart')}>
+            {t('ohlcv.loadingBars', { symbol, timeframe })}
           </div>
         )}
         {!isLoading && error && (
           <div className={styles.error} role="alert">
             <p>
-              Failed to load <strong>{symbol}</strong> {timeframe}: {error.message}
+              {t('ohlcv.loadFailedPrefix')} <strong>{symbol}</strong> {timeframe}: {error.message}
             </p>
             <button type="button" onClick={refetch}>
-              Retry
+              {t('ohlcv.retry')}
             </button>
           </div>
         )}
         {!isLoading && !error && bars && bars.length === 0 && (
           <div className={styles.empty} role="status" data-testid="ohlcv-empty">
-            No bars for {symbol} {timeframe} in this window.
+            {t('ohlcv.emptyBars', { symbol, timeframe })}
           </div>
         )}
         {!isLoading && !error && bars && bars.length > 0 && (
@@ -215,7 +216,7 @@ export function OhlcvView({
             quote={quote}
             onReachLeftEdge={loadOlder}
             historyTriggerEnabled={!isLoadingOlder && !reachedStart}
-            ariaLabel={`Candlestick chart for ${symbol} ${timeframe}, ${bars.length} bars`}
+            ariaLabel={t('ohlcv.chartLabel', { symbol, timeframe, count: bars.length })}
           />
         )}
 
@@ -226,17 +227,19 @@ export function OhlcvView({
             className={styles.historyLoading}
             role="status"
             data-testid="ohlcv-history-loading"
-            aria-label="Loading older bars"
+            aria-label={t('ohlcv.loadingOlder')}
           >
             <span className={styles.spinnerDot} aria-hidden="true" />
-            Loading history…
+            {t('ohlcv.loadingHistory')}
           </span>
         )}
         {olderError && !reachedStart && (
           <div className={styles.historyError} role="alert" data-testid="ohlcv-history-error">
-            <span>Couldn’t load older bars: {olderError.message}</span>
+            <span>
+              {t('ohlcv.olderBarsError')} {olderError.message}
+            </span>
             <button type="button" onClick={loadOlder}>
-              Retry
+              {t('ohlcv.retry')}
             </button>
           </div>
         )}
@@ -286,7 +289,7 @@ export function PriceHeader({
 }: PriceHeaderProps): JSX.Element {
   const change = quote?.change_pct ?? null
   return (
-    <div className={styles.priceHeader} aria-label={`Current price for ${symbol}`}>
+    <div className={styles.priceHeader} aria-label={t('ohlcv.currentPriceLabel', { symbol })}>
       <span
         className={styles.priceValue}
         data-testid="price-value"
@@ -309,10 +312,10 @@ export function PriceHeader({
           className={styles.priceStale}
           role="status"
           data-testid="price-disconnected"
-          aria-label={`Live price for ${symbol} disconnected — showing last known value`}
+          aria-label={t('ohlcv.disconnectedLabel', { symbol })}
         >
           <span className={styles.priceStaleDot} aria-hidden="true" />
-          disconnected
+          {t('ohlcv.disconnected')}
         </span>
       )}
     </div>

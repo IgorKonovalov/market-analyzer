@@ -6,6 +6,7 @@
  * toast), so this is that minimal one. Used for backfill-failure surfacing in
  * OhlcvView; reusable for any transient, dismissible notice.
  */
+import { t } from '../lib/i18n'
 import styles from './Toast.module.css'
 
 export interface ToastProps {
@@ -25,7 +26,7 @@ export function Toast({ message, onDismiss, tone = 'info' }: ToastProps): JSX.El
       <button
         type="button"
         className={styles.dismiss}
-        aria-label="Dismiss notification"
+        aria-label={t('toast.dismiss')}
         onClick={onDismiss}
       >
         ×

@@ -33,6 +33,7 @@ import {
   subscribeEffective,
   type EffectiveTheme,
 } from '../lib/theme'
+import { t } from '../lib/i18n'
 import styles from './ChartStyleControls.module.css'
 
 const ELEMENT_LABELS: Record<ChartStyleElement, string> = {
@@ -101,7 +102,7 @@ export function ChartStyleControls(): JSX.Element {
     <div className={styles.root}>
       <div className={styles.field}>
         <span className={styles.fieldLabel} id="candle-type-label">
-          Candle type
+          {t('chartStyle.candleTypeLabel')}
         </span>
         <div
           className={styles.segmented}
@@ -130,15 +131,17 @@ export function ChartStyleControls(): JSX.Element {
         </div>
         {singleLine && (
           <p className={styles.note} data-testid="candle-type-note">
-            Line and Area draw a single colour (the <strong>Candle up</strong> colour). Switch to
-            Candles or OHLC bars to change it.
+            {t('chartStyle.lineAreaNotePre')}
+            <strong>{t('chartStyle.candleUp')}</strong>
+            {t('chartStyle.lineAreaNotePost')}
           </p>
         )}
       </div>
 
       <p className={styles.editing} aria-live="polite" data-testid="chart-style-editing-theme">
-        Editing <strong>{themeName}</strong> theme — switch theme in Appearance to edit the other
-        set.
+        {t('chartStyle.editingPre')}
+        <strong>{themeName}</strong>
+        {t('chartStyle.editingPost')}
       </p>
       <div className={styles.grid}>
         {CHART_STYLE_ELEMENTS.map((element) => {
@@ -169,7 +172,7 @@ export function ChartStyleControls(): JSX.Element {
                 {isLineElement(element) && (
                   <span className={styles.widthField}>
                     <label className={styles.widthLabel} htmlFor={widthId}>
-                      Width
+                      {t('chartStyle.widthLabel')}
                     </label>
                     <select
                       id={widthId}
@@ -199,7 +202,7 @@ export function ChartStyleControls(): JSX.Element {
         onClick={() => resetChartStyle()}
         data-testid="chart-style-reset"
       >
-        Reset chart style
+        {t('chartStyle.resetButton')}
       </button>
     </div>
   )

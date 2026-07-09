@@ -23,6 +23,7 @@ import { useCallback, useId, useRef, useState, type KeyboardEvent, type ReactNod
 import { createPortal } from 'react-dom'
 
 import { term } from '../glossary/types'
+import { t } from '../lib/i18n'
 import styles from './GlossaryTerm.module.css'
 
 interface Props {
@@ -103,11 +104,11 @@ export function GlossaryTerm({ termKey, children, className }: Props): JSX.Eleme
         >
           <span className={styles.cardTerm}>{record.term}</span>
           <span className={styles.cardHow}>
-            <span className={styles.cardHat}>How it&apos;s computed</span>
+            <span className={styles.cardHat}>{t('glossary.howComputedLabel')}</span>
             {record.howComputed}
           </span>
           <span className={styles.cardMeaning}>
-            <span className={styles.cardHat}>What it means</span>
+            <span className={styles.cardHat}>{t('glossary.whatItMeansLabel')}</span>
             {record.whatItMeans}
           </span>
         </span>,

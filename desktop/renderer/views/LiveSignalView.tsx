@@ -14,6 +14,7 @@
  * sidecar fetch (unlike the backtest view, which fetches a persisted result).
  */
 import { formatDateTime } from '../lib/format'
+import { t } from '../lib/i18n'
 import type { EvaluatedSignal, SignalEvaluation } from '../types/events'
 import styles from './LiveSignalView.module.css'
 
@@ -23,18 +24,18 @@ interface Props {
 }
 
 const KIND_LABEL: Record<EvaluatedSignal['kind'], string> = {
-  enter_long: 'enter long',
-  exit_long: 'exit long',
-  enter_short: 'enter short',
-  exit_short: 'exit short',
+  enter_long: 'signals.kind.enterLong',
+  exit_long: 'signals.kind.exitLong',
+  enter_short: 'signals.kind.enterShort',
+  exit_short: 'signals.kind.exitShort',
 }
 
 export function LiveSignalView({ evaluation }: Props): JSX.Element {
   if (evaluation === null) {
     return (
-      <section className={styles.view} aria-label="Live signal evaluation">
+      <section className={styles.view} aria-label={t('signals.liveSignalEvaluation')}>
         <p className={styles.empty} data-testid="live-signal-empty">
-          No evaluation yet — ask the agent to evaluate a strategy.
+          {t('signals.noEvaluation')}
         </p>
       </section>
     )
@@ -43,7 +44,7 @@ export function LiveSignalView({ evaluation }: Props): JSX.Element {
   const lastSignal = evaluation.last_signal ?? null
 
   return (
-    <section className={styles.view} aria-label="Live signal evaluation">
+    <section className={styles.view} aria-label={t('signals.liveSignalEvaluation')}>
       <header className={styles.header}>
         <h2 className={styles.title} data-testid="live-signal-title">
           <span className={styles.strategy}>{evaluation.strategy_id}</span>
@@ -60,7 +61,7 @@ export function LiveSignalView({ evaluation }: Props): JSX.Element {
 
       <dl className={styles.grid}>
         <div className={styles.row}>
-          <dt>Current position</dt>
+          <dt>{t('signals.currentPosition')}</dt>
           <dd
             data-testid="live-signal-position"
             data-position={evaluation.current_position}
@@ -71,10 +72,10 @@ export function LiveSignalView({ evaluation }: Props): JSX.Element {
         </div>
 
         <div className={styles.row}>
-          <dt>Last signal</dt>
+          <dt>{t('signals.lastSignal')}</dt>
           <dd data-testid="live-signal-last">
             {lastSignal === null ? (
-              <span className={styles.muted}>none yet</span>
+              <span className={styles.muted}>{t('signals.noneYet')}</span>
             ) : (
               <LastSignalLine
                 signal={lastSignal}
@@ -85,38 +86,39 @@ export function LiveSignalView({ evaluation }: Props): JSX.Element {
         </div>
 
         <div className={styles.row}>
-          <dt>Freshness</dt>
+          <dt>{t('signals.freshness')}</dt>
           <dd>
             {evaluation.fresh_signal ? (
               <span className={styles.fresh} data-fresh="true" data-testid="live-signal-freshness">
-                fresh — fired on the last closed bar
+                {t('signals.freshFired')}
               </span>
             ) : (
               <span className={styles.stale} data-fresh="false" data-testid="live-signal-freshness">
-                no fresh signal on the last closed bar
+                {t('signals.noFreshSignal')}
               </span>
             )}
           </dd>
         </div>
 
         <div className={styles.row}>
-          <dt>Evaluated through</dt>
+          <dt>{t('signals.evaluatedThrough')}</dt>
           <dd data-testid="live-signal-through">
             {formatDateTime(evaluation.evaluated_through_ts)} UTC
-            <span className={styles.muted}> · {evaluation.closed_bar_count} closed bars</span>
+            <span className={styles.muted}>
+              {' '}
+              · {t('signals.closedBars', { count: evaluation.closed_bar_count })}
+            </span>
           </dd>
         </div>
       </dl>
 
       {evaluation.latest_bar_excluded_as_forming && (
         <p className={styles.forming} data-testid="live-signal-forming" role="note">
-          The latest bar is still forming and was excluded — this reads through the last closed bar.
+          {t('signals.formingNote')}
         </p>
       )}
 
-      <p className={styles.disclaimer}>
-        A condition report of the strategy&apos;s current signal state — not advice.
-      </p>
+      <p className={styles.disclaimer}>{t('signals.disclaimer')}</p>
     </section>
   )
 }
@@ -133,14 +135,14 @@ function LastSignalLine({ signal, barsSince }: LastSignalLineProps): JSX.Element
       ? ''
       : barsSince === 0
         ? ' (last closed bar)'
-        : ` (${barsSince} bar${barsSince === 1 ? '' : 's'} ago)`
+        : t('signals.barsAgo', { count: barsSince })
 
   return (
     <span>
       <span className={styles[`kind_${signal.kind}`]} data-testid="live-signal-kind">
-        {KIND_LABEL[signal.kind]}
+        {t(KIND_LABEL[signal.kind])}
       </span>{' '}
-      at {formatDateTime(signal.event_ts)} UTC{ago}
+      {t('signals.at')} {formatDateTime(signal.event_ts)} UTC{ago}
       {signal.reason ? <span className={styles.reason}> — {signal.reason}</span> : null}
     </span>
   )

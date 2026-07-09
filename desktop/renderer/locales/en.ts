@@ -5,13 +5,335 @@
  * is authored to equal the literal the corresponding renderer spec greps for —
  * a catalog typo surfaces as a failing existing spec rather than silent drift.
  *
- * Phase 1 seeds only the strings the i18n foundation itself introduces (the
- * Settings *Language* control). Phase 2 grows this to cover all renderer chrome;
- * phases 5–6 add the sidecar reason-codes, enum labels, and fixed-error entries.
- * Keep keys dotted and namespaced by surface (e.g. `settings.appearance.*`).
+ * Keys are dotted and namespaced by surface. Phase 2 covers all renderer chrome
+ * (extracted via the `i18n/no-unkeyed-literals` guard); phases 5–6 add the
+ * sidecar reason-codes, enum labels, and fixed-error entries. `{param}` and the
+ * ICU-lite `{count, plural, …}` forms are resolved by `t()` (see `lib/i18n.ts`).
+ * Numbers/dates/currency stay `en-US` (ADR-0063), so `#`/`{param}` numeric
+ * values format `en-US` regardless of locale.
  */
 import type { Catalog } from '../lib/i18n'
 
 export const en = {
+  // ── App shell: nav + backtest panel (App.tsx) ──
+  'app.nav.primaryLabel': 'Primary',
+  'app.nav.chart': 'Chart',
+  'app.nav.backtests': 'Backtests',
+  'app.nav.signals': 'Signals',
+  'app.nav.recommendations': 'Recommendations',
+  'app.nav.forecast': 'Forecast',
+  'app.nav.news': 'News',
+  'app.nav.alerts': 'Alerts',
+  'app.nav.settings': 'Settings',
+  'app.backtest.loading': 'Loading backtest result…',
+  'app.backtest.loadError': 'Failed to load backtest result:',
+  'app.backtest.backToRecent': 'Back to Recent backtests',
+  'app.backtest.noneSelected': 'No backtest selected. Open Recent backtests to pick one.',
+  'app.backtest.recentBacktests': 'Recent backtests',
+
+  // ── Backtest result view (BacktestView.tsx) ──
+  'backtest.rootLabel': 'Backtest {runId}',
+  'backtest.backButton': '← Recent backtests',
+  'backtest.engineVersion': 'engine v{version}',
+  'backtest.metricsHeading': 'Metrics',
+  'backtest.totalReturn': 'Total return',
+  'backtest.sharpe': 'Sharpe',
+  'backtest.maxDrawdown': 'Max drawdown',
+  'backtest.maxDdDuration': 'Max DD duration',
+  'backtest.winRate': 'Win rate',
+  'backtest.tradeCount': 'Trade count',
+  'backtest.buyAndHold': 'Buy & hold',
+  'backtest.equityCurveHeading': 'Equity curve',
+  'backtest.tradeLogHeading': 'Trade log ({count})',
+  'backtest.noTrades': 'No trades in this run.',
+  'backtest.colEntry': 'Entry',
+  'backtest.colExit': 'Exit',
+  'backtest.colEntryPrice': 'Entry $',
+  'backtest.colExitPrice': 'Exit $',
+  'backtest.colPnlUsd': 'P&L $',
+  'backtest.colPnlPct': 'P&L %',
+  'backtest.colStatus': 'Status',
+  'backtest.statusOpen': 'Open',
+  'backtest.statusClosed': 'Closed',
+  'backtest.equityCurveLabel': 'Equity curve for {symbol} {timeframe}, {points} points',
+
+  // ── Alerts view (AlertsView.tsx) ──
+  'alerts.alerts': 'Alerts',
+  'alerts.watches': 'Watches',
+  'alerts.alertHistory': 'Alert history',
+  'alerts.disclaimer': 'Alerts report conditions the agent was asked to watch — facts, not advice.',
+  'alerts.loadingWatches': 'Loading watches…',
+  'alerts.watchesError': 'Failed to load watches:',
+  'alerts.noWatches': 'No watches yet — ask the agent to create one.',
+  'alerts.watchRowLabel': 'Watch {id}: {symbol} {timeframe} {kind} — {state}',
+  'alerts.enabled': 'enabled',
+  'alerts.disabled': 'disabled',
+  'alerts.loadingHistory': 'Loading alert history…',
+  'alerts.historyError': 'Failed to load alert history:',
+  'alerts.nothingFired': 'Nothing has fired yet.',
+  'alerts.watchFallback': 'watch {id}',
+  'alerts.noConditionText': '(no condition text)',
+  'alerts.kind.indicatorThreshold': 'indicator threshold',
+  'alerts.kind.pattern': 'pattern',
+  'alerts.kind.strategySignal': 'strategy signal',
+
+  // ── Toast (Toast.tsx) ──
+  'toast.dismiss': 'Dismiss notification',
+
+  // ── OHLCV chart view (OhlcvView.tsx) ──
+  'ohlcv.viewLabel': 'OHLCV view for {symbol} {timeframe}',
+  'ohlcv.refresh': 'Refresh',
+  'ohlcv.refreshing': 'Refreshing…',
+  'ohlcv.updated': 'Updated ✓',
+  'ohlcv.backfillingLabel': 'Backfilling {symbol} {timeframe}',
+  'ohlcv.backfilling': 'Backfilling…',
+  'ohlcv.loadingChart': 'Loading chart',
+  'ohlcv.loadingBars': 'Loading {symbol} {timeframe}…',
+  'ohlcv.loadFailedPrefix': 'Failed to load',
+  'ohlcv.retry': 'Retry',
+  'ohlcv.emptyBars': 'No bars for {symbol} {timeframe} in this window.',
+  'ohlcv.chartLabel': 'Candlestick chart for {symbol} {timeframe}, {count} bars',
+  'ohlcv.loadingOlder': 'Loading older bars',
+  'ohlcv.loadingHistory': 'Loading history…',
+  'ohlcv.olderBarsError': 'Couldn’t load older bars:',
+  'ohlcv.currentPriceLabel': 'Current price for {symbol}',
+  'ohlcv.disconnectedLabel': 'Live price for {symbol} disconnected — showing last known value',
+  'ohlcv.disconnected': 'disconnected',
+
+  // ── Symbol picker (SymbolPicker.tsx) ──
+  'symbolPicker.symbol': 'Symbol',
+  'symbolPicker.timeframe': 'Timeframe',
+  'symbolPicker.symbolSuggestions': 'Symbol suggestions',
+
+  // ── Agent-mode toggle (AgentModeToggle.tsx) ──
+  'agentMode.toggle': 'Toggle agent mode',
+  'agentMode.label': 'Agent mode',
+  'agentMode.on': 'ON',
+  'agentMode.off': 'OFF',
+
+  // ── Recent backtests list (RecentBacktestsView.tsx) ──
+  'recent.title': 'Recent backtests',
+  'recent.lede': 'Persisted runs from `runs/`. Click a row to open the full result view.',
+  'recent.loading': 'Loading runs…',
+  'recent.loadError': 'failed to load backtests',
+  'recent.empty':
+    'No backtests yet. Ask Claude to run one — e.g. "backtest RSI on AAPL daily for the last year".',
+  'recent.colStrategy': 'Strategy',
+  'recent.colSymbol': 'Symbol',
+  'recent.colTimeframe': 'Timeframe',
+  'recent.colRange': 'Range',
+  'recent.colTotalReturn': 'Total return',
+  'recent.colSharpe': 'Sharpe',
+  'recent.colMaxDd': 'Max DD',
+  'recent.colTrades': 'Trades',
+  'recent.colFinished': 'Finished',
+  'recent.openBacktestLabel': 'Open backtest {runId}',
+
+  // ── News view (NewsView.tsx) ──
+  'news.title': 'News',
+  'news.lede': 'Recent headlines and aggregate tone. Leave the symbol blank to browse all feeds.',
+  'news.symbolLabel': 'Symbol',
+  'news.symbolPlaceholder': 'e.g. BTC (blank = all feeds)',
+  'news.windowLabel': 'Window',
+  'news.load': 'Load',
+  'news.loading': 'Loading news…',
+  'news.loadError': 'failed to load news',
+  'news.empty': 'No headlines in this window.',
+  'news.headlinesLabel': 'Headlines',
+  'news.toneScore': 'tone {score}',
+  'news.toneCounts': '{pos} pos / {neg} neg / {neu} neu',
+
+  // ── Live-signal view (LiveSignalView.tsx) ──
+  'signals.liveSignalEvaluation': 'Live signal evaluation',
+  'signals.noEvaluation': 'No evaluation yet — ask the agent to evaluate a strategy.',
+  'signals.currentPosition': 'Current position',
+  'signals.lastSignal': 'Last signal',
+  'signals.noneYet': 'none yet',
+  'signals.freshness': 'Freshness',
+  'signals.freshFired': 'fresh — fired on the last closed bar',
+  'signals.noFreshSignal': 'no fresh signal on the last closed bar',
+  'signals.evaluatedThrough': 'Evaluated through',
+  'signals.closedBars': '{count} closed bars',
+  'signals.formingNote':
+    'The latest bar is still forming and was excluded — this reads through the last closed bar.',
+  'signals.disclaimer': "A condition report of the strategy's current signal state — not advice.",
+  'signals.at': 'at',
+  'signals.barsAgo': ' ({count, plural, one {# bar} other {# bars}} ago)',
+  'signals.kind.enterLong': 'enter long',
+  'signals.kind.exitLong': 'exit long',
+  'signals.kind.enterShort': 'enter short',
+  'signals.kind.exitShort': 'exit short',
+
+  // ── Candlestick chart controls (CandlestickChart.tsx) ──
+  'chart.selectingRange': 'Selecting range… (Esc to cancel)',
+  'chart.selectRange': 'Select range',
+  'chart.scanning': 'Scanning…',
+  'chart.scanPatterns': 'Scan patterns',
+  'chart.scanChartPatterns': 'Scan chart patterns',
+  'chart.patternCount': '{count, plural, one {# pattern} other {# patterns}}',
+  'chart.noPatternsInView': 'No patterns in view',
+  'chart.noChartPatternsInView': 'No chart patterns in view',
+  'chart.ariaLabel': 'Candlestick chart, {count} bars',
+
+  // ── Forecast view (ForecastView.tsx) — chrome only; sidecar prose is phase 5 ──
+  'forecast.viewLabel': 'Direction forecast',
+  'forecast.emptyState': 'No forecast yet — ask the agent for one via the `forecast` tool.',
+  'forecast.conditionBannerLead': 'A forecast is a',
+  'forecast.conditionBannerStrong': 'calibrated probability of direction',
+  'forecast.conditionBannerTail':
+    '— a condition report, not advice. Each horizon passes or fails its own out-of-sample baseline gate.',
+  'forecast.asOf': 'as of',
+  'forecast.asOfSuffix': '(last bar the features saw)',
+  'forecast.featureSet': 'feature set',
+  'forecast.featuresPriceOnly': '— price-derived features only; no exogenous series were consumed',
+  'forecast.exogenousSeries': '— exogenous series:',
+  'forecast.whySummary': 'Why — what the validated models lean on',
+  'forecast.inputFreshness': 'Input freshness',
+  'forecast.freshestPoint': '— freshest point {ts}',
+  'forecast.noObservablePoint': '— no observable point',
+  'forecast.artifactLead': 'full explanation persisted at',
+  'forecast.artifactTail': "(relative to the sidecar's runs directory)",
+  'forecast.whyDisclaimer':
+    'Driver importance is out-of-sample permutation importance — association within the validated model, not causation; correlated inputs share credit.',
+  'forecast.disclaimer':
+    'Skill numbers are out-of-sample directional accuracy from purged walk-forward validation; the baseline is the stronger of persistence and majority-class on the same bars (ADR-0030). A marginal edge means the beat was thin — treat its probabilities as weak evidence.',
+  'forecast.driversHeadingAhead': 'ahead —',
+  'forecast.topDrivers': 'top drivers',
+  'forecast.noScoredFolds':
+    'no scored out-of-sample folds at this horizon — no importances were measured',
+  'forecast.blockAriaLabel': 'Forecast for {horizon} ahead',
+  'forecast.ahead': 'ahead',
+  'forecast.directionUp': 'Up',
+  'forecast.directionDown': 'Down',
+  'forecast.directionFlat': 'Flat',
+  'forecast.noEdgeStrong': 'No edge over baseline.',
+  'forecast.noEdgeBody':
+    'The model did not beat a naive baseline out-of-sample at this horizon, so no probability is shown — an honest "don\'t know" rather than a fabricated number.',
+  'forecast.outOfSample': 'out-of-sample',
+  'forecast.skill': 'skill',
+  'forecast.unscored': 'unscored',
+  'forecast.vs': 'vs',
+  'forecast.baseline': 'baseline',
+  'forecast.margin': 'margin',
+  'forecast.scoredBars': 'scored bars',
+  'forecast.across': 'across',
+  'forecast.folds': 'folds',
+  'forecast.provenanceTitle': 'model {model} · libs {libs} · seed {seed}',
+  'forecast.provenanceModelPrefix': 'model',
+  'forecast.trainedThrough': '· trained through',
+  'forecast.noModelTrained': 'no model was trained at this horizon (insufficient usable history)',
+
+  // ── Recommendations view (RecommendationsView.tsx) — chrome only; prose is phase 5 ──
+  'recommendations.advisoryRecommendationLabel': 'Advisory recommendation',
+  'recommendations.empty':
+    'No recommendation yet — ask the agent for one via the `recommend` tool.',
+  'recommendations.advisoryOnly': 'Advisory only.',
+  'recommendations.advisoryBannerBody':
+    'This is a recommendation, not an order ticket — nothing in this app can act on it. The agent recommends; you decide.',
+  'recommendations.asOf': 'as of',
+  'recommendations.lastClosedBar': '(last closed bar the basis saw)',
+  'recommendations.direction': 'Direction',
+  'recommendations.conviction': 'Conviction',
+  'recommendations.convictionDerived':
+    'derived (forecast probability × backtested edge), never invented',
+  'recommendations.advisoryLevelsLabel': 'Advisory levels',
+  'recommendations.advisoryLevelsTitle': 'Advisory levels — for your judgement, not a ticket',
+  'recommendations.entryZone': 'Entry zone',
+  'recommendations.advisoryTag': '(advisory)',
+  'recommendations.stop': 'Stop',
+  'recommendations.targetHeading': '{count, plural, one {Target} other {Targets}}',
+  'recommendations.rationaleLabel': 'Rationale',
+  'recommendations.why': 'Why',
+  'recommendations.basisLabel': 'Basis',
+  'recommendations.whatBackedThisCall': 'What backed this call',
+  'recommendations.conditions': 'Conditions',
+  'recommendations.liveSignals': 'Live signals',
+  'recommendations.backtestedEdge': 'Backtested edge',
+  'recommendations.disclaimer':
+    'Labeled advisory (ADR-0029): the basis above travels with every call, and a flat verdict is an honest "no actionable edge", never a fabricated call.',
+  'recommendations.fusionChecksLabel': 'Fusion checks',
+  'recommendations.everyGateChecked': 'Every gate checked',
+  'recommendations.leg': 'leg',
+  'recommendations.check': 'check',
+  'recommendations.threshold': 'threshold',
+  'recommendations.actual': 'actual',
+  'recommendations.result': 'result',
+  'recommendations.pass': 'pass',
+  'recommendations.fail': 'FAIL',
+  'recommendations.checksNote':
+    "The trace records the fusion's decision; a directional call means every gate passed.",
+  'recommendations.none': 'none',
+  'recommendations.notPartOfBasis': 'not part of this basis',
+  'recommendations.forecast': 'Forecast',
+  'recommendations.forecastRanOnTier': 'Forecast ran on the {name} feature set.',
+  'recommendations.forecastRanOnFeatureSet': 'Forecast ran on feature set {x}.',
+
+  // ── Settings view (SettingsView.tsx) ──
+  'settings.appearance.heading': 'Appearance',
+  'settings.appearance.lede.pre': 'Choose how the app looks. ',
+  'settings.appearance.lede.system': 'System',
+  'settings.appearance.lede.post':
+    " follows your operating system's light/dark setting; Light and Dark pin it regardless of the OS.",
+  'settings.appearance.theme.label': 'Theme',
+  'settings.appearance.theme.light': 'Light',
+  'settings.appearance.theme.dark': 'Dark',
+  'settings.appearance.theme.system': 'System',
   'settings.appearance.language.label': 'Language',
+  'settings.chartStyle.heading': 'Chart style',
+  'settings.chartStyle.lede.pre':
+    'Recolour and resize the candlestick chart’s lines and markers. Colours and widths are saved ',
+  'settings.chartStyle.lede.perTheme': 'per theme',
+  'settings.chartStyle.lede.post': "; you're editing the theme the chart is currently showing.",
+  'settings.mcp.heading': 'MCP access',
+  'settings.mcp.lede':
+    'Claude Desktop and other MCP clients connect to the sidecar at the URL below using the bearer token. The token is long-lived and survives app restarts.',
+  'settings.mcp.endpointUrl.label': 'Endpoint URL',
+  'settings.mcp.bearerToken.label': 'Bearer token',
+  'settings.mcp.loading': 'Loading…',
+  'settings.mcp.hide': 'Hide',
+  'settings.mcp.reveal': 'Reveal',
+  'settings.mcp.copied': 'Copied!',
+  'settings.mcp.copy': 'Copy',
+  'settings.mcp.rotating': 'Rotating…',
+  'settings.mcp.rotate': 'Rotate',
+  'settings.mcp.rotateWarning':
+    'Rotating generates a new token and invalidates the existing one immediately. Any active MCP clients will need to be reconfigured with the new token.',
+  'settings.mcp.lifecycle.label': 'Sidecar lifecycle',
+  'settings.mcp.lifecycle.lede':
+    'The sidecar runs as a standalone process — closing this window does not stop it. MCP clients can keep talking to it. Click below to stop it explicitly.',
+  'settings.mcp.stopping': 'Stopping…',
+  'settings.mcp.stopRequested': 'Stop requested',
+  'settings.mcp.stopSidecar': 'Stop sidecar',
+  'settings.mcp.shutdownRequested':
+    'Sidecar shutdown requested. The viewer will lose its sidecar connection.',
+  'settings.mcp.snippet.label': 'Claude Desktop snippet',
+  'settings.mcp.snippet.pre': 'Paste this into ',
+  'settings.mcp.configFilename': 'claude_desktop_config.json',
+  'settings.mcp.snippet.post': '. Reveal the token first so the snippet contains the real value.',
+
+  // ── Theme toggle (ThemeToggle.tsx) ──
+  'themeToggle.system': 'System',
+  'themeToggle.light': 'Light',
+  'themeToggle.dark': 'Dark',
+  'themeToggle.ariaLabel': 'Theme: {current}. Activate to switch to {next}.',
+  'themeToggle.title': 'Theme: {current}',
+
+  // ── Chart-style controls (ChartStyleControls.tsx) ──
+  'chartStyle.candleTypeLabel': 'Candle type',
+  'chartStyle.lineAreaNotePre': 'Line and Area draw a single colour (the ',
+  'chartStyle.candleUp': 'Candle up',
+  'chartStyle.lineAreaNotePost': ' colour). Switch to Candles or OHLC bars to change it.',
+  'chartStyle.editingPre': 'Editing ',
+  'chartStyle.editingPost': ' theme — switch theme in Appearance to edit the other set.',
+  'chartStyle.widthLabel': 'Width',
+  'chartStyle.resetButton': 'Reset chart style',
+
+  // ── Layers panel (LayersPanel.tsx) ──
+  'layers.panelAriaLabel': 'Chart layers',
+  'layers.heading': 'Layers',
+  'layers.toggleAria': 'Toggle {layerName}',
+
+  // ── Glossary tooltip chrome (GlossaryTerm.tsx) — prose is phase 3 ──
+  'glossary.howComputedLabel': "How it's computed",
+  'glossary.whatItMeansLabel': 'What it means',
 } satisfies Catalog

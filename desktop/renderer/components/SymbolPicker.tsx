@@ -11,6 +11,7 @@
  */
 import { useEffect, useId, useRef, useState } from 'react'
 
+import { t } from '../lib/i18n'
 import { useSymbolSearch } from '../hooks/useSymbolSearch'
 import { TIMEFRAMES, type Timeframe } from '../lib/timeframes'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
@@ -130,7 +131,7 @@ export function SymbolPicker({
         }}
       >
         <label className={styles.field}>
-          <span className={styles.labelText}>Symbol</span>
+          <span className={styles.labelText}>{t('symbolPicker.symbol')}</span>
           <input
             className={styles.input}
             type="text"
@@ -157,20 +158,20 @@ export function SymbolPicker({
             }}
             onKeyDown={onKeyDown}
             disabled={disabled}
-            aria-label="Symbol"
+            aria-label={t('symbolPicker.symbol')}
             autoComplete="off"
             spellCheck={false}
           />
         </label>
 
         <label className={styles.field}>
-          <span className={styles.labelText}>Timeframe</span>
+          <span className={styles.labelText}>{t('symbolPicker.timeframe')}</span>
           <select
             className={styles.select}
             value={timeframe}
             onChange={(event) => onTimeframeChange(event.target.value as Timeframe)}
             disabled={disabled}
-            aria-label="Timeframe"
+            aria-label={t('symbolPicker.timeframe')}
           >
             {TIMEFRAMES.map((tf) => (
               <option key={tf} value={tf}>
@@ -186,7 +187,7 @@ export function SymbolPicker({
           className={styles.dropdown}
           role="listbox"
           id={listboxId}
-          aria-label="Symbol suggestions"
+          aria-label={t('symbolPicker.symbolSuggestions')}
         >
           {results.map((info, i) => (
             <li

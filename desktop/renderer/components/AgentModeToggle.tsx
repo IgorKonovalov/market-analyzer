@@ -14,6 +14,7 @@
  * OFF. The clarifying copy lives in `title` (surfaced as the switch's accessible
  * description); no behaviour changes with it.
  */
+import { t } from '../lib/i18n'
 import styles from './AgentModeToggle.module.css'
 
 /** Tooltip + accessible description: what agent mode does and, crucially, what
@@ -37,7 +38,7 @@ export function AgentModeToggle({ enabled, setEnabled, disabled = false }: Props
       type="button"
       role="switch"
       aria-checked={enabled}
-      aria-label="Toggle agent mode"
+      aria-label={t('agentMode.toggle')}
       title={AGENT_MODE_HELP}
       data-testid="agent-mode-toggle"
       data-region="chart-header-right"
@@ -49,7 +50,9 @@ export function AgentModeToggle({ enabled, setEnabled, disabled = false }: Props
       <span className={styles.track} aria-hidden="true">
         <span className={styles.thumb} />
       </span>
-      <span className={styles.label}>Agent mode {enabled ? 'ON' : 'OFF'}</span>
+      <span className={styles.label}>
+        {t('agentMode.label')} {enabled ? t('agentMode.on') : t('agentMode.off')}
+      </span>
     </button>
   )
 }

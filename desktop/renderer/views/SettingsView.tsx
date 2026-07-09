@@ -19,10 +19,10 @@ import type { ThemePref } from '../lib/theme'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 import styles from './SettingsView.module.css'
 
-const THEME_OPTIONS: ReadonlyArray<{ value: ThemePref; label: string }> = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'system', label: 'System' },
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemePref; labelKey: string }> = [
+  { value: 'light', labelKey: 'settings.appearance.theme.light' },
+  { value: 'dark', labelKey: 'settings.appearance.theme.dark' },
+  { value: 'system', labelKey: 'settings.appearance.theme.system' },
 ]
 
 // Language options are endonyms — a language is conventionally named in its own
@@ -151,15 +151,16 @@ export function SettingsView(): JSX.Element {
     <div className={styles.root}>
       <section className={styles.block} aria-labelledby="appearance-heading">
         <h2 id="appearance-heading" className={styles.heading}>
-          Appearance
+          {t('settings.appearance.heading')}
         </h2>
         <p className={styles.lede}>
-          Choose how the app looks. <strong>System</strong> follows your operating system&apos;s
-          light/dark setting; Light and Dark pin it regardless of the OS.
+          {t('settings.appearance.lede.pre')}
+          <strong>{t('settings.appearance.lede.system')}</strong>
+          {t('settings.appearance.lede.post')}
         </p>
         <div className={styles.field}>
           <span className={styles.fieldLabel} id="theme-label">
-            Theme
+            {t('settings.appearance.theme.label')}
           </span>
           <div className={styles.segmented} role="radiogroup" aria-labelledby="theme-label">
             {THEME_OPTIONS.map((opt) => (
@@ -177,7 +178,7 @@ export function SettingsView(): JSX.Element {
                   checked={themePref === opt.value}
                   onChange={() => setThemePref(opt.value)}
                 />
-                {opt.label}
+                {t(opt.labelKey)}
               </label>
             ))}
           </div>
@@ -211,28 +212,25 @@ export function SettingsView(): JSX.Element {
 
       <section className={styles.block} aria-labelledby="chart-style-heading">
         <h2 id="chart-style-heading" className={styles.heading}>
-          Chart style
+          {t('settings.chartStyle.heading')}
         </h2>
         <p className={styles.lede}>
-          Recolour and resize the candlestick chart&apos;s lines and markers. Colours and widths are
-          saved <strong>per theme</strong>; you&apos;re editing the theme the chart is currently
-          showing.
+          {t('settings.chartStyle.lede.pre')}
+          <strong>{t('settings.chartStyle.lede.perTheme')}</strong>
+          {t('settings.chartStyle.lede.post')}
         </p>
         <ChartStyleControls />
       </section>
 
       <section className={styles.block} aria-labelledby="settings-heading">
         <h2 id="settings-heading" className={styles.heading}>
-          MCP access
+          {t('settings.mcp.heading')}
         </h2>
-        <p className={styles.lede}>
-          Claude Desktop and other MCP clients connect to the sidecar at the URL below using the
-          bearer token. The token is long-lived and survives app restarts.
-        </p>
+        <p className={styles.lede}>{t('settings.mcp.lede')}</p>
 
         <div className={styles.field}>
           <label className={styles.fieldLabel} htmlFor="mcp-endpoint-url">
-            Endpoint URL
+            {t('settings.mcp.endpointUrl.label')}
           </label>
           <input
             id="mcp-endpoint-url"
@@ -246,11 +244,11 @@ export function SettingsView(): JSX.Element {
 
         <div className={styles.field}>
           <span className={styles.fieldLabel} id="mcp-secret-label">
-            Bearer token
+            {t('settings.mcp.bearerToken.label')}
           </span>
           {isLoading && (
             <div className={styles.loading} role="status">
-              Loading…
+              {t('settings.mcp.loading')}
             </div>
           )}
           {!isLoading && state.error != null && state.record == null && (
@@ -286,7 +284,7 @@ export function SettingsView(): JSX.Element {
                     onClick={handleHide}
                     data-testid="mcp-secret-hide"
                   >
-                    Hide
+                    {t('settings.mcp.hide')}
                   </button>
                 ) : (
                   <button
@@ -295,7 +293,7 @@ export function SettingsView(): JSX.Element {
                     onClick={handleReveal}
                     data-testid="mcp-secret-reveal"
                   >
-                    Reveal
+                    {t('settings.mcp.reveal')}
                   </button>
                 )}
                 <button
@@ -305,7 +303,7 @@ export function SettingsView(): JSX.Element {
                   disabled={!state.revealed}
                   data-testid="mcp-secret-copy"
                 >
-                  {state.copiedAt != null ? 'Copied!' : 'Copy'}
+                  {state.copiedAt != null ? t('settings.mcp.copied') : t('settings.mcp.copy')}
                 </button>
                 <button
                   type="button"
@@ -314,16 +312,13 @@ export function SettingsView(): JSX.Element {
                   disabled={state.rotatingAt != null}
                   data-testid="mcp-secret-rotate"
                 >
-                  {state.rotatingAt != null ? 'Rotating…' : 'Rotate'}
+                  {state.rotatingAt != null ? t('settings.mcp.rotating') : t('settings.mcp.rotate')}
                 </button>
               </div>
             </div>
           )}
           {state.record != null && (
-            <p className={styles.warning}>
-              Rotating generates a new token and invalidates the existing one immediately. Any
-              active MCP clients will need to be reconfigured with the new token.
-            </p>
+            <p className={styles.warning}>{t('settings.mcp.rotateWarning')}</p>
           )}
           {state.error != null && state.record != null && (
             <p className={styles.errorInline} role="alert">
@@ -333,11 +328,8 @@ export function SettingsView(): JSX.Element {
         </div>
 
         <div className={styles.field}>
-          <span className={styles.fieldLabel}>Sidecar lifecycle</span>
-          <p className={styles.lede}>
-            The sidecar runs as a standalone process — closing this window does not stop it. MCP
-            clients can keep talking to it. Click below to stop it explicitly.
-          </p>
+          <span className={styles.fieldLabel}>{t('settings.mcp.lifecycle.label')}</span>
+          <p className={styles.lede}>{t('settings.mcp.lifecycle.lede')}</p>
           <div className={styles.controls}>
             <button
               type="button"
@@ -347,24 +339,23 @@ export function SettingsView(): JSX.Element {
               data-testid="sidecar-stop"
             >
               {state.stoppingAt != null
-                ? 'Stopping…'
+                ? t('settings.mcp.stopping')
                 : state.stopRequested
-                  ? 'Stop requested'
-                  : 'Stop sidecar'}
+                  ? t('settings.mcp.stopRequested')
+                  : t('settings.mcp.stopSidecar')}
             </button>
           </div>
           {state.stopRequested && (
-            <p className={styles.warning}>
-              Sidecar shutdown requested. The viewer will lose its sidecar connection.
-            </p>
+            <p className={styles.warning}>{t('settings.mcp.shutdownRequested')}</p>
           )}
         </div>
 
         <div className={styles.field}>
-          <span className={styles.fieldLabel}>Claude Desktop snippet</span>
+          <span className={styles.fieldLabel}>{t('settings.mcp.snippet.label')}</span>
           <p className={styles.lede}>
-            Paste this into <code>claude_desktop_config.json</code>. Reveal the token first so the
-            snippet contains the real value.
+            {t('settings.mcp.snippet.pre')}
+            <code>{t('settings.mcp.configFilename')}</code>
+            {t('settings.mcp.snippet.post')}
           </p>
           <pre className={styles.snippet} data-testid="mcp-config-snippet">
             {snippet}

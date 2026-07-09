@@ -12,11 +12,16 @@
 import { useCallback } from 'react'
 
 import { useThemePref } from '../hooks/useThemePref'
+import { t } from '../lib/i18n'
 import type { ThemePref } from '../lib/theme'
 import styles from './ThemeToggle.module.css'
 
 const ORDER: readonly ThemePref[] = ['system', 'light', 'dark']
-const LABEL: Record<ThemePref, string> = { system: 'System', light: 'Light', dark: 'Dark' }
+const LABEL: Record<ThemePref, string> = {
+  system: 'themeToggle.system',
+  light: 'themeToggle.light',
+  dark: 'themeToggle.dark',
+}
 const GLYPH: Record<ThemePref, string> = { system: '◐', light: '○', dark: '●' }
 
 export function ThemeToggle(): JSX.Element {
@@ -27,20 +32,23 @@ export function ThemeToggle(): JSX.Element {
     setPref(next)
   }, [setPref, next])
 
+  const currentLabel = t(LABEL[pref])
+  const nextLabel = t(LABEL[next])
+
   return (
     <button
       type="button"
       className={styles.toggle}
       data-testid="theme-toggle"
       data-theme-pref={pref}
-      aria-label={`Theme: ${LABEL[pref]}. Activate to switch to ${LABEL[next]}.`}
-      title={`Theme: ${LABEL[pref]}`}
+      aria-label={t('themeToggle.ariaLabel', { current: currentLabel, next: nextLabel })}
+      title={t('themeToggle.title', { current: currentLabel })}
       onClick={onClick}
     >
       <span className={styles.glyph} aria-hidden="true">
         {GLYPH[pref]}
       </span>
-      <span className={styles.label}>{LABEL[pref]}</span>
+      <span className={styles.label}>{currentLabel}</span>
     </button>
   )
 }

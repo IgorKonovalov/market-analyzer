@@ -19,6 +19,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { api } from '../api/client'
 import type { NewsWindow } from '../api/client'
 import { formatDateTime, formatRatio } from '../lib/format'
+import { t } from '../lib/i18n'
 import type { NewsItem } from '../types/sidecar/news-item'
 import type { NewsResponse } from '../types/sidecar/news-response'
 import type { SentimentSample } from '../types/sidecar/sentiment-sample'
@@ -92,7 +93,7 @@ export function NewsView(): JSX.Element {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const message = err instanceof Error ? err.message : 'failed to load news'
+        const message = err instanceof Error ? err.message : t('news.loadError')
         setState({ status: 'error', data: null, error: message })
       })
     return () => {
@@ -114,27 +115,25 @@ export function NewsView(): JSX.Element {
   const ready = state.status === 'ready' ? state.data : null
 
   return (
-    <section className={styles.root} aria-label="News">
+    <section className={styles.root} aria-label={t('news.title')}>
       <header className={styles.header}>
-        <h2 className={styles.title}>News</h2>
-        <p className={styles.lede}>
-          Recent headlines and aggregate tone. Leave the symbol blank to browse all feeds.
-        </p>
+        <h2 className={styles.title}>{t('news.title')}</h2>
+        <p className={styles.lede}>{t('news.lede')}</p>
       </header>
 
       <form className={styles.controls} onSubmit={onSubmit}>
         <div className={styles.field}>
-          <label htmlFor="news-symbol">Symbol</label>
+          <label htmlFor="news-symbol">{t('news.symbolLabel')}</label>
           <input
             id="news-symbol"
             type="text"
             value={symbolInput}
-            placeholder="e.g. BTC (blank = all feeds)"
+            placeholder={t('news.symbolPlaceholder')}
             onChange={(e) => setSymbolInput(e.target.value)}
           />
         </div>
         <div className={styles.field}>
-          <label htmlFor="news-window">Window</label>
+          <label htmlFor="news-window">{t('news.windowLabel')}</label>
           <select id="news-window" value={windowSel} onChange={onWindowChange}>
             {NEWS_WINDOWS.map((w) => (
               <option key={w} value={w}>
@@ -143,28 +142,28 @@ export function NewsView(): JSX.Element {
             ))}
           </select>
         </div>
-        <button type="submit">Load</button>
+        <button type="submit">{t('news.load')}</button>
       </form>
 
       {ready?.sentiment && <ToneHeader sentiment={ready.sentiment} />}
 
       {state.status === 'loading' && (
         <div className={styles.statusBlock} role="status">
-          Loading news…
+          {t('news.loading')}
         </div>
       )}
       {state.status === 'error' && (
         <div className={styles.error} role="alert">
-          {state.error ?? 'failed to load news'}
+          {state.error ?? t('news.loadError')}
         </div>
       )}
       {ready && ready.items.length === 0 && (
         <div className={styles.statusBlock} role="status" data-testid="news-empty">
-          No headlines in this window.
+          {t('news.empty')}
         </div>
       )}
       {ready && ready.items.length > 0 && (
-        <ul className={styles.list} aria-label="Headlines">
+        <ul className={styles.list} aria-label={t('news.headlinesLabel')}>
           {ready.items.map((item, i) => (
             <HeadlineRow key={`${item.url}-${i}`} item={item} />
           ))}
@@ -189,10 +188,10 @@ function ToneHeader({ sentiment }: ToneHeaderProps): JSX.Element {
       <span className={`${styles.badge} ${TONE_CLASS[tone]}`} data-tone={tone}>
         {TONE_LABEL[tone]}
       </span>
-      <span className={styles.toneScore}>tone {formatRatio(sentiment.score)}</span>
-      <span className={styles.toneCounts}>
-        {pos} pos / {neg} neg / {neu} neu
+      <span className={styles.toneScore}>
+        {t('news.toneScore', { score: formatRatio(sentiment.score) })}
       </span>
+      <span className={styles.toneCounts}>{t('news.toneCounts', { pos, neg, neu })}</span>
     </div>
   )
 }

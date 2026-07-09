@@ -7,6 +7,7 @@
  * touch.
  */
 import { GlossaryTerm } from './GlossaryTerm'
+import { t } from '../lib/i18n'
 import styles from './LayersPanel.module.css'
 
 export interface ChartLayer {
@@ -47,8 +48,12 @@ export function LayersPanel({
 }: LayersPanelProps): JSX.Element | null {
   if (layers.length === 0) return null
   return (
-    <aside className={styles.panel} aria-label="Chart layers" data-testid="layers-panel">
-      <h2 className={styles.heading}>Layers</h2>
+    <aside
+      className={styles.panel}
+      aria-label={t('layers.panelAriaLabel')}
+      data-testid="layers-panel"
+    >
+      <h2 className={styles.heading}>{t('layers.heading')}</h2>
       <ul className={styles.list}>
         {layers.map((layer) => (
           <li
@@ -68,7 +73,7 @@ export function LayersPanel({
                 className={styles.checkbox}
                 checked={layer.visible}
                 onChange={() => onToggle(layer.id)}
-                aria-label={`Toggle ${layer.label}`}
+                aria-label={t('layers.toggleAria', { layerName: layer.label })}
               />
               <span
                 className={styles.swatch}

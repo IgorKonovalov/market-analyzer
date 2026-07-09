@@ -27,6 +27,7 @@
  */
 import { GlossaryTerm } from '../components/GlossaryTerm'
 import { formatDateTime } from '../lib/format'
+import { t } from '../lib/i18n'
 import type {
   ExplanationSummary,
   HorizonForecast,
@@ -75,9 +76,9 @@ const EDGE_LABEL: Record<HorizonForecast['edge_strength'], string> = {
 export function ForecastView({ forecast }: Props): JSX.Element {
   if (forecast === null) {
     return (
-      <section className={styles.view} aria-label="Direction forecast">
+      <section className={styles.view} aria-label={t('forecast.viewLabel')}>
         <p className={styles.empty} data-testid="forecast-empty">
-          No forecast yet — ask the agent for one via the `forecast` tool.
+          {t('forecast.emptyState')}
         </p>
       </section>
     )
@@ -106,10 +107,10 @@ export function ForecastView({ forecast }: Props): JSX.Element {
     null
 
   return (
-    <section className={styles.view} aria-label="Direction forecast">
+    <section className={styles.view} aria-label={t('forecast.viewLabel')}>
       <p className={styles.conditionBanner} data-testid="forecast-condition-note" role="note">
-        A forecast is a <strong>calibrated probability of direction</strong> — a condition report,
-        not advice. Each horizon passes or fails its own out-of-sample baseline gate.
+        {t('forecast.conditionBannerLead')} <strong>{t('forecast.conditionBannerStrong')}</strong>{' '}
+        {t('forecast.conditionBannerTail')}
       </p>
 
       <header className={styles.header}>
@@ -121,20 +122,18 @@ export function ForecastView({ forecast }: Props): JSX.Element {
           <span className={styles.timeframe}>{forecast.timeframe}</span>
         </h2>
         <p className={styles.asOf} data-testid="forecast-as-of">
-          as of {formatDateTime(forecast.as_of_bar_ts)} UTC (last bar the features saw)
+          {t('forecast.asOf')} {formatDateTime(forecast.as_of_bar_ts)} UTC{' '}
+          {t('forecast.asOfSuffix')}
         </p>
         <p className={styles.featureSet} data-testid="forecast-feature-set">
-          <GlossaryTerm termKey="feature_set_id">feature set</GlossaryTerm>{' '}
+          <GlossaryTerm termKey="feature_set_id">{t('forecast.featureSet')}</GlossaryTerm>{' '}
           <code>{forecast.feature_set_id}</code>
           {seriesInputs.length === 0 ? (
-            <span className={styles.muted}>
-              {' '}
-              — price-derived features only; no exogenous series were consumed
-            </span>
+            <span className={styles.muted}> {t('forecast.featuresPriceOnly')}</span>
           ) : (
             <span className={styles.muted}>
               {' '}
-              — exogenous series: {seriesInputs.map((s) => s.series_id).join(', ')}
+              {t('forecast.exogenousSeries')} {seriesInputs.map((s) => s.series_id).join(', ')}
             </span>
           )}
           {fallbackReason != null && (
@@ -148,23 +147,28 @@ export function ForecastView({ forecast }: Props): JSX.Element {
 
       {explainedBlocks.length > 0 && (
         <details className={styles.why} data-testid="forecast-why">
-          <summary className={styles.whySummary}>Why — what the validated models lean on</summary>
+          <summary className={styles.whySummary}>{t('forecast.whySummary')}</summary>
           <div className={styles.whyBody}>
             {explainedBlocks.map(({ horizonBars, explanation }) => (
               <WhyDrivers key={horizonBars} horizonBars={horizonBars} explanation={explanation} />
             ))}
             {seriesInputs.length > 0 && (
               <div className={styles.whyGroup} data-testid="forecast-why-freshness">
-                <h4 className={styles.whyGroupTitle}>Input freshness</h4>
+                <h4 className={styles.whyGroupTitle}>{t('forecast.inputFreshness')}</h4>
                 <ul className={styles.freshnessList}>
                   {seriesInputs.map((series) => (
                     <li key={series.series_id}>
                       <code>{series.series_id}</code>{' '}
-                      {series.last_point_ts != null
-                        ? `— freshest point ${formatDateTime(
-                            new Date(series.last_point_ts * 1000).toISOString(),
-                          )} UTC`
-                        : '— no observable point'}
+                      {series.last_point_ts != null ? (
+                        <>
+                          {t('forecast.freshestPoint', {
+                            ts: formatDateTime(new Date(series.last_point_ts * 1000).toISOString()),
+                          })}{' '}
+                          UTC
+                        </>
+                      ) : (
+                        t('forecast.noObservablePoint')
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -172,14 +176,11 @@ export function ForecastView({ forecast }: Props): JSX.Element {
             )}
             {artifactPath != null && (
               <p className={styles.whyArtifact} data-testid="forecast-why-artifact">
-                full explanation persisted at <code>{artifactPath}</code> (relative to the
-                sidecar&apos;s runs directory)
+                {t('forecast.artifactLead')} <code>{artifactPath}</code>{' '}
+                {t('forecast.artifactTail')}
               </p>
             )}
-            <p className={styles.whyDisclaimer}>
-              Driver importance is out-of-sample permutation importance — association within the
-              validated model, not causation; correlated inputs share credit.
-            </p>
+            <p className={styles.whyDisclaimer}>{t('forecast.whyDisclaimer')}</p>
           </div>
         </details>
       )}
@@ -190,11 +191,7 @@ export function ForecastView({ forecast }: Props): JSX.Element {
         ))}
       </div>
 
-      <p className={styles.disclaimer}>
-        Skill numbers are out-of-sample directional accuracy from purged walk-forward validation;
-        the baseline is the stronger of persistence and majority-class on the same bars (ADR-0030).
-        A marginal edge means the beat was thin — treat its probabilities as weak evidence.
-      </p>
+      <p className={styles.disclaimer}>{t('forecast.disclaimer')}</p>
     </section>
   )
 }
@@ -214,13 +211,11 @@ function WhyDrivers({ horizonBars, explanation }: WhyDriversProps): JSX.Element 
   return (
     <div className={styles.whyGroup} data-testid={`forecast-why-drivers-${horizonBars}`}>
       <h4 className={styles.whyGroupTitle}>
-        {horizonLabel(horizonBars)} ahead —{' '}
-        <GlossaryTerm termKey="permutation_importance">top drivers</GlossaryTerm>
+        {horizonLabel(horizonBars)} {t('forecast.driversHeadingAhead')}{' '}
+        <GlossaryTerm termKey="permutation_importance">{t('forecast.topDrivers')}</GlossaryTerm>
       </h4>
       {drivers.length === 0 ? (
-        <p className={styles.muted}>
-          no scored out-of-sample folds at this horizon — no importances were measured
-        </p>
+        <p className={styles.muted}>{t('forecast.noScoredFolds')}</p>
       ) : (
         <ol className={styles.driverList}>
           {drivers.map((driver) => (
@@ -265,10 +260,12 @@ function HorizonBlock({ block }: HorizonBlockProps): JSX.Element {
       className={styles.block}
       data-testid={`forecast-block-${block.horizon_bars}`}
       data-strength={block.edge_strength}
-      aria-label={`Forecast for ${horizonLabel(block.horizon_bars)} ahead`}
+      aria-label={t('forecast.blockAriaLabel', { horizon: horizonLabel(block.horizon_bars) })}
     >
       <header className={styles.blockHeader}>
-        <h3 className={styles.blockTitle}>{horizonLabel(block.horizon_bars)} ahead</h3>
+        <h3 className={styles.blockTitle}>
+          {horizonLabel(block.horizon_bars)} {t('forecast.ahead')}
+        </h3>
         <span
           className={styles.edgeBadge}
           data-testid={`forecast-edge-${block.horizon_bars}`}
@@ -280,41 +277,60 @@ function HorizonBlock({ block }: HorizonBlockProps): JSX.Element {
 
       {hasProbabilities ? (
         <dl className={styles.probList} data-testid={`forecast-probs-${block.horizon_bars}`}>
-          <ProbBar block={block} label="Up" kind="up" prob={block.prob_up ?? 0} />
-          <ProbBar block={block} label="Down" kind="down" prob={block.prob_down ?? 0} />
-          <ProbBar block={block} label="Flat" kind="flat" prob={block.prob_flat ?? 0} />
+          <ProbBar
+            block={block}
+            label={t('forecast.directionUp')}
+            kind="up"
+            prob={block.prob_up ?? 0}
+          />
+          <ProbBar
+            block={block}
+            label={t('forecast.directionDown')}
+            kind="down"
+            prob={block.prob_down ?? 0}
+          />
+          <ProbBar
+            block={block}
+            label={t('forecast.directionFlat')}
+            kind="flat"
+            prob={block.prob_flat ?? 0}
+          />
         </dl>
       ) : (
         <p className={styles.noEdge} data-testid={`forecast-no-edge-${block.horizon_bars}`}>
-          <strong>No edge over baseline.</strong> The model did not beat a naive baseline
-          out-of-sample at this horizon, so no probability is shown — an honest &quot;don&apos;t
-          know&quot; rather than a fabricated number.
+          <strong>{t('forecast.noEdgeStrong')}</strong> {t('forecast.noEdgeBody')}
         </p>
       )}
 
       <p className={styles.skillLine} data-testid={`forecast-skill-${block.horizon_bars}`}>
-        out-of-sample <GlossaryTerm termKey="skill">skill</GlossaryTerm>{' '}
+        {t('forecast.outOfSample')}{' '}
+        <GlossaryTerm termKey="skill">{t('forecast.skill')}</GlossaryTerm>{' '}
         <span className={styles.skillValue}>
-          {validation.skill != null ? SKILL_FORMAT.format(validation.skill) : 'unscored'}
+          {validation.skill != null
+            ? SKILL_FORMAT.format(validation.skill)
+            : t('forecast.unscored')}
         </span>{' '}
-        vs <GlossaryTerm termKey="baseline_skill">baseline</GlossaryTerm>{' '}
+        {t('forecast.vs')}{' '}
+        <GlossaryTerm termKey="baseline_skill">{t('forecast.baseline')}</GlossaryTerm>{' '}
         <span className={styles.skillValue}>
           {validation.baseline_skill != null
             ? SKILL_FORMAT.format(validation.baseline_skill)
-            : 'unscored'}
+            : t('forecast.unscored')}
         </span>
         {block.edge_margin != null && (
           <span className={styles.muted}>
             {' '}
-            (<GlossaryTerm termKey="edge_margin">margin</GlossaryTerm>{' '}
+            (<GlossaryTerm termKey="edge_margin">{t('forecast.margin')}</GlossaryTerm>{' '}
             {block.edge_margin >= 0 ? '+' : ''}
             {SKILL_FORMAT.format(block.edge_margin)})
           </span>
         )}
         <span className={styles.muted}>
           {' '}
-          · {validation.n_scored} <GlossaryTerm termKey="n_scored">scored bars</GlossaryTerm> across{' '}
-          {validation.n_splits} <GlossaryTerm termKey="n_splits">folds</GlossaryTerm>
+          · {validation.n_scored}{' '}
+          <GlossaryTerm termKey="n_scored">{t('forecast.scoredBars')}</GlossaryTerm>{' '}
+          {t('forecast.across')} {validation.n_splits}{' '}
+          <GlossaryTerm termKey="n_splits">{t('forecast.folds')}</GlossaryTerm>
         </span>
       </p>
 
@@ -322,18 +338,21 @@ function HorizonBlock({ block }: HorizonBlockProps): JSX.Element {
         <p
           className={styles.provenance}
           data-testid={`forecast-provenance-${block.horizon_bars}`}
-          title={`model ${block.provenance.model_version} · libs ${Object.entries(
-            block.provenance.lib_versions,
-          )
-            .map(([lib, version]) => `${lib} ${version}`)
-            .join(', ')} · seed ${block.provenance.seed}`}
+          title={t('forecast.provenanceTitle', {
+            model: block.provenance.model_version,
+            libs: Object.entries(block.provenance.lib_versions)
+              .map(([lib, version]) => `${lib} ${version}`)
+              .join(', '),
+            seed: block.provenance.seed,
+          })}
         >
-          model <code>{block.provenance.model_version.slice(0, 12)}…</code> · trained through{' '}
+          {t('forecast.provenanceModelPrefix')}{' '}
+          <code>{block.provenance.model_version.slice(0, 12)}…</code> {t('forecast.trainedThrough')}{' '}
           {formatDateTime(block.provenance.training_cutoff)} UTC
         </p>
       ) : (
         <p className={styles.provenance} data-testid={`forecast-provenance-${block.horizon_bars}`}>
-          no model was trained at this horizon (insufficient usable history)
+          {t('forecast.noModelTrained')}
         </p>
       )}
     </article>

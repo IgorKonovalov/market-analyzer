@@ -34,6 +34,7 @@ import {
   formatUsd,
   formatUsdSigned,
 } from '../lib/format'
+import { t } from '../lib/i18n'
 import type { BacktestResult } from '../types/sidecar/backtest-result'
 import type { EquityPoint } from '../types/sidecar/equity-point'
 import type { Trade } from '../types/sidecar/trade'
@@ -64,7 +65,7 @@ export function BacktestView({ result, onBack }: BacktestViewProps): JSX.Element
   )
 
   return (
-    <section className={styles.root} aria-label={`Backtest ${result.run_id}`}>
+    <section className={styles.root} aria-label={t('backtest.rootLabel', { runId: result.run_id })}>
       <header className={styles.header}>
         {onBack && (
           <button
@@ -73,7 +74,7 @@ export function BacktestView({ result, onBack }: BacktestViewProps): JSX.Element
             className={styles.backButton}
             data-testid="backtest-back"
           >
-            ← Recent backtests
+            {t('backtest.backButton')}
           </button>
         )}
         <h2 className={styles.title} data-testid="backtest-title">
@@ -81,47 +82,47 @@ export function BacktestView({ result, onBack }: BacktestViewProps): JSX.Element
           {formatDate(result.range_start)} → {formatDate(result.range_end)}
         </h2>
         <p className={styles.subtitle} data-testid="backtest-engine-version">
-          engine v{result.engine_version}
+          {t('backtest.engineVersion', { version: result.engine_version })}
         </p>
       </header>
 
       <section className={styles.metricsSection} aria-labelledby="metrics-heading">
         <h3 id="metrics-heading" className={styles.sectionTitle}>
-          Metrics
+          {t('backtest.metricsHeading')}
         </h3>
         <dl className={styles.metrics} data-testid="backtest-metrics">
           <MetricRow
-            label="Total return"
+            label={t('backtest.totalReturn')}
             value={formatPct(result.metrics.total_return)}
             testId="metric-total-return"
           />
           <MetricRow
-            label="Sharpe"
+            label={t('backtest.sharpe')}
             value={formatRatio(result.metrics.sharpe)}
             testId="metric-sharpe"
           />
           <MetricRow
-            label="Max drawdown"
+            label={t('backtest.maxDrawdown')}
             value={formatPct(result.metrics.max_drawdown)}
             testId="metric-max-drawdown"
           />
           <MetricRow
-            label="Max DD duration"
+            label={t('backtest.maxDdDuration')}
             value={`${formatInt(result.metrics.max_drawdown_duration_bars)} bars`}
             testId="metric-max-dd-duration"
           />
           <MetricRow
-            label="Win rate"
+            label={t('backtest.winRate')}
             value={formatPct(result.metrics.win_rate)}
             testId="metric-win-rate"
           />
           <MetricRow
-            label="Trade count"
+            label={t('backtest.tradeCount')}
             value={formatInt(result.metrics.trade_count)}
             testId="metric-trade-count"
           />
           <MetricRow
-            label="Buy & hold"
+            label={t('backtest.buyAndHold')}
             value={formatPct(result.metrics.buy_and_hold_return)}
             testId="metric-buy-and-hold"
           />
@@ -130,7 +131,7 @@ export function BacktestView({ result, onBack }: BacktestViewProps): JSX.Element
 
       <section className={styles.chartSection} aria-labelledby="equity-heading">
         <h3 id="equity-heading" className={styles.sectionTitle}>
-          Equity curve
+          {t('backtest.equityCurveHeading')}
         </h3>
         <EquityCurveChart
           points={result.equity_curve}
@@ -144,32 +145,32 @@ export function BacktestView({ result, onBack }: BacktestViewProps): JSX.Element
 
       <section className={styles.tradesSection} aria-labelledby="trades-heading">
         <h3 id="trades-heading" className={styles.sectionTitle}>
-          Trade log ({tradeRows.length})
+          {t('backtest.tradeLogHeading', { count: tradeRows.length })}
         </h3>
         {tradeRows.length === 0 ? (
           <p className={styles.emptyTrades} data-testid="trades-empty">
-            No trades in this run.
+            {t('backtest.noTrades')}
           </p>
         ) : (
           <div className={styles.tableScroll}>
             <table className={styles.trades} data-testid="trades-table">
               <thead>
                 <tr>
-                  <th scope="col">Entry</th>
-                  <th scope="col">Exit</th>
+                  <th scope="col">{t('backtest.colEntry')}</th>
+                  <th scope="col">{t('backtest.colExit')}</th>
                   <th scope="col" className={styles.numCol}>
-                    Entry $
+                    {t('backtest.colEntryPrice')}
                   </th>
                   <th scope="col" className={styles.numCol}>
-                    Exit $
+                    {t('backtest.colExitPrice')}
                   </th>
                   <th scope="col" className={styles.numCol}>
-                    P&amp;L $
+                    {t('backtest.colPnlUsd')}
                   </th>
                   <th scope="col" className={styles.numCol}>
-                    P&amp;L %
+                    {t('backtest.colPnlPct')}
                   </th>
-                  <th scope="col">Status</th>
+                  <th scope="col">{t('backtest.colStatus')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,10 +191,10 @@ export function BacktestView({ result, onBack }: BacktestViewProps): JSX.Element
                     <td>
                       {row.isOpen ? (
                         <span className={styles.openBadge} data-testid="trade-open-badge">
-                          Open
+                          {t('backtest.statusOpen')}
                         </span>
                       ) : (
-                        <span className={styles.closedBadge}>Closed</span>
+                        <span className={styles.closedBadge}>{t('backtest.statusClosed')}</span>
                       )}
                     </td>
                   </tr>
@@ -322,7 +323,11 @@ function EquityCurveChart({
       className={styles.equityChart}
       data-testid="equity-chart"
       role="img"
-      aria-label={`Equity curve for ${symbol} ${timeframe}, ${points.length} points`}
+      aria-label={t('backtest.equityCurveLabel', {
+        symbol,
+        timeframe,
+        points: points.length,
+      })}
     />
   )
 }

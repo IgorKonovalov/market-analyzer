@@ -19,6 +19,7 @@
  */
 import { GlossaryTerm } from '../components/GlossaryTerm'
 import { formatDateTime } from '../lib/format'
+import { t } from '../lib/i18n'
 import type { BasisValue, FusionCheck, Recommendation } from '../types/events'
 import styles from './RecommendationsView.module.css'
 
@@ -78,9 +79,12 @@ const TIER_KEYS = new Set(['feature_set_id', 'fallback_reason'])
 export function RecommendationsView({ recommendation }: Props): JSX.Element {
   if (recommendation === null) {
     return (
-      <section className={styles.view} aria-label="Advisory recommendation">
+      <section
+        className={styles.view}
+        aria-label={t('recommendations.advisoryRecommendationLabel')}
+      >
         <p className={styles.empty} data-testid="recommendation-empty">
-          No recommendation yet — ask the agent for one via the `recommend` tool.
+          {t('recommendations.empty')}
         </p>
       </section>
     )
@@ -94,10 +98,10 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
       recommendation.targets.length > 0)
 
   return (
-    <section className={styles.view} aria-label="Advisory recommendation">
+    <section className={styles.view} aria-label={t('recommendations.advisoryRecommendationLabel')}>
       <p className={styles.advisoryBanner} data-testid="advisory-label" role="note">
-        <strong>Advisory only.</strong> This is a recommendation, not an order ticket — nothing in
-        this app can act on it. The agent recommends; you decide.
+        <strong>{t('recommendations.advisoryOnly')}</strong>{' '}
+        {t('recommendations.advisoryBannerBody')}
       </p>
 
       <header className={styles.header}>
@@ -109,14 +113,15 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
           <span className={styles.timeframe}>{recommendation.timeframe}</span>
         </h2>
         <p className={styles.asOf} data-testid="recommendation-as-of">
-          as of {formatDateTime(recommendation.as_of_bar_ts)} UTC (last closed bar the basis saw)
+          {t('recommendations.asOf')} {formatDateTime(recommendation.as_of_bar_ts)} UTC{' '}
+          {t('recommendations.lastClosedBar')}
         </p>
       </header>
 
       <dl className={styles.grid}>
         <div className={styles.row}>
           <dt>
-            <GlossaryTerm termKey="direction">Direction</GlossaryTerm>
+            <GlossaryTerm termKey="direction">{t('recommendations.direction')}</GlossaryTerm>
           </dt>
           <dd
             data-testid="recommendation-direction"
@@ -129,7 +134,7 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
 
         <div className={styles.row}>
           <dt>
-            <GlossaryTerm termKey="conviction">Conviction</GlossaryTerm>
+            <GlossaryTerm termKey="conviction">{t('recommendations.conviction')}</GlossaryTerm>
           </dt>
           <dd>
             <span
@@ -139,22 +144,20 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
             >
               {CONVICTION_FORMAT.format(recommendation.conviction)} — {strength}
             </span>
-            <span className={styles.muted}>
-              {' '}
-              derived (forecast probability × backtested edge), never invented
-            </span>
+            <span className={styles.muted}> {t('recommendations.convictionDerived')}</span>
           </dd>
         </div>
       </dl>
 
       {hasLevels && (
-        <section className={styles.levels} aria-label="Advisory levels">
-          <h3 className={styles.levelsTitle}>Advisory levels — for your judgement, not a ticket</h3>
+        <section className={styles.levels} aria-label={t('recommendations.advisoryLevelsLabel')}>
+          <h3 className={styles.levelsTitle}>{t('recommendations.advisoryLevelsTitle')}</h3>
           <dl className={styles.grid}>
             {recommendation.entry_zone != null && (
               <div className={styles.row}>
                 <dt>
-                  <GlossaryTerm termKey="entry_zone">Entry zone</GlossaryTerm> (advisory)
+                  <GlossaryTerm termKey="entry_zone">{t('recommendations.entryZone')}</GlossaryTerm>{' '}
+                  {t('recommendations.advisoryTag')}
                 </dt>
                 <dd data-testid="recommendation-entry">
                   {PRICE_FORMAT.format(recommendation.entry_zone[0])} –{' '}
@@ -165,7 +168,8 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
             {recommendation.stop != null && (
               <div className={styles.row}>
                 <dt>
-                  <GlossaryTerm termKey="stop">Stop</GlossaryTerm> (advisory)
+                  <GlossaryTerm termKey="stop">{t('recommendations.stop')}</GlossaryTerm>{' '}
+                  {t('recommendations.advisoryTag')}
                 </dt>
                 <dd data-testid="recommendation-stop">
                   {PRICE_FORMAT.format(recommendation.stop)}
@@ -176,9 +180,9 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
               <div className={styles.row}>
                 <dt>
                   <GlossaryTerm termKey="targets">
-                    Target{recommendation.targets.length === 1 ? '' : 's'}
+                    {t('recommendations.targetHeading', { count: recommendation.targets.length })}
                   </GlossaryTerm>{' '}
-                  (advisory)
+                  {t('recommendations.advisoryTag')}
                 </dt>
                 <dd data-testid="recommendation-targets">
                   {recommendation.targets.map((t) => PRICE_FORMAT.format(t)).join(', ')}
@@ -189,8 +193,8 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
         </section>
       )}
 
-      <section className={styles.rationale} aria-label="Rationale">
-        <h3 className={styles.sectionTitle}>Why</h3>
+      <section className={styles.rationale} aria-label={t('recommendations.rationaleLabel')}>
+        <h3 className={styles.sectionTitle}>{t('recommendations.why')}</h3>
         <ul className={styles.rationaleList} data-testid="recommendation-rationale">
           {recommendation.rationale.map((line) => (
             <li key={line}>{line}</li>
@@ -202,21 +206,21 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
         <ChecksTable checks={recommendation.basis.checks} />
       )}
 
-      <section className={styles.basis} aria-label="Basis">
-        <h3 className={styles.sectionTitle}>What backed this call</h3>
+      <section className={styles.basis} aria-label={t('recommendations.basisLabel')}>
+        <h3 className={styles.sectionTitle}>{t('recommendations.whatBackedThisCall')}</h3>
         <div className={styles.basisGrid}>
           <BasisList
-            label="Conditions"
+            label={t('recommendations.conditions')}
             items={recommendation.basis.conditions}
             testId="basis-conditions"
           />
           <BasisList
-            label="Live signals"
+            label={t('recommendations.liveSignals')}
             items={recommendation.basis.signals}
             testId="basis-signals"
           />
           <BasisFacts
-            label="Backtested edge"
+            label={t('recommendations.backtestedEdge')}
             facts={recommendation.basis.backtest ?? null}
             testId="basis-backtest"
           />
@@ -224,10 +228,7 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
         </div>
       </section>
 
-      <p className={styles.disclaimer}>
-        Labeled advisory (ADR-0029): the basis above travels with every call, and a flat verdict is
-        an honest &quot;no actionable edge&quot;, never a fabricated call.
-      </p>
+      <p className={styles.disclaimer}>{t('recommendations.disclaimer')}</p>
     </section>
   )
 }
@@ -243,16 +244,16 @@ interface ChecksTableProps {
  * bar) renders as a dash. A plain table: nothing here is interactive. */
 function ChecksTable({ checks }: ChecksTableProps): JSX.Element {
   return (
-    <section className={styles.checks} aria-label="Fusion checks">
-      <h3 className={styles.sectionTitle}>Every gate checked</h3>
+    <section className={styles.checks} aria-label={t('recommendations.fusionChecksLabel')}>
+      <h3 className={styles.sectionTitle}>{t('recommendations.everyGateChecked')}</h3>
       <table className={styles.checksTable} data-testid="recommendation-checks">
         <thead>
           <tr>
-            <th scope="col">leg</th>
-            <th scope="col">check</th>
-            <th scope="col">threshold</th>
-            <th scope="col">actual</th>
-            <th scope="col">result</th>
+            <th scope="col">{t('recommendations.leg')}</th>
+            <th scope="col">{t('recommendations.check')}</th>
+            <th scope="col">{t('recommendations.threshold')}</th>
+            <th scope="col">{t('recommendations.actual')}</th>
+            <th scope="col">{t('recommendations.result')}</th>
           </tr>
         </thead>
         <tbody>
@@ -265,15 +266,13 @@ function ChecksTable({ checks }: ChecksTableProps): JSX.Element {
               <td className={styles.checkValue}>{formatBasisValue(check.threshold ?? null)}</td>
               <td className={styles.checkValue}>{formatBasisValue(check.actual ?? null)}</td>
               <td className={styles.checkResult} data-passed={check.passed}>
-                {check.passed ? 'pass' : 'FAIL'}
+                {check.passed ? t('recommendations.pass') : t('recommendations.fail')}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className={styles.checksNote}>
-        The trace records the fusion&apos;s decision; a directional call means every gate passed.
-      </p>
+      <p className={styles.checksNote}>{t('recommendations.checksNote')}</p>
     </section>
   )
 }
@@ -289,7 +288,7 @@ function BasisList({ label, items, testId }: BasisListProps): JSX.Element {
     <div className={styles.basisBlock} data-testid={testId}>
       <h4 className={styles.basisLabel}>{label}</h4>
       {items.length === 0 ? (
-        <p className={styles.muted}>none</p>
+        <p className={styles.muted}>{t('recommendations.none')}</p>
       ) : (
         <ul className={styles.basisList}>
           {items.map((item) => (
@@ -315,7 +314,7 @@ function BasisFacts({ label, facts, testId }: BasisFactsProps): JSX.Element {
     <div className={styles.basisBlock} data-testid={testId}>
       <h4 className={styles.basisLabel}>{label}</h4>
       {facts === null ? (
-        <p className={styles.muted}>not part of this basis</p>
+        <p className={styles.muted}>{t('recommendations.notPartOfBasis')}</p>
       ) : (
         <dl className={styles.factList}>
           {Object.entries(facts).map(([key, value]) => (
@@ -351,8 +350,8 @@ function ForecastBasis({ facts, testId }: ForecastBasisProps): JSX.Element {
   if (facts === null) {
     return (
       <div className={styles.basisBlock} data-testid={testId}>
-        <h4 className={styles.basisLabel}>Forecast</h4>
-        <p className={styles.muted}>not part of this basis</p>
+        <h4 className={styles.basisLabel}>{t('recommendations.forecast')}</h4>
+        <p className={styles.muted}>{t('recommendations.notPartOfBasis')}</p>
       </div>
     )
   }
@@ -363,12 +362,12 @@ function ForecastBasis({ facts, testId }: ForecastBasisProps): JSX.Element {
 
   return (
     <div className={styles.basisBlock} data-testid={testId}>
-      <h4 className={styles.basisLabel}>Forecast</h4>
+      <h4 className={styles.basisLabel}>{t('recommendations.forecast')}</h4>
       {featureSetId !== null && (
         <p className={styles.forecastTier} data-testid="forecast-tier">
           {FEATURE_SET_LABELS[featureSetId] !== undefined
-            ? `Forecast ran on the ${FEATURE_SET_LABELS[featureSetId]} feature set.`
-            : `Forecast ran on feature set ${featureSetId}.`}
+            ? t('recommendations.forecastRanOnTier', { name: FEATURE_SET_LABELS[featureSetId] })
+            : t('recommendations.forecastRanOnFeatureSet', { x: featureSetId })}
         </p>
       )}
       {fallbackReason !== null && (

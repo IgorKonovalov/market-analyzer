@@ -38,6 +38,7 @@ import type {
 import type { IPriceLine } from 'lightweight-charts'
 
 import { ApiError, api, toLightweightBar } from '../api/client'
+import { t } from '../lib/i18n'
 import { useChartGestures } from '../hooks/useChartGestures'
 import { useChartPatternRecompute } from '../hooks/useChartPatternRecompute'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
@@ -1248,7 +1249,7 @@ export function CandlestickChart({
             className={styles.selectRangeButton}
             onClick={toggleSelectRange}
           >
-            {selectRangeMode ? 'Selecting range… (Esc to cancel)' : 'Select range'}
+            {selectRangeMode ? t('chart.selectingRange') : t('chart.selectRange')}
           </button>
         )}
         <button
@@ -1258,16 +1259,16 @@ export function CandlestickChart({
           onClick={scanVisibleRange}
           disabled={scanStatus.kind === 'scanning' || !symbol || !timeframe}
         >
-          {scanStatus.kind === 'scanning' ? 'Scanning…' : 'Scan patterns'}
+          {scanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.scanPatterns')}
         </button>
         {scanStatus.kind === 'done' && (
           <span data-testid="scan-patterns-status" className={styles.scanStatus}>
-            {scanStatus.count} pattern{scanStatus.count === 1 ? '' : 's'}
+            {t('chart.patternCount', { count: scanStatus.count })}
           </span>
         )}
         {scanStatus.kind === 'empty' && (
           <span data-testid="scan-patterns-status" className={styles.scanStatus}>
-            No patterns in view
+            {t('chart.noPatternsInView')}
           </span>
         )}
         {scanStatus.kind === 'error' && (
@@ -1282,16 +1283,16 @@ export function CandlestickChart({
           onClick={scanChartPatternsVisibleRange}
           disabled={chartScanStatus.kind === 'scanning' || !symbol || !timeframe}
         >
-          {chartScanStatus.kind === 'scanning' ? 'Scanning…' : 'Scan chart patterns'}
+          {chartScanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.scanChartPatterns')}
         </button>
         {chartScanStatus.kind === 'done' && (
           <span data-testid="scan-chart-patterns-status" className={styles.scanStatus}>
-            {chartScanStatus.count} pattern{chartScanStatus.count === 1 ? '' : 's'}
+            {t('chart.patternCount', { count: chartScanStatus.count })}
           </span>
         )}
         {chartScanStatus.kind === 'empty' && (
           <span data-testid="scan-chart-patterns-status" className={styles.scanStatus}>
-            No chart patterns in view
+            {t('chart.noChartPatternsInView')}
           </span>
         )}
         {chartScanStatus.kind === 'error' && (
@@ -1306,7 +1307,7 @@ export function CandlestickChart({
           className={`${styles.chartContainer} ${selectRangeMode ? styles.selectRangeActive : ''}`.trim()}
           data-testid="candlestick-chart"
           role="img"
-          aria-label={ariaLabel ?? `Candlestick chart, ${bars.length} bars`}
+          aria-label={ariaLabel ?? t('chart.ariaLabel', { count: bars.length })}
         />
         {selection && (
           <div

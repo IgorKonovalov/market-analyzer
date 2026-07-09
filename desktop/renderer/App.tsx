@@ -28,6 +28,7 @@ import { useEventStream } from './hooks/useEventStream'
 import styles from './App.module.css'
 import { AlertToaster } from './components/AlertToaster'
 import { ThemeToggle } from './components/ThemeToggle'
+import { t } from './lib/i18n'
 import type { Timeframe } from './lib/timeframes'
 import type { MultiHorizonForecastResult, Recommendation, SignalEvaluation } from './types/events'
 import { AlertsView } from './views/AlertsView'
@@ -189,7 +190,7 @@ export function App(): JSX.Element {
     <main className="appShell">
       <header className="appHeader">
         <h1>market-analyser</h1>
-        <nav className={styles.nav} aria-label="Primary">
+        <nav className={styles.nav} aria-label={t('app.nav.primaryLabel')}>
           <button
             type="button"
             className={styles.tab}
@@ -197,7 +198,7 @@ export function App(): JSX.Element {
             onClick={() => setView('chart')}
             data-testid="nav-chart"
           >
-            Chart
+            {t('app.nav.chart')}
           </button>
           <button
             type="button"
@@ -206,7 +207,7 @@ export function App(): JSX.Element {
             onClick={() => setView('recent-backtests')}
             data-testid="nav-backtests"
           >
-            Backtests
+            {t('app.nav.backtests')}
           </button>
           <button
             type="button"
@@ -215,7 +216,7 @@ export function App(): JSX.Element {
             onClick={() => setView('signals')}
             data-testid="nav-signals"
           >
-            Signals
+            {t('app.nav.signals')}
           </button>
           <button
             type="button"
@@ -224,7 +225,7 @@ export function App(): JSX.Element {
             onClick={() => setView('recommendations')}
             data-testid="nav-recommendations"
           >
-            Recommendations
+            {t('app.nav.recommendations')}
           </button>
           <button
             type="button"
@@ -233,7 +234,7 @@ export function App(): JSX.Element {
             onClick={() => setView('forecast')}
             data-testid="nav-forecast"
           >
-            Forecast
+            {t('app.nav.forecast')}
           </button>
           <button
             type="button"
@@ -242,7 +243,7 @@ export function App(): JSX.Element {
             onClick={() => setView('news')}
             data-testid="nav-news"
           >
-            News
+            {t('app.nav.news')}
           </button>
           <button
             type="button"
@@ -251,7 +252,7 @@ export function App(): JSX.Element {
             onClick={() => setView('alerts')}
             data-testid="nav-alerts"
           >
-            Alerts
+            {t('app.nav.alerts')}
           </button>
           <button
             type="button"
@@ -260,7 +261,7 @@ export function App(): JSX.Element {
             onClick={() => setView('settings')}
             data-testid="nav-settings"
           >
-            Settings
+            {t('app.nav.settings')}
           </button>
         </nav>
         <ThemeToggle />
@@ -309,25 +310,27 @@ function BacktestPanel({ state, onBack }: BacktestPanelProps): JSX.Element {
   if (state.status === 'loading') {
     return (
       <section className={styles.statusPanel} role="status" data-testid="backtest-loading">
-        Loading backtest result…
+        {t('app.backtest.loading')}
       </section>
     )
   }
   if (state.status === 'error') {
     return (
       <section className={styles.statusPanel} role="alert" data-testid="backtest-error">
-        <p>Failed to load backtest result: {state.error.message}</p>
+        <p>
+          {t('app.backtest.loadError')} {state.error.message}
+        </p>
         <button type="button" onClick={onBack}>
-          Back to Recent backtests
+          {t('app.backtest.backToRecent')}
         </button>
       </section>
     )
   }
   return (
     <section className={styles.statusPanel} role="status" data-testid="backtest-idle">
-      <p>No backtest selected. Open Recent backtests to pick one.</p>
+      <p>{t('app.backtest.noneSelected')}</p>
       <button type="button" onClick={onBack}>
-        Recent backtests
+        {t('app.backtest.recentBacktests')}
       </button>
     </section>
   )

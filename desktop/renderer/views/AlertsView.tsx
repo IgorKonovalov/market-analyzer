@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api/client'
 import { subscribeAlerts } from '../handlers/alertBus'
 import { formatDateTime } from '../lib/format'
+import { t } from '../lib/i18n'
 import type { AlertOut } from '../types/sidecar/alert-out'
 import type { WatchOut } from '../types/sidecar/watch-out'
 import type { AlertTriggeredPayloadV1 } from '../types/events'
@@ -145,10 +146,10 @@ export function AlertsView(): JSX.Element {
   }
 
   return (
-    <section className={styles.view} aria-label="Alerts">
+    <section className={styles.view} aria-label={t('alerts.alerts')}>
       <div className={styles.columns}>
-        <section className={styles.panel} aria-label="Watches">
-          <h2 className={styles.panelTitle}>Watches</h2>
+        <section className={styles.panel} aria-label={t('alerts.watches')}>
+          <h2 className={styles.panelTitle}>{t('alerts.watches')}</h2>
           <WatchesPanel state={watchesState} onToggle={onToggle} />
           {toggleError !== null && (
             <p className={styles.error} role="alert" data-testid="watch-toggle-error">
@@ -156,14 +157,12 @@ export function AlertsView(): JSX.Element {
             </p>
           )}
         </section>
-        <section className={styles.panel} aria-label="Alert history">
-          <h2 className={styles.panelTitle}>Alert history</h2>
+        <section className={styles.panel} aria-label={t('alerts.alertHistory')}>
+          <h2 className={styles.panelTitle}>{t('alerts.alertHistory')}</h2>
           <HistoryPanel state={historyState} liveRows={liveRows} />
         </section>
       </div>
-      <p className={styles.disclaimer}>
-        Alerts report conditions the agent was asked to watch — facts, not advice.
-      </p>
+      <p className={styles.disclaimer}>{t('alerts.disclaimer')}</p>
     </section>
   )
 }
@@ -177,21 +176,21 @@ function WatchesPanel({ state, onToggle }: WatchesPanelProps): JSX.Element {
   if (state.status === 'loading') {
     return (
       <p className={styles.muted} role="status" data-testid="watches-loading">
-        Loading watches…
+        {t('alerts.loadingWatches')}
       </p>
     )
   }
   if (state.status === 'error') {
     return (
       <p className={styles.error} role="alert" data-testid="watches-error">
-        Failed to load watches: {state.message}
+        {t('alerts.watchesError')} {state.message}
       </p>
     )
   }
   if (state.watches.length === 0) {
     return (
       <p className={styles.muted} data-testid="watches-empty">
-        No watches yet — ask the agent to create one.
+        {t('alerts.noWatches')}
       </p>
     )
   }
@@ -204,9 +203,13 @@ function WatchesPanel({ state, onToggle }: WatchesPanelProps): JSX.Element {
               type="checkbox"
               checked={watch.enabled}
               onChange={(e) => onToggle(watch, e.target.checked)}
-              aria-label={`Watch ${watch.id}: ${watch.symbol} ${watch.timeframe} ${watch.kind} — ${
-                watch.enabled ? 'enabled' : 'disabled'
-              }`}
+              aria-label={t('alerts.watchRowLabel', {
+                id: watch.id,
+                symbol: watch.symbol,
+                timeframe: watch.timeframe,
+                kind: watch.kind,
+                state: watch.enabled ? t('alerts.enabled') : t('alerts.disabled'),
+              })}
             />
             <span className={styles.watchSymbol}>{watch.symbol}</span>
             <span className={styles.watchMeta}>
@@ -214,7 +217,7 @@ function WatchesPanel({ state, onToggle }: WatchesPanelProps): JSX.Element {
             </span>
           </label>
           <span className={watch.enabled ? styles.enabled : styles.disabled}>
-            {watch.enabled ? 'enabled' : 'disabled'}
+            {watch.enabled ? t('alerts.enabled') : t('alerts.disabled')}
           </span>
         </li>
       ))}
@@ -231,14 +234,14 @@ function HistoryPanel({ state, liveRows }: HistoryPanelProps): JSX.Element {
   if (state.status === 'loading') {
     return (
       <p className={styles.muted} role="status" data-testid="alerts-loading">
-        Loading alert history…
+        {t('alerts.loadingHistory')}
       </p>
     )
   }
   if (state.status === 'error') {
     return (
       <p className={styles.error} role="alert" data-testid="alerts-error">
-        Failed to load alert history: {state.message}
+        {t('alerts.historyError')} {state.message}
       </p>
     )
   }
@@ -249,7 +252,7 @@ function HistoryPanel({ state, liveRows }: HistoryPanelProps): JSX.Element {
   if (rows.length === 0) {
     return (
       <p className={styles.muted} data-testid="alerts-empty">
-        Nothing has fired yet.
+        {t('alerts.nothingFired')}
       </p>
     )
   }
@@ -260,10 +263,12 @@ function HistoryPanel({ state, liveRows }: HistoryPanelProps): JSX.Element {
           <span className={styles.alertWhen}>{formatDateTime(row.firedAt)} UTC</span>
           <span className={styles.alertWhat}>
             <span className={styles.alertSymbol}>
-              {row.symbol ?? `watch ${row.watchId}`}
+              {row.symbol ?? t('alerts.watchFallback', { id: row.watchId })}
               {row.timeframe !== null ? ` ${row.timeframe}` : ''}
             </span>
-            <span className={styles.alertCondition}>{row.condition ?? '(no condition text)'}</span>
+            <span className={styles.alertCondition}>
+              {row.condition ?? t('alerts.noConditionText')}
+            </span>
           </span>
         </li>
       ))}
@@ -272,13 +277,14 @@ function HistoryPanel({ state, liveRows }: HistoryPanelProps): JSX.Element {
 }
 
 const KIND_LABELS: Record<string, string> = {
-  indicator_threshold: 'indicator threshold',
-  pattern: 'pattern',
-  strategy_signal: 'strategy signal',
+  indicator_threshold: 'alerts.kind.indicatorThreshold',
+  pattern: 'alerts.kind.pattern',
+  strategy_signal: 'alerts.kind.strategySignal',
 }
 
 function kindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? kind
+  const key = KIND_LABELS[kind]
+  return key !== undefined ? t(key) : kind
 }
 
 function describeError(err: unknown): string {

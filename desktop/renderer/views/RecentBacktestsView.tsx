@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { listBacktests } from '../api/backtests'
 import { formatDate, formatDateTime, formatInt, formatPct, formatRatio } from '../lib/format'
+import { t } from '../lib/i18n'
 import type { BacktestRunSummary } from '../types/sidecar/backtest-run-summary'
 import styles from './RecentBacktestsView.module.css'
 
@@ -58,7 +59,7 @@ export function RecentBacktestsView({
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const message = err instanceof Error ? err.message : 'failed to load backtests'
+        const message = err instanceof Error ? err.message : t('recent.loadError')
         setState({ status: 'error', rows: [], error: message })
       })
     return () => {
@@ -77,28 +78,25 @@ export function RecentBacktestsView({
   }
 
   return (
-    <section className={styles.root} aria-label="Recent backtests">
+    <section className={styles.root} aria-label={t('recent.title')}>
       <header className={styles.header}>
-        <h2 className={styles.title}>Recent backtests</h2>
-        <p className={styles.lede}>
-          Persisted runs from `runs/`. Click a row to open the full result view.
-        </p>
+        <h2 className={styles.title}>{t('recent.title')}</h2>
+        <p className={styles.lede}>{t('recent.lede')}</p>
       </header>
 
       {state.status === 'loading' && (
         <div className={styles.statusBlock} role="status">
-          Loading runs…
+          {t('recent.loading')}
         </div>
       )}
       {state.status === 'error' && (
         <div className={styles.error} role="alert">
-          {state.error ?? 'failed to load backtests'}
+          {state.error ?? t('recent.loadError')}
         </div>
       )}
       {state.status === 'ready' && state.rows.length === 0 && (
         <div className={styles.statusBlock} role="status" data-testid="recent-empty">
-          No backtests yet. Ask Claude to run one — e.g. "backtest RSI on AAPL daily for the last
-          year".
+          {t('recent.empty')}
         </div>
       )}
       {state.status === 'ready' && state.rows.length > 0 && (
@@ -106,33 +104,33 @@ export function RecentBacktestsView({
           <table className={styles.table} data-testid="recent-table">
             <thead>
               <tr>
-                <th scope="col">Strategy</th>
-                <th scope="col">Symbol</th>
-                <th scope="col">Timeframe</th>
-                <th scope="col">Range</th>
+                <th scope="col">{t('recent.colStrategy')}</th>
+                <th scope="col">{t('recent.colSymbol')}</th>
+                <th scope="col">{t('recent.colTimeframe')}</th>
+                <th scope="col">{t('recent.colRange')}</th>
                 <SortableHeader
-                  label="Total return"
+                  label={t('recent.colTotalReturn')}
                   column="total_return"
                   sort={sort}
                   onClick={onHeaderClick}
                 />
                 <SortableHeader
-                  label="Sharpe"
+                  label={t('recent.colSharpe')}
                   column="sharpe"
                   sort={sort}
                   onClick={onHeaderClick}
                 />
                 <SortableHeader
-                  label="Max DD"
+                  label={t('recent.colMaxDd')}
                   column="max_drawdown"
                   sort={sort}
                   onClick={onHeaderClick}
                 />
                 <th scope="col" className={styles.numCol}>
-                  Trades
+                  {t('recent.colTrades')}
                 </th>
                 <SortableHeader
-                  label="Finished"
+                  label={t('recent.colFinished')}
                   column="finished_at"
                   sort={sort}
                   onClick={onHeaderClick}
@@ -149,7 +147,7 @@ export function RecentBacktestsView({
                   onClick={() => onSelect(row.run_id)}
                   tabIndex={0}
                   role="button"
-                  aria-label={`Open backtest ${row.run_id}`}
+                  aria-label={t('recent.openBacktestLabel', { runId: row.run_id })}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
