@@ -35,7 +35,7 @@ from market_analyser.api.mcp_tools.cycle_snapshot import (
     _build_snapshot,
     register_btc_cycle_snapshot,
 )
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.metric_series import (
     SERIES_COINGECKO_BTC_DOMINANCE,
     SERIES_COINMETRICS_BTC_MVRV,

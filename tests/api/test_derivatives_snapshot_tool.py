@@ -33,7 +33,7 @@ from market_analyser.api.mcp_tools.derivatives_snapshot import (
     _build_snapshot,
     register_derivatives_snapshot,
 )
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.metric_series import (
     SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
     SERIES_BINANCE_OPEN_INTEREST_BTCUSDT,

@@ -22,7 +22,7 @@ from mcp.types import ListToolsRequest, ListToolsResult
 
 from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.adapters.zerion import ZerionAuthError
 from market_analyser.data.errors import UpstreamUnavailableError
 from market_analyser.data.types import (

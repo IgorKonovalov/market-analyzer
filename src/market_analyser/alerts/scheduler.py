@@ -42,8 +42,6 @@ from pydantic import BaseModel, ConfigDict
 
 from market_analyser.alerts.evaluate import evaluate_watch_detail, should_fire
 from market_analyser.alerts.types import Watch
-from market_analyser.api.ui_events import UIEventEnvelope
-from market_analyser.api.ui_events.buffer import UIEventBuffer
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.timeframes import timeframe_spec
@@ -53,6 +51,8 @@ from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
     WatchesRepository,
 )
+from market_analyser.ui_events import UIEventEnvelope
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 # Bars of trailing history fetched per evaluation — enough for every indicator
 # the watch vocabulary admits to warm up (the slowest, ADX(14)/RSI(14) with

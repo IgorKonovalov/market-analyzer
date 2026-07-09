@@ -12,8 +12,8 @@ import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from market_analyser.api.ui_events import UIEventEnvelope
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events import UIEventEnvelope
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 _BASE = datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC)
 

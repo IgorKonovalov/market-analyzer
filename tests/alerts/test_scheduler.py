@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from market_analyser.alerts.scheduler import WatchScheduler
 from market_analyser.alerts.types import Watch
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.timeframes import bar_duration
 from market_analyser.data.types import (
     Bar,

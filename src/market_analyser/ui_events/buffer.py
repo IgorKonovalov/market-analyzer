@@ -1,4 +1,5 @@
-"""Bounded in-memory ring buffer of UI events (Plan 0014 phase 1, ADR-0021).
+"""Bounded in-memory ring buffer of UI events (Plan 0014 phase 1, ADR-0021;
+moved to the neutral core in Plan 0072 phase 1, ADR-0065).
 
 A `collections.deque(maxlen=N)` of `UIEventEnvelope`s. Drop-oldest on overflow.
 Empty whenever agent mode is OFF (the `POST /ui_events` route 403s before
@@ -30,7 +31,7 @@ from collections import deque
 from collections.abc import Callable
 from datetime import datetime
 
-from market_analyser.api.ui_events import UIEventEnvelope
+from market_analyser.ui_events import UIEventEnvelope
 
 DEFAULT_MAXLEN = 100
 

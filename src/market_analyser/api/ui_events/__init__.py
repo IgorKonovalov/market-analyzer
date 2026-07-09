@@ -1,15 +1,21 @@
-"""UI-event vocabulary + envelope (Plan 0014 phase 1, ADR-0021).
+"""UI-event vocabulary + envelope builder (Plan 0014 phase 1, ADR-0021).
 
-The renderer→agent feedback loop carries three typed UI-event payloads from the
-Electron viewer to the sidecar's in-memory buffer (`buffer.UIEventBuffer`), gated
-by the agent-mode toggle (`agent_mode.AgentModeStore`). The agent reads them back
-via the MCP surface added in phase 2.
+The transport half of the renderer→agent feedback loop: the closed `ui.*`
+payload vocabulary and `build_ui_event_envelope`, the boundary validator the
+`POST /ui_events` route uses. The neutral envelope shape and the in-memory
+buffer live in the top-level `market_analyser.ui_events` core (moved there in
+Plan 0072 phase 1, ADR-0065) so domain producers need not import the api layer;
+`UIEventEnvelope` is imported from there and re-exported here for the transition.
 
-The envelope shape mirrors the sidecar→renderer SSE `Envelope` (ADR-0017:
-`{type, version, ts, payload}`) and adds a server-generated `event_id` so the
-agent can dedupe across the draining tool read and the non-draining resource
-read (the open question ADR-0021 flagged). `ts` and `event_id` are both
-server-generated at POST time — the renderer supplies neither.
+The renderer sends three typed UI-event payloads from the Electron viewer;
+`build_ui_event_envelope` validates `(type, payload)` and wraps the result in a
+`UIEventEnvelope`, gated at the route by the agent-mode toggle
+(`agent_mode.AgentModeStore`). The agent reads them back via the MCP surface.
+
+The envelope adds a server-generated `event_id` so the agent can dedupe across
+the draining tool read and the non-draining resource read (the open question
+ADR-0021 flagged). `ts` and `event_id` are both server-generated at POST time —
+the renderer supplies neither.
 
 The type set is *closed*: `build_ui_event_envelope` rejects an unknown type with
 `UnknownUIEventTypeError` so the `POST /ui_events` boundary can return 422 rather
@@ -23,6 +29,8 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
+
+from market_analyser.ui_events import UIEventEnvelope
 
 
 class RangeSelectedPayloadV1(BaseModel):
@@ -75,18 +83,6 @@ UI_EVENT_TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "ui.bar_clicked": BarClickedPayloadV1,
     "ui.agent_mode_toggled": AgentModeToggledPayloadV1,
 }
-
-
-class UIEventEnvelope(BaseModel):
-    """Buffered envelope. Mirrors ADR-0017's shape, adds `event_id` for dedup."""
-
-    model_config = ConfigDict(frozen=True)
-
-    event_id: str  # server-generated UUID v4
-    type: str
-    version: int
-    ts: datetime  # server-generated at POST time
-    payload: dict[str, Any]
 
 
 class UnknownUIEventTypeError(ValueError):

@@ -40,8 +40,8 @@ from market_analyser.api.mcp_tools.get_pending_ui_events import (
     UI_EVENTS_RESOURCE_URI,
     _ResourceUpdateNotifier,
 )
-from market_analyser.api.ui_events import UIEventEnvelope
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events import UIEventEnvelope
+from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.types import (
     Bar,
     MacroContext,

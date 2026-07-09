@@ -25,7 +25,7 @@ from market_analyser.api.ui_events import (
     build_ui_event_envelope,
 )
 from market_analyser.api.ui_events.agent_mode import AgentModeStore
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 router = APIRouter(tags=["ui-events"])
 

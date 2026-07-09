@@ -22,8 +22,8 @@ from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyUrl
 
-from market_analyser.api.ui_events import UIEventEnvelope
-from market_analyser.api.ui_events.buffer import UIEventBuffer
+from market_analyser.ui_events import UIEventEnvelope
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 logger = logging.getLogger(__name__)
 
