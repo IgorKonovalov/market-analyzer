@@ -1,6 +1,6 @@
 # 0060 — Glossary tooltips: a scoped exception to the advisory panels' no-interactive-element posture
 
-> **Status:** proposed — accepts at [Plan 0065](../plans/0065-glossary-hover-explanations.md) close
+> **Status:** accepted (Plan 0065 close, 2026-07-09)
 > **Created:** 2026-07-08
 > **Related:** [ADR-0029](0029-advisory-recommendation-boundary.md) (the advisory boundary — the app recommends, never acts), [ADR-0025](0025-trade-execution-feasibility.md) (execution is an untaken decision — no order path exists), [ADR-0058](0058-forecast-recommendation-explainability.md) (the explanation surfaces the tooltips annotate), [ADR-0046](0046-mcp-large-result-delivery.md) (the small-wire posture the glossary delivery respects)
 
