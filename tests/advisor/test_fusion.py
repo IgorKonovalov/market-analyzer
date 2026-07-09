@@ -130,6 +130,8 @@ def make_forecast(
     prob_flat: float | None = 0.15,
     beats_baseline: bool = True,
     edge_strength: EdgeStrength = "clear",
+    feature_set_id: str = "fs-v1",
+    fallback_reason: str | None = None,
 ) -> ForecastResult:
     return ForecastResult(
         symbol=SYMBOL,
@@ -152,10 +154,11 @@ def make_forecast(
         ),
         provenance=ForecastProvenance(
             model_version="abc123",
-            feature_set_id="fs-v1",
+            feature_set_id=feature_set_id,
             training_cutoff=AS_OF,
             seed=7,
             lib_versions={"scikit-learn": "1.8.0"},
+            fallback_reason=fallback_reason,
         ),
         edge_margin=0.05 if beats_baseline else -0.02,
         edge_strength=edge_strength,
@@ -380,6 +383,73 @@ class TestFlatVerdicts:
         )
         assert rec.direction == "flat"
         assert rec.basis.conditions  # never a groundless artifact, even flat
+
+
+class TestForecastTierInBasis:
+    """Plan 0066 phase 2 (ADR-0057): the forecast basis carries the tier that
+    backed the call (`feature_set_id`) and, when a richer tier was skipped, the
+    stated `fallback_reason` — both on the recommendation itself, directional or
+    flat, taken straight from the fused `ForecastResult`'s provenance."""
+
+    _REASON = (
+        "v2-full unavailable: 0 of 2746 bars survived the join (floor 500); "
+        "trained v2-deep (1347 rows)"
+    )
+
+    def test_directional_basis_carries_tier_and_fallback(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(
+                nearest_support=make_level(95.0, "support"),
+                nearest_resistance=make_level(108.0, "resistance"),
+            ),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(feature_set_id="fs-v2-deep", fallback_reason=self._REASON),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"
+        assert rec.basis.forecast is not None
+        assert rec.basis.forecast["feature_set_id"] == "fs-v2-deep"
+        assert rec.basis.forecast["fallback_reason"] == self._REASON
+
+    def test_flat_basis_carries_tier_and_fallback(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[],
+            walk_forward=None,
+            forecast=make_forecast(
+                prob_up=None,
+                prob_down=None,
+                prob_flat=None,
+                beats_baseline=False,
+                edge_strength="no_edge",
+                feature_set_id="fs-v2-deep",
+                fallback_reason=self._REASON,
+            ),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        assert rec.basis.forecast is not None
+        assert rec.basis.forecast["feature_set_id"] == "fs-v2-deep"
+        assert rec.basis.forecast["fallback_reason"] == self._REASON
+
+    def test_v2_full_run_reports_no_fallback_reason(self) -> None:
+        """A genuine v2-full run has `fallback_reason=None` — the key is present
+        in the basis dict but carries the honest null (nothing was skipped)."""
+
+        rec = fuse(
+            snapshot=make_snapshot(
+                nearest_support=make_level(95.0, "support"),
+                nearest_resistance=make_level(108.0, "resistance"),
+            ),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(feature_set_id="fs-v2", fallback_reason=None),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.basis.forecast is not None
+        assert rec.basis.forecast["feature_set_id"] == "fs-v2"
+        assert rec.basis.forecast["fallback_reason"] is None
 
 
 class TestInputValidation:

@@ -465,6 +465,13 @@ def _build_basis(
         "edge_margin": forecast.edge_margin,
         "edge_strength": forecast.edge_strength,
         "model_version": forecast.provenance.model_version,
+        # Plan 0066 (ADR-0057): the tier that backed this forecast travels on the
+        # recommendation itself, not only in the persisted advice artifact — so a
+        # reader can see whether the call ran on v2-full/v2-deep/v1 and why a
+        # richer tier was skipped. Both open dict[str, BasisValue] scalars, so no
+        # wire-pin/parity test moves (new keys, not a changed field set).
+        "feature_set_id": forecast.provenance.feature_set_id,
+        "fallback_reason": forecast.provenance.fallback_reason,
     }
 
     return RecommendationBasis(

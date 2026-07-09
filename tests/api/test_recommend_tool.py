@@ -521,6 +521,43 @@ class TestForecastUnification:
         )
         assert leg == _as_forecast_result(core)
 
+    def test_recommendation_basis_carries_the_tier(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Plan 0066 phase 2: the recommendation's `basis.forecast` carries the
+        tier (`feature_set_id`) + `fallback_reason` the real leg produced, equal
+        to what the forecast core reports for the same inputs (unwired → v1)."""
+
+        monkeypatch.setattr(
+            recommend_tool,
+            "evaluate_signals_core",
+            lambda *a, **kw: _signal_evaluation("long"),
+        )
+        monkeypatch.setattr(
+            recommend_tool,
+            "walk_forward",
+            lambda *a, **kw: _walk_forward_result(0.8),
+        )
+        rec = _run()  # real forecast leg, no store wired → v1
+
+        assert rec.basis.forecast is not None
+        assert rec.basis.forecast["feature_set_id"] == FEATURE_SET_ID
+        assert rec.basis.forecast["fallback_reason"] == FALLBACK_REASON_UNWIRED
+
+        core = _compute_multi_horizon_forecast(
+            bars=list(BARS),
+            symbol="SYN",
+            timeframe="1d",
+            horizons=(1,),
+            flat_band=0.001,
+            n_splits=5,
+            seed=1729,
+            models_dir=None,
+            metric_lookup=None,
+        )
+        (block,) = core.horizons
+        assert block.provenance is not None
+        assert rec.basis.forecast["feature_set_id"] == block.provenance.feature_set_id
+        assert rec.basis.forecast["fallback_reason"] == block.provenance.fallback_reason
+
 
 def _run_draining_bus(**overrides: Any) -> tuple[Any, list[Envelope]]:
     """Run `_recommend_response` with a subscription open on its bus and
