@@ -5,8 +5,8 @@
 import type { UTCTimestamp } from 'lightweight-charts'
 
 import type { Annotation } from '../types/sidecar/annotation'
-import type { OverlaySpec } from '../types/events'
-import { overlayLabel, tooltipAtTime, tooltipPosition } from './tooltip'
+import type { OverlaySpec, TrendlineSpec } from '../types/events'
+import { overlayLabel, tooltipAtTime, tooltipPosition, trendlineTooltipText } from './tooltip'
 
 function annotation(overrides: Partial<Annotation> = {}): Annotation {
   return {
@@ -62,6 +62,38 @@ describe('overlayLabel', () => {
   it('omits the parenthetical when there is no period', () => {
     expect(overlayLabel({ kind: 'price_line', price: 100, label: 'R1' } as OverlaySpec)).toBe(
       'PRICE_LINE',
+    )
+  })
+})
+
+describe('trendlineTooltipText (Plan 0067 phase 2)', () => {
+  const line = (overrides: Partial<TrendlineSpec>): TrendlineSpec => ({
+    points: [
+      { ts: '2026-04-13T00:00:00+00:00', price: 100 },
+      { ts: '2026-04-15T00:00:00+00:00', price: 104 },
+    ],
+    style: 'solid',
+    ...overrides,
+  })
+
+  it('names the pattern and marks a solid line confirmed', () => {
+    expect(trendlineTooltipText(line({ pattern: 'rising_wedge', style: 'solid' }))).toBe(
+      'Rising wedge — confirmed',
+    )
+  })
+
+  it('marks a dashed line forming', () => {
+    expect(trendlineTooltipText(line({ pattern: 'head_shoulders', style: 'dashed' }))).toBe(
+      'Head & shoulders — forming',
+    )
+  })
+
+  it('falls back to "Trendline" for an unknown/absent pattern', () => {
+    expect(trendlineTooltipText(line({ pattern: null, style: 'solid' }))).toBe(
+      'Trendline — confirmed',
+    )
+    expect(trendlineTooltipText(line({ pattern: 'mystery', style: 'dashed' }))).toBe(
+      'Trendline — forming',
     )
   })
 })

@@ -24,6 +24,12 @@
   font-weight: 600;
 }
 
+/* Hovered-trendline read-out (pattern + state) — Plan 0067 phase 2. Same weight
+   as a marker row; it names the line under the cursor. */
+.trendline {
+  font-weight: 600;
+}
+
 .overlay {
   display: flex;
   justify-content: space-between;

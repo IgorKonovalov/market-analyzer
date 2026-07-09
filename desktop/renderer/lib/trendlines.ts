@@ -35,6 +35,7 @@ import type {
   ISeriesPrimitivePaneRenderer,
   ISeriesPrimitivePaneView,
   Logical,
+  PrimitiveHoveredItem,
   SeriesAttachedParameter,
   SeriesPrimitivePaneViewZOrder,
   Time,
@@ -190,6 +191,60 @@ export function computeTrendlineSegments(
     }
   }
   return segments
+}
+
+/** Default pixel tolerance for hovering a trendline (Plan 0067 phase 2 /
+ * ADR-0061). Small enough that a hover near a dense cluster picks one line, big
+ * enough that a 2px line is easy to catch; pinned in the hit-test unit test. */
+export const TRENDLINE_HIT_TOLERANCE_PX = 5
+
+/**
+ * Pure: shortest distance (px) from point `(px,py)` to the segment
+ * `(x1,y1)-(x2,y2)`. Projects the point onto the segment, clamping the parameter
+ * to `[0,1]` so an off-the-end projection measures to the nearer endpoint; a
+ * degenerate zero-length segment measures to its point.
+ */
+export function pointSegmentDistance(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): number {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1)
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq
+  t = Math.max(0, Math.min(1, t))
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+}
+
+/**
+ * Pure: index of the spec-group whose nearest drawn segment is closest to
+ * `(px,py)` within `tolerance` px, or `null` when every group is farther.
+ * `groups[i]` are the pixel segments of spec `i`. Ties resolve to the LAST group
+ * (later specs draw over earlier, so the topmost line wins the hover).
+ */
+export function nearestTrendlineGroup(
+  groups: readonly (readonly TrendlineSegment[])[],
+  px: number,
+  py: number,
+  tolerance: number,
+): number | null {
+  let best: number | null = null
+  let bestDist = tolerance
+  for (let i = 0; i < groups.length; i += 1) {
+    for (const seg of groups[i]) {
+      const d = pointSegmentDistance(px, py, seg.x1, seg.y1, seg.x2, seg.y2)
+      if (d <= bestDist) {
+        bestDist = d
+        best = i
+      }
+    }
+  }
+  return best
 }
 
 /**
@@ -368,21 +423,57 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
    * `resolveTimeX`, so projected/extended lines still draw; the price axis
    * extrapolates natively via `priceToCoordinate`. */
   currentSegments(): TrendlineSegment[] {
+    return this.currentSegmentsBySpec().flat()
+  }
+
+  /** Pixel segments grouped per spec (parallel to `this.specs`) so a hit test
+   * can map a hovered pixel back to the owning spec. `currentSegments()` is just
+   * the flattened form. Empty until attached (chart/series present). */
+  private currentSegmentsBySpec(): TrendlineSegment[][] {
     const timeScale = this.chart?.timeScale()
     const series = this.series
     if (!timeScale || !series) return []
     const barTimes = barTimesFromSeries(series.data())
-    return computeTrendlineSegments(
-      this.specs,
-      (t) =>
-        resolveTimeX(
-          t,
-          (tt) => timeScale.timeToCoordinate(tt),
-          barTimes,
-          (logical) => timeScale.logicalToCoordinate(logical as Logical),
-        ),
-      (p) => series.priceToCoordinate(p),
-      this.colors,
+    const timeToX = (t: UTCTimestamp): number | null =>
+      resolveTimeX(
+        t,
+        (tt) => timeScale.timeToCoordinate(tt),
+        barTimes,
+        (logical) => timeScale.logicalToCoordinate(logical as Logical),
+      )
+    const priceToY = (p: number): number | null => series.priceToCoordinate(p)
+    return this.specs.map((spec) =>
+      computeTrendlineSegments([spec], timeToX, priceToY, this.colors),
     )
+  }
+
+  /** The trendline spec drawn nearest the pixel `(x,y)` within the hover
+   * tolerance, or `null` (Plan 0067 phase 2). Feeds the chart's hover tooltip
+   * with the hovered line's pattern + state. Returns `null` while hidden. */
+  hitTestTrendline(x: number, y: number): TrendlineSpec | null {
+    if (!this.visible) return null
+    const idx = nearestTrendlineGroup(
+      this.currentSegmentsBySpec(),
+      x,
+      y,
+      TRENDLINE_HIT_TOLERANCE_PX,
+    )
+    return idx === null ? null : this.specs[idx]
+  }
+
+  /** lightweight-charts' primitive hover hook: reports the hovered line so the
+   * library sets a pointer cursor and populates `MouseEventParams.hoveredObjectId`
+   * (Plan 0067 phase 2 / ADR-0061). The tooltip reads the spec via
+   * `hitTestTrendline`; this only drives the cursor affordance. */
+  hitTest(x: number, y: number): PrimitiveHoveredItem | null {
+    if (!this.visible) return null
+    const idx = nearestTrendlineGroup(
+      this.currentSegmentsBySpec(),
+      x,
+      y,
+      TRENDLINE_HIT_TOLERANCE_PX,
+    )
+    if (idx === null) return null
+    return { externalId: `${TRENDLINE_LAYER_ID}:${idx}`, zOrder: 'top', cursorStyle: 'pointer' }
   }
 }

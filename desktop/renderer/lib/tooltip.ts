@@ -11,7 +11,7 @@
  */
 import type { UTCTimestamp } from 'lightweight-charts'
 
-import type { MarkerKind, OverlaySpec } from '../types/events'
+import type { MarkerKind, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { ChartMarker } from './markers'
 
 export interface OverlayReading {
@@ -25,6 +25,35 @@ export interface TooltipContent {
   markers: string[]
   /** Each hovered overlay line's name + value at the crosshair. */
   overlays: OverlayReading[]
+  /** Hovered trendline read-outs — pattern + state (Plan 0067 phase 2 /
+   * ADR-0061). Absent when the cursor isn't over a line. */
+  trendlines?: string[]
+}
+
+/** Human-readable names for the classical chart-pattern types the detector emits
+ * (mirror of `CHART_PATTERNS`). Keyed by the wire `pattern` value. */
+const PATTERN_DISPLAY_NAMES: Record<string, string> = {
+  head_shoulders: 'Head & shoulders',
+  inverse_head_shoulders: 'Inverse head & shoulders',
+  double_top: 'Double top',
+  double_bottom: 'Double bottom',
+  ascending_triangle: 'Ascending triangle',
+  descending_triangle: 'Descending triangle',
+  symmetrical_triangle: 'Symmetrical triangle',
+  rising_wedge: 'Rising wedge',
+  falling_wedge: 'Falling wedge',
+}
+
+/**
+ * Read-out for a hovered trendline: pattern name + state, e.g. "Rising wedge —
+ * confirmed" (Plan 0067 phase 2 / ADR-0061). State comes from `style`
+ * (solid=confirmed, dashed=forming); an unknown/absent pattern reads
+ * "Trendline". Pattern + state only — role stays in the data (ADR-0061).
+ */
+export function trendlineTooltipText(spec: TrendlineSpec): string {
+  const name = (spec.pattern != null && PATTERN_DISPLAY_NAMES[spec.pattern]) || 'Trendline'
+  const state = spec.style === 'dashed' ? 'forming' : 'confirmed'
+  return `${name} — ${state}`
 }
 
 /** Default gap (px) between the crosshair and the tooltip box. */

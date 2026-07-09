@@ -14,13 +14,17 @@ import type { SeriesAttachedParameter, Time, UTCTimestamp } from 'lightweight-ch
 
 import type { TrendlineSpec } from '../types/events'
 import {
+  TRENDLINE_HIT_TOLERANCE_PX,
   TrendlinePrimitive,
   computeTrendlineSegments,
   dedupeTrendlines,
+  nearestTrendlineGroup,
+  pointSegmentDistance,
   resolveTimeX,
   timeToFractionalLogical,
   trendlineColor,
   type TrendlineColors,
+  type TrendlineSegment,
 } from './trendlines'
 
 const COLORS: TrendlineColors = {
@@ -196,6 +200,53 @@ describe('dedupeTrendlines', () => {
   })
 })
 
+// Plan 0067 phase 2: the trendline hover hit test — pure point-to-segment
+// distance + nearest-group selection, canvas-free.
+const seg = (x1: number, y1: number, x2: number, y2: number): TrendlineSegment => ({
+  x1,
+  y1,
+  x2,
+  y2,
+  color: '#000',
+  dashed: false,
+})
+
+describe('pointSegmentDistance', () => {
+  it('is zero for a point on the segment', () => {
+    expect(pointSegmentDistance(5, 0, 0, 0, 10, 0)).toBe(0)
+  })
+
+  it('measures the perpendicular distance to the segment interior', () => {
+    expect(pointSegmentDistance(5, 3, 0, 0, 10, 0)).toBeCloseTo(3)
+  })
+
+  it('measures to the nearer ENDPOINT when the projection falls off the end', () => {
+    expect(pointSegmentDistance(-2, 0, 0, 0, 10, 0)).toBeCloseTo(2) // before start
+    expect(pointSegmentDistance(13, 0, 0, 0, 10, 0)).toBeCloseTo(3) // past end
+  })
+
+  it('handles a degenerate zero-length segment as distance to its point', () => {
+    expect(pointSegmentDistance(5, 8, 5, 5, 5, 5)).toBeCloseTo(3)
+  })
+})
+
+describe('nearestTrendlineGroup', () => {
+  const groups = [[seg(0, 0, 10, 0)], [seg(0, 20, 10, 20)]]
+
+  it('returns the index of the group whose nearest segment is within tolerance', () => {
+    expect(nearestTrendlineGroup(groups, 5, 1, 5)).toBe(0)
+    expect(nearestTrendlineGroup(groups, 5, 19, 5)).toBe(1)
+  })
+
+  it('returns null when every group is farther than the tolerance', () => {
+    expect(nearestTrendlineGroup(groups, 5, 10, 5)).toBeNull() // 10px from both
+  })
+
+  it('breaks a tie toward the LAST (topmost-drawn) group', () => {
+    expect(nearestTrendlineGroup(groups, 5, 10, 10)).toBe(1) // equidistant, tol 10
+  })
+})
+
 // Plan 0064 phase 1: the off-grid time→x fallback. `timeToCoordinate` is
 // null-for-off-grid; these helpers map an anchor time onto the bar-grid logical
 // scale (interpolating/extrapolating) so projected/extended lines still draw.
@@ -337,5 +388,49 @@ describe('TrendlinePrimitive', () => {
     expect(primitive.currentSegments()[0].color).toBe(COLORS.head_shoulders)
     primitive.setColors({ ...COLORS, head_shoulders: '#123456' })
     expect(primitive.currentSegments()[0].color).toBe('#123456')
+  })
+
+  // Plan 0067 phase 2: hover hit test. NECKLINE draws (100,80)-(160,40) under the
+  // stub scales, so its midpoint is (130,60).
+  it('hitTestTrendline returns the spec for a cursor near a line and null when far', () => {
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    primitive.setTrendlines([NECKLINE])
+    expect(primitive.hitTestTrendline(130, 60)).toBe(NECKLINE) // on the line
+    expect(primitive.hitTestTrendline(130, 200)).toBeNull() // far below
+  })
+
+  it('hitTestTrendline respects the pixel tolerance', () => {
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    // A horizontal line is easiest to reason about: (100,80)→(160,80) at y=80.
+    const flat: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 10 }, // priceToY 120-4*10 = 80
+        { ts: T2, price: 10 },
+      ],
+      style: 'solid',
+      pattern: 'double_top',
+    }
+    primitive.setTrendlines([flat])
+    expect(primitive.hitTestTrendline(130, 80 + TRENDLINE_HIT_TOLERANCE_PX)).toBe(flat) // at tol
+    expect(primitive.hitTestTrendline(130, 80 + TRENDLINE_HIT_TOLERANCE_PX + 1)).toBeNull() // past tol
+  })
+
+  it('hitTestTrendline returns null while hidden', () => {
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    primitive.setTrendlines([NECKLINE])
+    primitive.setVisible(false)
+    expect(primitive.hitTestTrendline(130, 60)).toBeNull()
+  })
+
+  it('hitTest (library hook) reports a hovered item near a line, null when far', () => {
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    primitive.setTrendlines([NECKLINE])
+    const hit = primitive.hitTest(130, 60)
+    expect(hit).toMatchObject({ externalId: 'trendlines:0', zOrder: 'top', cursorStyle: 'pointer' })
+    expect(primitive.hitTest(130, 200)).toBeNull()
   })
 })

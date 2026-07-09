@@ -59,6 +59,11 @@ export function ChartTooltip({
       role="tooltip"
       style={{ left, top }}
     >
+      {(content.trendlines ?? []).map((label, i) => (
+        <div key={`trendline-${i}`} className={styles.trendline} data-testid="tooltip-trendline">
+          {label}
+        </div>
+      ))}
       {content.markers.map((label, i) => (
         <div key={`marker-${i}`} className={styles.marker} data-testid="tooltip-marker">
           {label}

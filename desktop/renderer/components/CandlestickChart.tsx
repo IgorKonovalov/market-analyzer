@@ -52,6 +52,7 @@ import {
   type TooltipContent,
   overlayLabel,
   tooltipAtTime,
+  trendlineTooltipText,
 } from '../lib/tooltip'
 import { ChartTooltip } from './ChartTooltip'
 import { LayersPanel, type ChartLayer } from './LayersPanel'
@@ -1000,20 +1001,43 @@ export function CandlestickChart({
     const chart = chartRef.current
     if (!chart) return
     const handler = (param: MouseEventParams): void => {
-      if (param.time === undefined || param.point === undefined) {
+      // A trendline can extend past the last bar, so the pointer may be over a
+      // line while `param.time` is undefined — gate only on `point`, and compute
+      // the time-keyed marker/overlay content only when a time is present.
+      if (param.point === undefined) {
         setTooltip(null)
         return
       }
       const readings: OverlayReading[] = []
-      for (const { spec, series } of overlaySeriesRef.current.values()) {
-        const datum = param.seriesData.get(series)
-        const value = datum !== undefined ? (datum as LineData).value : undefined
-        if (typeof value === 'number') {
-          readings.push({ label: overlayLabel(spec), value })
+      if (param.time !== undefined) {
+        for (const { spec, series } of overlaySeriesRef.current.values()) {
+          const datum = param.seriesData.get(series)
+          const value = datum !== undefined ? (datum as LineData).value : undefined
+          if (typeof value === 'number') {
+            readings.push({ label: overlayLabel(spec), value })
+          }
         }
       }
-      const content = tooltipAtTime(param.time as UTCTimestamp, annotations ?? [], readings)
-      setTooltip(content === null ? null : { content, x: param.point.x, y: param.point.y })
+      const timeContent =
+        param.time !== undefined
+          ? tooltipAtTime(param.time as UTCTimestamp, annotations ?? [], readings)
+          : null
+      // Trendline under the cursor (Plan 0067 phase 2): the primitive hit-tests
+      // the hovered pixel against its drawn segments and returns the spec, if any.
+      const hovered =
+        trendlinePrimitiveRef.current?.hitTestTrendline(param.point.x, param.point.y) ?? null
+      const trendlines = hovered ? [trendlineTooltipText(hovered)] : []
+      const markers = timeContent?.markers ?? []
+      const overlays = timeContent?.overlays ?? []
+      if (markers.length === 0 && overlays.length === 0 && trendlines.length === 0) {
+        setTooltip(null)
+        return
+      }
+      setTooltip({
+        content: { markers, overlays, trendlines },
+        x: param.point.x,
+        y: param.point.y,
+      })
     }
     chart.subscribeCrosshairMove(handler)
     return () => chart.unsubscribeCrosshairMove(handler)
