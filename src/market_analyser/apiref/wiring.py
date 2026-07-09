@@ -45,7 +45,6 @@ from sqlalchemy.orm import Session, sessionmaker
 import market_analyser.api.mcp_app as mcp_app
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_app import create_mcp_components
-from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.types import (
     AccountHoldings,
     Bar,
@@ -73,6 +72,7 @@ from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
     WatchesRepository,
 )
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 _RENDERER_SECRET = "apiref-renderer-secret"
 _MCP_SECRET = "apiref-mcp-secret"

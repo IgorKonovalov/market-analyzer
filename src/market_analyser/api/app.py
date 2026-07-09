@@ -49,7 +49,6 @@ from market_analyser.api.routes.settings_stop import router as settings_stop_rou
 from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
-from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.config import default_app_data_dir
 from market_analyser.data.adapters.binance_account import BinanceAccountAdapter
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
@@ -91,6 +90,7 @@ from market_analyser.persistence.repositories.watches import (
 )
 from market_analyser.persistence.repository import BarRepository
 from market_analyser.persistence.secrets import SecretsStore
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({"/healthz"})
 MCP_PREFIX = "/mcp"

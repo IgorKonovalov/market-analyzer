@@ -33,7 +33,6 @@ from market_analyser.api.mcp_tools.derivatives_snapshot import (
     _build_snapshot,
     register_derivatives_snapshot,
 )
-from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.metric_series import (
     SERIES_BINANCE_FUNDING_RATE_BTCUSDT,
     SERIES_BINANCE_OPEN_INTEREST_BTCUSDT,
@@ -57,6 +56,7 @@ from market_analyser.persistence.engine import (
     make_session_factory,
 )
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 _HOUR = 3_600
 _DAY = 86_400

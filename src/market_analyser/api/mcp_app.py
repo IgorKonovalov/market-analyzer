@@ -76,7 +76,6 @@ from market_analyser.api.mcp_tools.volume_confirmation import register_volume_co
 from market_analyser.api.mcp_tools.walk_forward_backtest import register_walk_forward_backtest
 from market_analyser.api.mcp_tools.watches import register_watch_tools
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
-from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
 from market_analyser.data.backfill import BackfillCoordinator
@@ -101,6 +100,7 @@ from market_analyser.persistence.repositories.watches import (
     WatchesRepository,
 )
 from market_analyser.portfolio.sources import MANUAL_POSITIONS_FILENAME
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 
 def create_mcp_components(

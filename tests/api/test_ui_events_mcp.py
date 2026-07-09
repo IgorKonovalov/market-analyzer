@@ -40,8 +40,6 @@ from market_analyser.api.mcp_tools.get_pending_ui_events import (
     UI_EVENTS_RESOURCE_URI,
     _ResourceUpdateNotifier,
 )
-from market_analyser.ui_events import UIEventEnvelope
-from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.types import (
     Bar,
     MacroContext,
@@ -59,6 +57,8 @@ from market_analyser.persistence.engine import (
     make_engine,
     make_session_factory,
 )
+from market_analyser.ui_events import UIEventEnvelope
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 RENDERER_SECRET = "renderer-test-secret"
 _BASE = datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC)

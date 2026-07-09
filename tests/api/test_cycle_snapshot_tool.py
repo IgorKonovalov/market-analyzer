@@ -35,7 +35,6 @@ from market_analyser.api.mcp_tools.cycle_snapshot import (
     _build_snapshot,
     register_btc_cycle_snapshot,
 )
-from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.metric_series import (
     SERIES_COINGECKO_BTC_DOMINANCE,
     SERIES_COINMETRICS_BTC_MVRV,
@@ -60,6 +59,7 @@ from market_analyser.persistence.engine import (
     make_session_factory,
 )
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 _DAY = 86_400
 

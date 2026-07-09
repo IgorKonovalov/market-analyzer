@@ -30,7 +30,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from market_analyser.alerts.scheduler import WatchScheduler
 from market_analyser.alerts.types import Watch
-from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.data.timeframes import bar_duration
 from market_analyser.data.types import (
     Bar,
@@ -52,6 +51,7 @@ from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
     WatchesRepository,
 )
+from market_analyser.ui_events.buffer import UIEventBuffer
 
 _EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 _CREATED_AT = datetime(2026, 6, 1, tzinfo=UTC)
