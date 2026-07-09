@@ -15,6 +15,7 @@ import '@testing-library/jest-dom'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { SettingsView } from './SettingsView'
+import { getChartStyleOverrides, resetChartStyle } from '../lib/chartStyle'
 
 const INITIAL_SECRET = 'a'.repeat(64)
 const ROTATED_SECRET = 'b'.repeat(64)
@@ -92,6 +93,7 @@ function installMatchMedia(initialDark: boolean): void {
 beforeEach(() => {
   setupWindowApi()
   window.localStorage.clear()
+  resetChartStyle()
   delete document.documentElement.dataset.theme
   installMatchMedia(false)
 })
@@ -254,6 +256,90 @@ describe('SettingsView — Appearance theme control', () => {
     expect(document.documentElement.dataset.theme).toBeUndefined()
     expect(window.localStorage.getItem('ma.theme')).toBeNull()
     expect(radio('System').checked).toBe(true)
+  })
+})
+
+describe('SettingsView — Chart style controls (Plan 0068 phase 3)', () => {
+  const radio = (name: string): HTMLInputElement =>
+    screen.getByRole('radio', { name }) as HTMLInputElement
+
+  it('writes a colour override for the active theme and reflects the new value', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    const input = (await screen.findByTestId('chart-style-color-candleUp')) as HTMLInputElement
+
+    fireEvent.change(input, { target: { value: '#123456' } })
+
+    // Active effective theme is light (system + OS light); the override lands there.
+    expect(getChartStyleOverrides().light.candleUp?.color).toBe('#123456')
+    expect(getChartStyleOverrides().dark.candleUp).toBeUndefined()
+    // The control reflects the new value.
+    expect((screen.getByTestId('chart-style-color-candleUp') as HTMLInputElement).value).toBe(
+      '#123456',
+    )
+  })
+
+  it('writes an in-range line-width override', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    const width = (await screen.findByTestId('chart-style-width-ema')) as HTMLSelectElement
+
+    fireEvent.change(width, { target: { value: '3' } })
+
+    expect(getChartStyleOverrides().light.ema?.lineWidth).toBe(3)
+    expect((screen.getByTestId('chart-style-width-ema') as HTMLSelectElement).value).toBe('3')
+  })
+
+  it('edits the OTHER theme after switching theme in Appearance (per-theme model)', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    await screen.findByTestId('chart-style-editing-theme')
+    expect(screen.getByTestId('chart-style-editing-theme')).toHaveTextContent('Editing Light')
+
+    fireEvent.click(radio('Dark'))
+
+    expect(screen.getByTestId('chart-style-editing-theme')).toHaveTextContent('Editing Dark')
+    fireEvent.change(screen.getByTestId('chart-style-color-candleUp'), {
+      target: { value: '#0b0b0b' },
+    })
+    // The override targets dark now; light is untouched.
+    expect(getChartStyleOverrides().dark.candleUp?.color).toBe('#0b0b0b')
+    expect(getChartStyleOverrides().light.candleUp).toBeUndefined()
+  })
+
+  it('Reset chart style clears every override back to defaults', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    fireEvent.change(await screen.findByTestId('chart-style-color-vwap'), {
+      target: { value: '#abcdef' },
+    })
+    fireEvent.change(screen.getByTestId('chart-style-width-vwap'), { target: { value: '4' } })
+    expect(getChartStyleOverrides().light.vwap).toBeDefined()
+
+    fireEvent.click(screen.getByTestId('chart-style-reset'))
+
+    expect(getChartStyleOverrides()).toEqual({ light: {}, dark: {} })
+  })
+
+  it('labels each control and announces the theme indicator', async () => {
+    setupFetch()
+    setupClipboard()
+
+    render(<SettingsView />)
+    // Each colour input has an associated <label> (accessible name).
+    expect(await screen.findByTestId('chart-style-color-vwap')).toHaveAccessibleName('VWAP')
+    // The width control is labelled too.
+    expect(screen.getByTestId('chart-style-width-vwap')).toHaveAccessibleName('Width')
+    // The "Editing <theme>" indicator is a live region.
+    expect(screen.getByTestId('chart-style-editing-theme')).toHaveAttribute('aria-live', 'polite')
   })
 })
 

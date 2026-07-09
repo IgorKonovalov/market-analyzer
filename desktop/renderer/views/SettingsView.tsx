@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { ApiError, api } from '../api/client'
+import { ChartStyleControls } from '../components/ChartStyleControls'
 import { useThemePref } from '../hooks/useThemePref'
 import type { ThemePref } from '../lib/theme'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
@@ -171,6 +172,18 @@ export function SettingsView(): JSX.Element {
             ))}
           </div>
         </div>
+      </section>
+
+      <section className={styles.block} aria-labelledby="chart-style-heading">
+        <h2 id="chart-style-heading" className={styles.heading}>
+          Chart style
+        </h2>
+        <p className={styles.lede}>
+          Recolour and resize the candlestick chart&apos;s lines and markers. Colours and widths are
+          saved <strong>per theme</strong>; you&apos;re editing the theme the chart is currently
+          showing.
+        </p>
+        <ChartStyleControls />
       </section>
 
       <section className={styles.block} aria-labelledby="settings-heading">

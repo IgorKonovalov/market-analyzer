@@ -1,0 +1,116 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.editing {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* One styleable element: a label on the left, its colour + width controls on the
+   right. Wraps on narrow widths rather than clipping. */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  flex-wrap: wrap;
+}
+
+.label {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg);
+}
+
+.controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Native colour swatch — kept compact and square, with the theme's focus ring. */
+.colorInput {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elev);
+  cursor: pointer;
+}
+
+.colorInput:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.hex {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+  min-width: 62px;
+}
+
+.widthField {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.widthLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.widthSelect {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  cursor: pointer;
+}
+
+.widthSelect:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.reset {
+  align-self: flex-start;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.reset:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-fg-muted);
+}
+
+.reset:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
