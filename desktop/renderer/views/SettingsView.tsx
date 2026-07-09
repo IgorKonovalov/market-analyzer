@@ -12,7 +12,9 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { ApiError, api } from '../api/client'
 import { ChartStyleControls } from '../components/ChartStyleControls'
+import { useLocalePref } from '../hooks/useLocalePref'
 import { useThemePref } from '../hooks/useThemePref'
+import { t, type Locale } from '../lib/i18n'
 import type { ThemePref } from '../lib/theme'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 import styles from './SettingsView.module.css'
@@ -21,6 +23,13 @@ const THEME_OPTIONS: ReadonlyArray<{ value: ThemePref; label: string }> = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
   { value: 'system', label: 'System' },
+]
+
+// Language options are endonyms — a language is conventionally named in its own
+// script regardless of the active locale — so they are not routed through t().
+const LOCALE_OPTIONS: ReadonlyArray<{ value: Locale; label: string }> = [
+  { value: 'en', label: 'English' },
+  { value: 'ru', label: 'Русский' },
 ]
 
 interface State {
@@ -50,6 +59,7 @@ const COPY_FEEDBACK_MS = 1500
 export function SettingsView(): JSX.Element {
   const [state, setState] = useState<State>(INITIAL_STATE)
   const [themePref, setThemePref] = useThemePref()
+  const [localePref, setLocalePref] = useLocalePref()
 
   useEffect(() => {
     let alive = true
@@ -166,6 +176,31 @@ export function SettingsView(): JSX.Element {
                   value={opt.value}
                   checked={themePref === opt.value}
                   onChange={() => setThemePref(opt.value)}
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className={styles.field}>
+          <span className={styles.fieldLabel} id="language-label">
+            {t('settings.appearance.language.label')}
+          </span>
+          <div className={styles.segmented} role="radiogroup" aria-labelledby="language-label">
+            {LOCALE_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={styles.segment}
+                data-active={localePref === opt.value}
+                data-testid={`language-option-${opt.value}`}
+              >
+                <input
+                  type="radio"
+                  name="language-pref"
+                  className={styles.segmentInput}
+                  value={opt.value}
+                  checked={localePref === opt.value}
+                  onChange={() => setLocalePref(opt.value)}
                 />
                 {opt.label}
               </label>

@@ -1,6 +1,6 @@
 # 0069 — Russian localization (full parity)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-08
 > **Owner skill(s):** ui-builder, dev, human
 > **Related ADRs:** [0063-in-house-i18n-and-reason-codes](../adrs/0063-in-house-i18n-and-reason-codes.md)
