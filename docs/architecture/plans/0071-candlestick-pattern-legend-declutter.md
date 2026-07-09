@@ -1,6 +1,6 @@
 # 0071 — Candlestick pattern legend + declutter, and disambiguate the two scan buttons
 
-> **Status:** draft
+> **Status:** approved (user go 2026-07-09; implementation not started)
 > **Created:** 2026-07-09
 > **Owner skill(s):** ui-builder, human
 > **Related ADRs:** none new (renderer-only UX; reuses [ADR-0061](../adrs/0061-trendline-pattern-identity-and-colour.md)'s grouped-legend interaction and consumes [ADR-0045](../adrs/0045-candlestick-pattern-span-delivery.md)'s already-first-class candlestick identity; no ADR is reversed)
