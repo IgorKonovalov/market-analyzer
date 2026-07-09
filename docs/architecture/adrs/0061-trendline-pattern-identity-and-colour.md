@@ -1,6 +1,6 @@
 # ADR-0061 — Trendline colour by pattern type; identity via hover + grouped legend
 
-> **Status:** proposed (accepts at Plan 0067 close)
+> **Status:** accepted (Plan 0067 close, 2026-07-09)
 > **Date:** 2026-07-08
 > **Related plan(s):** 0067-trendline-pattern-identification
 > **Related ADRs:** amends the colour-model decision of [0049](0049-chart-trendline-overlay-primitive.md) (trendline colour by role); follows the tooltip-interaction-posture precedent of [0060](0060-glossary-tooltip-interaction-posture.md); consumes the detection identity of [0048](0048-classical-chart-pattern-detection.md); the geometry/wire model of [0049](0049-chart-trendline-overlay-primitive.md) and the delivery channel of [0059](0059-trendline-event-channel-and-recompute.md) are untouched.
