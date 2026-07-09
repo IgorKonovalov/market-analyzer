@@ -176,7 +176,6 @@ test('run.completed v1 (kind=backtest) auto-routes to BacktestView within 3 s', 
     dataDir,
   )
 
-  const mcpStartMs = Date.now()
   await window.evaluate((id) => {
     const fn = (
       globalThis as {
@@ -191,9 +190,11 @@ test('run.completed v1 (kind=backtest) auto-routes to BacktestView within 3 s', 
     fn({ kind: 'backtest', run_id: id, artifact_path: id })
   }, runId)
 
+  // The bounded `toBeVisible({ timeout })` is itself the "renders promptly"
+  // check — the view must appear within 3s of the run.completed event. (A
+  // separate wall-clock `elapsed < 3000` assertion was redundant and mildly
+  // flake-prone under CI scheduling jitter; dropped in Plan 0072 phase 7.)
   await expect(window.getByTestId('backtest-title')).toBeVisible({ timeout: 3_000 })
-  const elapsed = Date.now() - mcpStartMs
-  expect(elapsed).toBeLessThan(3_000)
 
   // Header contains strategy + symbol + timeframe.
   const titleText = await window.getByTestId('backtest-title').textContent()

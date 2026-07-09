@@ -1,10 +1,13 @@
 /**
  * Plan 0001 phase 5 done-when: candlestick chart for one symbol.
  *
- * Asserts the chart canvas appears after cold launch with the default symbol.
- * If the sidecar returns a non-200 (Yahoo down, cache miss with no network),
- * the renderer shows the error state instead — also captured so the spec
- * doesn't hang on a flake.
+ * Two distinct claims, kept as separate tests (Plan 0072 phase 7):
+ *  - Happy path (deterministic): with a seeded, network-free fixture, the chart
+ *    renders — `chartVisible` with a candlestick series and bars.
+ *  - Resilience (no-hang): with the default symbol and whatever the network
+ *    gives, OhlcvView always resolves to a DEFINITE state — chart, error, or
+ *    empty — never an infinite spinner. This one intentionally accepts any of
+ *    the three; it is a liveness claim, not a happy-path claim.
  *
  * Requires a built desktop bundle. Run with `pnpm --filter desktop test:e2e`.
  */
@@ -93,7 +96,205 @@ function latestEndMs(urls: string[], fromIndex: number): number {
   return ends.length > 0 ? Math.max(...ends) : Number.NEGATIVE_INFINITY
 }
 
-test('cold launch renders a candlestick chart for the default symbol', async () => {
+// --- deterministic seeded happy-path helpers (mirror lazy-history.spec.ts) --- //
+// A synthetic symbol real Yahoo does not list: its cache is seeded here, and an
+// unlisted symbol's upstream fetch returns nothing, so the chart renders purely
+// from the seeded SQLite bars — no network, no flake.
+const SEED_SYMBOL = 'SEEDCO'
+const SEED_TIMEFRAME = '1d'
+
+interface ChartRenderSnapshot {
+  seriesCount: number
+  barCount: number
+}
+
+/**
+ * Seed contiguous daily `Bar`s for `SEEDCO` into the SAME SQLite DB the launched
+ * sidecar uses, via a Python subprocess (`BarRepository.upsert_bars`). `dataDir`
+ * MUST be the live Electron's `userData` (forwarded as `MARKET_ANALYSER_DATA_DIR`
+ * so `load_config(None).db_path` resolves to the sidecar's file). Every calendar
+ * day is seeded so the requested window is cache-covered with no rim gaps.
+ * Returns the bar count written.
+ */
+function seedBars(startIso: string, endIso: string, dataDir: string): number {
+  const script = [
+    'import json, sys',
+    'from datetime import datetime, timedelta',
+    'from market_analyser.config import load_config',
+    'from market_analyser.data.types import Bar',
+    'from market_analyser.persistence.engine import apply_migrations, make_engine, make_session_factory',
+    'from market_analyser.persistence.repository import BarRepository',
+    'req = json.loads(sys.stdin.read())',
+    'symbol, timeframe = req["symbol"], req["timeframe"]',
+    'start = datetime.fromisoformat(req["start"])',
+    'end = datetime.fromisoformat(req["end"])',
+    'cfg = load_config(None)',
+    'engine = make_engine(cfg.db_path)',
+    'apply_migrations(engine)',
+    'repo = BarRepository(make_session_factory(engine))',
+    'bars = []',
+    'day = start',
+    'i = 0',
+    'while day <= end:',
+    '    base = 100.0 + (i % 50) * 0.5',
+    '    o = base',
+    '    c = base + 0.75',
+    '    hi = c + 0.5',
+    '    lo = o - 0.5',
+    '    bars.append(Bar(symbol=symbol, timeframe=timeframe, event_ts=day, open=o, high=hi, low=lo, close=c, volume=1000.0 + i, source="e2e-seed"))',
+    '    i += 1',
+    '    day = day + timedelta(days=1)',
+    'written = repo.upsert_bars(bars)',
+    'print(written)',
+  ].join('\n')
+
+  const result = spawnSync('uv', ['run', '--no-sync', 'python', '-c', script], {
+    cwd: REPO_ROOT,
+    input: JSON.stringify({
+      symbol: SEED_SYMBOL,
+      timeframe: SEED_TIMEFRAME,
+      start: startIso,
+      end: endIso,
+    }),
+    encoding: 'utf-8',
+    shell: false,
+    env: { ...process.env, MARKET_ANALYSER_DATA_DIR: dataDir },
+  })
+  if (result.status !== 0) {
+    throw new Error(`seedBars failed (exit ${result.status}): ${result.stderr}`)
+  }
+  return Number(result.stdout.trim())
+}
+
+interface ToolResult {
+  isError: boolean
+  content: string[]
+  structured: Record<string, unknown> | null
+}
+
+/**
+ * Drive the running sidecar's MCP `show_chart` tool from a Python subprocess so
+ * the renderer displays the seeded symbol. Reads the lockfile + secret from the
+ * same `MARKET_ANALYSER_DATA_DIR` we seeded with.
+ */
+function callMcpTool(tool: string, args: Record<string, unknown>, dataDir: string): ToolResult {
+  const script = [
+    'import asyncio, json, sys',
+    'from market_analyser.api.lockfile import read_lockfile',
+    'from market_analyser.api.mcp_secret import read_secret_record',
+    'from market_analyser.config import default_app_data_dir',
+    'import httpx',
+    'from mcp import ClientSession',
+    'from mcp.client.streamable_http import streamable_http_client',
+    'app_data = default_app_data_dir()',
+    'lock = read_lockfile(app_data / "sidecar.lock")',
+    'assert lock is not None, f"no sidecar.lock at {app_data}"',
+    'secret = read_secret_record(app_data / "mcp-secret.json").secret',
+    'req = json.loads(sys.stdin.read())',
+    'tool, args = req["tool"], req["args"]',
+    'async def run():',
+    '    async with httpx.AsyncClient(headers={"Authorization": f"Bearer {secret}"}, timeout=httpx.Timeout(30.0)) as http_client:',
+    '        async with streamable_http_client(f"http://127.0.0.1:{lock.port}/mcp", http_client=http_client) as (read_stream, write_stream, _):',
+    '            async with ClientSession(read_stream, write_stream) as session:',
+    '                await session.initialize()',
+    '                r = await session.call_tool(tool, args)',
+    '                return {"isError": r.isError, "content": [str(c) for c in r.content], "structured": r.structuredContent}',
+    'print(json.dumps(asyncio.run(run())))',
+  ].join('\n')
+
+  const result = spawnSync('uv', ['run', '--no-sync', 'python', '-c', script], {
+    cwd: REPO_ROOT,
+    input: JSON.stringify({ tool, args }),
+    encoding: 'utf-8',
+    shell: false,
+    env: { ...process.env, MARKET_ANALYSER_DATA_DIR: dataDir },
+  })
+  if (result.status !== 0) {
+    throw new Error(`callMcpTool(${tool}) failed (exit ${result.status}): ${result.stderr}`)
+  }
+  return JSON.parse(result.stdout) as ToolResult
+}
+
+async function readChartRender(
+  window: import('@playwright/test').Page,
+): Promise<ChartRenderSnapshot> {
+  const snapshot = await window.evaluate(
+    () => (globalThis as { __test_chart_render__?: unknown }).__test_chart_render__,
+  )
+  if (!snapshot) throw new Error('__test_chart_render__ not exposed on window')
+  return snapshot as ChartRenderSnapshot
+}
+
+/** YYYY-MM-DDT00:00:00+00:00 for a Date, as `show_chart`/seed both expect. */
+function isoMidnightUtc(d: Date): string {
+  const day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  return day.toISOString().replace('.000Z', '+00:00')
+}
+
+test('happy path: a seeded fixture renders the candlestick chart (deterministic, no Yahoo)', async () => {
+  const app = await electron.launch({
+    args: [join(__dirname, '..', 'dist', 'main', 'index.cjs')],
+  })
+  const window = await app.firstWindow()
+  await window.waitForLoadState('domcontentloaded')
+  const dataDir = await getDataDir(app)
+
+  await expect(window.getByRole('region', { name: /OHLCV view/ })).toBeVisible({
+    timeout: 15_000,
+  })
+
+  // Seed ~4 months of contiguous daily bars for SEEDCO ending ~now, then show
+  // a window fully inside the seeded range so the chart is cache-covered with
+  // no rim gaps — SEEDCO is unlisted upstream, so nothing is fetched.
+  const now = new Date()
+  const seedStart = new Date(now)
+  seedStart.setUTCMonth(seedStart.getUTCMonth() - 4)
+  const written = seedBars(isoMidnightUtc(seedStart), isoMidnightUtc(now), dataDir)
+  expect(written).toBeGreaterThan(100)
+
+  // Wait for the renderer to mount before driving show_chart.
+  await expect
+    .poll(
+      () =>
+        window.evaluate(
+          () =>
+            (globalThis as { __test_chart_state__?: { symbol?: string } }).__test_chart_state__
+              ?.symbol,
+        ),
+      { timeout: 15_000, intervals: [200] },
+    )
+    .toBeDefined()
+
+  const showStart = new Date(now)
+  showStart.setUTCMonth(showStart.getUTCMonth() - 1)
+  callMcpTool(
+    'show_chart',
+    {
+      symbol: SEED_SYMBOL,
+      timeframe: SEED_TIMEFRAME,
+      range_start: isoMidnightUtc(showStart),
+      range_end: isoMidnightUtc(now),
+    },
+    dataDir,
+  )
+
+  // The happy path, asserted specifically: the candlestick chart is visible
+  // with a real canvas AND the series drew bars from the seeded cache.
+  const chart = window.locator('[data-testid="candlestick-chart"]')
+  await expect(chart).toBeVisible({ timeout: 15_000 })
+  expect(await chart.locator('canvas').count()).toBeGreaterThan(0)
+  await expect
+    .poll(async () => (await readChartRender(window)).seriesCount, {
+      timeout: 15_000,
+      intervals: [200],
+    })
+    .toBeGreaterThanOrEqual(1)
+  expect((await readChartRender(window)).barCount).toBeGreaterThan(0)
+
+  await app.close()
+})
+
+test('resilience: cold launch resolves OhlcvView to a definite state (never an infinite spinner)', async () => {
   const app = await electron.launch({
     args: [join(__dirname, '..', 'dist', 'main', 'index.cjs')],
   })
@@ -107,12 +308,12 @@ test('cold launch renders a candlestick chart for the default symbol', async () 
   })
 
   // Then wait for the chart canvas OR a visible error state OR an empty
-  // state. All three prove the useOhlcv hook ran end-to-end (success,
-  // surfaced failure, or no-bars). A hang here would mean an infinite
-  // spinner, which is the UX failure the four-state discipline exists to
-  // prevent. The empty branch is a real user state (offline + uncached
-  // symbol + bad range) -- Plan 0004 phase 7 added a role+testid so this
-  // predicate can match it without re-routing it through the error state.
+  // state. This is deliberately a THREE-way accept: it is the liveness claim
+  // that the useOhlcv hook always resolves to a definite state (success,
+  // surfaced failure, or no-bars) and never hangs on an infinite spinner. The
+  // deterministic happy path is the seeded test above; the empty branch is a
+  // real user state (offline + uncached symbol + bad range), which Plan 0004
+  // phase 7 gave a role+testid so this predicate matches it directly.
   const chart = window.locator('[data-testid="candlestick-chart"]')
   const errorState = window.getByRole('alert')
   const emptyState = window.locator('[data-testid="ohlcv-empty"]')
@@ -122,11 +323,6 @@ test('cold launch renders a candlestick chart for the default symbol', async () 
     const emptyVisible = await emptyState.isVisible().catch(() => false)
     expect(chartVisible || errorVisible || emptyVisible).toBe(true)
   }).toPass({ timeout: 30_000 })
-
-  if (await chart.isVisible()) {
-    const canvasCount = await chart.locator('canvas').count()
-    expect(canvasCount).toBeGreaterThan(0)
-  }
 
   await app.close()
 })

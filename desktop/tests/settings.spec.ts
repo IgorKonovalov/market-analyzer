@@ -85,8 +85,11 @@ test('reveal → copy → rotate → old bearer is rejected by /mcp', async () =
   })
   expect(oldBearerResponse.status).toBe(401)
 
-  // New bearer must not 401 — proves the rotation succeeded and the new
-  // bearer is now the live one.
+  // New bearer must authenticate — proves the rotation succeeded and the new
+  // bearer is now the live one. Assert membership in the expected non-error
+  // set rather than a bare `not.toBe(401)`: this bare `tools/list` POST omits
+  // the MCP session/Accept negotiation, so the auth-passed response is a 200
+  // or a 400/406 from the MCP protocol layer — never a 401 (auth) or a 5xx.
   const newBearerResponse = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: 'POST',
     headers: {
@@ -95,7 +98,7 @@ test('reveal → copy → rotate → old bearer is rejected by /mcp', async () =
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
   })
-  expect(newBearerResponse.status).not.toBe(401)
+  expect([200, 400, 406]).toContain(newBearerResponse.status)
 
   await app.close()
 })

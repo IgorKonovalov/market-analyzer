@@ -37,13 +37,15 @@ test('sidecar fetch with injected bearer succeeds', async () => {
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
 
-  // OhlcvView fires `/ohlcv` on mount. A response that's not 401 proves the
-  // preload-injected bearer was accepted by the sidecar's auth middleware.
+  // OhlcvView fires `/ohlcv` on mount. Assert the exact 200 (not merely
+  // "not 401"): the injected bearer must be accepted AND the route must
+  // succeed. A 5xx would slip past a `not.toBe(401)` check on this security
+  // boundary — the whole point of the test is that the request went through.
   const response = await window.waitForResponse(
     (res) => res.url().includes('/ohlcv?') && res.url().includes('127.0.0.1'),
     { timeout: 15_000 },
   )
-  expect(response.status()).not.toBe(401)
+  expect(response.status()).toBe(200)
 
   await app.close()
 })
