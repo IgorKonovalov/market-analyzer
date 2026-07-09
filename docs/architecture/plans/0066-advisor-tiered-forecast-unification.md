@@ -1,6 +1,6 @@
 # 0066 — Advisor forecast unification: one tiered forecast for the recommendation
 
-> **Status:** approved (2026-07-08, user — "approve all plans, do not start work"). Not started; awaits an implementer session's "go".
+> **Status:** in-progress (2026-07-09, dev session — user "go"). Was approved 2026-07-08 (user — "approve all plans, do not start work").
 > **Created:** 2026-07-08
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [ADR-0057](../adrs/0057-forecast-feature-set-tiers.md) (the tier ladder this brings into the advisor), [ADR-0054](../adrs/0054-exogenous-forecast-features-multi-horizon.md) (the exogenous features the advisor's forecast leg gains), [ADR-0058](../adrs/0058-forecast-recommendation-explainability.md) (the explanation the advice artifact inherits for free), [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the advisory boundary — unchanged; this feeds a better forecast into the same fusion), [ADR-0046](../adrs/0046-mcp-large-result-delivery.md) (small-wire posture the basis enrichment respects)

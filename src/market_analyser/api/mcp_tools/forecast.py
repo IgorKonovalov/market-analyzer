@@ -37,11 +37,13 @@ wall-clock field anywhere, so re-running on the same cached bars + metric points
 
 The CPU-bound model work is offloaded with `asyncio.to_thread`; the body is
 factored into `_multi_forecast_response` / `_compute_multi_horizon_forecast` so
-it is unit-testable without a live MCP server. `_compute_forecast` remains the
-single-horizon v1 core the `recommend` tool consumes (its surface is
-deliberately untouched by Plan 0059). Persistence targets a gitignored
-`models/` root (sibling to `runs/`); when no such root is wired the forecast
-still computes and returns, it is simply not cached to disk.
+it is unit-testable without a live MCP server. `_compute_multi_horizon_forecast`
+is the single tiered core BOTH the `forecast` tool and the advisor's
+`recommend` leg run (Plan 0066 reversed Plan 0059's "single-horizon v1 core left
+untouched" note — the advisor now walks the same ladder so the two tools cannot
+disagree at a shared horizon). Persistence targets a gitignored `models/` root
+(sibling to `runs/`); when no such root is wired the forecast still computes and
+returns, it is simply not cached to disk.
 """
 
 from __future__ import annotations
@@ -178,92 +180,6 @@ FORECAST_DESCRIPTION = (
     "the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, "
     "15m, 4h, 1w."
 )
-
-
-def _compute_forecast(
-    *,
-    bars: list[Bar],
-    symbol: str,
-    timeframe: str,
-    horizon_bars: int,
-    flat_band: float,
-    n_splits: int,
-    seed: int,
-    models_dir: Path | None,
-) -> ForecastResult:
-    """The deterministic, CPU-bound core: validate, train the final model, predict
-    the latest bar, gate on the baseline, and (when accepted) persist."""
-
-    model_params = ModelParams(seed=seed)
-    validation = validate(
-        bars,
-        horizon_bars=horizon_bars,
-        flat_band=flat_band,
-        n_splits=n_splits,
-        model_params=model_params,
-    )
-
-    rows = build_feature_rows(bars)
-    defined_rows = [row for row in rows if row is not None]
-    if not defined_rows:
-        raise ValueError("not enough bars to build any feature row; fetch more history")
-    predict_row = defined_rows[-1]  # the latest bar we have features for — the as-of bar
-
-    labels = build_labels(bars, LabelParams(horizon_bars=horizon_bars, flat_band=flat_band))
-    train_rows, train_labels = align_samples(rows, labels)
-    if not train_rows or len({lab for lab in train_labels}) < 2:
-        raise ValueError("insufficient labelled history/variation to train a forecast model")
-
-    model = train(train_rows, train_labels, model_params)
-    lib_versions = model_lib_versions()
-    cutoff = model.training_cutoff
-    assert isinstance(cutoff, datetime)  # set from a bar event_ts in model.train
-    model_version = compute_model_version(
-        feature_set_id=FEATURE_SET_ID,
-        model_params=model.params,
-        label_params=LabelParams(horizon_bars=horizon_bars, flat_band=flat_band),
-        training_cutoff=cutoff,
-        lib_versions=lib_versions,
-    )
-    provenance = ForecastProvenance(
-        model_version=model_version,
-        feature_set_id=FEATURE_SET_ID,
-        training_cutoff=cutoff,
-        seed=model.params.seed,
-        lib_versions=lib_versions,
-    )
-
-    dist = predict_proba(model, [predict_row])[0]
-    if validation.beats_baseline:
-        prob_up: float | None = dist[Direction.UP]
-        prob_down: float | None = dist[Direction.DOWN]
-        prob_flat: float | None = dist[Direction.FLAT]
-        if models_dir is not None and not model_exists(model_version, root=models_dir):
-            save_model(
-                model,
-                model_version=model_version,
-                lib_versions=lib_versions,
-                root=models_dir,
-                label_params=LabelParams(horizon_bars=horizon_bars, flat_band=flat_band),
-            )
-    else:
-        prob_up = prob_down = prob_flat = None
-
-    edge_margin, edge_strength = _classify_edge(validation)
-
-    return ForecastResult(
-        symbol=symbol,
-        timeframe=timeframe,
-        as_of_bar_ts=predict_row.event_ts,
-        horizon_bars=horizon_bars,
-        prob_up=prob_up,
-        prob_down=prob_down,
-        prob_flat=prob_flat,
-        validation=validation,
-        provenance=provenance,
-        edge_margin=edge_margin,
-        edge_strength=edge_strength,
-    )
 
 
 def default_horizons(timeframe: str) -> tuple[int, ...]:
@@ -606,7 +522,6 @@ __all__ = [
     "MultiHorizonForecastResult",
     "SeriesInput",
     "_classify_edge",
-    "_compute_forecast",
     "_compute_multi_horizon_forecast",
     "_multi_forecast_response",
     "default_horizons",

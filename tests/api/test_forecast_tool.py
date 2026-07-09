@@ -57,7 +57,6 @@ from market_analyser.api.mcp_tools.forecast import (
     FALLBACK_REASON_UNWIRED,
     FORECAST_DESCRIPTION,
     _classify_edge,
-    _compute_forecast,
     _compute_multi_horizon_forecast,
     _multi_forecast_response,
     _normalise_horizons,
@@ -89,7 +88,7 @@ from market_analyser.forecast.features import (
     build_feature_rows_v2_deep,
 )
 from market_analyser.forecast.labels import Direction, LabelParams, build_labels
-from market_analyser.forecast.result import MultiHorizonForecastResult
+from market_analyser.forecast.result import HorizonForecast, MultiHorizonForecastResult
 from market_analyser.forecast.tiers import MIN_TIER_ROWS
 from market_analyser.forecast.validation import ForecastValidation
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
@@ -121,107 +120,81 @@ def _fake_validation(*, beats: bool) -> ForecastValidation:
 
 # --------------------------------------------------------------------------- #
 # Body-level tests (no live server) — fast, deterministic gate branches.       #
+#                                                                              #
+# Plan 0066 removed the single-horizon `_compute_forecast` (the advisor's old  #
+# v1-only leg); the guarantees it pinned — no-edge ships null probabilities    #
+# and does not persist, an accepted block ships a distribution and persists,   #
+# provenance names scikit-learn only — now hold on the ONE tiered core         #
+# `_compute_multi_horizon_forecast`, exercised here over a single horizon.     #
 # --------------------------------------------------------------------------- #
 
 
-def test_no_edge_result_ships_null_probabilities(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(forecast_tool, "validate", lambda bars, **kw: _fake_validation(beats=False))
-    result = _compute_forecast(
-        bars=list(BARS),
+def _one_block(
+    bars: list[Bar],
+    *,
+    models_dir: Path | None = None,
+    metric_lookup: Any = None,
+    flat_band: float = 0.001,
+    n_splits: int = 5,
+    seed: int = 1729,
+) -> tuple[MultiHorizonForecastResult, HorizonForecast]:
+    """Run the tiered core for exactly one horizon (h=1) and return the result
+    together with its single block — the shape the advisor's forecast leg
+    consumes after Plan 0066."""
+
+    result = _compute_multi_horizon_forecast(
+        bars=bars,
         symbol="SYN",
         timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=None,
+        horizons=(1,),
+        flat_band=flat_band,
+        n_splits=n_splits,
+        seed=seed,
+        models_dir=models_dir,
+        metric_lookup=metric_lookup,
     )
-    assert result.prob_up is None
-    assert result.prob_down is None
-    assert result.prob_flat is None
-    assert result.validation.beats_baseline is False
-    assert result.provenance.model_version  # provenance is always present
+    (block,) = result.horizons
+    return result, block
 
 
-def test_no_edge_result_does_not_persist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_edge_block_ships_null_probabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(forecast_tool, "validate", lambda bars, **kw: _fake_validation(beats=False))
-    _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=tmp_path,
-    )
+    _, block = _one_block(list(BARS))
+    assert block.prob_up is None
+    assert block.prob_down is None
+    assert block.prob_flat is None
+    assert block.validation.beats_baseline is False
+    assert block.provenance is not None
+    assert block.provenance.model_version  # provenance is always present when trainable
+
+
+def test_no_edge_block_does_not_persist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(forecast_tool, "validate", lambda bars, **kw: _fake_validation(beats=False))
+    _one_block(list(BARS), models_dir=tmp_path)
     assert not any(tmp_path.iterdir())  # rejected model is not written
 
 
-def test_accepted_result_ships_distribution_and_persists(
+def test_accepted_block_ships_distribution_and_persists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(forecast_tool, "validate", lambda bars, **kw: _fake_validation(beats=True))
-    result = _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=tmp_path,
-    )
-    assert result.prob_up is not None
-    assert result.prob_down is not None
-    assert result.prob_flat is not None
-    assert abs(result.prob_up + result.prob_down + result.prob_flat - 1.0) < 1e-9
+    _, block = _one_block(list(BARS), models_dir=tmp_path)
+    assert block.prob_up is not None
+    assert block.prob_down is not None
+    assert block.prob_flat is not None
+    assert abs(block.prob_up + block.prob_down + block.prob_flat - 1.0) < 1e-9
 
     # The accepted model is persisted under models/<model_version>/.
-    artifact_dir = tmp_path / result.provenance.model_version
+    assert block.provenance is not None
+    artifact_dir = tmp_path / block.provenance.model_version
     assert (artifact_dir / "model.joblib").is_file()
     assert (artifact_dir / "meta.json").is_file()
 
 
-def test_result_is_deterministic() -> None:
-    """Real pipeline (no stub): identical bars + seed → byte-identical result."""
-
-    first = _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=None,
-    )
-    second = _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=None,
-    )
-    assert first == second
-    assert first.model_dump() == second.model_dump()
-
-
-def test_provenance_lib_versions_are_scikit_learn_only() -> None:
-    result = _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=None,
-    )
-    prov = result.provenance
+def test_block_provenance_lib_versions_are_scikit_learn_only() -> None:
+    result, block = _one_block(list(BARS))
+    assert block.provenance is not None
+    prov = block.provenance
     assert prov.seed == 1729
     assert prov.feature_set_id == FEATURE_SET_ID
     assert set(prov.lib_versions) == {"scikit-learn"}  # statsmodels excluded (unused in prediction)
@@ -277,7 +250,7 @@ def test_classify_edge_splits_clear_marginal_no_edge_and_unscored() -> None:
     assert margin is None
 
 
-def test_marginal_beat_ships_probabilities_labelled_marginal(
+def test_marginal_beat_block_labelled_marginal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from math import isclose
@@ -287,44 +260,26 @@ def test_marginal_beat_ships_probabilities_labelled_marginal(
         "validate",
         lambda bars, **kw: _validation(skill=0.490, baseline=0.488, beats=True),
     )
-    result = _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=None,
-    )
+    _, block = _one_block(list(BARS))
     # prob_* still ship (it beat baseline) but the edge is flagged thin.
-    assert result.prob_up is not None
-    assert result.edge_strength == "marginal"
-    assert result.edge_margin is not None
-    assert isclose(result.edge_margin, 0.002)
+    assert block.prob_up is not None
+    assert block.edge_strength == "marginal"
+    assert block.edge_margin is not None
+    assert isclose(block.edge_margin, 0.002)
 
 
-def test_clear_beat_labelled_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_clear_beat_block_labelled_clear(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         forecast_tool,
         "validate",
         lambda bars, **kw: _validation(skill=0.61, baseline=0.40, beats=True),
     )
-    result = _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=None,
-    )
-    assert result.prob_up is not None
-    assert result.edge_strength == "clear"
+    _, block = _one_block(list(BARS))
+    assert block.prob_up is not None
+    assert block.edge_strength == "clear"
 
 
-def test_no_edge_labelled_no_edge_with_null_probabilities(
+def test_no_edge_block_labelled_no_edge_with_null_probabilities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -332,18 +287,9 @@ def test_no_edge_labelled_no_edge_with_null_probabilities(
         "validate",
         lambda bars, **kw: _validation(skill=0.30, baseline=0.40, beats=False),
     )
-    result = _compute_forecast(
-        bars=list(BARS),
-        symbol="SYN",
-        timeframe="1d",
-        horizon_bars=1,
-        flat_band=0.001,
-        n_splits=5,
-        seed=1729,
-        models_dir=None,
-    )
-    assert result.prob_up is None  # no-edge path unchanged
-    assert result.edge_strength == "no_edge"
+    _, block = _one_block(list(BARS))
+    assert block.prob_up is None  # no-edge path unchanged
+    assert block.edge_strength == "no_edge"
 
 
 def test_description_documents_edge_strength() -> None:

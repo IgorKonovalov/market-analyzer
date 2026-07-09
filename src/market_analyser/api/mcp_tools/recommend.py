@@ -52,7 +52,7 @@ from market_analyser.api.mcp_tools._validation import (
     _require_non_empty_symbol,
     _require_supported_timeframe,
 )
-from market_analyser.api.mcp_tools.forecast import _compute_forecast
+from market_analyser.api.mcp_tools.forecast import _compute_multi_horizon_forecast
 from market_analyser.backtest import evaluate_signals as evaluate_signals_core
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward import walk_forward
@@ -63,8 +63,9 @@ from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.timeframes import supported_timeframes_label, timeframe_spec
 from market_analyser.data.types import Bar
 from market_analyser.events import EventBus, RecommendationCompletedPayloadV1
+from market_analyser.forecast.exogenous import MetricAsOfLookup
 from market_analyser.forecast.model import DEFAULT_SEED
-from market_analyser.forecast.result import ForecastResult
+from market_analyser.forecast.result import ForecastResult, MultiHorizonForecastResult
 
 RECOMMEND_DESCRIPTION = (
     "ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single "
@@ -119,6 +120,37 @@ class RecommendationExplanationArtifact(BaseModel):
     inputs: RecommendationLegInputs
 
 
+def _as_forecast_result(multi: MultiHorizonForecastResult) -> ForecastResult:
+    """Adapt the single-horizon block the advisor requested (Plan 0066) to the
+    ``ForecastResult`` shape `fuse()` consumes. The tiered core
+    (`_compute_multi_horizon_forecast`) returns one block per requested horizon;
+    the advisor asks for exactly one, so there is exactly one block here.
+
+    A block that could not train at all (``provenance is None`` — e.g. every row
+    dropped during exogenous warm-up) preserves the ``ValueError`` the advisor's
+    forecast leg raised before this unification. An honest no-edge block
+    (``prob_*`` None but provenance present) flows through unchanged, exactly as
+    the pre-0066 v1 core produced it — fusion already reads that as a blocked
+    directional call."""
+
+    (block,) = multi.horizons
+    if block.provenance is None:
+        raise ValueError("insufficient labelled history/variation to train a forecast model")
+    return ForecastResult(
+        symbol=multi.symbol,
+        timeframe=multi.timeframe,
+        as_of_bar_ts=multi.as_of_bar_ts,
+        horizon_bars=block.horizon_bars,
+        prob_up=block.prob_up,
+        prob_down=block.prob_down,
+        prob_flat=block.prob_flat,
+        validation=block.validation,
+        provenance=block.provenance,
+        edge_margin=block.edge_margin,
+        edge_strength=block.edge_strength,
+    )
+
+
 def _assemble_and_fuse(
     *,
     strategy_module: ModuleType,
@@ -130,6 +162,7 @@ def _assemble_and_fuse(
     n_splits: int,
     seed: int,
     models_dir: Path | None,
+    metric_lookup: MetricAsOfLookup | None,
     now: datetime,
 ) -> tuple[Recommendation, RecommendationLegInputs]:
     """The CPU-bound core: compute all four analyst inputs from the same
@@ -147,16 +180,23 @@ def _assemble_and_fuse(
         timeframe=timeframe,
         n_splits=n_splits,
     )
-    forecast = _compute_forecast(
+    # The advisor's forecast leg runs the SAME tiered core the `forecast` tool
+    # uses (Plan 0066, ADR-0057): one horizon through the richest-first
+    # v2-full -> v2-deep -> v1 ladder, then adapted to the single-horizon shape
+    # fusion consumes. This closes the pre-0066 divergence where `recommend`'s
+    # v1-only forecast could disagree with the forecast tool at the same horizon.
+    multi_forecast = _compute_multi_horizon_forecast(
         bars=closed_bars,
         symbol=closed_bars[0].symbol,
         timeframe=timeframe,
-        horizon_bars=horizon_bars,
+        horizons=(horizon_bars,),
         flat_band=flat_band,
         n_splits=n_splits,
         seed=seed,
         models_dir=models_dir,
+        metric_lookup=metric_lookup,
     )
+    forecast = _as_forecast_result(multi_forecast)
     last_close = closed_bars[-1].close
     recommendation = fuse(
         snapshot=snapshot,
@@ -190,6 +230,7 @@ async def _recommend_response(
     flat_band: float,
     n_splits: int,
     seed: int,
+    metric_lookup: MetricAsOfLookup | None = None,
     now: datetime | None = None,
     runs_dir: Path | None = None,
 ) -> Recommendation:
@@ -274,6 +315,7 @@ async def _recommend_response(
         n_splits=n_splits,
         seed=seed,
         models_dir=models_dir,
+        metric_lookup=metric_lookup,
         now=resolved_now,
     )
 
@@ -311,13 +353,18 @@ def register_recommend(
     backfill_coordinator: BackfillCoordinator | None,
     event_bus: EventBus,
     models_dir: Path | None,
+    metric_lookup: MetricAsOfLookup | None = None,
     runs_dir: Path | None = None,
 ) -> None:
     """Bind the `recommend` tool to `server`. Dependencies are captured by
     closure so the tool body keeps the parameter list FastMCP introspects for
-    the (strict) input schema. ``runs_dir`` (Plan 0063, ADR-0058) enables the
-    per-call advice explanation artifact under ``runs_dir/advice/…``; without
-    it the fusion trace still rides the wire, only the full JSON is skipped."""
+    the (strict) input schema. ``metric_lookup`` (Plan 0066, ADR-0057) is the
+    ADR-0051 as_of surface the advisor's forecast leg walks the tier ladder
+    over — the SAME store the `forecast` tool receives; without it the leg
+    computes on the v1 OHLCV-only set and says so in its provenance. ``runs_dir``
+    (Plan 0063, ADR-0058) enables the per-call advice explanation artifact under
+    ``runs_dir/advice/…``; without it the fusion trace still rides the wire,
+    only the full JSON is skipped."""
 
     @server.tool(description=RECOMMEND_DESCRIPTION)
     async def recommend(
@@ -345,6 +392,7 @@ def register_recommend(
             flat_band=flat_band,
             n_splits=n_splits,
             seed=seed,
+            metric_lookup=metric_lookup,
             runs_dir=runs_dir,
         )
 
@@ -353,6 +401,7 @@ __all__ = [
     "RECOMMEND_DESCRIPTION",
     "RecommendationExplanationArtifact",
     "RecommendationLegInputs",
+    "_as_forecast_result",
     "_assemble_and_fuse",
     "_recommend_response",
     "register_recommend",

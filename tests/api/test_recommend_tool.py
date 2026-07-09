@@ -35,22 +35,38 @@ import pytest
 
 import market_analyser.advisor
 from market_analyser.api.mcp_tools import recommend as recommend_tool
+from market_analyser.api.mcp_tools.forecast import (
+    FALLBACK_REASON_UNWIRED,
+    _compute_multi_horizon_forecast,
+)
 from market_analyser.api.mcp_tools.recommend import (
     RECOMMEND_DESCRIPTION,
     RecommendationExplanationArtifact,
+    _as_forecast_result,
+    _assemble_and_fuse,
     _recommend_response,
 )
 from market_analyser.backtest.result import BacktestMetrics
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
+from market_analyser.contracts.strategy import discover
 from market_analyser.data.types import Bar
 from market_analyser.events import Envelope, EventBus
+from market_analyser.forecast.features import FEATURE_SET_ID
 from market_analyser.forecast.result import (
     EdgeStrength,
     ForecastProvenance,
     ForecastResult,
+    HorizonForecast,
+    MultiHorizonForecastResult,
 )
 from market_analyser.forecast.validation import ForecastValidation
+from market_analyser.persistence.engine import (
+    apply_migrations,
+    make_engine,
+    make_session_factory,
+)
+from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from tests.forecast._synthetic import synthetic_bars
 
 BARS = synthetic_bars(220)
@@ -126,6 +142,8 @@ def _forecast_result(
     prob_flat: float | None,
     beats_baseline: bool,
     edge_strength: EdgeStrength,
+    feature_set_id: str = "fs-v1",
+    fallback_reason: str | None = None,
 ) -> ForecastResult:
     return ForecastResult(
         symbol="SYN",
@@ -148,13 +166,43 @@ def _forecast_result(
         ),
         provenance=ForecastProvenance(
             model_version="deadbeef",
-            feature_set_id="fs-v1",
+            feature_set_id=feature_set_id,
             training_cutoff=LAST_TS,
             seed=1729,
             lib_versions={"scikit-learn": "1.8.0"},
+            fallback_reason=fallback_reason,
         ),
         edge_margin=0.08 if beats_baseline else -0.15,
         edge_strength=edge_strength,
+    )
+
+
+def _multi_forecast_result(**kwargs: Any) -> MultiHorizonForecastResult:
+    """Wrap `_forecast_result` into the single-block `MultiHorizonForecastResult`
+    the tiered core returns (Plan 0066) — so a stub at the
+    `_compute_multi_horizon_forecast` seam still drives the REAL
+    `_as_forecast_result` adapter the advisor now runs. Reconstructing the
+    result field-for-field from `_forecast_result` guarantees
+    `_as_forecast_result(_multi_forecast_result(**k)) == _forecast_result(**k)`."""
+
+    fr = _forecast_result(**kwargs)
+    assert fr.provenance is not None
+    block = HorizonForecast(
+        horizon_bars=fr.horizon_bars,
+        prob_up=fr.prob_up,
+        prob_down=fr.prob_down,
+        prob_flat=fr.prob_flat,
+        validation=fr.validation,
+        edge_margin=fr.edge_margin,
+        edge_strength=fr.edge_strength,
+        provenance=fr.provenance,
+    )
+    return MultiHorizonForecastResult(
+        symbol=fr.symbol,
+        timeframe=fr.timeframe,
+        as_of_bar_ts=fr.as_of_bar_ts,
+        feature_set_id=fr.provenance.feature_set_id,
+        horizons=[block],
     )
 
 
@@ -168,9 +216,13 @@ def _patch_legs(
     prob_flat: float | None = 0.15,
     beats_baseline: bool = True,
     edge_strength: EdgeStrength = "clear",
+    feature_set_id: str = "fs-v1",
+    fallback_reason: str | None = None,
 ) -> None:
-    """Stub the three expensive legs at the module seams; the condition
-    snapshot stays real."""
+    """Stub the two expensive backtest legs and the forecast core at the module
+    seams; the condition snapshot and the `_as_forecast_result` adapter stay
+    real (the adapter is on the advisor's forecast path — Plan 0066 — so every
+    fusion test exercises it)."""
 
     monkeypatch.setattr(
         recommend_tool,
@@ -184,13 +236,15 @@ def _patch_legs(
     )
     monkeypatch.setattr(
         recommend_tool,
-        "_compute_forecast",
-        lambda **kw: _forecast_result(
+        "_compute_multi_horizon_forecast",
+        lambda **kw: _multi_forecast_result(
             prob_up=prob_up,
             prob_down=prob_down,
             prob_flat=prob_flat,
             beats_baseline=beats_baseline,
             edge_strength=edge_strength,
+            feature_set_id=feature_set_id,
+            fallback_reason=fallback_reason,
         ),
     )
 
@@ -280,6 +334,192 @@ class TestHonestFlat:
         rec = _run()
         assert rec.direction == "flat"
         assert any("disagree" in line for line in rec.rationale)
+
+
+class TestForecastLegAdapter:
+    """Plan 0066: `_as_forecast_result` adapts the tiered core's single block to
+    the `ForecastResult` `fuse()` consumes. It preserves the pre-0066 failure
+    contract (a block that could not train at all → the same `ValueError` the
+    advisor's forecast leg raised before) while passing an honest no-edge block
+    (provenance present, `prob_*` null) straight through — fusion reads that as a
+    blocked directional call, not an error."""
+
+    def test_maps_untrainable_block_to_valueerror(self) -> None:
+        untrainable = HorizonForecast(
+            horizon_bars=1,
+            prob_up=None,
+            prob_down=None,
+            prob_flat=None,
+            validation=ForecastValidation(
+                horizon_bars=1,
+                n_splits=5,
+                n_scored=0,
+                skill=None,
+                baseline_skill=None,
+                persistence_skill=None,
+                majority_skill=None,
+                beats_baseline=False,
+                folds=[],
+            ),
+            edge_margin=None,
+            edge_strength="no_edge",
+            provenance=None,  # nothing trained — no model to version
+        )
+        multi = MultiHorizonForecastResult(
+            symbol="SYN",
+            timeframe="1d",
+            as_of_bar_ts=LAST_TS,
+            feature_set_id=FEATURE_SET_ID,
+            horizons=[untrainable],
+        )
+        with pytest.raises(ValueError, match="insufficient labelled history"):
+            _as_forecast_result(multi)
+
+    def test_passes_no_edge_block_through(self) -> None:
+        multi = _multi_forecast_result(
+            prob_up=None,
+            prob_down=None,
+            prob_flat=None,
+            beats_baseline=False,
+            edge_strength="no_edge",
+        )
+        fr = _as_forecast_result(multi)
+        assert fr.prob_up is None
+        assert fr.validation.beats_baseline is False
+        assert fr.provenance.feature_set_id == "fs-v1"
+        # A faithful projection of the block back to the single-horizon shape.
+        assert fr == _forecast_result(
+            prob_up=None,
+            prob_down=None,
+            prob_flat=None,
+            beats_baseline=False,
+            edge_strength="no_edge",
+        )
+
+
+class TestForecastUnification:
+    """Plan 0066 phase-1 done-when: the advisor's forecast leg runs the SAME
+    tiered core the `forecast` tool does — identical tier, probabilities, and
+    skill at a shared horizon (the 0063 divergence, closed) — and still falls
+    back to the stated v1 set when no metric store is wired."""
+
+    @staticmethod
+    def _leg_forecast(monkeypatch: pytest.MonkeyPatch, *, metric_lookup: Any) -> ForecastResult:
+        """Run `_assemble_and_fuse` with the two backtest legs stubbed but the
+        forecast leg REAL, and return the `ForecastResult` it fused from."""
+
+        monkeypatch.setattr(
+            recommend_tool,
+            "evaluate_signals_core",
+            lambda *a, **kw: _signal_evaluation("long"),
+        )
+        monkeypatch.setattr(
+            recommend_tool,
+            "walk_forward",
+            lambda *a, **kw: _walk_forward_result(0.8),
+        )
+        strategy_module = discover()["rsi"]
+        _, legs = _assemble_and_fuse(
+            strategy_module=strategy_module,
+            closed_bars=list(BARS),
+            params_instance=strategy_module.Params(),
+            timeframe="1d",
+            horizon_bars=1,
+            flat_band=0.001,
+            n_splits=5,
+            seed=1729,
+            models_dir=None,
+            metric_lookup=metric_lookup,
+            now=NOW,
+        )
+        return legs.forecast
+
+    def test_leg_matches_forecast_core_with_store_wired(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        engine = make_engine(":memory:")
+        apply_migrations(engine)
+        store = MetricPointsRepository(make_session_factory(engine))
+        fr = self._leg_forecast(monkeypatch, metric_lookup=store)
+        core = _compute_multi_horizon_forecast(
+            bars=list(BARS),
+            symbol="SYN",
+            timeframe="1d",
+            horizons=(1,),
+            flat_band=0.001,
+            n_splits=5,
+            seed=1729,
+            models_dir=None,
+            metric_lookup=store,
+        )
+        engine.dispose()
+
+        (block,) = core.horizons
+        assert block.provenance is not None
+        # Same tier, same probabilities, same skill — the divergence is closed.
+        assert fr.provenance.feature_set_id == block.provenance.feature_set_id
+        assert fr.prob_up == block.prob_up
+        assert fr.prob_down == block.prob_down
+        assert fr.prob_flat == block.prob_flat
+        assert fr.validation.skill == block.validation.skill
+        assert fr.validation.baseline_skill == block.validation.baseline_skill
+        assert fr.validation.beats_baseline == block.validation.beats_baseline
+        # The advisor's leg IS the tool's core, adapted — byte-identical.
+        assert fr == _as_forecast_result(core)
+
+    def test_leg_is_v1_with_unwired_store(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fr = self._leg_forecast(monkeypatch, metric_lookup=None)
+        # No store → the terminal v1 tier, stated (not silent) — the leg still
+        # produces a usable forecast offline, carrying the 0063 explanation.
+        assert fr.provenance.feature_set_id == FEATURE_SET_ID
+        assert fr.provenance.series_inputs == ()
+        assert fr.provenance.fallback_reason == FALLBACK_REASON_UNWIRED
+        assert fr.provenance.explanation is not None
+
+    def test_advice_artifact_forecast_leg_round_trips_the_tier(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The persisted advice explanation's forecast leg carries the tier's
+        `series_inputs` + the 0063 explanation and round-trips through the
+        artifact model — exactly the tiered core's output, adapted."""
+
+        monkeypatch.setattr(
+            recommend_tool,
+            "evaluate_signals_core",
+            lambda *a, **kw: _signal_evaluation("long"),
+        )
+        monkeypatch.setattr(
+            recommend_tool,
+            "walk_forward",
+            lambda *a, **kw: _walk_forward_result(0.8),
+        )
+        _run(runs_dir=tmp_path)  # real forecast leg, no store wired → v1
+
+        stamp = NOW.strftime("%Y%m%dT%H%M%S%fZ")
+        target = tmp_path / "advice" / f"{stamp}-SYN" / "explanation.json"
+        assert target.is_file()
+        artifact = RecommendationExplanationArtifact.model_validate_json(
+            target.read_text(encoding="utf-8")
+        )
+        leg = artifact.inputs.forecast
+        assert leg.provenance.feature_set_id == FEATURE_SET_ID
+        assert leg.provenance.series_inputs == ()  # v1 tier: named, empty
+        assert leg.provenance.fallback_reason == FALLBACK_REASON_UNWIRED
+        assert leg.provenance.explanation is not None  # 0063 explanation rides along
+
+        # The persisted leg IS the tiered core's output for these inputs.
+        core = _compute_multi_horizon_forecast(
+            bars=list(BARS),
+            symbol="SYN",
+            timeframe="1d",
+            horizons=(1,),
+            flat_band=0.001,
+            n_splits=5,
+            seed=1729,
+            models_dir=None,
+            metric_lookup=None,
+        )
+        assert leg == _as_forecast_result(core)
 
 
 def _run_draining_bus(**overrides: Any) -> tuple[Any, list[Envelope]]:

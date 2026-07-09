@@ -235,6 +235,9 @@ def create_mcp_components(
     # walk-forward edge, and the forecast into one Recommendation, or an honest
     # "no actionable edge". Advisory only: holds no trade key, places no order.
     # Shares the forecast models_dir so an accepted forecast model persists once.
+    # Plan 0066 (ADR-0057): shares the SAME metric store as the `forecast` tool
+    # so the advisor's forecast leg walks the identical v2-full -> v2-deep -> v1
+    # tier ladder — `recommend` and `forecast` no longer disagree at a horizon.
     # Publishes `recommendation.completed v1` (Plan 0039) so the viewer's
     # Recommendations view renders the advisory call live.
     # Plan 0063 (ADR-0058): with a runs_dir wired the tool also persists the
@@ -246,6 +249,7 @@ def create_mcp_components(
         backfill_coordinator=backfill_coordinator,
         event_bus=event_bus,
         models_dir=forecast_models_dir,
+        metric_lookup=metric_points_repository,
         runs_dir=runs_dir,
     )
 
