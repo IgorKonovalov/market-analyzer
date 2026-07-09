@@ -1,8 +1,11 @@
 """Plan 0007 phase 2 done-when: SSE /events stream + typed envelope schema.
 
 Defends:
-- Auth: header-bearer works, ?token=bearer works (only on /events), missing /
-  wrong / cross-tenant (MCP) bearer all 401.
+- Auth (ADR-0066 ticket): a minted ticket authorizes exactly one stream and is
+  single-use; absent / unknown / expired / reused tickets all 401; the mint
+  endpoint is renderer-bearer-gated; the durable bearer in `?token=` or an
+  Authorization header no longer authorizes /events (cutover); the bearer never
+  rides a request URL.
 - Stream shape: 200 with text/event-stream content-type; `retry: 5000` at start;
   `: ping` heartbeat at the configured interval; `data: <json>` for envelopes.
 - Pub/sub: two subscribers each receive the same envelope.
@@ -35,6 +38,7 @@ from pydantic import BaseModel, ValidationError
 
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
+from market_analyser.api.sse_ticket import SseTicketStore
 from market_analyser.data.types import (
     Bar,
     MacroContext,
@@ -61,6 +65,20 @@ from market_analyser.persistence.engine import (
 )
 
 RENDERER_SECRET = "renderer-test-secret"
+_AUTH = {"Authorization": f"Bearer {RENDERER_SECRET}"}
+
+
+class _FakeClock:
+    """Deterministic monotonic clock for TTL tests — no sleeping."""
+
+    def __init__(self, start: float = 1000.0) -> None:
+        self._t = start
+
+    def __call__(self) -> float:
+        return self._t
+
+    def advance(self, seconds: float) -> None:
+        self._t += seconds
 
 
 class _FakeProvider:
@@ -213,53 +231,99 @@ def live_server(app: FastAPI) -> Iterator[str]:
         thread.join(timeout=5.0)
 
 
-def test_events_with_query_bearer_returns_200_and_event_stream_content_type(
-    live_server: str,
+def _mint_ticket(base_url: str) -> str:
+    """Exchange the renderer bearer for a fresh SSE ticket via the mint endpoint."""
+    with httpx.Client(timeout=5.0) as c:
+        r = c.post(f"{base_url}/events/ticket", headers=_AUTH)
+        assert r.status_code == 200, r.text
+        return str(r.json()["ticket"])
+
+
+def test_events_ticket_authorizes_exactly_one_stream(live_server: str) -> None:
+    """A fresh ticket opens the stream (200, text/event-stream); the SAME ticket
+    is single-use, so a second open with it is rejected 401 (ADR-0066)."""
+    ticket = _mint_ticket(live_server)
+    with httpx.Client(timeout=5.0) as c:
+        with c.stream("GET", f"{live_server}/events?ticket={ticket}") as r:
+            assert r.status_code == 200
+            assert "text/event-stream" in r.headers.get("content-type", "")
+        # The ticket was consumed opening the stream above; reuse is rejected.
+        reused = c.get(f"{live_server}/events?ticket={ticket}")
+        assert reused.status_code == 401
+
+
+def test_events_mint_requires_renderer_bearer(client: TestClient, mcp_secret: str) -> None:
+    """The mint endpoint is ordinary renderer-bearer-gated: absent/wrong/MCP
+    bearers all 401, so a ticket can only be obtained by an authed renderer."""
+    assert client.post("/events/ticket").status_code == 401
+    assert (
+        client.post("/events/ticket", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    )
+    assert (
+        client.post("/events/ticket", headers={"Authorization": f"Bearer {mcp_secret}"}).status_code
+        == 401
+    )
+
+
+def test_events_rejects_absent_ticket(client: TestClient) -> None:
+    assert client.get("/events").status_code == 401
+
+
+def test_events_rejects_unknown_ticket(client: TestClient) -> None:
+    assert client.get("/events?ticket=not-a-real-ticket").status_code == 401
+
+
+def test_events_rejects_expired_ticket(
+    mcp_secret: str,
+    mcp_secret_path: Path,
+    annotations_repo: AnnotationsRepository,
+    event_bus: EventBus,
 ) -> None:
-    with (
-        httpx.Client(timeout=5.0) as c,
-        c.stream("GET", f"{live_server}/events?token={RENDERER_SECRET}") as r,
-    ):
-        assert r.status_code == 200
-        assert "text/event-stream" in r.headers.get("content-type", "")
+    """A ticket past its TTL is rejected — driven deterministically by a fake
+    clock injected into the store (no sleeping)."""
+    clock = _FakeClock()
+    store = SseTicketStore(ttl_seconds=10.0, clock=clock)
+    app = create_app(
+        secret=RENDERER_SECRET,
+        mcp_secret=mcp_secret,
+        mcp_secret_path=mcp_secret_path,
+        provider=_FakeProvider(),
+        annotations_repository=annotations_repo,
+        event_bus=event_bus,
+        sse_ticket_store=store,
+    )
+    with TestClient(app) as c:
+        ticket = c.post("/events/ticket", headers=_AUTH).json()["ticket"]
+        clock.advance(11.0)  # past the 10s TTL
+        assert c.get(f"/events?ticket={ticket}").status_code == 401
 
 
-def test_events_with_header_bearer_returns_200(live_server: str) -> None:
-    with (
-        httpx.Client(timeout=5.0) as c,
-        c.stream(
-            "GET",
-            f"{live_server}/events",
-            headers={"Authorization": f"Bearer {RENDERER_SECRET}"},
-        ) as r,
-    ):
-        assert r.status_code == 200
+def test_events_rejects_durable_bearer_in_token_query(client: TestClient) -> None:
+    """Cutover proof: the old `?token=<bearer>` accommodation is gone — the
+    durable bearer in the URL no longer authorizes the stream (ADR-0066)."""
+    assert client.get(f"/events?token={RENDERER_SECRET}").status_code == 401
 
 
-def test_events_rejects_missing_bearer(client: TestClient) -> None:
-    response = client.get("/events")
-    assert response.status_code == 401
+def test_events_rejects_header_bearer(client: TestClient) -> None:
+    """`/events` is ticket-only: even a valid renderer bearer in the header does
+    not authorize the stream — only a ticket does."""
+    assert client.get("/events", headers=_AUTH).status_code == 401
 
 
-def test_events_rejects_wrong_query_bearer(client: TestClient) -> None:
-    response = client.get("/events?token=wrong-secret")
-    assert response.status_code == 401
-
-
-def test_events_rejects_mcp_bearer_via_query(client: TestClient, mcp_secret: str) -> None:
-    """Cross-tenant: MCP bearer must not authenticate /events."""
-    response = client.get(f"/events?token={mcp_secret}")
-    assert response.status_code == 401
+def test_events_rejects_mcp_bearer_in_token_query(client: TestClient, mcp_secret: str) -> None:
+    """Cross-tenant: the MCP bearer in `?token=` does not authorize /events."""
+    assert client.get(f"/events?token={mcp_secret}").status_code == 401
 
 
 def test_events_rejects_mcp_bearer_via_header(client: TestClient, mcp_secret: str) -> None:
-    response = client.get("/events", headers={"Authorization": f"Bearer {mcp_secret}"})
-    assert response.status_code == 401
+    assert (
+        client.get("/events", headers={"Authorization": f"Bearer {mcp_secret}"}).status_code == 401
+    )
 
 
 def test_ohlcv_does_not_accept_query_bearer(client: TestClient) -> None:
-    """The `?token=` accommodation is /events-only — every other renderer route
-    stays header-only so the bearer doesn't leak into general request URLs."""
+    """No renderer route accepts the bearer in the URL — /events uses tickets and
+    every other route is header-only, so the bearer never rides a request URL."""
     response = client.get(
         "/ohlcv",
         params={
@@ -279,9 +343,10 @@ def test_ohlcv_does_not_accept_query_bearer(client: TestClient) -> None:
 
 
 def test_stream_starts_with_retry_directive(live_server: str) -> None:
+    ticket = _mint_ticket(live_server)
     with (
         httpx.Client(timeout=5.0) as c,
-        c.stream("GET", f"{live_server}/events?token={RENDERER_SECRET}") as r,
+        c.stream("GET", f"{live_server}/events?ticket={ticket}") as r,
     ):
         for chunk in r.iter_raw():
             assert chunk.startswith(b"retry: 5000\n\n"), chunk
@@ -296,9 +361,10 @@ def test_stream_emits_published_envelope_as_data_line(live_server: str, app: Fas
     server's app state since it's the same Python object (uvicorn's
     background thread shares the FastAPI instance with the test process)."""
     bus: EventBus = app.state.event_bus
+    ticket = _mint_ticket(live_server)
     with (
         httpx.Client(timeout=5.0) as c,
-        c.stream("GET", f"{live_server}/events?token={RENDERER_SECRET}") as r,
+        c.stream("GET", f"{live_server}/events?ticket={ticket}") as r,
     ):
         chunk_iter = r.iter_raw()
         # Drain the `retry:` preamble.
@@ -460,15 +526,16 @@ def test_envelope_version_matches_registered_model_version(event_bus: EventBus) 
 def test_bearer_does_not_appear_in_server_logs(
     live_server: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Capture log records produced while making a /events request and assert
-    the bearer doesn't appear in any *sidecar* log. The httpx client's own
-    request-line log carries the URL (and thus `?token=`); that's a
-    test-tooling artifact, not a sidecar leak, so we filter it out by logger
-    name. Defends against an accidental re-enable of uvicorn's access log."""
+    """Capture log records produced while minting a ticket and opening /events,
+    and assert the bearer doesn't appear in any *sidecar* log. The bearer now
+    rides only the mint POST's Authorization header — never a URL — so the
+    stream URL carries a throwaway ticket instead. Defends against an accidental
+    re-enable of uvicorn's access log (which would log the mint request line)."""
     caplog.set_level(logging.DEBUG)
+    ticket = _mint_ticket(live_server)
     with (
         httpx.Client(timeout=5.0) as c,
-        c.stream("GET", f"{live_server}/events?token={RENDERER_SECRET}") as r,
+        c.stream("GET", f"{live_server}/events?ticket={ticket}") as r,
     ):
         for chunk in r.iter_raw():
             _ = chunk

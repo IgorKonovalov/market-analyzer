@@ -48,6 +48,7 @@ from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.routes.watches import router as watches_router
+from market_analyser.api.sse_ticket import SseTicketStore
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.config import default_app_data_dir
 from market_analyser.data.adapters.binance_account import BinanceAccountAdapter
@@ -116,6 +117,7 @@ def create_app(
     engine: Engine | None = None,
     dev_origin: str | None = None,
     event_bus: EventBus | None = None,
+    sse_ticket_store: SseTicketStore | None = None,
     agent_mode_path: Path | None = None,
     metric_accrual_enabled: bool = False,
     metric_accrual_interval_seconds: int = DEFAULT_INTERVAL_SECONDS,
@@ -426,6 +428,13 @@ def create_app(
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.
     app.state.event_bus = effective_event_bus
+    # The SSE ticket store (Plan 0072 phase 4, ADR-0066): mints/consumes the
+    # short-lived single-use tickets that authenticate `GET /events` so the
+    # durable bearer never rides the stream URL. One per app instance; always
+    # present (the middleware and mint route both read it from app.state).
+    app.state.sse_ticket_store = (
+        sse_ticket_store if sse_ticket_store is not None else SseTicketStore()
+    )
     # Plan 0014: the buffer is the renderer→agent seam (POST /ui_events appends;
     # the phase-2 MCP tool/resource read it); the store gates the whole flow.
     app.state.ui_event_buffer = ui_event_buffer
@@ -453,16 +462,24 @@ def create_app(
         path = request.url.path
         if path in AUTH_EXEMPT_PATHS:
             return await call_next(request)
-        # Resolve the bearer token. The Authorization header is the primary
-        # path; for `/events` only (ADR-0017), `?token=<bearer>` is also
-        # accepted so browser `EventSource` (which can't set custom headers)
-        # can subscribe.
+        # The SSE stream authenticates with a short-lived, single-use ticket in
+        # the query string (ADR-0066), never the durable bearer: browser
+        # `EventSource` can't set headers, and a leaked ticket is worthless in
+        # seconds. The ticket is minted by the bearer-gated `POST /events/ticket`
+        # and consumed here (single use — one stream per ticket). Every other
+        # route, the mint endpoint included, takes the header-bearer path below.
+        if path == EVENTS_PATH:
+            ticket = request.query_params.get("ticket", "")
+            ticket_store: SseTicketStore | None = request.app.state.sse_ticket_store
+            if not ticket or ticket_store is None or not ticket_store.consume(ticket):
+                return JSONResponse({"detail": "unauthorized"}, status_code=401)
+            return await call_next(request)
+        # Resolve the bearer token from the Authorization header — the only auth
+        # path for every renderer/MCP route now that `/events` uses tickets.
         header = request.headers.get("authorization", "")
         scheme, _, token = header.partition(" ")
         if scheme.lower() != "bearer":
             token = ""
-        if not token and path == EVENTS_PATH:
-            token = request.query_params.get("token", "")
         if not token:
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         is_mcp = path == MCP_PREFIX or path.startswith(MCP_PREFIX + "/")
@@ -575,8 +592,10 @@ def create_app(
     # cannot stop the sidecar through this route.
     app.include_router(settings_stop_router)
 
-    # `GET /events` SSE stream. Renderer-bearer-gated; query-string ?token=
-    # accepted only on this route for EventSource compatibility (ADR-0017).
+    # `GET /events` SSE stream + `POST /events/ticket` mint. The stream is
+    # authenticated by a short-lived single-use ticket in `?ticket=` (ADR-0066),
+    # never the durable bearer; the mint endpoint is renderer-bearer-gated by the
+    # central middleware, `/events` by the ticket check in that middleware.
     app.include_router(events_router)
 
     # Plan 0014: agent-mode toggle (GET/PUT /agent_mode) + UI-event ingress

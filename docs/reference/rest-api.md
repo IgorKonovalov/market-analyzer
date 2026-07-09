@@ -4,7 +4,7 @@
 
 # REST API
 
-The 25 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
+The 26 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
 
 | Route | Summary |
 | --- | --- |
@@ -18,6 +18,7 @@ The 25 renderer-facing REST operations, from the FastAPI OpenAPI document. Every
 | [`POST /defi/pnl`](#post-defipnl) | Post Defi Pnl |
 | [`POST /defi/scan`](#post-defiscan) | Post Defi Scan |
 | [`GET /events`](#get-events) | Get Events |
+| [`POST /events/ticket`](#post-eventsticket) | Mint Events Ticket |
 | [`GET /healthz`](#get-healthz) | Healthz |
 | [`GET /news`](#get-news) | Get News |
 | [`GET /ohlcv`](#get-ohlcv) | Get Ohlcv |
@@ -176,6 +177,20 @@ Get Events
 No parameters.
 
 **Response:** `any`
+
+## `POST /events/ticket`
+
+Exchange the renderer bearer (checked by the central middleware) for a
+short-TTL, single-use SSE ticket (ADR-0066). The renderer opens the stream
+with `?ticket=<ticket>` and re-mints before every reconnect.
+
+**Auth:** renderer bearer
+
+**Parameters**
+
+No parameters.
+
+**Response:** `SseTicketResponse`
 
 ## `GET /healthz`
 

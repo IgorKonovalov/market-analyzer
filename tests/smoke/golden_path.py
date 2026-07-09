@@ -316,7 +316,10 @@ class SseReader:
     """
 
     def __init__(self, conn: Connection) -> None:
-        self._url = f"{conn.base_url}/events?token={urllib.parse.quote(conn.renderer_bearer)}"
+        # ADR-0066: the stream authenticates with a short-lived ticket minted
+        # from the bearer, never the bearer in the URL. Mint happens in `_run`.
+        self._base_url = conn.base_url
+        self._bearer = conn.renderer_bearer
         self.types: set[str] = set()
         self.connected = threading.Event()
         self._stop = threading.Event()
@@ -333,7 +336,15 @@ class SseReader:
 
     def _run(self) -> None:
         try:
-            req = urllib.request.Request(self._url)  # loopback only
+            mint_req = urllib.request.Request(
+                f"{self._base_url}/events/ticket",
+                method="POST",
+                headers={"Authorization": f"Bearer {self._bearer}"},
+            )
+            with urllib.request.urlopen(mint_req, timeout=REST_TIMEOUT_S) as mr:
+                ticket = json.loads(mr.read().decode("utf-8"))["ticket"]
+            url = f"{self._base_url}/events?ticket={urllib.parse.quote(ticket)}"
+            req = urllib.request.Request(url)  # loopback only
             with urllib.request.urlopen(req, timeout=REST_TIMEOUT_S) as resp:
                 for raw in resp:
                     self.connected.set()

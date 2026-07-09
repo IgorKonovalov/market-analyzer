@@ -158,6 +158,8 @@ def _mcp_headers(secret: str) -> dict[str, str]:
 def test_get_returns_current_secret_to_renderer_bearer(client: TestClient, mcp_secret: str) -> None:
     response = client.get("/settings/mcp-secret", headers=_renderer_headers())
     assert response.status_code == 200, response.text
+    # The body carries the live MCP bearer: no cache may retain it (ADR-0066).
+    assert response.headers.get("Cache-Control") == "no-store"
     body = response.json()
     assert body["secret"] == mcp_secret
     assert body.get("created_at")
@@ -177,6 +179,8 @@ def test_get_rejects_mcp_bearer(client: TestClient, mcp_secret: str) -> None:
 def test_post_rotate_returns_new_secret(client: TestClient, mcp_secret: str) -> None:
     response = client.post("/settings/mcp-secret/rotate", headers=_renderer_headers())
     assert response.status_code == 200, response.text
+    # The rotate response returns the new bearer in its body — no caching (ADR-0066).
+    assert response.headers.get("Cache-Control") == "no-store"
     body = response.json()
     new_secret = body["secret"]
     assert isinstance(new_secret, str)

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from market_analyser.api.mcp_secret import McpSecretRecord, read_secret_record, rotate_secret
@@ -68,12 +68,18 @@ def _secret_path(request: Request) -> Path:
 
 
 @router.get("/mcp-secret", response_model=McpSecretRecord)
-def get_mcp_secret(request: Request) -> McpSecretRecord:
+def get_mcp_secret(request: Request, response: Response) -> McpSecretRecord:
+    # `no-store`: the response body carries the live MCP bearer, so no cache
+    # (browser, proxy, or disk) may retain it (Plan 0072 phase 4, ADR-0066).
+    response.headers["Cache-Control"] = "no-store"
     return read_secret_record(_secret_path(request))
 
 
 @router.post("/mcp-secret/rotate", response_model=McpSecretRecord)
-def post_rotate_mcp_secret(request: Request) -> McpSecretRecord:
+def post_rotate_mcp_secret(request: Request, response: Response) -> McpSecretRecord:
+    # `no-store`: the rotate response likewise returns the new bearer in its
+    # body — it must not be cached anywhere (Plan 0072 phase 4, ADR-0066).
+    response.headers["Cache-Control"] = "no-store"
     record = rotate_secret(_secret_path(request))
     # Mutate the running app's in-memory secret so the bearer middleware's next
     # read sees the new value. Without this, the rewritten file would not
