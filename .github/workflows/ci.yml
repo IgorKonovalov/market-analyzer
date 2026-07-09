@@ -63,6 +63,11 @@ jobs:
       - name: Mypy (strict)
         run: uv run mypy --strict src tests
 
+      - name: API reference --check (Plan 0070)
+        # Re-renders the docs/reference/ tree from the live sidecar and fails on
+        # any drift, exactly like gen-types:check does for the renderer types.
+        run: uv run python -m market_analyser.apiref --check
+
       - name: Pytest with coverage (excludes @pytest.mark.network per Plan 0001)
         run: uv run pytest -m "not network" --cov=src --cov-fail-under=85
 

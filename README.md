@@ -9,7 +9,7 @@ This README is the entrypoint for developers cloning the repo; design docs live 
 ## Capabilities
 
 - **OHLCV candlestick charts** for one symbol at a time, timeframes `15m`/`1h`/`4h`/`1d`/`1w`/`1mo`. Fetches route per symbol to Yahoo Finance or (for exchange pairs like `BTCUSDT`) Binance spot klines; subsequent loads serve from a local SQLite cache keyed on `(symbol, timeframe, bar timestamp)`, with auto-backfill on cache miss and scroll-left lazy history. The data layer is written in-house under `src/market_analyser/data/`.
-- **Agent control over MCP** at `/mcp` (Streamable HTTP, long-lived bearer). 41 tools spanning market data, chart annotations, the agent-driven viewer (`show_chart`/`update_chart`/`highlight_pattern`), backtests + walk-forward + comparison, live strategy-signal evaluation, the TradingView screener, news & sentiment, live quotes, symbol search, technical-analysis snapshots, candlestick/chart-pattern scans, support/resistance levels, crypto cycle + derivatives metrics, the forecaster, the advisor, DeFi wallet scans + P&L reconstruction, and condition watches.
+- **Agent control over MCP** at `/mcp` (Streamable HTTP, long-lived bearer). 42 tools spanning market data, chart annotations, the agent-driven viewer (`show_chart`/`update_chart`/`highlight_pattern`), backtests + walk-forward + comparison, live strategy-signal evaluation, the TradingView screener, news & sentiment, live quotes, symbol search, technical-analysis snapshots, candlestick/chart-pattern scans, support/resistance levels, crypto cycle + derivatives metrics, the forecaster, the advisor, DeFi wallet scans + P&L reconstruction, and condition watches.
 - **Live agent-driven viewer** over an SSE stream at `/events`. Agents issue chart commands and the viewer reflects them within ~1 s; chart annotations persist in SQLite and survive restarts.
 - **Strategy contract + eight strategies** (`rsi`, `rsi_stop`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`, `chart_pattern_breakout`) — pure `generate_signals(bars, params) -> list[Signal]` modules (flat/long/**short**) with a pydantic `Params` model and a `META` constant. Discover them via `market-analyser strategies list [--json]`.
 - **Backtest engine** — pure `run(strategy, bars, params, **costs) -> BacktestResult` producing an equity curve, trade log, and extended metrics (Sharpe/Sortino/Calmar/profit factor/…), long **and short**, plus rolling walk-forward validation; deterministic and cross-process byte-identical modulo run provenance. Results persist to disk + a SQLite index and render in the backtest views.
@@ -21,6 +21,7 @@ This README is the entrypoint for developers cloning the repo; design docs live 
 - **DeFi wallet analysis** — paste an EVM address to discover decoded positions across Ethereum / Base / Arbitrum / Optimism via Zerion (`scan_wallet` / `POST /defi/scan`), enriched with deep on-chain LP state (tick range, in-range, uncollected fees) via direct RPC; consumed by the `defi-analyst` skill. Requires a Zerion key (see [Configuration](#configuration)).
 - **DeFi P&L reconstruction** (`compute_wallet_pnl` / `POST /defi/pnl`) — deterministic average-cost P&L by transaction replay with block-time pricing (DefiLlama, first-write-wins snapshot cache; immutable tx cache), realized/unrealized per position with vs-HODL for LPs, plus a best-effort Zerion cross-check. Positions the replay can't fully book are flagged honestly `incomplete` with the reason named — never guessed.
 - **Secure Electron shell** — `contextIsolation`, `sandbox`, no node integration, double-CSP, dual-bearer auth, in-app Light/Dark/System theming. The renderer reaches the sidecar only through a typed `window.api.*` bridge.
+- **Generated API reference** under [`docs/reference/`](docs/reference/) — every MCP tool, REST route, and SSE event, with parameters, return/payload shapes, and source links. Rendered from the live, fully-wired sidecar (so it can't drift from behaviour) and CI-gated against staleness ([ADR-0064](docs/architecture/adrs/0064-generated-sidecar-api-reference.md)).
 
 ## Architecture at a glance
 
@@ -226,6 +227,8 @@ uv run pytest -m network      # tests that hit the live network (off by default)
 uv run ruff check src tests   # lint
 uv run ruff format src tests  # format
 uv run mypy                   # strict type-check
+pnpm gen:api-docs             # regenerate the API reference under docs/reference/
+pnpm gen:api-docs:check       # CI check that the committed reference is in sync
 ```
 
 ### Desktop
