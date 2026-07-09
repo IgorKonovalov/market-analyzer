@@ -17,6 +17,7 @@ import type { LineData, UTCTimestamp, WhitespaceData } from 'lightweight-charts'
 
 import { computeEma, computeSma } from './indicators'
 import { DEFAULT_MARKER_COLORS } from './markers'
+import type { ChartLineElement } from './chartStyle'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlayKind, OverlaySpec } from '../types/events'
 
@@ -97,6 +98,16 @@ export function overlayColorFor(spec: OverlaySpec): string {
  * reads this token off the themed DOM so the line recolors with the theme. */
 export function overlayColorTokenFor(spec: OverlaySpec): string | null {
   return OVERLAY_REGISTRY[spec.kind]?.colorToken ?? null
+}
+
+/** The chart-style element an overlay line resolves its user-overridable colour +
+ * width from (Plan 0068 phase 2, ADR-0062). Only `ema`/`sma` have a styleable
+ * entry today; any other kind (supertrend, future kinds) returns `null` and the
+ * chart keeps the registry's static colour + the default overlay width. */
+export function overlayStyleElement(spec: OverlaySpec): ChartLineElement | null {
+  if (spec.kind === 'ema') return 'ema'
+  if (spec.kind === 'sma') return 'sma'
+  return null
 }
 
 /** Compute the overlay's line data, or `[]` for an unregistered kind or a

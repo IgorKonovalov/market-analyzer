@@ -27,6 +27,7 @@ import type {
   IChartApi,
   ISeriesApi,
   LineData,
+  LineWidth,
   Logical,
   MouseEventParams,
   SeriesMarker,
@@ -61,8 +62,8 @@ import {
   computeSupertrend,
   isSupportedOverlay,
   overlayColorFor,
-  overlayColorTokenFor,
   overlayLayerId,
+  overlayStyleElement,
   supertrendBands,
 } from '../lib/overlays'
 import { PatternSpanPrimitive, SPAN_LAYER_ID, SPAN_LAYER_LABEL, markersToSpans } from '../lib/spans'
@@ -83,6 +84,7 @@ import {
   subscribeEffective,
   type EffectiveTheme,
 } from '../lib/theme'
+import { resolveChartStyle, subscribeChartStyle, type ResolvedChartStyle } from '../lib/chartStyle'
 import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
@@ -97,23 +99,9 @@ import type { QuoteResponse } from '../types/sidecar/quote-response'
 import { timeframeDurationMs } from '../lib/timeframes'
 import styles from './CandlestickChart.module.css'
 
-// Fallback chart colors (light-theme values) used when a theme token is unset —
-// e.g. in jsdom unit tests where styles.css isn't loaded. At runtime the tokens
-// in styles.css win and follow the chosen theme. See `readChartColors`.
-const CHART_COLOR_FALLBACK = {
-  text: '#1a1a1a',
-  border: '#e5e5e5',
-  candleUp: '#15803d',
-  candleDown: '#b42318',
-  volume: '#cbd5e1',
-  volumeMa: '#64748b',
-  vwap: '#9333ea',
-  obv: '#0891b2',
-  markerClicked: '#2563eb',
-  markerBullish: DEFAULT_MARKER_COLORS.bullish,
-  markerBearish: DEFAULT_MARKER_COLORS.bearish,
-  markerNeutral: DEFAULT_MARKER_COLORS.neutral,
-} as const
+// Default width for an agent overlay line whose kind has no styleable width
+// (i.e. not ema/sma) — matches the literal the chart used before Plan 0068.
+const DEFAULT_OVERLAY_LINE_WIDTH = 2 as LineWidth
 
 interface ChartColors {
   text: string
@@ -130,37 +118,27 @@ interface ChartColors {
   markerNeutral: string
 }
 
-/** Read the chart palette off the themed DOM. lightweight-charts can't resolve
- * `var(--x)` (it hands strings straight to canvas), so each token is resolved to
- * a concrete color here, falling back to the light defaults when unset. */
-function readChartColors(el: HTMLElement): ChartColors {
-  const c = getComputedStyle(el)
-  const v = (name: string, fallback: string): string => c.getPropertyValue(name).trim() || fallback
-  return {
-    text: v('--color-fg', CHART_COLOR_FALLBACK.text),
-    border: v('--color-border', CHART_COLOR_FALLBACK.border),
-    candleUp: v('--chart-up', CHART_COLOR_FALLBACK.candleUp),
-    candleDown: v('--chart-down', CHART_COLOR_FALLBACK.candleDown),
-    volume: v('--chart-volume', CHART_COLOR_FALLBACK.volume),
-    volumeMa: v('--overlay-volume-ma', CHART_COLOR_FALLBACK.volumeMa),
-    vwap: v('--overlay-vwap', CHART_COLOR_FALLBACK.vwap),
-    obv: v('--overlay-obv', CHART_COLOR_FALLBACK.obv),
-    markerClicked: v('--marker-clicked', CHART_COLOR_FALLBACK.markerClicked),
-    markerBullish: v('--marker-bullish', CHART_COLOR_FALLBACK.markerBullish),
-    markerBearish: v('--marker-bearish', CHART_COLOR_FALLBACK.markerBearish),
-    markerNeutral: v('--marker-neutral', CHART_COLOR_FALLBACK.markerNeutral),
-  }
+/** Flatten a resolved chart style into the flat colour view several effects read
+ * (the styleable colours ⊕ the non-overridable chrome). Every drawn colour now
+ * resolves through the chart-style store (Plan 0068 phase 2, ADR-0062): styles.css
+ * theme tokens are the defaults, the user's per-theme overrides layer on top, and
+ * lightweight-charts is handed fully-resolved strings (it can't resolve `var()`). */
+function chartColorsFrom(style: ResolvedChartStyle): ChartColors {
+  return { ...style.colors, ...style.chrome }
 }
 
-/** Resolve an overlay series' color from its theme token, falling back to the
- * registry's static color when the token is unset/unknown. */
-function overlaySeriesColor(spec: OverlaySpec, el: HTMLElement): string {
-  const token = overlayColorTokenFor(spec)
-  if (token !== null) {
-    const resolved = getComputedStyle(el).getPropertyValue(token).trim()
-    if (resolved) return resolved
-  }
-  return overlayColorFor(spec)
+/** An agent overlay line's resolved colour: ema/sma read their styleable entry
+ * (honouring the user's override); any other kind keeps the registry colour. */
+function overlayStyleColor(spec: OverlaySpec, style: ResolvedChartStyle): string {
+  const element = overlayStyleElement(spec)
+  return element ? style.colors[element] : overlayColorFor(spec)
+}
+
+/** An agent overlay line's resolved width: ema/sma read their styleable width;
+ * any other kind keeps the default overlay width. */
+function overlayStyleWidth(spec: OverlaySpec, style: ResolvedChartStyle): LineWidth {
+  const element = overlayStyleElement(spec)
+  return (element ? style.widths[element] : DEFAULT_OVERLAY_LINE_WIDTH) as LineWidth
 }
 
 // Stable no-op for the lazy-history trigger when no `onReachLeftEdge` is wired
@@ -361,6 +339,16 @@ export function CandlestickChart({
   const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>(() =>
     resolveEffective(getStoredTheme()),
   )
+  // Latest effective theme in a ref so effects that create series (mount, overlay
+  // reconcile) can resolve the right theme's style overrides without listing
+  // `effectiveTheme` as a dep (which would remount / re-setData on a theme flip).
+  // The style-change/theme-recolor effect re-applies existing series in place.
+  const effectiveThemeRef = useRef(effectiveTheme)
+  effectiveThemeRef.current = effectiveTheme
+  // Bumped on any chart-style store mutation (Plan 0068 phase 2). The colour/width
+  // effects key on it so a user override re-resolves and re-applies in place — no
+  // remount, mirroring the theme-recolor path.
+  const [styleVersion, setStyleVersion] = useState(0)
   // Ephemeral hover-tooltip state (Plan 0047 phase 8): the crosshair content +
   // its position within the chart area. Null while not hovering a labelled bar
   // or an overlay line. Never persisted, never round-tripped to the sidecar.
@@ -502,9 +490,11 @@ export function CandlestickChart({
 
     // lightweight-charts hands these strings to canvas APIs that don't resolve
     // CSS variables; passing `var(--chart-up)` paints with the browser's
-    // invalid-color fallback. Resolve every token to a concrete color at mount
-    // (and again on theme change in the recolor effect below).
-    const colors = readChartColors(container)
+    // invalid-color fallback. Resolve every token (⊕ user overrides + widths) to
+    // concrete values at mount (and again on theme/style change in the effect
+    // below). The ref gives the current theme without making this effect re-run.
+    const style = resolveChartStyle(container, effectiveThemeRef.current)
+    const colors = chartColorsFrom(style)
 
     const chart = createChart(container, {
       layout: {
@@ -543,21 +533,21 @@ export function CandlestickChart({
     const volumeMaSeries = chart.addLineSeries({
       priceScaleId: VOLUME_SCALE_ID,
       color: colors.volumeMa,
-      lineWidth: 1,
+      lineWidth: style.widths.volumeMa as LineWidth,
       priceLineVisible: false,
       lastValueVisible: false,
     })
     const vwapSeries = chart.addLineSeries({
       priceScaleId: PRICE_SCALE_ID, // rides the main price scale alongside candles
       color: colors.vwap,
-      lineWidth: 2,
+      lineWidth: style.widths.vwap as LineWidth,
       priceLineVisible: false,
       lastValueVisible: false,
     })
     const obvSeries = chart.addLineSeries({
       priceScaleId: OBV_SCALE_ID,
       color: colors.obv,
-      lineWidth: 1,
+      lineWidth: style.widths.obv as LineWidth,
       priceLineVisible: false,
       lastValueVisible: false,
     })
@@ -642,6 +632,13 @@ export function CandlestickChart({
     vwapSeriesRef.current?.setData(computeVwap(bars, VWAP_PERIOD))
     obvSeriesRef.current?.setData(computeObv(bars))
 
+    // Resolve the style once for any series this reconcile CREATES (initial colour
+    // + width, overrides layered). Existing series get re-applied in place by the
+    // style/theme effect below, so a theme flip doesn't need to re-run this effect.
+    const overlayStyle = containerRef.current
+      ? resolveChartStyle(containerRef.current, effectiveThemeRef.current)
+      : null
+
     const desired = new Map<string, OverlaySpec>()
     for (const spec of overlays ?? []) {
       // price_line overlays are horizontal lines, reconciled in the price-line
@@ -674,12 +671,12 @@ export function CandlestickChart({
     for (const [key, spec] of desired) {
       let entry = overlaySeriesRef.current.get(key)
       if (entry === undefined) {
-        const color = containerRef.current
-          ? overlaySeriesColor(spec, containerRef.current)
-          : overlayColorFor(spec)
+        const color = overlayStyle ? overlayStyleColor(spec, overlayStyle) : overlayColorFor(spec)
         const series = chart.addLineSeries({
           color,
-          lineWidth: 2,
+          lineWidth: overlayStyle
+            ? overlayStyleWidth(spec, overlayStyle)
+            : DEFAULT_OVERLAY_LINE_WIDTH,
           priceLineVisible: false,
           lastValueVisible: false,
         })
@@ -692,9 +689,8 @@ export function CandlestickChart({
     // Supertrend reconcile (Plan 0049 phase 9): each supertrend overlay draws two
     // masked line series (up=bullish, down=bearish) so the line flips colour at
     // trend changes. Same add/remove/toggle discipline as the generic overlays.
-    const stColors = containerRef.current ? readChartColors(containerRef.current) : null
-    const upColor = stColors?.markerBullish ?? CHART_COLOR_FALLBACK.markerBullish
-    const downColor = stColors?.markerBearish ?? CHART_COLOR_FALLBACK.markerBearish
+    const upColor = overlayStyle?.colors.markerBullish ?? DEFAULT_MARKER_COLORS.bullish
+    const downColor = overlayStyle?.colors.markerBearish ?? DEFAULT_MARKER_COLORS.bearish
     const desiredSt = new Map<string, OverlaySpec>()
     for (const spec of overlays ?? []) {
       if (spec.kind !== 'supertrend') continue
@@ -840,7 +836,7 @@ export function CandlestickChart({
     const series = seriesRef.current
     const container = containerRef.current
     if (!series || !container) return
-    const colors = readChartColors(container)
+    const colors = chartColorsFrom(resolveChartStyle(container, effectiveTheme))
     // Drop annotations whose marker-direction layer is toggled off in the legend.
     const visibleAnnotations = (annotations ?? []).filter((a) => !hidden.has(markerLayerId(a.kind)))
     const base = annotationsToMarkers(
@@ -868,7 +864,7 @@ export function CandlestickChart({
       markers = [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
     }
     series.setMarkers(markers)
-  }, [annotations, clickedBarTs, effectiveTheme, hidden])
+  }, [annotations, clickedBarTs, effectiveTheme, hidden, styleVersion])
 
   // Multi-bar pattern span band (Plan 0049 phase 7): feed the span primitive the
   // current spans, theme-resolved direction colours, and the legend visibility.
@@ -879,7 +875,7 @@ export function CandlestickChart({
     const primitive = spanPrimitiveRef.current
     const container = containerRef.current
     if (!primitive || !container) return
-    const colors = readChartColors(container)
+    const colors = chartColorsFrom(resolveChartStyle(container, effectiveTheme))
     primitive.setColors({
       bullish: colors.markerBullish,
       bearish: colors.markerBearish,
@@ -887,7 +883,7 @@ export function CandlestickChart({
     })
     primitive.setSpans(markersToSpans(annotations ?? []))
     primitive.setVisible(!hidden.has(SPAN_LAYER_ID))
-  }, [annotations, effectiveTheme, hidden])
+  }, [annotations, effectiveTheme, hidden, styleVersion])
 
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
   // (S/R levels the agent pushes) on the candlestick series. A line toggled off
@@ -897,7 +893,7 @@ export function CandlestickChart({
     const series = seriesRef.current
     const container = containerRef.current
     if (!series || !container) return
-    const colors = readChartColors(container)
+    const colors = chartColorsFrom(resolveChartStyle(container, effectiveTheme))
     const desired = new Map<string, OverlaySpec>()
     for (const spec of overlays ?? []) {
       if (spec.kind !== 'price_line') continue
@@ -925,7 +921,7 @@ export function CandlestickChart({
         existing.applyOptions({ color })
       }
     }
-  }, [overlays, hidden, effectiveTheme])
+  }, [overlays, hidden, effectiveTheme, styleVersion])
 
   // Build the layers-legend descriptor list (Plan 0047 phase 9): one row per
   // indicator overlay, per marker-direction group present, and per price line —
@@ -934,7 +930,8 @@ export function CandlestickChart({
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    const colors = readChartColors(container)
+    const style = resolveChartStyle(container, effectiveTheme)
+    const colors = chartColorsFrom(style)
     const next: ChartLayer[] = []
     for (const spec of overlays ?? []) {
       if (spec.kind === 'price_line' || !isSupportedOverlay(spec.kind)) continue
@@ -942,7 +939,7 @@ export function CandlestickChart({
       next.push({
         id,
         label: overlayLabel(spec),
-        color: overlaySeriesColor(spec, container),
+        color: overlayStyleColor(spec, style),
         kind: 'overlay',
         visible: !hidden.has(id),
         // The overlay kind keys the glossary tooltip (Plan 0065) — ema/sma/
@@ -1018,7 +1015,7 @@ export function CandlestickChart({
       })
     }
     setLayers(next)
-  }, [overlays, annotations, visibleTrendlines, hidden, effectiveTheme])
+  }, [overlays, annotations, visibleTrendlines, hidden, effectiveTheme, styleVersion])
 
   // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a labelled
   // marker's text and/or each overlay line's name + value at that bar. Reads only
@@ -1072,15 +1069,19 @@ export function CandlestickChart({
     return () => chart.unsubscribeCrosshairMove(handler)
   }, [annotations])
 
-  // Recolor the EXISTING chart when the effective theme changes — re-read the
-  // tokens and push them via applyOptions. No remount (the creation effect's
-  // deps are `[]`); also runs once on mount, idempotent with creation colors.
+  // Re-apply the EXISTING chart's colours + line widths when the effective theme
+  // changes OR the user mutates the chart-style store (Plan 0068 phase 2). One
+  // `resolveChartStyle` pass, pushed via `applyOptions` — no remount (the creation
+  // effect's deps are `[syncTestRenderHook]`); also runs once on mount, idempotent
+  // with the creation values. Colour AND width both flow here, so a colour or a
+  // width override lands in place on any mounted chart.
   useEffect(() => {
     const container = containerRef.current
     const chart = chartRef.current
     const candlestick = seriesRef.current
     if (!container || !chart || !candlestick) return
-    const colors = readChartColors(container)
+    const style = resolveChartStyle(container, effectiveTheme)
+    const colors = chartColorsFrom(style)
     chart.applyOptions({
       layout: { textColor: colors.text },
       grid: {
@@ -1097,22 +1098,39 @@ export function CandlestickChart({
       borderDownColor: colors.candleDown,
     })
     volumeSeriesRef.current?.applyOptions({ color: colors.volume })
-    volumeMaSeriesRef.current?.applyOptions({ color: colors.volumeMa })
-    vwapSeriesRef.current?.applyOptions({ color: colors.vwap })
-    obvSeriesRef.current?.applyOptions({ color: colors.obv })
+    volumeMaSeriesRef.current?.applyOptions({
+      color: colors.volumeMa,
+      lineWidth: style.widths.volumeMa as LineWidth,
+    })
+    vwapSeriesRef.current?.applyOptions({
+      color: colors.vwap,
+      lineWidth: style.widths.vwap as LineWidth,
+    })
+    obvSeriesRef.current?.applyOptions({
+      color: colors.obv,
+      lineWidth: style.widths.obv as LineWidth,
+    })
     for (const { spec, series } of overlaySeriesRef.current.values()) {
-      series.applyOptions({ color: overlaySeriesColor(spec, container) })
+      series.applyOptions({
+        color: overlayStyleColor(spec, style),
+        lineWidth: overlayStyleWidth(spec, style),
+      })
     }
     // Supertrend's two masked series recolor from the bull/bear tokens in place.
     for (const { up, down } of supertrendSeriesRef.current.values()) {
       up.applyOptions({ color: colors.markerBullish })
       down.applyOptions({ color: colors.markerBearish })
     }
-  }, [effectiveTheme])
+  }, [effectiveTheme, styleVersion])
 
   // Track the effective theme; the subscription fires on an explicit theme
   // change and on an OS flip while in `system` mode. Unsubscribes on unmount.
   useEffect(() => subscribeEffective(setEffectiveTheme), [])
+
+  // Re-resolve + re-apply on any chart-style store mutation (colour, width, or
+  // candle-type) by bumping the version the restyle effect keys on. Unsubscribes
+  // on unmount.
+  useEffect(() => subscribeChartStyle(() => setStyleVersion((v) => v + 1)), [])
 
   return (
     <div className={styles.wrapper}>
