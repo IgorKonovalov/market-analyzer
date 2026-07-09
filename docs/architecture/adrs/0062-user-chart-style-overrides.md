@@ -1,6 +1,6 @@
 # ADR-0062 — User chart-style overrides: a unified typed style store over the theme tokens
 
-> **Status:** proposed (accepts at Plan 0068's close)
+> **Status:** accepted (Plan 0068 close 2026-07-09 — the unified typed store over the theme tokens held: `readChartColors`/`overlaySeriesColor` removed, `resolveChartStyle` the single read path, per-theme type-keyed overrides in `localStorage['ma.chartStyle']`, candle-type rebuild verified)
 > **Date:** 2026-07-08
 > **Related plan(s):** [0068-chart-style-settings](../plans/0068-chart-style-settings.md)
 > **Relates to:** [ADR-0039](0039-renderer-theming-localstorage.md) (renderer-owned presentation prefs in localStorage — this extends it), [ADR-0006](0006-persistence-layout.md) (config.json — this carves another presentation pref out of it), [ADR-0049](0049-chart-trendline-overlay-primitive.md) / [ADR-0061](0061-trendline-pattern-identity-and-colour.md) (trendline colour — deliberately out of scope here)
