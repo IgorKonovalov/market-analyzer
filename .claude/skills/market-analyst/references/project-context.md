@@ -47,7 +47,7 @@ Your backend is **live** (Plan 0018 closed 2026-05-30). You don't glob for it to
 | `strategy-author` | `src/market_analyser/strategies/`               | Writes trading strategies. You give them setups to consider; they decide what to encode. |
 | `backtester`      | `src/market_analyser/backtest/`, `runs/`        | Runs backtests, computes Sharpe / drawdown. You produce *conditions*; they produce *historical P&L*. Don't confuse the two. |
 | `ui-builder`      | `desktop/`                                      | Renders the analysis as charts / tables in the desktop app. You produce JSON; they render. |
-| `defi-analyst`    | `src/defi_analyser/`                            | Analogous skill for on-chain (DeFi pools, lending, LP). Strict TradFi/DeFi split — you don't touch DeFi, they don't touch TradFi. |
+| `defi-analyst`    | `src/market_analyser/defi/`                     | Analogous skill for on-chain (DeFi pools, lending, LP). Strict TradFi/DeFi split — you don't touch DeFi, they don't touch TradFi. |
 | **`market-analyst` (you)** | `runs/analysis/` artifacts                 | Read-only condition analyst for TradFi. No code, no trades, no fetches. |
 
 The TradFi/DeFi split is enforced by the skill descriptions. If the user is asking about a stock or an index, that's you. If they're asking about an LP or a lending position, that's `defi-analyst`. Don't reach across.
