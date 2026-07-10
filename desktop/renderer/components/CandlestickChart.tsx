@@ -22,69 +22,53 @@
  * regression that loses a series cannot pass.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { ColorType, TickMarkType, createChart } from 'lightweight-charts'
-import type {
-  IChartApi,
-  ISeriesApi,
-  LineData,
-  LineWidth,
-  Logical,
-  MouseEventParams,
-  SeriesMarker,
-  Time,
-  UTCTimestamp,
-} from 'lightweight-charts'
+import { ColorType, createChart } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, LineWidth, Logical } from 'lightweight-charts'
 
 import type { IPriceLine } from 'lightweight-charts'
 
-import { ApiError, api, toLightweightBar } from '../api/client'
 import { t } from '../lib/i18n'
 import { useChartGestures } from '../hooks/useChartGestures'
+import { useChartMarkers } from '../hooks/useChartMarkers'
 import { useChartPatternRecompute } from '../hooks/useChartPatternRecompute'
+import { useChartRestyle } from '../hooks/useChartRestyle'
+import { useChartScans } from '../hooks/useChartScans'
+import { useChartTooltip } from '../hooks/useChartTooltip'
+import { useCandleMarkerGroups } from '../hooks/useCandleMarkerGroups'
+import { useFormingBar } from '../hooks/useFormingBar'
+import { useLayersLegend } from '../hooks/useLayersLegend'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
-import {
-  DEFAULT_MARKER_COLORS,
-  annotationsToMarkers,
-  candleGroupKey,
-  type ChartMarker,
-} from '../lib/markers'
-import {
-  CANDLE_MASTER_ID,
-  CANDLE_MASTER_LABEL,
-  candleGroupKeyFromLayerId,
-  candleGroupLabel,
-  candleGroupLayerId,
-  groupCandlestickMarkers,
-  mostRecentGroupKey,
-} from '../lib/candleGroups'
-import {
-  type OverlayReading,
-  type TooltipContent,
-  overlayLabel,
-  tooltipAtTime,
-  trendlineTooltipText,
-} from '../lib/tooltip'
+import { useOverlaySeries } from '../hooks/useOverlaySeries'
+import { usePriceLines } from '../hooks/usePriceLines'
+import { useSupertrendSeries } from '../hooks/useSupertrendSeries'
+import type { ChartMarker } from '../lib/markers'
+import { candleGroupKeyFromLayerId } from '../lib/candleGroups'
+import { ChartToolbar } from './ChartToolbar'
 import { ChartTooltip } from './ChartTooltip'
-import { LayersPanel, type ChartLayer } from './LayersPanel'
+import { LayersPanel } from './LayersPanel'
 import {
-  computeOverlayData,
-  computeSupertrend,
-  isSupportedOverlay,
-  overlayColorFor,
-  overlayLayerId,
-  overlayStyleElement,
-  supertrendBands,
-} from '../lib/overlays'
-import { PatternSpanPrimitive, markerHighlightSpan, markersToSpans } from '../lib/spans'
+  OBV_SCALE_ID,
+  OBV_SCALE_MARGINS,
+  PRICE_SCALE_ID,
+  PRICE_SCALE_MARGINS,
+  VOLUME_SCALE_ID,
+  VOLUME_SCALE_MARGINS,
+  applyMainColors,
+  chartColorsFrom,
+  createMainSeries,
+  mainSeriesKind,
+  setMainData,
+  type MainSeries,
+  type OverlayEntry,
+} from '../lib/chartSeries'
+import { formatRangeLabel, monthlyTickMarkFormatter } from '../lib/chartAxis'
+import { PatternSpanPrimitive } from '../lib/spans'
 import {
   TrendlinePrimitive,
   dedupeTrendlines,
-  patternDisplayName,
   patternStateKey,
   readTrendlineColors,
-  trendlineColor,
   trendlineGroupLayerId,
-  trendlineStateLabel,
 } from '../lib/trendlines'
 import { useTrendlines } from '../hooks/useTrendlines'
 import {
@@ -93,13 +77,7 @@ import {
   subscribeEffective,
   type EffectiveTheme,
 } from '../lib/theme'
-import {
-  getCandleType,
-  resolveChartStyle,
-  subscribeChartStyle,
-  type CandleSeriesType,
-  type ResolvedChartStyle,
-} from '../lib/chartStyle'
+import { getCandleType, resolveChartStyle, subscribeChartStyle } from '../lib/chartStyle'
 import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
@@ -111,150 +89,11 @@ import {
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec, TrendlineSpec } from '../types/events'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
-import { timeframeDurationMs } from '../lib/timeframes'
 import styles from './CandlestickChart.module.css'
-
-// Default width for an agent overlay line whose kind has no styleable width
-// (i.e. not ema/sma) — matches the literal the chart used before Plan 0068.
-const DEFAULT_OVERLAY_LINE_WIDTH = 2 as LineWidth
-
-interface ChartColors {
-  text: string
-  border: string
-  candleUp: string
-  candleDown: string
-  volume: string
-  volumeMa: string
-  vwap: string
-  obv: string
-  markerClicked: string
-  markerBullish: string
-  markerBearish: string
-  markerNeutral: string
-}
-
-/** Flatten a resolved chart style into the flat colour view several effects read
- * (the styleable colours ⊕ the non-overridable chrome). Every drawn colour now
- * resolves through the chart-style store (Plan 0068 phase 2, ADR-0062): styles.css
- * theme tokens are the defaults, the user's per-theme overrides layer on top, and
- * lightweight-charts is handed fully-resolved strings (it can't resolve `var()`). */
-function chartColorsFrom(style: ResolvedChartStyle): ChartColors {
-  return { ...style.colors, ...style.chrome }
-}
-
-/** An agent overlay line's resolved colour: ema/sma read their styleable entry
- * (honouring the user's override); any other kind keeps the registry colour. */
-function overlayStyleColor(spec: OverlaySpec, style: ResolvedChartStyle): string {
-  const element = overlayStyleElement(spec)
-  return element ? style.colors[element] : overlayColorFor(spec)
-}
-
-/** An agent overlay line's resolved width: ema/sma read their styleable width;
- * any other kind keeps the default overlay width. */
-function overlayStyleWidth(spec: OverlaySpec, style: ResolvedChartStyle): LineWidth {
-  const element = overlayStyleElement(spec)
-  return (element ? style.widths[element] : DEFAULT_OVERLAY_LINE_WIDTH) as LineWidth
-}
 
 // Stable no-op for the lazy-history trigger when no `onReachLeftEdge` is wired
 // (keeps the trigger hook's callback ref from churning on every render).
 const NOOP = (): void => {}
-
-// Always-on volume series (Plan 0027 phase 3), each derived client-side from
-// `bars`. The histogram + its MA sit on their own bottom-band price scale; VWAP
-// rides the main price scale; OBV gets its own band. lightweight-charts 4.2.x has
-// no panes API, so "own pane" is an overlay price scale with `scaleMargins` (the
-// plan's documented v4 mechanism / OBV fallback).
-const PRICE_SCALE_ID = 'right' // the default price (candlestick) scale
-const VOLUME_SCALE_ID = 'volume'
-const OBV_SCALE_ID = 'obv'
-// Candles occupy the upper band; volume hugs the bottom; OBV gets a strip above it.
-const PRICE_SCALE_MARGINS = { top: 0.05, bottom: 0.4 }
-const VOLUME_SCALE_MARGINS = { top: 0.82, bottom: 0 }
-const OBV_SCALE_MARGINS = { top: 0.62, bottom: 0.22 }
-
-// The main price series across the four render modes (Plan 0068 phase 4). A
-// candle-type change rebuilds the chart (the series type is fixed at creation),
-// so the whole creation effect re-runs with a fresh series of this type.
-type MainSeries = ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area'>
-
-/** The `__test_chart_render__` kind reported for the main series of each type. */
-function mainSeriesKind(type: CandleSeriesType): string {
-  switch (type) {
-    case 'bars':
-      return 'bar'
-    case 'line':
-      return 'line'
-    case 'area':
-      return 'area'
-    case 'candles':
-    default:
-      return 'candlestick'
-  }
-}
-
-/** Create the main price series for the chosen render type. Colours are applied
- * separately by `applyMainColors` so creation and the restyle effect share one
- * colour source. Line/area ride the main price scale (as candles do by default). */
-function createMainSeries(chart: IChartApi, type: CandleSeriesType): MainSeries {
-  const common = { priceLineVisible: false, lastValueVisible: false }
-  switch (type) {
-    case 'bars':
-      return chart.addBarSeries({})
-    case 'line':
-      return chart.addLineSeries({ priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
-    case 'area':
-      return chart.addAreaSeries({ priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
-    case 'candles':
-    default:
-      return chart.addCandlestickSeries({})
-  }
-}
-
-/** Apply the resolved colours to the main series for its render type. Candles/bars
- * take up/down (+ wick/border) colours; line/area have no up/down concept, so the
- * single line colour maps from `candleUp` (ADR-0062: the up/down/wick controls are
- * inert then, and the Settings UI disables them). */
-function applyMainColors(series: MainSeries, type: CandleSeriesType, colors: ChartColors): void {
-  if (type === 'bars') {
-    ;(series as ISeriesApi<'Bar'>).applyOptions({
-      upColor: colors.candleUp,
-      downColor: colors.candleDown,
-    })
-  } else if (type === 'line') {
-    ;(series as ISeriesApi<'Line'>).applyOptions({ color: colors.candleUp })
-  } else if (type === 'area') {
-    ;(series as ISeriesApi<'Area'>).applyOptions({
-      lineColor: colors.candleUp,
-      topColor: colors.candleUp,
-      bottomColor: 'transparent',
-    })
-  } else {
-    ;(series as ISeriesApi<'Candlestick'>).applyOptions({
-      upColor: colors.candleUp,
-      downColor: colors.candleDown,
-      wickUpColor: colors.candleUp,
-      wickDownColor: colors.candleDown,
-      borderUpColor: colors.candleUp,
-      borderDownColor: colors.candleDown,
-    })
-  }
-}
-
-/** Push the bars onto the main series in the shape its render type expects:
- * OHLC for candles/bars, a single `value` (close) for line/area. */
-function setMainData(series: MainSeries, type: CandleSeriesType, bars: Bar[]): void {
-  if (type === 'line' || type === 'area') {
-    ;(series as ISeriesApi<'Line'>).setData(
-      bars.map((b) => {
-        const d = toLightweightBar(b)
-        return { time: d.time, value: d.close }
-      }),
-    )
-  } else {
-    ;(series as ISeriesApi<'Candlestick'>).setData(bars.map(toLightweightBar))
-  }
-}
 
 declare global {
   interface Window {
@@ -298,84 +137,6 @@ interface Props {
   /** Gate for the left-edge trigger — false while an older fetch is in flight
    * or the start of available history has been reached. */
   historyTriggerEnabled?: boolean
-}
-
-/** Transient state of the "Scan patterns" sweep (Plan 0049 phase 8). The markers
- * arrive via SSE; this only tracks the trigger's ack so the button can show
- * progress / a count / "nothing in view" / an error. */
-type ScanStatus =
-  | { kind: 'idle' }
-  | { kind: 'scanning' }
-  | { kind: 'done'; count: number }
-  | { kind: 'empty' }
-  | { kind: 'error'; message: string }
-
-/** Human-readable label for a selected [start, end] window. UTC (matching the
- * bar timestamps); the time is shown only when it isn't midnight, so a daily
- * range reads as plain dates. */
-function formatRangeLabel(startIso: string, endIso: string): string {
-  const fmt = (iso: string): string => {
-    const date = iso.slice(0, 10)
-    const time = iso.slice(11, 16)
-    return time === '00:00' ? date : `${date} ${time}`
-  }
-  return `${fmt(startIso)} → ${fmt(endIso)}`
-}
-
-/** Axis tick formatter for the monthly (`1mo`) timeframe (Plan 0050 phase 7).
- * Month-spaced bars must read as month/year, never day-of-month or intraday
- * labels (which lightweight-charts' default would emit for some zoom levels,
- * producing repeated "1" day labels). Year boundaries show the year; every other
- * tick shows the abbreviated month. UTC, matching the bar timestamps. */
-function monthlyTickMarkFormatter(time: Time, tickMarkType: TickMarkType, locale: string): string {
-  const ms = typeof time === 'number' ? time * 1000 : Date.parse(String(time))
-  const date = new Date(ms)
-  if (tickMarkType === TickMarkType.Year) {
-    return String(date.getUTCFullYear())
-  }
-  return date.toLocaleDateString(locale, { month: 'short', timeZone: 'UTC' })
-}
-
-interface OverlayEntry {
-  spec: OverlaySpec
-  series: ISeriesApi<'Line'>
-}
-
-function overlayKey(spec: OverlaySpec): string {
-  return `${spec.kind}:${spec.period ?? 'na'}`
-}
-
-/** Layers-legend id for a `price_line` overlay (Plan 0047 phase 9). */
-function priceLineId(spec: OverlaySpec): string {
-  return `pline:${spec.label ?? spec.price ?? 'na'}`
-}
-
-/** Display label for a price line in the legend, e.g. `R1 (61335.75)`. */
-function priceLineLabel(spec: OverlaySpec): string {
-  const name = spec.label ?? 'level'
-  return spec.price != null ? `${name} (${spec.price})` : name
-}
-
-/** Price-line colour: a support level reads bullish, a resistance level bearish,
- * a roleless level uses the neutral clicked/accent token — so the legend swatch
- * matches the drawn line. */
-function priceLineColor(spec: OverlaySpec, colors: ChartColors): string {
-  if (spec.role === 'support') return colors.markerBullish
-  if (spec.role === 'resistance') return colors.markerBearish
-  return colors.markerClicked
-}
-
-/** The chart's current visible [from, to] window as ISO strings, or null when
- * the chart has no data / no resolvable numeric range yet. Shared by the
- * pattern-scan triggers (markers + trendlines). */
-function visibleRangeIso(chart: IChartApi): { range_start: string; range_end: string } | null {
-  const range = chart.timeScale().getVisibleRange()
-  const toIso = (t: Time): string | null =>
-    typeof t === 'number' ? new Date(t * 1000).toISOString() : null
-  const rangeStart = range ? toIso(range.from) : null
-  const rangeEnd = range ? toIso(range.to) : null
-  if (rangeStart === null || rangeEnd === null) return null
-  return { range_start: rangeStart, range_end: rangeEnd }
 }
 
 export function CandlestickChart({
@@ -456,17 +217,10 @@ export function CandlestickChart({
   // when the type actually changes (getCandleType is a stable primitive snapshot),
   // so a colour/width mutation doesn't trigger a rebuild.
   const candleType = useSyncExternalStore(subscribeChartStyle, getCandleType, getCandleType)
-  // Ephemeral hover-tooltip state (Plan 0047 phase 8): the crosshair content +
-  // its position within the chart area. Null while not hovering a labelled bar
-  // or an overlay line. Never persisted, never round-tripped to the sidecar.
-  const [tooltip, setTooltip] = useState<{ content: TooltipContent; x: number; y: number } | null>(
-    null,
-  )
   // Layers-legend state (Plan 0047 phase 9), all ephemeral: `hidden` is the set
   // of layer ids the user toggled off; `layers` is the resolved descriptor list
   // the panel renders. Reset on remount (no persistence) by construction.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
-  const [layers, setLayers] = useState<ChartLayer[]>([])
   const toggleLayer = useCallback((id: string): void => {
     setHidden((prev) => {
       const next = new Set(prev)
@@ -492,59 +246,21 @@ export function CandlestickChart({
   // null. Threaded into the primitive so hovering a row emphasises that group's
   // lines and dims the rest. Ephemeral, never persisted.
   const [highlightedTrendlineKey, setHighlightedTrendlineKey] = useState<string | null>(null)
-  // Candlestick-marker groups (Plan 0071 phase 2): the sweep markers grouped by
-  // (pattern type, direction) from the ADR-0045 identity. Painting all at once
-  // buries the candles, so the legend lists the groups and only ENABLED ones
-  // draw. Recomputed when the markers change.
-  const candleGroups = useMemo(() => groupCandlestickMarkers(annotations ?? []), [annotations])
-  // Opt-in per-group visibility (draw-on-select). Seeded to the single most-recent
-  // group on each NEW sweep (the effect below) so the chart is populated, not
-  // walled. Ephemeral, never persisted.
-  const [enabledCandleGroups, setEnabledCandleGroups] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  )
-  // The (type, direction) group-set signature of the last render. Reseed the
-  // enabled set only when the GROUPS change (a new sweep) — never on a live tick
-  // that just grows an existing group, which would yank the user's picks.
-  const prevCandleSigRef = useRef<string>('')
-  useEffect(() => {
-    const sig = candleGroups
-      .map((g) => g.key)
-      .sort()
-      .join(',')
-    if (sig === prevCandleSigRef.current) return
-    prevCandleSigRef.current = sig
-    const recent = mostRecentGroupKey(candleGroups)
-    setEnabledCandleGroups(recent === null ? new Set() : new Set([recent]))
-  }, [candleGroups])
-  // Hovered candlestick legend group (its group key), or null — emphasises that
-  // group's markers and fades the rest. Ephemeral.
-  const [highlightedCandleGroup, setHighlightedCandleGroup] = useState<string | null>(null)
-  // The candlestick layer MASTER toggle (Plan 0071 phase 2): the coarse per-
-  // direction rows + the span row fold into one master; the per-group rows are
-  // the detail. Master off hides every group's markers + spans WITHOUT clearing
-  // the per-group selection (no desync). Opt-out via the shared `hidden` set.
-  const candleMasterHidden = hidden.has(CANDLE_MASTER_ID)
-  // The markers actually drawn: master on AND the marker's group enabled. Feeds
-  // both the marker draw and the span band, so they gate identically.
-  const drawnMarkers = useMemo(
-    () =>
-      candleMasterHidden
-        ? []
-        : (annotations ?? []).filter((m) => enabledCandleGroups.has(candleGroupKey(m))),
-    [annotations, candleMasterHidden, enabledCandleGroups],
-  )
-  const toggleCandleGroup = useCallback((key: string): void => {
-    setEnabledCandleGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }, [])
+  // Candlestick-marker groups (Plan 0071 phase 2): sweep markers grouped by
+  // (pattern type, direction), draw-on-select selection, master gate, and hover
+  // (Plan 0072 phase 8: `useCandleMarkerGroups` owns this state).
+  const {
+    candleGroups,
+    enabledCandleGroups,
+    drawnMarkers,
+    highlightedCandleGroup,
+    setHighlightedCandleGroup,
+    toggleCandleGroup,
+    candleKeySet,
+  } = useCandleMarkerGroups(annotations, hidden)
   // LayersPanel routes a candlestick GROUP row (opt-in) to the enabled set and
   // everything else (overlays / candlestick master / price-lines / trendline
-  // groups, all opt-out) to `hidden`.
+  // groups, all opt-out) to `hidden` — the glue joining the two legend systems.
   const onLayerToggle = useCallback(
     (id: string): void => {
       const groupKey = candleGroupKeyFromLayerId(id)
@@ -555,7 +271,6 @@ export function CandlestickChart({
   )
   // Hover-highlight is shared by both legend systems: a candlestick group key
   // drives the marker emphasis, any other key drives the trendline primitive.
-  const candleKeySet = useMemo(() => new Set(candleGroups.map((g) => g.key)), [candleGroups])
   const onLayerHighlight = useCallback(
     (key: string | null): void => {
       if (key !== null && candleKeySet.has(key)) {
@@ -566,84 +281,18 @@ export function CandlestickChart({
         setHighlightedCandleGroup(null)
       }
     },
-    [candleKeySet],
+    [candleKeySet, setHighlightedCandleGroup],
   )
-  // "Scan patterns" trigger state (Plan 0049 phase 8). Ephemeral, never persisted.
-  const [scanStatus, setScanStatus] = useState<ScanStatus>({ kind: 'idle' })
-  // "Scan chart patterns" (trendline) trigger state (Plan 0064 phase 5). Only the
-  // MANUAL button surfaces this; the mount/range auto-recompute stays silent so a
-  // pan doesn't flicker a status label. Ephemeral, never persisted.
-  const [chartScanStatus, setChartScanStatus] = useState<ScanStatus>({ kind: 'idle' })
-
-  // Sweep the chart's CURRENT visible range (not the full buffer) for patterns via
-  // POST /scan_patterns; the markers come back over SSE (no second draw path). The
-  // bearer is injected by the typed client — never a raw fetch.
-  const scanVisibleRange = useCallback(async (): Promise<void> => {
-    const chart = chartRef.current
-    if (!chart || !symbol || !timeframe) return
-    const range = chart.timeScale().getVisibleRange()
-    const toIso = (t: Time): string | null =>
-      typeof t === 'number' ? new Date(t * 1000).toISOString() : null
-    const rangeStart = range ? toIso(range.from) : null
-    const rangeEnd = range ? toIso(range.to) : null
-    if (rangeStart === null || rangeEnd === null) return
-    setScanStatus({ kind: 'scanning' })
-    try {
-      const ack = await api.scanPatterns({
-        symbol,
-        timeframe,
-        range_start: rangeStart,
-        range_end: rangeEnd,
-      })
-      setScanStatus(
-        ack.published && ack.count > 0 ? { kind: 'done', count: ack.count } : { kind: 'empty' },
-      )
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Pattern scan failed'
-      setScanStatus({ kind: 'error', message })
-    }
-  }, [symbol, timeframe])
-
-  // Recompute the chart-pattern TRENDLINES for the current visible range via
-  // POST /scan_chart_patterns (Plan 0064 phase 5, ADR-0059). The lines come back
-  // over SSE as a `chart.trendlines` event — this only fires the trigger. Silent
-  // (no status churn): used by the mount + debounced-range auto-recompute so the
-  // lines track the bars on screen and survive a reload. Bearer via the typed
-  // client — never a raw fetch.
-  const recomputeTrendlines = useCallback(async (): Promise<void> => {
-    const chart = chartRef.current
-    if (!chart || !symbol || !timeframe) return
-    const range = visibleRangeIso(chart)
-    if (range === null) return
-    try {
-      await api.scanChartPatterns({ symbol, timeframe, ...range })
-    } catch (err) {
-      // Auto-recompute is best-effort: a failed refresh just leaves the current
-      // lines in place. Log, don't surface (the manual trigger reports errors).
-      console.warn('[CandlestickChart] trendline recompute failed', err)
-    }
-  }, [symbol, timeframe])
-
-  // Manual "Scan chart patterns" trigger (Plan 0064 phase 5): same sweep as the
-  // auto-recompute but status-tracked for button feedback. Kept distinct from
-  // "Scan patterns" (candlestick markers) — marker glyphs and chart-pattern
-  // geometry are conceptually separate layers.
-  const scanChartPatternsVisibleRange = useCallback(async (): Promise<void> => {
-    const chart = chartRef.current
-    if (!chart || !symbol || !timeframe) return
-    const range = visibleRangeIso(chart)
-    if (range === null) return
-    setChartScanStatus({ kind: 'scanning' })
-    try {
-      const ack = await api.scanChartPatterns({ symbol, timeframe, ...range })
-      setChartScanStatus(
-        ack.published && ack.count > 0 ? { kind: 'done', count: ack.count } : { kind: 'empty' },
-      )
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Chart-pattern scan failed'
-      setChartScanStatus({ kind: 'error', message })
-    }
-  }, [symbol, timeframe])
+  // Pattern-scan triggers + their button status (Plan 0049 ph8 / Plan 0064 ph5),
+  // sweeping the current visible range via the typed client (Plan 0072 phase 8:
+  // `useChartScans`).
+  const {
+    scanStatus,
+    chartScanStatus,
+    scanVisibleRange,
+    scanChartPatternsVisibleRange,
+    recomputeTrendlines,
+  } = useChartScans(chartRef, { symbol, timeframe })
 
   // Reflect what's drawn into the test hook. Stable identity (reads only refs),
   // so it can sit in the effect dep arrays without retriggering them.
@@ -814,96 +463,6 @@ export function CandlestickChart({
     vwapSeriesRef.current?.setData(computeVwap(bars, VWAP_PERIOD))
     obvSeriesRef.current?.setData(computeObv(bars))
 
-    // Resolve the style once for any series this reconcile CREATES (initial colour
-    // + width, overrides layered). Existing series get re-applied in place by the
-    // style/theme effect below, so a theme flip doesn't need to re-run this effect.
-    const overlayStyle = containerRef.current
-      ? resolveChartStyle(containerRef.current, effectiveThemeRef.current)
-      : null
-
-    const desired = new Map<string, OverlaySpec>()
-    for (const spec of overlays ?? []) {
-      // price_line overlays are horizontal lines, reconciled in the price-line
-      // effect below — not line series, and not an "unsupported" warning case.
-      if (spec.kind === 'price_line') continue
-      // supertrend is a two-masked-series overlay, reconciled separately below —
-      // skip the generic single-series path (and its "unsupported" warning).
-      if (spec.kind === 'supertrend') continue
-      if (!isSupportedOverlay(spec.kind)) {
-        console.warn(
-          `[CandlestickChart] unsupported overlay kind "${spec.kind}" — ignored (MVP renders ema/sma only)`,
-        )
-        continue
-      }
-      // A layer toggled off in the legend is removed below (absent from `desired`)
-      // and re-added when re-checked.
-      if (hidden.has(overlayLayerId(spec))) continue
-      desired.set(overlayKey(spec), spec)
-    }
-
-    // Remove series no longer requested.
-    for (const [key, entry] of overlaySeriesRef.current) {
-      if (!desired.has(key)) {
-        chart.removeSeries(entry.series)
-        overlaySeriesRef.current.delete(key)
-      }
-    }
-
-    // Add new series + recompute data for all kept ones (bars may have moved).
-    for (const [key, spec] of desired) {
-      let entry = overlaySeriesRef.current.get(key)
-      if (entry === undefined) {
-        const color = overlayStyle ? overlayStyleColor(spec, overlayStyle) : overlayColorFor(spec)
-        const series = chart.addLineSeries({
-          color,
-          lineWidth: overlayStyle
-            ? overlayStyleWidth(spec, overlayStyle)
-            : DEFAULT_OVERLAY_LINE_WIDTH,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        })
-        entry = { spec, series }
-        overlaySeriesRef.current.set(key, entry)
-      }
-      entry.series.setData(computeOverlayData(bars, spec))
-    }
-
-    // Supertrend reconcile (Plan 0049 phase 9): each supertrend overlay draws two
-    // masked line series (up=bullish, down=bearish) so the line flips colour at
-    // trend changes. Same add/remove/toggle discipline as the generic overlays.
-    const upColor = overlayStyle?.colors.markerBullish ?? DEFAULT_MARKER_COLORS.bullish
-    const downColor = overlayStyle?.colors.markerBearish ?? DEFAULT_MARKER_COLORS.bearish
-    const desiredSt = new Map<string, OverlaySpec>()
-    for (const spec of overlays ?? []) {
-      if (spec.kind !== 'supertrend') continue
-      if (hidden.has(overlayLayerId(spec))) continue
-      desiredSt.set(overlayKey(spec), spec)
-    }
-    for (const [key, entry] of supertrendSeriesRef.current) {
-      if (!desiredSt.has(key)) {
-        chart.removeSeries(entry.up)
-        chart.removeSeries(entry.down)
-        supertrendSeriesRef.current.delete(key)
-      }
-    }
-    for (const [key, spec] of desiredSt) {
-      let entry = supertrendSeriesRef.current.get(key)
-      if (entry === undefined) {
-        const lineOpts = { lineWidth: 2 as const, priceLineVisible: false, lastValueVisible: false }
-        const up = chart.addLineSeries({ color: upColor, ...lineOpts })
-        const down = chart.addLineSeries({ color: downColor, ...lineOpts })
-        entry = { up, down }
-        supertrendSeriesRef.current.set(key, entry)
-      } else {
-        entry.up.applyOptions({ color: upColor })
-        entry.down.applyOptions({ color: downColor })
-      }
-      const points = computeSupertrend(bars, spec.period ?? 10, spec.multiplier ?? 3)
-      const bands = supertrendBands(points)
-      entry.up.setData(bands.up)
-      entry.down.setData(bands.down)
-    }
-
     const barsChanged = prevBarsRef.current !== bars
     if (grewOnLeft && rangeBeforePrepend && prevFirstMs !== null) {
       let prepended = 0
@@ -923,42 +482,35 @@ export function CandlestickChart({
     prevBarsRef.current = bars
     prevFirstTsRef.current = newFirstMs
     syncTestRenderHook()
-    // `candleType` re-runs this after a rebuild so the fresh main series (and the
-    // recreated overlay/supertrend series) get their data pushed (Plan 0068 ph4).
-  }, [bars, overlays, hidden, syncTestRenderHook, candleType])
+    // `candleType` re-runs this after a rebuild so the fresh main series gets its
+    // data pushed (Plan 0068 ph4). Overlay/supertrend reconcile lives in its own
+    // hook now (Plan 0072 phase 8), so this effect no longer keys on overlays/hidden.
+  }, [bars, syncTestRenderHook, candleType])
+
+  // Agent-overlay line series + supertrend two-series reconcile (Plan 0007 ph4.5 /
+  // Plan 0049 ph9), split out of the bars effect (Plan 0072 phase 8). Defined
+  // AFTER the bars effect so they run after `setMainData` on each commit; each
+  // reads the theme off the ref so a flip recolours in place (restyle effect)
+  // rather than re-creating series.
+  useOverlaySeries(chartRef, containerRef, overlaySeriesRef, {
+    bars,
+    overlays,
+    hidden,
+    effectiveThemeRef,
+    rebuildToken: candleType,
+    syncTestRenderHook,
+  })
+  useSupertrendSeries(chartRef, containerRef, supertrendSeriesRef, {
+    bars,
+    overlays,
+    hidden,
+    effectiveThemeRef,
+    rebuildToken: candleType,
+  })
 
   // Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`
-  // into the chart's CURRENT (forming) bar via `series.update()` — close tracks
-  // the quote, high/low extend — but ONLY when the quote's `as_of` falls within
-  // the latest bar's period. A quote that predates the latest bar, or has crossed
-  // into a not-yet-fetched new period, touches nothing: we never rewrite a closed
-  // bar nor fabricate a new one (that is a refetch/SSE concern). No new fetch, no
-  // setData — `series.update()` at the last bar's time updates it in place. No
-  // lookahead: this is the live current bar, not historical replay.
-  useEffect(() => {
-    const series = seriesRef.current
-    if (!series || !quote || bars.length === 0) return
-    const periodMs = timeframeDurationMs(timeframe)
-    if (periodMs === null) return
-    const last = bars[bars.length - 1]
-    const lastStartMs = new Date(last.event_ts).getTime()
-    const asOfMs = new Date(quote.as_of).getTime()
-    // Outside the forming bar's [start, start + period) window → leave every bar.
-    if (asOfMs < lastStartMs || asOfMs >= lastStartMs + periodMs) return
-    const time = Math.floor(lastStartMs / 1000) as UTCTimestamp
-    if (candleType === 'line' || candleType === 'area') {
-      // Line/area track a single value (the forming close).
-      ;(series as ISeriesApi<'Line'>).update({ time, value: quote.price })
-    } else {
-      ;(series as ISeriesApi<'Candlestick'>).update({
-        time,
-        open: last.open,
-        high: Math.max(last.high, quote.price),
-        low: Math.min(last.low, quote.price),
-        close: quote.price,
-      })
-    }
-  }, [quote, bars, timeframe, candleType])
+  // into the chart's CURRENT (forming) bar in place (Plan 0072 phase 8: `useFormingBar`).
+  useFormingBar(seriesRef, { quote, bars, timeframe, candleType })
 
   // Monthly axis ticks (Plan 0050 phase 7): the `1mo` timeframe needs month/year
   // tick marks, not the day-level labels lightweight-charts' default emits at some
@@ -1022,203 +574,34 @@ export function CandlestickChart({
     rebuildToken: candleType,
   })
 
-  // Markers (annotation markers + the clicked-bar affordance) are themed: their
-  // colors resolve from the DOM tokens, so they recolor when `effectiveTheme`
-  // changes. Built in an effect (not useMemo) so the container is mounted and
-  // the tokens resolve; re-set on annotation / clicked-bar / theme change.
-  useEffect(() => {
-    const series = seriesRef.current
-    const container = containerRef.current
-    if (!series || !container) return
-    const colors = chartColorsFrom(resolveChartStyle(container, effectiveTheme))
-    // Draw-on-select (Plan 0071 phase 2): only the enabled groups' markers paint
-    // (master on ⊗ group enabled — encapsulated in `drawnMarkers`), so the sweep
-    // never dumps all N at once. A hovered legend group emphasises its markers.
-    const base = annotationsToMarkers(
-      drawnMarkers,
-      {
-        bullish: colors.markerBullish,
-        bearish: colors.markerBearish,
-        neutral: colors.markerNeutral,
-      },
-      // Glyph-only on the canvas; the label shows in the backed hover tooltip
-      // (Plan 0049 phase 12 — no bare overlapping text over the candles).
-      { includeText: false, highlightGroupKey: highlightedCandleGroup },
-    )
-    let markers = base
-    if (clickedBarTs !== null) {
-      const time = Math.floor(new Date(clickedBarTs).getTime() / 1000) as UTCTimestamp
-      const clicked: SeriesMarker<UTCTimestamp> = {
-        time,
-        position: 'aboveBar',
-        shape: 'circle',
-        color: colors.markerClicked,
-        text: clickedBarTs.slice(0, 10),
-      }
-      // setMarkers requires ascending time order.
-      markers = [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
-    }
-    series.setMarkers(markers)
-  }, [drawnMarkers, clickedBarTs, effectiveTheme, styleVersion, candleType, highlightedCandleGroup])
-
-  // Multi-bar pattern span band (Plan 0049 phase 7): feed the span primitive the
-  // current spans, theme-resolved direction colours, and the legend visibility.
-  // The primitive redraws via `requestUpdate`; the band tracks pan/zoom for free
-  // (the chart re-reads `paneViews`). Recolours in place on a theme flip — no
-  // remount (the deps include `effectiveTheme`, the primitive persists).
-  useEffect(() => {
-    const primitive = spanPrimitiveRef.current
-    const container = containerRef.current
-    if (!primitive || !container) return
-    const colors = chartColorsFrom(resolveChartStyle(container, effectiveTheme))
-    primitive.setColors({
-      bullish: colors.markerBullish,
-      bearish: colors.markerBearish,
-      neutral: colors.markerNeutral,
-    })
-    // Spans gate identically to the markers (Plan 0071 phase 2): only the enabled
-    // groups' spans draw (master off / group disabled → `drawnMarkers` excludes
-    // them → no span). The standalone "Pattern spans" row folds into the master.
-    primitive.setSpans(markersToSpans(drawnMarkers))
-    primitive.setVisible(true)
-    // `candleType` re-feeds the freshly-attached span primitive after a rebuild.
-  }, [drawnMarkers, effectiveTheme, styleVersion, candleType])
+  // Candlestick markers + pattern-span band (Plan 0049 phases 7 & 10 / Plan 0071
+  // phase 2): draw only the enabled groups' markers + spans, themed, with the
+  // clicked-bar affordance and hover emphasis (Plan 0072 phase 8: `useChartMarkers`).
+  useChartMarkers(seriesRef, containerRef, spanPrimitiveRef, {
+    drawnMarkers,
+    clickedBarTs,
+    highlightedCandleGroup,
+    effectiveTheme,
+    styleVersion,
+    rebuildToken: candleType,
+  })
 
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
-  // (S/R levels the agent pushes) on the candlestick series. A line toggled off
-  // in the legend is removed; re-checking re-creates it. Colours resolve from the
-  // theme tokens, so a theme flip recolours the kept lines in place.
-  useEffect(() => {
-    const series = seriesRef.current
-    const container = containerRef.current
-    if (!series || !container) return
-    const colors = chartColorsFrom(resolveChartStyle(container, effectiveTheme))
-    const desired = new Map<string, OverlaySpec>()
-    for (const spec of overlays ?? []) {
-      if (spec.kind !== 'price_line') continue
-      if (hidden.has(priceLineId(spec))) continue
-      desired.set(priceLineId(spec), spec)
-    }
-    for (const [id, line] of priceLinesRef.current) {
-      if (!desired.has(id)) {
-        series.removePriceLine(line)
-        priceLinesRef.current.delete(id)
-      }
-    }
-    for (const [id, spec] of desired) {
-      const color = priceLineColor(spec, colors)
-      const existing = priceLinesRef.current.get(id)
-      if (existing === undefined) {
-        const line = series.createPriceLine({
-          price: spec.price ?? 0,
-          color,
-          axisLabelVisible: true,
-          title: spec.label ?? '',
-        })
-        priceLinesRef.current.set(id, line)
-      } else {
-        existing.applyOptions({ color })
-      }
-    }
-    // `candleType` re-creates the price lines on the fresh series after a rebuild.
-  }, [overlays, hidden, effectiveTheme, styleVersion, candleType])
+  // (S/R levels the agent pushes) on the main series (Plan 0072 phase 8:
+  // `usePriceLines`).
+  usePriceLines(seriesRef, containerRef, priceLinesRef, {
+    overlays,
+    hidden,
+    effectiveTheme,
+    styleVersion,
+    rebuildToken: candleType,
+  })
 
-  // Build the layers-legend descriptor list (Plan 0047 phase 9): one row per
-  // indicator overlay, per marker-direction group present, and per price line —
-  // each with its resolved colour (equal to the colour the layer is drawn with)
-  // and its current visibility. Recomputed when the inputs or theme change.
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const style = resolveChartStyle(container, effectiveTheme)
-    const colors = chartColorsFrom(style)
-    const next: ChartLayer[] = []
-    for (const spec of overlays ?? []) {
-      if (spec.kind === 'price_line' || !isSupportedOverlay(spec.kind)) continue
-      const id = overlayLayerId(spec)
-      next.push({
-        id,
-        label: overlayLabel(spec),
-        color: overlayStyleColor(spec, style),
-        kind: 'overlay',
-        visible: !hidden.has(id),
-        // The overlay kind keys the glossary tooltip (Plan 0065) — ema/sma/
-        // supertrend resolve; a future unsupported kind degrades to plain text.
-        glossaryKey: spec.kind,
-      })
-    }
-    // Candlestick marker layer (Plan 0071 phase 2): a single MASTER row for the
-    // whole layer, then one DETAIL row per (pattern type, direction) group with
-    // its instance count, per-group visibility, and a highlight key. Replaces the
-    // coarse per-direction marker rows + the standalone span row (both fold into
-    // the master). Rows list even when a group is toggled off (so it re-enables).
-    if (candleGroups.length > 0) {
-      next.push({
-        id: CANDLE_MASTER_ID,
-        label: CANDLE_MASTER_LABEL,
-        color: colors.markerNeutral,
-        kind: 'marker',
-        visible: !hidden.has(CANDLE_MASTER_ID),
-      })
-      for (const group of candleGroups) {
-        const groupColor =
-          group.kind === 'bullish_marker'
-            ? colors.markerBullish
-            : group.kind === 'bearish_marker'
-              ? colors.markerBearish
-              : colors.markerNeutral
-        next.push({
-          id: candleGroupLayerId(group.key),
-          label: candleGroupLabel(group),
-          color: groupColor,
-          kind: 'marker',
-          visible: enabledCandleGroups.has(group.key),
-          count: group.count,
-          highlightKey: group.key,
-        })
-      }
-    }
-    for (const spec of overlays ?? []) {
-      if (spec.kind !== 'price_line') continue
-      const id = priceLineId(spec)
-      next.push({
-        id,
-        label: priceLineLabel(spec),
-        color: priceLineColor(spec, colors),
-        kind: 'price_line',
-        visible: !hidden.has(id),
-      })
-    }
-    // Grouped trendline rows (Plan 0067 phase 3 / ADR-0061): one row per
-    // (pattern type, state) present, each with its type-colour swatch, instance
-    // count, per-group visibility, and a highlight key for hover. Built from the
-    // deduped set so a hidden group still lists (to re-enable). Replaces the
-    // single "Trendlines" row.
-    const trendlineColors = readTrendlineColors(container)
-    const groups = new Map<
-      string,
-      { pattern: string | null | undefined; style: TrendlineSpec['style']; count: number }
-    >()
-    for (const spec of visibleTrendlines) {
-      const key = patternStateKey(spec)
-      const existing = groups.get(key)
-      if (existing) existing.count += 1
-      else groups.set(key, { pattern: spec.pattern, style: spec.style, count: 1 })
-    }
-    for (const [key, group] of groups) {
-      const id = trendlineGroupLayerId(key)
-      next.push({
-        id,
-        label: `${patternDisplayName(group.pattern)} (${trendlineStateLabel(group.style)})`,
-        color: trendlineColor(group.pattern, trendlineColors),
-        kind: 'trendline',
-        visible: !hidden.has(id),
-        count: group.count,
-        highlightKey: key,
-      })
-    }
-    setLayers(next)
-  }, [
+  // Build the layers-legend descriptor list (Plan 0047 phase 9 / Plan 0067 ph3 /
+  // Plan 0071 ph2): one row per overlay, a candlestick master + per-group rows,
+  // per price line, and per trendline group (Plan 0072 phase 8: `useLayersLegend`
+  // owns the state via the pure `buildChartLayers`).
+  const layers = useLayersLegend(containerRef, {
     overlays,
     candleGroups,
     enabledCandleGroups,
@@ -1226,118 +609,36 @@ export function CandlestickChart({
     hidden,
     effectiveTheme,
     styleVersion,
-  ])
+  })
 
-  // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a hovered pattern
-  // marker's name and/or each overlay line's name + value at that bar. Reads only
-  // data already in renderer state (the DRAWN markers + the overlay readings the
-  // chart pulls from `seriesData`) — no sidecar call. Keying off `drawnMarkers`
-  // (not the raw annotations) means a toggled-off / master-hidden group shows no
-  // hover — there's no arrow there to hover (Plan 0071 follow-up). Hovering a
-  // marker also outlines its pattern's bar(s) via the span primitive's highlight.
-  useEffect(() => {
-    const chart = chartRef.current
-    if (!chart) return
-    const handler = (param: MouseEventParams): void => {
-      // A trendline can extend past the last bar, so the pointer may be over a
-      // line while `param.time` is undefined — gate only on `point`, and compute
-      // the time-keyed marker/overlay content only when a time is present.
-      if (param.point === undefined) {
-        setTooltip(null)
-        spanPrimitiveRef.current?.setHighlight(null)
-        return
-      }
-      const readings: OverlayReading[] = []
-      if (param.time !== undefined) {
-        for (const { spec, series } of overlaySeriesRef.current.values()) {
-          const datum = param.seriesData.get(series)
-          const value = datum !== undefined ? (datum as LineData).value : undefined
-          if (typeof value === 'number') {
-            readings.push({ label: overlayLabel(spec), value })
-          }
-        }
-      }
-      // The DRAWN markers on the hovered bar (only enabled groups) — drives both
-      // the tooltip pattern name and the pattern-outline highlight.
-      const hoveredMarkers =
-        param.time !== undefined
-          ? drawnMarkers.filter(
-              (m) => Math.floor(new Date(m.event_ts).getTime() / 1000) === param.time,
-            )
-          : []
-      spanPrimitiveRef.current?.setHighlight(markerHighlightSpan(hoveredMarkers))
-      const timeContent =
-        param.time !== undefined
-          ? tooltipAtTime(param.time as UTCTimestamp, drawnMarkers, readings)
-          : null
-      // Trendline under the cursor (Plan 0067 phase 2): the primitive hit-tests
-      // the hovered pixel against its drawn segments and returns the spec, if any.
-      const hovered =
-        trendlinePrimitiveRef.current?.hitTestTrendline(param.point.x, param.point.y) ?? null
-      const trendlines = hovered ? [trendlineTooltipText(hovered)] : []
-      const markers = timeContent?.markers ?? []
-      const overlays = timeContent?.overlays ?? []
-      if (markers.length === 0 && overlays.length === 0 && trendlines.length === 0) {
-        setTooltip(null)
-        return
-      }
-      setTooltip({
-        content: { markers, overlays, trendlines },
-        x: param.point.x,
-        y: param.point.y,
-      })
-    }
-    chart.subscribeCrosshairMove(handler)
-    return () => chart.unsubscribeCrosshairMove(handler)
-    // `candleType` re-subscribes the crosshair handler on the fresh chart (ph4).
-  }, [drawnMarkers, candleType])
+  // Hover tooltip (Plan 0047 phase 8 / Plan 0067 phase 2): crosshair-driven
+  // marker/overlay/trendline read-out + pattern-bar outline (Plan 0072 phase 8:
+  // `useChartTooltip` owns the state and returns it).
+  const tooltip = useChartTooltip(
+    chartRef,
+    overlaySeriesRef,
+    spanPrimitiveRef,
+    trendlinePrimitiveRef,
+    { drawnMarkers, rebuildToken: candleType },
+  )
 
-  // Re-apply the EXISTING chart's colours + line widths when the effective theme
-  // changes OR the user mutates the chart-style store (Plan 0068 phase 2). One
-  // `resolveChartStyle` pass, pushed via `applyOptions` — no remount (the creation
-  // effect's deps are `[syncTestRenderHook]`); also runs once on mount, idempotent
-  // with the creation values. Colour AND width both flow here, so a colour or a
-  // width override lands in place on any mounted chart.
-  useEffect(() => {
-    const container = containerRef.current
-    const chart = chartRef.current
-    const candlestick = seriesRef.current
-    if (!container || !chart || !candlestick) return
-    const style = resolveChartStyle(container, effectiveTheme)
-    const colors = chartColorsFrom(style)
-    chart.applyOptions({
-      layout: { textColor: colors.text },
-      grid: {
-        vertLines: { color: colors.border },
-        horzLines: { color: colors.border },
-      },
-    })
-    applyMainColors(candlestick, candleType, colors)
-    volumeSeriesRef.current?.applyOptions({ color: colors.volume })
-    volumeMaSeriesRef.current?.applyOptions({
-      color: colors.volumeMa,
-      lineWidth: style.widths.volumeMa as LineWidth,
-    })
-    vwapSeriesRef.current?.applyOptions({
-      color: colors.vwap,
-      lineWidth: style.widths.vwap as LineWidth,
-    })
-    obvSeriesRef.current?.applyOptions({
-      color: colors.obv,
-      lineWidth: style.widths.obv as LineWidth,
-    })
-    for (const { spec, series } of overlaySeriesRef.current.values()) {
-      series.applyOptions({
-        color: overlayStyleColor(spec, style),
-        lineWidth: overlayStyleWidth(spec, style),
-      })
-    }
-    // Supertrend's two masked series recolor from the bull/bear tokens in place.
-    for (const { up, down } of supertrendSeriesRef.current.values()) {
-      up.applyOptions({ color: colors.markerBullish })
-      down.applyOptions({ color: colors.markerBearish })
-    }
-  }, [effectiveTheme, styleVersion, candleType])
+  // Re-apply the EXISTING chart's colours + line widths on a theme flip or a
+  // chart-style store mutation (Plan 0068 phase 2) — in place via `applyOptions`,
+  // no remount (Plan 0072 phase 8: `useChartRestyle`).
+  useChartRestyle(
+    {
+      containerRef,
+      chartRef,
+      seriesRef,
+      volumeSeriesRef,
+      volumeMaSeriesRef,
+      vwapSeriesRef,
+      obvSeriesRef,
+      overlaySeriesRef,
+      supertrendSeriesRef,
+    },
+    { effectiveTheme, styleVersion, candleType },
+  )
 
   // Track the effective theme; the subscription fires on an explicit theme
   // change and on an OS flip while in `system` mode. Unsubscribes on unmount.
@@ -1350,67 +651,17 @@ export function CandlestickChart({
 
   return (
     <div className={styles.wrapper}>
-      <div className={styles.controls}>
-        {agentModeEnabled && (
-          <button
-            type="button"
-            data-testid="select-range-toggle"
-            aria-pressed={selectRangeMode}
-            className={styles.selectRangeButton}
-            onClick={toggleSelectRange}
-          >
-            {selectRangeMode ? t('chart.selectingRange') : t('chart.selectRange')}
-          </button>
-        )}
-        <button
-          type="button"
-          data-testid="scan-patterns-button"
-          className={styles.scanButton}
-          onClick={scanVisibleRange}
-          disabled={scanStatus.kind === 'scanning' || !symbol || !timeframe}
-        >
-          {scanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.candlesticks')}
-        </button>
-        {scanStatus.kind === 'done' && (
-          <span data-testid="scan-patterns-status" className={styles.scanStatus}>
-            {t('chart.patternCount', { count: scanStatus.count })}
-          </span>
-        )}
-        {scanStatus.kind === 'empty' && (
-          <span data-testid="scan-patterns-status" className={styles.scanStatus}>
-            {t('chart.noPatternsInView')}
-          </span>
-        )}
-        {scanStatus.kind === 'error' && (
-          <span data-testid="scan-patterns-error" role="alert" className={styles.scanError}>
-            {scanStatus.message}
-          </span>
-        )}
-        <button
-          type="button"
-          data-testid="scan-chart-patterns-button"
-          className={styles.scanButton}
-          onClick={scanChartPatternsVisibleRange}
-          disabled={chartScanStatus.kind === 'scanning' || !symbol || !timeframe}
-        >
-          {chartScanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.chartPatterns')}
-        </button>
-        {chartScanStatus.kind === 'done' && (
-          <span data-testid="scan-chart-patterns-status" className={styles.scanStatus}>
-            {t('chart.patternCount', { count: chartScanStatus.count })}
-          </span>
-        )}
-        {chartScanStatus.kind === 'empty' && (
-          <span data-testid="scan-chart-patterns-status" className={styles.scanStatus}>
-            {t('chart.noChartPatternsInView')}
-          </span>
-        )}
-        {chartScanStatus.kind === 'error' && (
-          <span data-testid="scan-chart-patterns-error" role="alert" className={styles.scanError}>
-            {chartScanStatus.message}
-          </span>
-        )}
-      </div>
+      <ChartToolbar
+        agentModeEnabled={agentModeEnabled}
+        selectRangeMode={selectRangeMode}
+        toggleSelectRange={toggleSelectRange}
+        scanStatus={scanStatus}
+        chartScanStatus={chartScanStatus}
+        onScanPatterns={scanVisibleRange}
+        onScanChartPatterns={scanChartPatternsVisibleRange}
+        symbol={symbol}
+        timeframe={timeframe}
+      />
       <div className={styles.chartArea}>
         <div
           ref={containerRef}
