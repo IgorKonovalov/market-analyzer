@@ -1,6 +1,6 @@
 # 0077 — Forecast pivot: volatility + regime-transition forecasting, direction demoted
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-10
 > **Owner skill(s):** dev, backtester, ui-builder, human
 > **Related ADRs:** [0070](../adrs/0070-non-directional-forecast-targets.md) (non-directional forecast targets), [0071](../adrs/0071-advisor-non-directional-inputs-and-direction-demotion.md) (advisor non-voting inputs + direction demotion); extends [0030](../adrs/0030-forecasting-subsystem.md)/[0040](../adrs/0040-forecasting-model-artifacts.md), amends [0029](../adrs/0029-advisory-recommendation-boundary.md), relates [0027](../adrs/0027-crypto-macro-regime-classification.md)/[0057](../adrs/0057-forecast-feature-set-tiers.md)/[0058](../adrs/0058-forecast-recommendation-explainability.md)
