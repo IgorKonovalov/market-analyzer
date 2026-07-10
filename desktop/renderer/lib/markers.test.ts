@@ -8,7 +8,7 @@
  * and the empty-input case.
  */
 import type { Annotation } from '../types/sidecar/annotation'
-import { annotationsToMarkers, markerVisual } from './markers'
+import { annotationsToMarkers, candleGroupKey, markerVisual } from './markers'
 
 function annotation(overrides: Partial<Annotation> = {}): Annotation {
   return {
@@ -123,6 +123,49 @@ describe('annotationsToMarkers', () => {
       { event_ts: '2026-04-15T00:00:00+00:00', kind: 'bullish_marker', strength: 0.1 },
     ])[0]
     expect(strong.size ?? 0).toBeGreaterThan(weak.size ?? 0)
+  })
+
+  // Plan 0071 phase 2: a hovered legend group emphasises its markers and dims the
+  // rest (the marker analogue of the trendline highlight).
+  describe('highlightGroupKey (hover emphasis)', () => {
+    const TOKENS = { bullish: '#16a34a', bearish: '#dc2626', neutral: '#64748b' }
+    const HAMMER = {
+      event_ts: '2026-04-15T00:00:00+00:00',
+      kind: 'bullish_marker' as const,
+      pattern: 'hammer',
+    }
+    const DOJI = {
+      event_ts: '2026-04-16T00:00:00+00:00',
+      kind: 'neutral_marker' as const,
+      pattern: 'doji',
+    }
+
+    it('grows the hovered group and fades the rest', () => {
+      const plain = annotationsToMarkers([HAMMER, DOJI], TOKENS)
+      const [hammer, doji] = annotationsToMarkers([HAMMER, DOJI], TOKENS, {
+        highlightGroupKey: candleGroupKey(HAMMER),
+      })
+      // Hovered (hammer) grows above its un-highlighted size…
+      expect(hammer.size ?? 0).toBeGreaterThan(plain[0].size ?? 0)
+      // …and the un-hovered doji fades to an alpha'd colour (was a plain token).
+      expect(doji.color).not.toBe(plain[1].color)
+      expect(doji.color?.length).toBe(9) // #rrggbbaa
+    })
+
+    it('leaves every marker untouched when no group is hovered (null)', () => {
+      const plain = annotationsToMarkers([HAMMER, DOJI], TOKENS)
+      const none = annotationsToMarkers([HAMMER, DOJI], TOKENS, { highlightGroupKey: null })
+      expect(none.map((m) => [m.size, m.color])).toEqual(plain.map((m) => [m.size, m.color]))
+    })
+  })
+})
+
+describe('candleGroupKey', () => {
+  it('keys by pattern + direction; a null pattern folds to `unknown`', () => {
+    expect(candleGroupKey({ event_ts: 't', kind: 'bullish_marker', pattern: 'hammer' })).toBe(
+      'hammer|bullish_marker',
+    )
+    expect(candleGroupKey({ event_ts: 't', kind: 'neutral_marker' })).toBe('unknown|neutral_marker')
   })
 })
 

@@ -1,12 +1,16 @@
 /**
- * Plan 0049 phase 7 done-when: multi-bar pattern span rendering + its legend row.
+ * Plan 0049 phase 7 done-when: multi-bar pattern span rendering, updated for the
+ * Plan 0071 phase-2 reconciliation — spans no longer own a standalone "Pattern
+ * spans" legend row; they fold into the candlestick layer and gate with their
+ * (pattern type, direction) group.
  *
  * Drives the REAL component with a mocked `lightweight-charts` whose
  * `attachPrimitive` captures the span primitive, so we can assert: a multi-bar
- * marker (a morning_star span) produces a span band (one pane view) and a "Pattern
- * spans" legend row; a single-bar marker (a doji, no span) produces NO band and NO
- * row (the branch on `span_*` presence); and unchecking the span row hides the
- * band while leaving the arrows/overlays in place.
+ * marker (a morning_star span) produces a span band (one pane view) plus the
+ * candlestick legend (master + its group row); a single-bar marker (a doji, no
+ * span) produces NO band (the branch on `span_*` presence) yet still legends as a
+ * marker group; and toggling the group off removes the band (spans follow the
+ * group now, not a separate span toggle).
  *
  * The pixel-coordinate math (a span maps to a rect across exactly its bars) is
  * covered canvas-free in `lib/spans.test.ts`.
@@ -95,30 +99,36 @@ beforeEach(() => {
   setMarkersCalls = []
 })
 
-it('attaches the span primitive and draws a band + legend row for a multi-bar pattern', () => {
+it('attaches the span primitive and draws a band + candlestick legend for a multi-bar pattern', () => {
   render(<CandlestickChart bars={BARS} annotations={[SPAN_MARKER]} />)
   expect(mockAttachedPrimitive).not.toBeNull()
-  // The 3-bar morning_star is fed as one span → one pane view (the band).
+  // The 3-bar morning_star is the sole (and most-recent) group → enabled by
+  // default → fed as one span → one pane view (the band).
   expect(mockAttachedPrimitive?.paneViews()).toHaveLength(1)
-  expect(screen.getByTestId('layer-row:spans')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:candles-master')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:candles:morning_star|bullish_marker')).toBeInTheDocument()
 })
 
-it('draws NO band and NO span row for a single-bar pattern (branch on span_* presence)', () => {
+it('draws NO band for a single-bar pattern, but still legends it as a marker group', () => {
   render(<CandlestickChart bars={BARS} annotations={[SINGLE_BAR_MARKER]} />)
   expect(mockAttachedPrimitive).not.toBeNull()
+  // No span_* → no band…
   expect(mockAttachedPrimitive?.paneViews()).toHaveLength(0)
-  expect(screen.queryByTestId('layer-row:spans')).not.toBeInTheDocument()
+  // …but the doji is still a candlestick marker, so its group row lists.
+  expect(screen.getByTestId('layer-row:candles:doji|neutral_marker')).toBeInTheDocument()
 })
 
-it('unchecking the span row hides the band but leaves the markers drawn', () => {
+it('toggling the group off removes the band (spans follow the group, not a separate row)', () => {
   render(<CandlestickChart bars={BARS} annotations={[SPAN_MARKER]} />)
   expect(mockAttachedPrimitive?.paneViews()).toHaveLength(1)
-  const markerCallsBefore = setMarkersCalls.length
 
-  fireEvent.click(within(screen.getByTestId('layer-row:spans')).getByRole('checkbox'))
-
-  // Band gone (no pane view) …
+  // No standalone "Pattern spans" row exists anymore; the span is gated by its
+  // (morning_star, bullish) group. Unchecking that group removes the band.
+  expect(screen.queryByTestId('layer-row:spans')).not.toBeInTheDocument()
+  fireEvent.click(
+    within(screen.getByTestId('layer-row:candles:morning_star|bullish_marker')).getByRole(
+      'checkbox',
+    ),
+  )
   expect(mockAttachedPrimitive?.paneViews()).toHaveLength(0)
-  // … and the candlestick markers were still set (arrows unaffected by the toggle).
-  expect(setMarkersCalls.length).toBeGreaterThanOrEqual(markerCallsBefore)
 })

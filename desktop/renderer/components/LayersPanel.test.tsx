@@ -95,3 +95,34 @@ it('still toggles an overlay layer via its checkbox (legend interactivity untouc
   fireEvent.click(screen.getByLabelText('Toggle EMA(20)'))
   expect(onToggle).toHaveBeenCalledWith('overlay:ema:20')
 })
+
+// Plan 0071 phase 2: the same grouped-legend rows Plan 0067 introduced for
+// trendlines now serve candlestick-marker groups — a row carries an instance
+// count and a highlight key, and hovering it drives onHighlight (enter → key,
+// leave → null). This is the generalisation the plan reuses, unchanged.
+const GROUPED_LAYERS: ChartLayer[] = [
+  {
+    id: 'candles:hammer|bullish_marker',
+    label: 'Hammer (bullish)',
+    color: '#16a34a',
+    kind: 'marker',
+    visible: true,
+    count: 4,
+    highlightKey: 'hammer|bullish_marker',
+  },
+]
+
+it('renders a grouped row with its instance count', () => {
+  render(<LayersPanel layers={GROUPED_LAYERS} onToggle={() => {}} />)
+  expect(screen.getByTestId('layer-count:candles:hammer|bullish_marker')).toHaveTextContent('4')
+})
+
+it('fires onHighlight with the row key on hover-enter and null on leave', () => {
+  const onHighlight = jest.fn()
+  render(<LayersPanel layers={GROUPED_LAYERS} onToggle={() => {}} onHighlight={onHighlight} />)
+  const row = screen.getByTestId('layer-row:candles:hammer|bullish_marker')
+  fireEvent.mouseEnter(row)
+  expect(onHighlight).toHaveBeenLastCalledWith('hammer|bullish_marker')
+  fireEvent.mouseLeave(row)
+  expect(onHighlight).toHaveBeenLastCalledWith(null)
+})

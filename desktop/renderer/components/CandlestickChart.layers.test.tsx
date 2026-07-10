@@ -14,7 +14,7 @@ import '@testing-library/jest-dom'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 
 import { CandlestickChart } from './CandlestickChart'
-import type { Annotation } from '../types/sidecar/annotation'
+import type { ChartMarker } from '../lib/markers'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
 
@@ -31,7 +31,7 @@ let lineSeries: FakeLine[] = []
 let removedSeries: FakeLine[] = []
 let createdPriceLines: Array<{ price: number; color: string; line: FakePriceLine }> = []
 let removedPriceLines: FakePriceLine[] = []
-let lastMarkers: Array<{ color?: string }> = []
+let lastMarkers: Array<{ color?: string; size?: number; position?: string; shape?: string }> = []
 
 function reset(): void {
   lineSeries = []
@@ -48,7 +48,7 @@ jest.mock('lightweight-charts', () => ({
       setData: jest.fn(),
       attachPrimitive: jest.fn(),
       detachPrimitive: jest.fn(),
-      setMarkers: jest.fn((m: Array<{ color?: string }>) => {
+      setMarkers: jest.fn((m: typeof lastMarkers) => {
         lastMarkers = m
       }),
       applyOptions: jest.fn(),
@@ -111,16 +111,13 @@ const OVERLAYS: OverlaySpec[] = [
   { kind: 'price_line', price: 61_335.75, label: 'R1', role: 'resistance' },
 ]
 
-const ANNOTATIONS: Annotation[] = [
+// A single sweep marker (candlestick identity per ADR-0045: pattern + direction).
+const ANNOTATIONS: ChartMarker[] = [
   {
-    id: 'ann-1',
-    symbol: 'BTC-USD',
-    timeframe: '1d',
     event_ts: '2026-04-13T00:00:00+00:00',
     kind: 'bullish_marker',
     label: 'hammer',
-    agent_id: 'test',
-    created_at: '2026-04-13T01:00:00+00:00',
+    pattern: 'hammer',
   },
 ]
 
@@ -134,14 +131,16 @@ function row(id: string): HTMLElement {
   return screen.getByTestId(`layer-row:${id}`)
 }
 
-it('renders one row per layer: overlays + marker group + price line', () => {
+it('renders one row per layer: overlays + candlestick master/group + price line', () => {
   renderChart()
   const panel = screen.getByTestId('layers-panel')
   const rows = within(panel).getAllByRole('listitem')
-  expect(rows).toHaveLength(4)
+  // overlays ×2 + candlestick master + one (hammer, bullish) group + price line.
+  expect(rows).toHaveLength(5)
   expect(screen.getByTestId('layer-row:overlay:ema:20')).toBeInTheDocument()
   expect(screen.getByTestId('layer-row:overlay:sma:50')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:marker:bullish')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:candles-master')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:candles:hammer|bullish_marker')).toBeInTheDocument()
   expect(screen.getByTestId('layer-row:pline:R1')).toBeInTheDocument()
 })
 
@@ -155,9 +154,9 @@ it('each swatch colour equals the colour the layer was drawn with', () => {
   expect(screen.getByTestId('layer-swatch:overlay:sma:50')).toHaveStyle({
     backgroundColor: sma._opts.color as string,
   })
-  // Marker swatch === the colour the markers were drawn with.
+  // Group swatch === the colour the group's markers were drawn with.
   expect(lastMarkers.length).toBeGreaterThan(0)
-  expect(screen.getByTestId('layer-swatch:marker:bullish')).toHaveStyle({
+  expect(screen.getByTestId('layer-swatch:candles:hammer|bullish_marker')).toHaveStyle({
     backgroundColor: lastMarkers[0].color as string,
   })
   // Price-line swatch === the createPriceLine colour.
@@ -194,10 +193,11 @@ it('unchecking the price line removes it; re-checking re-creates it', () => {
   expect(createdPriceLines).toHaveLength(2) // re-created
 })
 
-it('unchecking the marker group hides those markers (empty setMarkers)', () => {
+it('unchecking the sole candlestick group hides those markers (empty setMarkers)', () => {
   renderChart()
+  // The single (hammer, bullish) group is the most-recent, so it draws by default.
   expect(lastMarkers.length).toBe(1)
-  fireEvent.click(within(row('marker:bullish')).getByRole('checkbox'))
+  fireEvent.click(within(row('candles:hammer|bullish_marker')).getByRole('checkbox'))
   expect(lastMarkers.length).toBe(0)
 })
 
@@ -209,7 +209,86 @@ it('toggle state is ephemeral — a remount restores all layers visible', () => 
   unmount()
   reset()
   renderChart()
-  // Fresh mount: nothing hidden.
+  // Fresh mount: overlays/price-lines back to visible.
   expect(within(row('overlay:ema:20')).getByRole('checkbox')).toBeChecked()
   expect(within(row('pline:R1')).getByRole('checkbox')).toBeChecked()
+})
+
+// ── Plan 0071 phase 2: grouped legend + draw-on-select for candlestick markers ──
+//
+// A dense sweep: 3 hammer (bullish) hits older, 2 doji (neutral) hits newest —
+// two (pattern type, direction) groups over 5 markers. The doji group is the
+// most-recent, so it draws by default and the wall of 5 never paints at once.
+const SWEEP: ChartMarker[] = [
+  { event_ts: '2026-04-10T00:00:00+00:00', kind: 'bullish_marker', pattern: 'hammer' },
+  { event_ts: '2026-04-11T00:00:00+00:00', kind: 'bullish_marker', pattern: 'hammer' },
+  { event_ts: '2026-04-12T00:00:00+00:00', kind: 'bullish_marker', pattern: 'hammer' },
+  { event_ts: '2026-04-20T00:00:00+00:00', kind: 'neutral_marker', pattern: 'doji' },
+  { event_ts: '2026-04-21T00:00:00+00:00', kind: 'neutral_marker', pattern: 'doji' },
+]
+
+const HAMMER_ROW = 'candles:hammer|bullish_marker'
+const DOJI_ROW = 'candles:doji|neutral_marker'
+
+function renderSweep() {
+  return render(<CandlestickChart bars={BARS} annotations={SWEEP} />)
+}
+
+it('does NOT paint all N markers at once — only the most-recent group draws', () => {
+  renderSweep()
+  // 5 markers arrived; the default draws only the 2 doji (most-recent) — never 5.
+  expect(SWEEP).toHaveLength(5)
+  expect(lastMarkers.length).toBe(2)
+})
+
+it('lists exactly one legend row per (type, direction) group with its count', () => {
+  renderSweep()
+  expect(screen.getByTestId('layer-row:candles-master')).toBeInTheDocument()
+  expect(screen.getByTestId(`layer-count:${HAMMER_ROW}`)).toHaveTextContent('3')
+  expect(screen.getByTestId(`layer-count:${DOJI_ROW}`)).toHaveTextContent('2')
+  // Default selection: doji (most-recent) on, hammer off.
+  expect(within(row(DOJI_ROW)).getByRole('checkbox')).toBeChecked()
+  expect(within(row(HAMMER_ROW)).getByRole('checkbox')).not.toBeChecked()
+})
+
+it('toggling a group on draws exactly that group and off removes it', () => {
+  renderSweep()
+  expect(lastMarkers.length).toBe(2) // doji only
+  // Enable hammer → its 3 markers add to the 2 doji (draws that group, nothing else).
+  fireEvent.click(within(row(HAMMER_ROW)).getByRole('checkbox'))
+  expect(lastMarkers.length).toBe(5)
+  // Disable it again → back to the 2 doji.
+  fireEvent.click(within(row(HAMMER_ROW)).getByRole('checkbox'))
+  expect(lastMarkers.length).toBe(2)
+})
+
+it('the master toggle hides the whole layer without desyncing the per-group toggles', () => {
+  renderSweep()
+  expect(lastMarkers.length).toBe(2)
+  // Master off → nothing draws, but the doji group stays selected (checkbox checked).
+  fireEvent.click(within(row('candles-master')).getByRole('checkbox'))
+  expect(lastMarkers.length).toBe(0)
+  expect(within(row(DOJI_ROW)).getByRole('checkbox')).toBeChecked()
+  // Master back on → the preserved doji selection redraws (no desync).
+  fireEvent.click(within(row('candles-master')).getByRole('checkbox'))
+  expect(lastMarkers.length).toBe(2)
+})
+
+it('hovering a group row emphasises that group and clears on leave', () => {
+  renderSweep()
+  const dojiSize = (): number => lastMarkers.find((m) => m.shape === 'circle')?.size ?? 0
+  const before = dojiSize()
+  expect(before).toBeGreaterThan(0)
+  fireEvent.mouseEnter(row(DOJI_ROW))
+  expect(dojiSize()).toBeGreaterThan(before) // hovered group's markers grow
+  fireEvent.mouseLeave(row(DOJI_ROW))
+  expect(dojiSize()).toBe(before) // emphasis cleared
+})
+
+it('still renders the empty/error states unchanged (no candlestick markers)', () => {
+  render(<CandlestickChart bars={BARS} overlays={OVERLAYS} />)
+  // No annotations → no candlestick master/group rows, but overlays + pline remain.
+  expect(screen.queryByTestId('layer-row:candles-master')).toBeNull()
+  expect(screen.getByTestId('layer-row:overlay:ema:20')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:pline:R1')).toBeInTheDocument()
 })

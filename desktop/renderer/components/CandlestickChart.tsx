@@ -45,10 +45,18 @@ import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import {
   DEFAULT_MARKER_COLORS,
   annotationsToMarkers,
+  candleGroupKey,
   type ChartMarker,
-  markerLayerId,
-  markerLayerLabel,
 } from '../lib/markers'
+import {
+  CANDLE_MASTER_ID,
+  CANDLE_MASTER_LABEL,
+  candleGroupKeyFromLayerId,
+  candleGroupLabel,
+  candleGroupLayerId,
+  groupCandlestickMarkers,
+  mostRecentGroupKey,
+} from '../lib/candleGroups'
 import {
   type OverlayReading,
   type TooltipContent,
@@ -67,7 +75,7 @@ import {
   overlayStyleElement,
   supertrendBands,
 } from '../lib/overlays'
-import { PatternSpanPrimitive, SPAN_LAYER_ID, SPAN_LAYER_LABEL, markersToSpans } from '../lib/spans'
+import { PatternSpanPrimitive, markersToSpans } from '../lib/spans'
 import {
   TrendlinePrimitive,
   dedupeTrendlines,
@@ -484,6 +492,82 @@ export function CandlestickChart({
   // null. Threaded into the primitive so hovering a row emphasises that group's
   // lines and dims the rest. Ephemeral, never persisted.
   const [highlightedTrendlineKey, setHighlightedTrendlineKey] = useState<string | null>(null)
+  // Candlestick-marker groups (Plan 0071 phase 2): the sweep markers grouped by
+  // (pattern type, direction) from the ADR-0045 identity. Painting all at once
+  // buries the candles, so the legend lists the groups and only ENABLED ones
+  // draw. Recomputed when the markers change.
+  const candleGroups = useMemo(() => groupCandlestickMarkers(annotations ?? []), [annotations])
+  // Opt-in per-group visibility (draw-on-select). Seeded to the single most-recent
+  // group on each NEW sweep (the effect below) so the chart is populated, not
+  // walled. Ephemeral, never persisted.
+  const [enabledCandleGroups, setEnabledCandleGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
+  // The (type, direction) group-set signature of the last render. Reseed the
+  // enabled set only when the GROUPS change (a new sweep) — never on a live tick
+  // that just grows an existing group, which would yank the user's picks.
+  const prevCandleSigRef = useRef<string>('')
+  useEffect(() => {
+    const sig = candleGroups
+      .map((g) => g.key)
+      .sort()
+      .join(',')
+    if (sig === prevCandleSigRef.current) return
+    prevCandleSigRef.current = sig
+    const recent = mostRecentGroupKey(candleGroups)
+    setEnabledCandleGroups(recent === null ? new Set() : new Set([recent]))
+  }, [candleGroups])
+  // Hovered candlestick legend group (its group key), or null — emphasises that
+  // group's markers and fades the rest. Ephemeral.
+  const [highlightedCandleGroup, setHighlightedCandleGroup] = useState<string | null>(null)
+  // The candlestick layer MASTER toggle (Plan 0071 phase 2): the coarse per-
+  // direction rows + the span row fold into one master; the per-group rows are
+  // the detail. Master off hides every group's markers + spans WITHOUT clearing
+  // the per-group selection (no desync). Opt-out via the shared `hidden` set.
+  const candleMasterHidden = hidden.has(CANDLE_MASTER_ID)
+  // The markers actually drawn: master on AND the marker's group enabled. Feeds
+  // both the marker draw and the span band, so they gate identically.
+  const drawnMarkers = useMemo(
+    () =>
+      candleMasterHidden
+        ? []
+        : (annotations ?? []).filter((m) => enabledCandleGroups.has(candleGroupKey(m))),
+    [annotations, candleMasterHidden, enabledCandleGroups],
+  )
+  const toggleCandleGroup = useCallback((key: string): void => {
+    setEnabledCandleGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  // LayersPanel routes a candlestick GROUP row (opt-in) to the enabled set and
+  // everything else (overlays / candlestick master / price-lines / trendline
+  // groups, all opt-out) to `hidden`.
+  const onLayerToggle = useCallback(
+    (id: string): void => {
+      const groupKey = candleGroupKeyFromLayerId(id)
+      if (groupKey !== null) toggleCandleGroup(groupKey)
+      else toggleLayer(id)
+    },
+    [toggleCandleGroup, toggleLayer],
+  )
+  // Hover-highlight is shared by both legend systems: a candlestick group key
+  // drives the marker emphasis, any other key drives the trendline primitive.
+  const candleKeySet = useMemo(() => new Set(candleGroups.map((g) => g.key)), [candleGroups])
+  const onLayerHighlight = useCallback(
+    (key: string | null): void => {
+      if (key !== null && candleKeySet.has(key)) {
+        setHighlightedCandleGroup(key)
+        setHighlightedTrendlineKey(null)
+      } else {
+        setHighlightedTrendlineKey(key)
+        setHighlightedCandleGroup(null)
+      }
+    },
+    [candleKeySet],
+  )
   // "Scan patterns" trigger state (Plan 0049 phase 8). Ephemeral, never persisted.
   const [scanStatus, setScanStatus] = useState<ScanStatus>({ kind: 'idle' })
   // "Scan chart patterns" (trendline) trigger state (Plan 0064 phase 5). Only the
@@ -947,10 +1031,11 @@ export function CandlestickChart({
     const container = containerRef.current
     if (!series || !container) return
     const colors = chartColorsFrom(resolveChartStyle(container, effectiveTheme))
-    // Drop annotations whose marker-direction layer is toggled off in the legend.
-    const visibleAnnotations = (annotations ?? []).filter((a) => !hidden.has(markerLayerId(a.kind)))
+    // Draw-on-select (Plan 0071 phase 2): only the enabled groups' markers paint
+    // (master on ⊗ group enabled — encapsulated in `drawnMarkers`), so the sweep
+    // never dumps all N at once. A hovered legend group emphasises its markers.
     const base = annotationsToMarkers(
-      visibleAnnotations,
+      drawnMarkers,
       {
         bullish: colors.markerBullish,
         bearish: colors.markerBearish,
@@ -958,7 +1043,7 @@ export function CandlestickChart({
       },
       // Glyph-only on the canvas; the label shows in the backed hover tooltip
       // (Plan 0049 phase 12 — no bare overlapping text over the candles).
-      { includeText: false },
+      { includeText: false, highlightGroupKey: highlightedCandleGroup },
     )
     let markers = base
     if (clickedBarTs !== null) {
@@ -974,7 +1059,7 @@ export function CandlestickChart({
       markers = [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
     }
     series.setMarkers(markers)
-  }, [annotations, clickedBarTs, effectiveTheme, hidden, styleVersion, candleType])
+  }, [drawnMarkers, clickedBarTs, effectiveTheme, styleVersion, candleType, highlightedCandleGroup])
 
   // Multi-bar pattern span band (Plan 0049 phase 7): feed the span primitive the
   // current spans, theme-resolved direction colours, and the legend visibility.
@@ -991,10 +1076,13 @@ export function CandlestickChart({
       bearish: colors.markerBearish,
       neutral: colors.markerNeutral,
     })
-    primitive.setSpans(markersToSpans(annotations ?? []))
-    primitive.setVisible(!hidden.has(SPAN_LAYER_ID))
+    // Spans gate identically to the markers (Plan 0071 phase 2): only the enabled
+    // groups' spans draw (master off / group disabled → `drawnMarkers` excludes
+    // them → no span). The standalone "Pattern spans" row folds into the master.
+    primitive.setSpans(markersToSpans(drawnMarkers))
+    primitive.setVisible(true)
     // `candleType` re-feeds the freshly-attached span primitive after a rebuild.
-  }, [annotations, effectiveTheme, hidden, styleVersion, candleType])
+  }, [drawnMarkers, effectiveTheme, styleVersion, candleType])
 
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
   // (S/R levels the agent pushes) on the candlestick series. A line toggled off
@@ -1059,21 +1147,36 @@ export function CandlestickChart({
         glossaryKey: spec.kind,
       })
     }
-    for (const direction of new Set((annotations ?? []).map((a) => a.kind))) {
-      const id = markerLayerId(direction)
-      const markerColor =
-        direction === 'bullish_marker'
-          ? colors.markerBullish
-          : direction === 'bearish_marker'
-            ? colors.markerBearish
-            : colors.markerNeutral
+    // Candlestick marker layer (Plan 0071 phase 2): a single MASTER row for the
+    // whole layer, then one DETAIL row per (pattern type, direction) group with
+    // its instance count, per-group visibility, and a highlight key. Replaces the
+    // coarse per-direction marker rows + the standalone span row (both fold into
+    // the master). Rows list even when a group is toggled off (so it re-enables).
+    if (candleGroups.length > 0) {
       next.push({
-        id,
-        label: markerLayerLabel(direction),
-        color: markerColor,
+        id: CANDLE_MASTER_ID,
+        label: CANDLE_MASTER_LABEL,
+        color: colors.markerNeutral,
         kind: 'marker',
-        visible: !hidden.has(id),
+        visible: !hidden.has(CANDLE_MASTER_ID),
       })
+      for (const group of candleGroups) {
+        const groupColor =
+          group.kind === 'bullish_marker'
+            ? colors.markerBullish
+            : group.kind === 'bearish_marker'
+              ? colors.markerBearish
+              : colors.markerNeutral
+        next.push({
+          id: candleGroupLayerId(group.key),
+          label: candleGroupLabel(group),
+          color: groupColor,
+          kind: 'marker',
+          visible: enabledCandleGroups.has(group.key),
+          count: group.count,
+          highlightKey: group.key,
+        })
+      }
     }
     for (const spec of overlays ?? []) {
       if (spec.kind !== 'price_line') continue
@@ -1084,18 +1187,6 @@ export function CandlestickChart({
         color: priceLineColor(spec, colors),
         kind: 'price_line',
         visible: !hidden.has(id),
-      })
-    }
-    // One row for ALL multi-bar pattern spans (Plan 0049 phase 7); only present
-    // when at least one span exists. Unchecking it hides every span box and
-    // leaves the arrows/overlays untouched (the spans effect reads `hidden`).
-    if (markersToSpans(annotations ?? []).length > 0) {
-      next.push({
-        id: SPAN_LAYER_ID,
-        label: SPAN_LAYER_LABEL,
-        color: colors.markerNeutral,
-        kind: 'span',
-        visible: !hidden.has(SPAN_LAYER_ID),
       })
     }
     // Grouped trendline rows (Plan 0067 phase 3 / ADR-0061): one row per
@@ -1127,7 +1218,15 @@ export function CandlestickChart({
       })
     }
     setLayers(next)
-  }, [overlays, annotations, visibleTrendlines, hidden, effectiveTheme, styleVersion])
+  }, [
+    overlays,
+    candleGroups,
+    enabledCandleGroups,
+    visibleTrendlines,
+    hidden,
+    effectiveTheme,
+    styleVersion,
+  ])
 
   // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a labelled
   // marker's text and/or each overlay line's name + value at that bar. Reads only
@@ -1338,11 +1437,7 @@ export function CandlestickChart({
             containerHeight={containerRef.current?.clientHeight ?? 0}
           />
         )}
-        <LayersPanel
-          layers={layers}
-          onToggle={toggleLayer}
-          onHighlight={setHighlightedTrendlineKey}
-        />
+        <LayersPanel layers={layers} onToggle={onLayerToggle} onHighlight={onLayerHighlight} />
       </div>
     </div>
   )

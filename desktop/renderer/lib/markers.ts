@@ -61,6 +61,15 @@ export function markerLayerLabel(kind: MarkerKind): string {
   return 'Neutral markers'
 }
 
+/** The (pattern type, direction) grouping key of a candlestick marker (Plan 0071
+ * phase 2). A marker with no `pattern` groups under `unknown|<kind>` so agent-
+ * authored highlights still form a coherent row; direction (`kind`) keeps a
+ * bullish and a bearish hit on the same bar in separate groups (the ADR-0045
+ * same-bar dedup lesson). The grouped-legend + draw-on-select gates on this. */
+export function candleGroupKey(m: ChartMarker): string {
+  return `${m.pattern ?? 'unknown'}|${m.kind}`
+}
+
 // Marker glyph sizing (Plan 0047 phase 7). lightweight-charts' default marker
 // `size` is 1; the old markers used it and read as too subtle. `NEUTRAL_SIZE` is
 // the baseline for a marker with no known strength (the current live path — see
@@ -71,6 +80,13 @@ const STRONG_SIZE = 3.0
 // Weakest strength still renders at this alpha so a low-strength marker stays
 // visible; strength 1.0 reaches full opacity.
 const WEAK_ALPHA = 0.5
+
+// Hover-highlight (Plan 0071 phase 2): when a legend group is hovered, its
+// markers grow (emphasis) and every other drawn marker fades (dim) so the
+// hovered group reads out of the field — the marker analogue of the trendline
+// legend's emphasise/dim (ADR-0061).
+const HIGHLIGHT_EMPHASIS_SCALE = 1.5
+const HIGHLIGHT_DIM_ALPHA = 0.3
 
 export interface MarkerVisual {
   /** lightweight-charts marker `size` multiplier. */
@@ -149,9 +165,9 @@ export function markerVisual(
 export function annotationsToMarkers(
   markers: ChartMarker[],
   colors: MarkerColors = DEFAULT_MARKER_COLORS,
-  options: { includeText?: boolean } = {},
+  options: { includeText?: boolean; highlightGroupKey?: string | null } = {},
 ): SeriesMarker<UTCTimestamp>[] {
-  const { includeText = true } = options
+  const { includeText = true, highlightGroupKey = null } = options
   return markers
     .map((m) => {
       const time = Math.floor(new Date(m.event_ts).getTime() / 1000) as UTCTimestamp
@@ -160,7 +176,13 @@ export function annotationsToMarkers(
       // bare overlapping text over the candles. The label instead shows in the
       // backed hover tooltip (Plan 0047). Other callers keep the text.
       const text = includeText && m.label ? truncateLabel(m.label) : ''
-      const { size, color } = markerVisual(m.kind, m.strength ?? null, colors)
+      let { size, color } = markerVisual(m.kind, m.strength ?? null, colors)
+      // Hover-highlight (Plan 0071 phase 2): a hovered legend group emphasises its
+      // markers and fades the rest. Null (no hover) leaves every marker as drawn.
+      if (highlightGroupKey !== null) {
+        if (candleGroupKey(m) === highlightGroupKey) size *= HIGHLIGHT_EMPHASIS_SCALE
+        else color = withAlpha(color, HIGHLIGHT_DIM_ALPHA)
+      }
       if (m.kind === 'bullish_marker') {
         return { time, position: 'belowBar' as const, shape: 'arrowUp' as const, color, size, text }
       }
