@@ -533,6 +533,8 @@ EXPECTED_FULL_TOOLSET = {
     "detect_levels",
     "evaluate_signals",
     "forecast",
+    "forecast_regime",
+    "forecast_volatility",
     "get_backtest",
     "get_metric_series",
     "get_ohlcv",

@@ -49,8 +49,10 @@ from market_analyser.events.payloads import (
     OhlcvBackfillFailedPayloadV1,
     OhlcvBackfillStartedPayloadV1,
     RecommendationCompletedPayloadV1,
+    RegimeForecastCompletedPayloadV1,
     RunCompletedPayloadV1,
     SignalEvaluatedPayloadV1,
+    VolatilityForecastCompletedPayloadV1,
 )
 
 __all__ = [
@@ -79,10 +81,12 @@ __all__ = [
     "OhlcvBackfilledPayloadV1",
     "OverlaySpec",
     "RecommendationCompletedPayloadV1",
+    "RegimeForecastCompletedPayloadV1",
     "RunCompletedPayloadV1",
     "SignalEvaluatedPayloadV1",
     "Subscription",
     "TrendPoint",
     "TrendlineSpec",
     "UnknownEventTypeError",
+    "VolatilityForecastCompletedPayloadV1",
 ]

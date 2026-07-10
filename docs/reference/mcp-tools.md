@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 42 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 44 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -22,6 +22,8 @@ The 42 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`detect_levels`](#detectlevels) | Detect support/resistance levels on the cached bars and draw them on the chart in one call: clusters confirmed swing pivots into zones, ranks each zone's strength by touch count weighted by the volume traded at that price (volume-by-price), returns the ranked levels as data, AND publishes a single `chart.show v1` event carrying one `price_line` overlay per level (role support/resistance, labels S1/R1/... |
 | [`evaluate_signals`](#evaluatesignals) | Evaluate a strategy against the CURRENT bar of one symbol — a live signal read, not a historical backtest. |
 | [`forecast`](#forecast) | Forecast the price DIRECTION of a cached symbol over one or more horizons, each as a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. |
+| [`forecast_regime`](#forecastregime) | Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. |
+| [`forecast_volatility`](#forecastvolatility) | Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. |
 | [`get_backtest`](#getbacktest) | Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). |
 | [`get_metric_series`](#getmetricseries) | Read a stored metric time series (ADR-0051): points of one registered series_id over an inclusive [start, end] epoch-second window, sorted by ts ascending. |
 | [`get_ohlcv`](#getohlcv) | Read OHLCV bars for one symbol over a [start, end] window. |
@@ -343,6 +345,74 @@ Forecast the price DIRECTION of a cached symbol over one or more horizons, each 
 | `horizons` | array[HorizonForecast] |
 
 **Source:** [`src/market_analyser/api/mcp_tools/forecast.py`](../../src/market_analyser/api/mcp_tools/forecast.py)
+
+## `forecast_regime`
+
+Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. up_quiet / down_volatile) and a probability distribution over the next-period regime horizon_bars ahead, scored against a persistence baseline (regime unchanged) by the Brier score. beats_baseline is the honest gate (the classifier must beat persistence out-of-sample); regimes are sticky, so persistence is a strong baseline and beating it is a real signal. The trend axis is the same classifier the analyst snapshot uses; the volatility axis splits ATR% at its trailing median. Features use the richest-first tier ladder (v2-full -> v2-deep -> v1); provenance names the tier, its series, any skipped tier, and the top out-of-sample permutation-importance drivers. Distinct from bitcoin_market_pulse's whole-market regime: this is per-symbol and predictive. A CONDITION, never a buy/sell recommendation. Requires bars already cached for the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, 15m, 4h, 1w.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `range_start` | string (date-time) | yes | — |
+| `range_end` | string (date-time) | yes | — |
+| `horizon_bars` | integer | no | `5` |
+| `n_splits` | integer | no | `5` |
+| `seed` | integer | no | `1729` |
+
+**Returns:** `RegimeForecast`
+
+| Field | Type |
+| --- | --- |
+| `symbol` | string |
+| `timeframe` | string |
+| `as_of_bar_ts` | string (date-time) |
+| `horizon_bars` | integer |
+| `current_regime` | RegimeState \| null |
+| `transition_probs` | object \| null |
+| `beats_baseline` | boolean |
+| `score_margin` | number \| null |
+| `validation` | RegimeValidation |
+| `provenance` | ForecastProvenance \| null |
+
+**Source:** [`src/market_analyser/api/mcp_tools/forecast_regime.py`](../../src/market_analyser/api/mcp_tools/forecast_regime.py)
+
+## `forecast_volatility`
+
+Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. beats_baseline is the honest gate (the model must beat the better baseline out-of-sample); when it does not, trust baseline_vol (the winning baseline's current reading), which is always surfaced. Features use the same richest-first tier ladder as `forecast` (v2-full -> v2-deep -> v1 by exogenous history depth); provenance names the tier (feature_set_id), its series (series_inputs), any skipped tier (fallback_reason), and the top out-of-sample permutation-importance drivers. This is a CONDITION (a magnitude), never a buy/sell recommendation and never a price level; use it for position sizing and stop distance. Requires bars already cached for the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, 15m, 4h, 1w.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `range_start` | string (date-time) | yes | — |
+| `range_end` | string (date-time) | yes | — |
+| `horizon_bars` | integer | no | `5` |
+| `n_splits` | integer | no | `5` |
+| `seed` | integer | no | `1729` |
+
+**Returns:** `VolatilityForecast`
+
+| Field | Type |
+| --- | --- |
+| `symbol` | string |
+| `timeframe` | string |
+| `as_of_bar_ts` | string (date-time) |
+| `horizon_bars` | integer |
+| `predicted_vol` | number \| null |
+| `band` | array[any] \| null |
+| `baseline_vol` | number \| null |
+| `baseline_kind` | enum["persistence", "ewma"] \| null |
+| `beats_baseline` | boolean |
+| `score_margin` | number \| null |
+| `validation` | VolatilityValidation |
+| `provenance` | ForecastProvenance \| null |
+
+**Source:** [`src/market_analyser/api/mcp_tools/forecast_volatility.py`](../../src/market_analyser/api/mcp_tools/forecast_volatility.py)
 
 ## `get_backtest`
 

@@ -4,7 +4,7 @@
 
 # SSE events
 
-The 20 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
+The 22 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
 
 | Event | Summary |
 | --- | --- |
@@ -26,8 +26,10 @@ The 20 SSE envelope kinds published on `/events`, from the event type registry. 
 | [`ohlcv.backfill_started`](#ohlcvbackfillstarted) | `ohlcv.backfill_started v1`: a backfill fetch began for symbol+timeframe. Emitted before the upstream call so the renderer can show its spinner. |
 | [`ohlcv.backfilled`](#ohlcvbackfilled) | `ohlcv.backfilled v1`: a backfill completed; the cache is now hot for the `[range_start, range_end]` span. |
 | [`recommendation.completed`](#recommendationcompleted) | `recommendation.completed v1` payload (Plan 0039, ADR-0029): the advisor produced a labeled advisory `Recommendation` for one symbol/timeframe. |
+| [`regime_forecast.completed`](#regimeforecastcompleted) | `regime_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_regime` tool produced a regime-transition forecast. |
 | [`run.completed`](#runcompleted) | `run.completed v1` payload: a backtest/analysis/defi artifact is ready. |
 | [`signal.evaluated`](#signalevaluated) | `signal.evaluated v1` payload (Plan 0026): the live signal state of one strategy on one symbol. |
+| [`volatility_forecast.completed`](#volatilityforecastcompleted) | `volatility_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_volatility` tool produced a realised-volatility forecast. |
 
 ---
 
@@ -377,6 +379,25 @@ payload validates is safe to render as advice-and-only-advice.
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 
+## `regime_forecast.completed`
+
+**Version:** 1
+
+`regime_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_regime`
+tool produced a regime-transition forecast.
+
+The full result rides inline — one envelope per tool call. Distinct from the
+crypto-macro nowcast (ADR-0027): per-symbol, technical, predictive. A *condition
+report*, never a recommendation (ADR-0029).
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `forecast` | RegimeForecast | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
 ## `run.completed`
 
 **Version:** 1
@@ -411,5 +432,25 @@ never a recommendation.
 | Name | Type | Required | Default |
 | --- | --- | --- | --- |
 | `evaluation` | SignalEvaluation | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
+## `volatility_forecast.completed`
+
+**Version:** 1
+
+`volatility_forecast.completed v1` payload (Plan 0077, ADR-0070): the
+`forecast_volatility` tool produced a realised-volatility forecast.
+
+The full result rides inline — small and ephemeral, nothing persisted for the viewer
+to follow-up fetch; one envelope per tool call. A no-edge verdict travels honestly
+(``beats_baseline=False`` with the baseline surfaced). A *condition report* (a
+magnitude), never a recommendation and never a price level (ADR-0029).
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `forecast` | VolatilityForecast | yes | — |
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)

@@ -43,6 +43,7 @@ import json
 import math
 import statistics
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
@@ -52,9 +53,10 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 
 from market_analyser.backtest.walk_forward import fold_bounds
 from market_analyser.data.types import Bar
+from market_analyser.forecast.explain import feature_names_for_set, summarize_fold_importances
 from market_analyser.forecast.features import FEATURE_SET_ID, FeatureRow, build_feature_rows
 from market_analyser.forecast.model import ModelParams, model_lib_versions
-from market_analyser.forecast.result import ForecastProvenance
+from market_analyser.forecast.result import ForecastProvenance, SeriesInput
 
 # Floor applied to any volatility before it is squared into a variance for QLIKE, so
 # a genuinely-zero realised move (possible at horizon 1) cannot yield ``ln(0)``. Small
@@ -141,6 +143,17 @@ class VolatilityValidation(BaseModel):
     score_margin: float | None
     beats_baseline: bool
     folds: list[VolatilityFoldScore]
+
+
+@dataclass(frozen=True)
+class _VolFold:
+    """One scored walk-forward fold captured for explainability (Plan 0077 phase 3): the
+    fitted regressor, its out-of-sample feature matrix, and the **log-vol** targets (the
+    space the regressor scores in, so permutation importance measures the real driver)."""
+
+    estimator: HistGradientBoostingRegressor
+    x: list[list[float]]
+    y: list[float]
 
 
 def _log_returns(closes: Sequence[float]) -> list[float | None]:
@@ -295,6 +308,7 @@ def validate_volatility(
     feature_rows: Sequence[FeatureRow | None] | None = None,
     ewma_lambda: float = DEFAULT_EWMA_LAMBDA,
     log_residual_sink: list[float] | None = None,
+    scored_fold_sink: list[_VolFold] | None = None,
 ) -> VolatilityValidation:
     """Run expanding-window walk-forward validation of the volatility regressor and
     return the QLIKE baseline-gated verdict.
@@ -356,6 +370,14 @@ def validate_volatility(
 
         reg = _train_log_vol(train_rows, train_labels, params)
         model_preds = _predict_vol(reg, test_rows)
+        if scored_fold_sink is not None:
+            scored_fold_sink.append(
+                _VolFold(
+                    estimator=reg,
+                    x=[list(row.values) for row in test_rows],
+                    y=[math.log(max(v, VOL_FLOOR)) for v in test_labels],
+                )
+            )
 
         fold_model: list[float] = []
         fold_pers: list[float] = []
@@ -482,18 +504,27 @@ def forecast_volatility(
     model_params: ModelParams | None = None,
     feature_rows: Sequence[FeatureRow | None] | None = None,
     ewma_lambda: float = DEFAULT_EWMA_LAMBDA,
+    feature_set_id: str = FEATURE_SET_ID,
+    series_inputs: tuple[SeriesInput, ...] = (),
+    fallback_reason: str | None = None,
 ) -> VolatilityForecast:
     """Produce a volatility forecast for the bar series: walk-forward-validate the
     regressor (the honest edge verdict), then train a final model on all causal samples
     and predict the volatility of the next ``horizon_bars`` from the latest bar's feature
     row. The point prediction is present whenever a model could train; ``beats_baseline``
     (from the validation) says whether it should be trusted over the baseline reading,
-    which is always surfaced when the walk-forward picked one."""
+    which is always surfaced when the walk-forward picked one.
+
+    ``feature_rows`` + ``feature_set_id`` / ``series_inputs`` / ``fallback_reason`` let the
+    MCP tool feed the ADR-0057 tier-selected matrix and record which tier trained; the
+    defaults compute the v1 OHLCV-only set (the direct-call path). The provenance carries
+    a compact out-of-sample permutation-importance `ExplanationSummary` (ADR-0058)."""
 
     params = model_params if model_params is not None else ModelParams()
     rows = list(feature_rows) if feature_rows is not None else build_feature_rows(bars)
 
     residuals: list[float] = []
+    captures: list[_VolFold] = []
     validation = validate_volatility(
         bars,
         horizon_bars=horizon_bars,
@@ -502,6 +533,7 @@ def forecast_volatility(
         feature_rows=rows,
         ewma_lambda=ewma_lambda,
         log_residual_sink=residuals,
+        scored_fold_sink=captures,
     )
 
     closes = [b.close for b in bars]
@@ -537,19 +569,27 @@ def forecast_volatility(
         band = (predicted_vol * math.exp(-resid_std), predicted_vol * math.exp(resid_std))
         training_cutoff = train_rows[-1].event_ts
         lib_versions = model_lib_versions()
+        explanation = summarize_fold_importances(
+            feature_names=feature_names_for_set(feature_set_id),
+            folds=[(f.estimator, f.x, f.y) for f in captures],
+            seed=params.seed,
+        )
         provenance = ForecastProvenance(
             model_version=_compute_vol_model_version(
-                feature_set_id=FEATURE_SET_ID,
+                feature_set_id=feature_set_id,
                 model_params=params,
                 horizon_bars=horizon_bars,
                 ewma_lambda=ewma_lambda,
                 training_cutoff=training_cutoff,
                 lib_versions=lib_versions,
             ),
-            feature_set_id=FEATURE_SET_ID,
+            feature_set_id=feature_set_id,
             training_cutoff=training_cutoff,
             seed=params.seed,
             lib_versions=lib_versions,
+            series_inputs=series_inputs,
+            fallback_reason=fallback_reason,
+            explanation=explanation,
         )
 
     return VolatilityForecast(

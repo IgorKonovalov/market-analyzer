@@ -30,6 +30,7 @@ import hashlib
 import json
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -43,9 +44,10 @@ from market_analyser.analysis.snapshot import _classify_trend
 from market_analyser.analysis.types import Trend
 from market_analyser.backtest.walk_forward import fold_bounds
 from market_analyser.data.types import Bar
+from market_analyser.forecast.explain import feature_names_for_set, summarize_fold_importances
 from market_analyser.forecast.features import FEATURE_SET_ID, FeatureRow, build_feature_rows
 from market_analyser.forecast.model import ModelParams, model_lib_versions
-from market_analyser.forecast.result import ForecastProvenance
+from market_analyser.forecast.result import ForecastProvenance, SeriesInput
 
 # ATR / ADX periods match the analyst surface (snapshot / features) so the regime reads
 # the same parameterisation the rest of the app reports.
@@ -127,6 +129,17 @@ class RegimeValidation(BaseModel):
     score_margin: float | None
     beats_baseline: bool
     folds: list[RegimeFoldScore]
+
+
+@dataclass(frozen=True)
+class _RegimeFold:
+    """One scored walk-forward fold captured for explainability (Plan 0077 phase 3): the
+    fitted classifier, its out-of-sample feature matrix, and the regime string targets
+    (the classifier scores in accuracy over these)."""
+
+    estimator: HistGradientBoostingClassifier
+    x: list[list[float]]
+    y: list[str]
 
 
 def _atr_pct_series(bars: Sequence[Bar]) -> list[float | None]:
@@ -313,6 +326,7 @@ def validate_regime(
     n_splits: int = 5,
     model_params: ModelParams | None = None,
     feature_rows: Sequence[FeatureRow | None] | None = None,
+    scored_fold_sink: list[_RegimeFold] | None = None,
 ) -> RegimeValidation:
     """Walk-forward-validate the transition classifier and return the Brier baseline-gated
     verdict. Reuses `fold_bounds` and purges the trailing ``horizon`` train samples (a
@@ -363,6 +377,14 @@ def validate_regime(
 
         clf, classes = _train_regime(train_rows, train_labels, params)
         model_dists = _predict_regime_proba(clf, classes, test_rows)
+        if scored_fold_sink is not None:
+            scored_fold_sink.append(
+                _RegimeFold(
+                    estimator=clf,
+                    x=[list(row.values) for row in test_rows],
+                    y=[label.value for label in test_labels],
+                )
+            )
 
         fold_model: list[float] = []
         fold_pers: list[float] = []
@@ -441,22 +463,32 @@ def forecast_regime(
     n_splits: int = 5,
     model_params: ModelParams | None = None,
     feature_rows: Sequence[FeatureRow | None] | None = None,
+    feature_set_id: str = FEATURE_SET_ID,
+    series_inputs: tuple[SeriesInput, ...] = (),
+    fallback_reason: str | None = None,
 ) -> RegimeForecast:
     """Produce a regime-transition forecast: walk-forward-validate the classifier (the
     honest edge verdict vs persistence), then train a final model on all causal samples
     and predict next-period regime probabilities from the latest bar's feature row. The
     current regime is always surfaced; ``beats_baseline`` says whether to trust the
-    transition distribution over 'regime unchanged'."""
+    transition distribution over 'regime unchanged'.
+
+    ``feature_rows`` + ``feature_set_id`` / ``series_inputs`` / ``fallback_reason`` let the
+    MCP tool feed the ADR-0057 tier-selected matrix and record which tier trained; the
+    defaults compute the v1 set. Provenance carries a compact out-of-sample
+    permutation-importance `ExplanationSummary` (ADR-0058)."""
 
     params = model_params if model_params is not None else ModelParams()
     rows = list(feature_rows) if feature_rows is not None else build_feature_rows(bars)
 
+    captures: list[_RegimeFold] = []
     validation = validate_regime(
         bars,
         horizon_bars=horizon_bars,
         n_splits=n_splits,
         model_params=params,
         feature_rows=rows,
+        scored_fold_sink=captures,
     )
 
     regimes = build_regime_labels(bars)
@@ -482,18 +514,26 @@ def forecast_regime(
         transition_probs = _predict_regime_proba(clf, classes, [last_row])[0]
         training_cutoff = train_rows[-1].event_ts
         lib_versions = model_lib_versions()
+        explanation = summarize_fold_importances(
+            feature_names=feature_names_for_set(feature_set_id),
+            folds=[(f.estimator, f.x, f.y) for f in captures],
+            seed=params.seed,
+        )
         provenance = ForecastProvenance(
             model_version=_compute_regime_model_version(
-                feature_set_id=FEATURE_SET_ID,
+                feature_set_id=feature_set_id,
                 model_params=params,
                 horizon_bars=horizon_bars,
                 training_cutoff=training_cutoff,
                 lib_versions=lib_versions,
             ),
-            feature_set_id=FEATURE_SET_ID,
+            feature_set_id=feature_set_id,
             training_cutoff=training_cutoff,
             seed=params.seed,
             lib_versions=lib_versions,
+            series_inputs=series_inputs,
+            fallback_reason=fallback_reason,
+            explanation=explanation,
         )
 
     return RegimeForecast(

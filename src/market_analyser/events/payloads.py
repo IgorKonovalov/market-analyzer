@@ -21,7 +21,9 @@ from pydantic import BaseModel, ConfigDict
 from market_analyser.advisor.models import Recommendation
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.events.chart_types import Marker, OverlaySpec, TrendlineSpec
+from market_analyser.forecast.regime import RegimeForecast
 from market_analyser.forecast.result import MultiHorizonForecastResult
+from market_analyser.forecast.volatility import VolatilityForecast
 
 
 class ChartShowPayloadV1(BaseModel):
@@ -140,6 +142,35 @@ class ForecastCompletedPayloadV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     forecast: MultiHorizonForecastResult
+
+
+class VolatilityForecastCompletedPayloadV1(BaseModel):
+    """`volatility_forecast.completed v1` payload (Plan 0077, ADR-0070): the
+    `forecast_volatility` tool produced a realised-volatility forecast.
+
+    The full result rides inline — small and ephemeral, nothing persisted for the viewer
+    to follow-up fetch; one envelope per tool call. A no-edge verdict travels honestly
+    (``beats_baseline=False`` with the baseline surfaced). A *condition report* (a
+    magnitude), never a recommendation and never a price level (ADR-0029)."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    forecast: VolatilityForecast
+
+
+class RegimeForecastCompletedPayloadV1(BaseModel):
+    """`regime_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_regime`
+    tool produced a regime-transition forecast.
+
+    The full result rides inline — one envelope per tool call. Distinct from the
+    crypto-macro nowcast (ADR-0027): per-symbol, technical, predictive. A *condition
+    report*, never a recommendation (ADR-0029)."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    forecast: RegimeForecast
 
 
 class ChartUpdateDroppedPayloadV1(BaseModel):
@@ -329,6 +360,8 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "signal.evaluated": SignalEvaluatedPayloadV1,
     "recommendation.completed": RecommendationCompletedPayloadV1,
     "forecast.completed": ForecastCompletedPayloadV1,
+    "volatility_forecast.completed": VolatilityForecastCompletedPayloadV1,
+    "regime_forecast.completed": RegimeForecastCompletedPayloadV1,
     "chart.update_dropped": ChartUpdateDroppedPayloadV1,
     "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
     "ohlcv.backfilled": OhlcvBackfilledPayloadV1,

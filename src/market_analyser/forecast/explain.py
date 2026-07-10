@@ -32,6 +32,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 from statistics import fmean, pstdev
+from typing import Any
 
 import threadpoolctl
 from pydantic import BaseModel, ConfigDict
@@ -247,6 +248,48 @@ def explain_horizon(
     )
 
 
+def summarize_fold_importances(
+    *,
+    feature_names: tuple[str, ...],
+    folds: Sequence[tuple[Any, list[list[float]], list[Any]]],
+    seed: int,
+) -> ExplanationSummary:
+    """Compact out-of-sample permutation-importance summary for a non-directional
+    forecast kind (Plan 0077, ADR-0070 / ADR-0058), reused by the volatility and regime
+    validators. Each ``fold`` is ``(fitted_estimator, oos_feature_matrix, oos_targets)``
+    captured from the walk-forward; per fold, seeded permutation importance (the
+    estimator's native scorer — R² for the vol regressor, accuracy for the regime
+    classifier) measures what the *validated* model leant on, then per-feature means are
+    ranked and the top `TOP_N_DRIVERS` ride the wire. No scored folds → an honest empty
+    summary carrying the no-folds note. No ``runs_dir`` artifact is written for these
+    kinds — the summary is the wire deliverable; full-artifact persistence is a
+    follow-up."""
+
+    per_fold_means: list[list[float]] = []
+    for fold_index, (estimator, x, y) in enumerate(folds):
+        with threadpoolctl.threadpool_limits(limits=1):
+            outcome = permutation_importance(
+                estimator, x, y, n_repeats=N_PERMUTATION_REPEATS, random_state=seed + fold_index
+            )
+        per_fold_means.append([float(value) for value in outcome.importances_mean])
+
+    if not per_fold_means:
+        return ExplanationSummary(
+            top_drivers=(), artifact=None, note_code=NOTE_NO_SCORED_FOLDS_CODE
+        )
+
+    per_feature = list(zip(*per_fold_means, strict=True))
+    assert len(per_feature) == len(feature_names)  # matrix column order is the frozen order
+    ranked = sorted(
+        (
+            ExplanationDriver(feature=name, importance=fmean(values))
+            for name, values in zip(feature_names, per_feature, strict=True)
+        ),
+        key=lambda d: (-d.importance, d.feature),
+    )
+    return ExplanationSummary(top_drivers=tuple(ranked[:TOP_N_DRIVERS]), artifact=None)
+
+
 def summarize_explanation(
     explanation: ForecastExplanation, *, artifact: str | None
 ) -> ExplanationSummary:
@@ -323,4 +366,5 @@ __all__ = [
     "explain_horizon",
     "feature_names_for_set",
     "summarize_explanation",
+    "summarize_fold_importances",
 ]

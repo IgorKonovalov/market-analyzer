@@ -47,6 +47,8 @@ from market_analyser.api.mcp_tools.detect_chart_patterns import register_detect_
 from market_analyser.api.mcp_tools.detect_levels import register_detect_levels
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.forecast import register_forecast
+from market_analyser.api.mcp_tools.forecast_regime import register_forecast_regime
+from market_analyser.api.mcp_tools.forecast_volatility import register_forecast_volatility
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
@@ -228,6 +230,22 @@ def create_mcp_components(
         models_dir=forecast_models_dir,
         metric_lookup=metric_points_repository,
         runs_dir=runs_dir,
+    )
+
+    # `forecast_volatility` / `forecast_regime` (Plan 0077, ADR-0070): the two
+    # non-directional forecast kinds. Same tier ladder as `forecast` (metric_lookup
+    # enables the v2 exogenous set); read-only condition reports, no model persistence.
+    register_forecast_volatility(
+        server,
+        provider=provider,
+        event_bus=event_bus,
+        metric_lookup=metric_points_repository,
+    )
+    register_forecast_regime(
+        server,
+        provider=provider,
+        event_bus=event_bus,
+        metric_lookup=metric_points_repository,
     )
 
     # `recommend` (Plan 0038, ADR-0029): the advisor layer's labeled advisory
