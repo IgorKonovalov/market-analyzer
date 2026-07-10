@@ -1,16 +1,39 @@
 /* Chart layers legend side panel (Plan 0047 phase 9). Sits beside the chart;
    compact, scrollable when many layers stack up. */
 .panel {
+  position: relative;
   flex: 0 0 auto;
-  /* Wide enough for the longest grouped legend label — e.g. "Three white
-     soldiers (bullish)" — to read without clipping (Plan 0071 follow-up). */
-  width: 13.5rem;
+  /* Fallback width; the real width is a draggable, persisted inline style set by
+     the component (Plan 0071 follow-up). Matches DEFAULT_PANEL_WIDTH. */
+  width: 15rem;
   align-self: stretch;
   overflow-y: auto;
+  /* Extra left padding clears the resize handle so it never overlaps a row. */
   padding: var(--space-2);
+  padding-left: calc(var(--space-2) + 4px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg-elev);
+}
+
+/* Left-edge drag handle to resize the panel (Plan 0071 follow-up). Full-height,
+   thin; a subtle accent wash on hover/focus signals it's grabbable. */
+.resizeHandle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  /* Don't let a touch-drag scroll the panel instead of resizing. */
+  touch-action: none;
+}
+
+.resizeHandle:hover,
+.resizeHandle:focus-visible {
+  background: var(--color-accent);
+  opacity: 0.5;
+  outline: none;
 }
 
 .heading {

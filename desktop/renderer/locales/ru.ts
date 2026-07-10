@@ -457,6 +457,7 @@ export const ru = {
   'layers.panelAriaLabel': 'Слои графика',
   'layers.heading': 'Слои',
   'layers.toggleAria': 'Переключить {layerName}',
+  'layers.resizeAria': 'Изменить ширину панели слоёв',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) ──
   'glossary.howComputedLabel': 'Как вычисляется',

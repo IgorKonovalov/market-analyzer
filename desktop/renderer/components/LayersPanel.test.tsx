@@ -9,6 +9,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 
 import { LayersPanel, type ChartLayer } from './LayersPanel'
 
+beforeEach(() => localStorage.clear())
+
 const LAYERS: ChartLayer[] = [
   { id: 'overlay:ema:20', label: 'EMA(20)', color: '#2563eb', kind: 'overlay', visible: true },
   {
@@ -125,4 +127,37 @@ it('fires onHighlight with the row key on hover-enter and null on leave', () => 
   expect(onHighlight).toHaveBeenLastCalledWith('hammer|bullish_marker')
   fireEvent.mouseLeave(row)
   expect(onHighlight).toHaveBeenLastCalledWith(null)
+})
+
+// Plan 0071 follow-up: the panel width is draggable (left-edge handle) and
+// persisted; keyboard is the accessible, deterministic path we assert here.
+it('renders a resize handle as an accessible vertical separator', () => {
+  render(<LayersPanel layers={LAYERS} onToggle={() => {}} />)
+  const handle = screen.getByTestId('layers-resize-handle')
+  expect(handle).toHaveAttribute('role', 'separator')
+  expect(handle).toHaveAttribute('aria-orientation', 'vertical')
+  expect(handle).toHaveAttribute('tabindex', '0')
+})
+
+it('widens on ArrowLeft, narrows on ArrowRight, and persists the width', () => {
+  render(<LayersPanel layers={LAYERS} onToggle={() => {}} />)
+  const handle = screen.getByTestId('layers-resize-handle')
+  const width = (): number => Number(handle.getAttribute('aria-valuenow'))
+  const start = width()
+
+  fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+  expect(width()).toBe(start + 16) // widened by one step
+  expect(Number(localStorage.getItem('ma.layersPanelWidth'))).toBe(start + 16)
+
+  fireEvent.keyDown(handle, { key: 'ArrowRight' })
+  expect(width()).toBe(start) // back to where it began
+  // The panel's inline width tracks the handle's reported value.
+  expect(screen.getByTestId('layers-panel')).toHaveStyle({ width: `${start}px` })
+})
+
+it('restores a persisted width on mount, clamped to the allowed range', () => {
+  localStorage.setItem('ma.layersPanelWidth', '9999') // above MAX_PANEL_WIDTH
+  render(<LayersPanel layers={LAYERS} onToggle={() => {}} />)
+  // Clamped to the 600px ceiling, not the raw stored value.
+  expect(screen.getByTestId('layers-panel')).toHaveStyle({ width: '600px' })
 })

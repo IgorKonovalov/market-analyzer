@@ -450,6 +450,7 @@ export const en = {
   'layers.panelAriaLabel': 'Chart layers',
   'layers.heading': 'Layers',
   'layers.toggleAria': 'Toggle {layerName}',
+  'layers.resizeAria': 'Resize the layers panel',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) — prose is phase 3 ──
   'glossary.howComputedLabel': "How it's computed",
