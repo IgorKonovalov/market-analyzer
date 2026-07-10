@@ -1,6 +1,6 @@
 # ADR-0063 — In-house renderer-side i18n via typed catalogs + structured sidecar reason-codes
 
-> **Status:** proposed (accepts at Plan 0069's close)
+> **Status:** accepted (2026-07-10, at Plan 0069's close)
 > **Date:** 2026-07-08
 > **Related plan(s):** [0069-russian-localization](../plans/0069-russian-localization.md)
 
