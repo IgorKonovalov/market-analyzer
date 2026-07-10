@@ -75,7 +75,7 @@ import {
   overlayStyleElement,
   supertrendBands,
 } from '../lib/overlays'
-import { PatternSpanPrimitive, markersToSpans } from '../lib/spans'
+import { PatternSpanPrimitive, markerHighlightSpan, markersToSpans } from '../lib/spans'
 import {
   TrendlinePrimitive,
   dedupeTrendlines,
@@ -1228,12 +1228,13 @@ export function CandlestickChart({
     styleVersion,
   ])
 
-  // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a labelled
-  // marker's text and/or each overlay line's name + value at that bar. Reads only
-  // data already in renderer state (annotations + the overlay readings the chart
-  // pulls from `seriesData`) — no sidecar call. Re-subscribes when `annotations`
-  // change so the handler closes over the current list; overlay series are read
-  // from the ref, so an overlay change needs no re-subscribe.
+  // Hover tooltip (Plan 0047 phase 8): on crosshair move, show a hovered pattern
+  // marker's name and/or each overlay line's name + value at that bar. Reads only
+  // data already in renderer state (the DRAWN markers + the overlay readings the
+  // chart pulls from `seriesData`) — no sidecar call. Keying off `drawnMarkers`
+  // (not the raw annotations) means a toggled-off / master-hidden group shows no
+  // hover — there's no arrow there to hover (Plan 0071 follow-up). Hovering a
+  // marker also outlines its pattern's bar(s) via the span primitive's highlight.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
@@ -1243,6 +1244,7 @@ export function CandlestickChart({
       // the time-keyed marker/overlay content only when a time is present.
       if (param.point === undefined) {
         setTooltip(null)
+        spanPrimitiveRef.current?.setHighlight(null)
         return
       }
       const readings: OverlayReading[] = []
@@ -1255,9 +1257,18 @@ export function CandlestickChart({
           }
         }
       }
+      // The DRAWN markers on the hovered bar (only enabled groups) — drives both
+      // the tooltip pattern name and the pattern-outline highlight.
+      const hoveredMarkers =
+        param.time !== undefined
+          ? drawnMarkers.filter(
+              (m) => Math.floor(new Date(m.event_ts).getTime() / 1000) === param.time,
+            )
+          : []
+      spanPrimitiveRef.current?.setHighlight(markerHighlightSpan(hoveredMarkers))
       const timeContent =
         param.time !== undefined
-          ? tooltipAtTime(param.time as UTCTimestamp, annotations ?? [], readings)
+          ? tooltipAtTime(param.time as UTCTimestamp, drawnMarkers, readings)
           : null
       // Trendline under the cursor (Plan 0067 phase 2): the primitive hit-tests
       // the hovered pixel against its drawn segments and returns the spec, if any.
@@ -1279,7 +1290,7 @@ export function CandlestickChart({
     chart.subscribeCrosshairMove(handler)
     return () => chart.unsubscribeCrosshairMove(handler)
     // `candleType` re-subscribes the crosshair handler on the fresh chart (ph4).
-  }, [annotations, candleType])
+  }, [drawnMarkers, candleType])
 
   // Re-apply the EXISTING chart's colours + line widths when the effective theme
   // changes OR the user mutates the chart-style store (Plan 0068 phase 2). One

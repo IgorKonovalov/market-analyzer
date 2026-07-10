@@ -13,6 +13,7 @@ import type { UTCTimestamp } from 'lightweight-charts'
 
 import type { MarkerKind, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { ChartMarker } from './markers'
+import { candlePatternDisplayName } from './candleGroups'
 import { patternDisplayName, trendlineStateLabel } from './trendlines'
 
 export interface OverlayReading {
@@ -21,8 +22,9 @@ export interface OverlayReading {
 }
 
 export interface TooltipContent {
-  /** Pattern-marker labels on the hovered bar (a marker's `label`, or a
-   * direction word when it carries none). */
+  /** Pattern-marker read-outs on the hovered bar: the candlestick pattern's
+   * display name (`Bullish engulfing`, `Doji`) when the marker carries one,
+   * else its free-text `label`, else a direction word (Plan 0071 follow-up). */
   markers: string[]
   /** Each hovered overlay line's name + value at the crosshair. */
   overlays: OverlayReading[]
@@ -105,7 +107,13 @@ export function tooltipAtTime(
   if (time === undefined) return null
   const markers = chartMarkers
     .filter((m) => Math.floor(new Date(m.event_ts).getTime() / 1000) === time)
-    .map((m) => m.label?.trim() || markerKindLabel(m.kind))
+    .map((m) =>
+      // A candlestick sweep marker names its pattern (ADR-0045); prefer that
+      // display name over the free-text label or a bare direction word.
+      m.pattern != null
+        ? candlePatternDisplayName(m.pattern)
+        : m.label?.trim() || markerKindLabel(m.kind),
+    )
   if (markers.length === 0 && overlays.length === 0) return null
   return { markers, overlays }
 }

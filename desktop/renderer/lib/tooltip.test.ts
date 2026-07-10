@@ -39,6 +39,22 @@ describe('tooltipAtTime', () => {
     ).toEqual(['Bearish'])
   })
 
+  it('prefers the candlestick pattern display name over the label (Plan 0071 follow-up)', () => {
+    const content = tooltipAtTime(
+      APR15,
+      [
+        {
+          event_ts: '2026-04-15T00:00:00+00:00',
+          kind: 'bullish_marker',
+          pattern: 'bullish_engulfing',
+          label: 'raw-label',
+        },
+      ],
+      [],
+    )
+    expect(content?.markers).toEqual(['Bullish engulfing'])
+  })
+
   it('includes overlay readings at the crosshair', () => {
     const content = tooltipAtTime(APR15, [], [{ label: 'EMA(20)', value: 101.5 }])
     expect(content?.overlays).toEqual([{ label: 'EMA(20)', value: 101.5 }])

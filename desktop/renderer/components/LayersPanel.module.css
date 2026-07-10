@@ -2,7 +2,9 @@
    compact, scrollable when many layers stack up. */
 .panel {
   flex: 0 0 auto;
-  width: 11rem;
+  /* Wide enough for the longest grouped legend label — e.g. "Three white
+     soldiers (bullish)" — to read without clipping (Plan 0071 follow-up). */
+  width: 13.5rem;
   align-self: stretch;
   overflow-y: auto;
   padding: var(--space-2);

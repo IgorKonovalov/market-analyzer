@@ -8,11 +8,12 @@
  * renderer state — the mock makes no sidecar call.
  */
 import '@testing-library/jest-dom'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import type { MouseEventParams, UTCTimestamp } from 'lightweight-charts'
 
 import { CandlestickChart } from './CandlestickChart'
 import type { Annotation } from '../types/sidecar/annotation'
+import type { ChartMarker } from '../lib/markers'
 import type { Bar } from '../types/sidecar/bar'
 
 let crosshairHandler: ((param: MouseEventParams) => void) | null = null
@@ -114,5 +115,35 @@ it('shows no tooltip when hovering a bar with no marker and no overlay', () => {
   render(<CandlestickChart bars={BARS} annotations={[ANNOTATION]} />)
   // A different bar time — no annotation there.
   moveCrosshair({ time: (Date.UTC(2026, 3, 20) / 1000) as UTCTimestamp, point: { x: 80, y: 60 } })
+  expect(screen.queryByTestId('chart-tooltip')).not.toBeInTheDocument()
+})
+
+// Plan 0071 follow-up: a sweep marker names its pattern, so the hover shows the
+// pattern's display name (not the raw wire token or a bare direction word).
+const SWEEP_MARKER: ChartMarker = {
+  event_ts: '2026-04-15T00:00:00+00:00',
+  kind: 'bullish_marker',
+  pattern: 'bullish_engulfing',
+}
+
+it('shows the candlestick pattern name on hover (Plan 0071 follow-up)', () => {
+  render(<CandlestickChart bars={BARS} annotations={[SWEEP_MARKER]} />)
+  moveCrosshair({ time: APR15_TS, point: { x: 40, y: 60 } })
+  expect(screen.getByTestId('chart-tooltip')).toHaveTextContent('Bullish engulfing')
+})
+
+it('shows NO hover for a group toggled off — no arrow is drawn there (bug fix)', () => {
+  render(<CandlestickChart bars={BARS} annotations={[SWEEP_MARKER]} />)
+  // The sole group is drawn by default → its bar hovers.
+  moveCrosshair({ time: APR15_TS, point: { x: 40, y: 60 } })
+  expect(screen.getByTestId('chart-tooltip')).toBeInTheDocument()
+
+  // Toggle the group off → its arrow is gone, so hovering that bar shows nothing.
+  fireEvent.click(
+    within(screen.getByTestId('layer-row:candles:bullish_engulfing|bullish_marker')).getByRole(
+      'checkbox',
+    ),
+  )
+  moveCrosshair({ time: APR15_TS, point: { x: 40, y: 60 } })
   expect(screen.queryByTestId('chart-tooltip')).not.toBeInTheDocument()
 })

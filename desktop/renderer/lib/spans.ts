@@ -55,6 +55,26 @@ export function markersToSpans(markers: ChartMarker[]): PatternSpan[] {
   return spans
 }
 
+/**
+ * Bounding highlight range for the markers under the crosshair (Plan 0071
+ * follow-up): the union of their bars — from the earliest `span_start_ts` (or
+ * `event_ts` for a single-bar marker) to the latest `span_end_ts` (or
+ * `event_ts`). A single-bar marker yields a zero-width range the primitive
+ * widens to a box around its bar. `null` for no markers. The direction/pattern
+ * come from the first marker (usually the only one on a bar). */
+export function markerHighlightSpan(markers: readonly ChartMarker[]): PatternSpan | null {
+  if (markers.length === 0) return null
+  let startTs = markers[0].span_start_ts ?? markers[0].event_ts
+  let endTs = markers[0].span_end_ts ?? markers[0].event_ts
+  for (const m of markers) {
+    const s = m.span_start_ts ?? m.event_ts
+    const e = m.span_end_ts ?? m.event_ts
+    if (s < startTs) startTs = s
+    if (e > endTs) endTs = e
+  }
+  return { startTs, endTs, kind: markers[0].kind, pattern: markers[0].pattern ?? null }
+}
+
 function toUtcSeconds(iso: string): UTCTimestamp {
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp
 }
@@ -145,6 +165,40 @@ class SpanPaneView implements ISeriesPrimitivePaneView {
   }
 }
 
+/** Draws the hovered-pattern highlight (Plan 0071 follow-up): a full-height
+ * STROKED border box around the pattern's bar(s) in its opaque direction colour,
+ * so hovering a marker arrow outlines exactly which candles the pattern occupies. */
+class SpanHighlightPaneRenderer implements ISeriesPrimitivePaneRenderer {
+  constructor(private readonly rect: SpanRect | null) {}
+
+  draw(target: SpanDrawTarget): void {
+    const rect = this.rect
+    if (rect === null) return
+    target.useMediaCoordinateSpace((scope) => {
+      const ctx = scope.context
+      ctx.save()
+      ctx.strokeStyle = rect.color
+      ctx.lineWidth = 2
+      ctx.strokeRect(rect.x1, 1, Math.max(1, rect.x2 - rect.x1), scope.mediaSize.height - 2)
+      ctx.restore()
+    })
+  }
+}
+
+class SpanHighlightPaneView implements ISeriesPrimitivePaneView {
+  constructor(private readonly primitive: PatternSpanPrimitive) {}
+
+  zOrder(): SeriesPrimitivePaneViewZOrder {
+    // Above the candles — the outline must be visible, unlike the translucent
+    // band, which deliberately sits behind them.
+    return 'top'
+  }
+
+  renderer(): ISeriesPrimitivePaneRenderer {
+    return new SpanHighlightPaneRenderer(this.primitive.currentHighlightRect())
+  }
+}
+
 /**
  * The series primitive the chart attaches once and feeds spans/colours/visibility
  * into. `paneViews()` returns the band view only while visible and non-empty, so
@@ -155,9 +209,14 @@ export class PatternSpanPrimitive implements ISeriesPrimitive<Time> {
   private spans: PatternSpan[] = []
   private colors: MarkerColors
   private visible = true
+  // The hovered-pattern highlight range (Plan 0071 follow-up), or null when no
+  // marker is under the crosshair. Drawn as a bordered box, independent of the
+  // translucent band, so a single-bar pattern (no span) still outlines.
+  private highlight: PatternSpan | null = null
   private chart: SeriesAttachedParameter<Time>['chart'] | null = null
   private requestUpdate: (() => void) | null = null
   private readonly paneView = new SpanPaneView(this)
+  private readonly highlightView = new SpanHighlightPaneView(this)
 
   constructor(colors: MarkerColors) {
     this.colors = colors
@@ -174,7 +233,10 @@ export class PatternSpanPrimitive implements ISeriesPrimitive<Time> {
   }
 
   paneViews(): readonly ISeriesPrimitivePaneView[] {
-    return this.visible && this.spans.length > 0 ? [this.paneView] : []
+    const views: ISeriesPrimitivePaneView[] = []
+    if (this.visible && this.spans.length > 0) views.push(this.paneView)
+    if (this.highlight !== null) views.push(this.highlightView)
+    return views
   }
 
   setSpans(spans: PatternSpan[]): void {
@@ -192,11 +254,36 @@ export class PatternSpanPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.()
   }
 
+  /** Highlight the pattern under the crosshair (Plan 0071 follow-up): outlines
+   * its bar(s) with a bordered box, or clears with `null`. */
+  setHighlight(highlight: PatternSpan | null): void {
+    this.highlight = highlight
+    this.requestUpdate?.()
+  }
+
   /** Current pixel rectangles (media coords) — read by the pane renderer and
    * asserted directly in tests via a stubbed time scale. Empty until attached. */
   currentRects(): SpanRect[] {
     const timeScale = this.chart?.timeScale()
     if (!timeScale) return []
     return computeSpanRects(this.spans, (t) => timeScale.timeToCoordinate(t), this.colors)
+  }
+
+  /** The hovered-pattern highlight box in pixel coords (media), padded ~half a
+   * bar each side so a single-bar pattern reads as a box around its candle and a
+   * multi-bar span sits just outside its bars. `null` until attached, when no
+   * highlight is set, or when either endpoint maps off-screen. */
+  currentHighlightRect(): SpanRect | null {
+    const timeScale = this.chart?.timeScale()
+    if (!timeScale || this.highlight === null) return null
+    const a = timeScale.timeToCoordinate(toUtcSeconds(this.highlight.startTs))
+    const b = timeScale.timeToCoordinate(toUtcSeconds(this.highlight.endTs))
+    if (a === null || b === null) return null
+    const pad = timeScale.options().barSpacing / 2 + 2
+    return {
+      x1: Math.min(a, b) - pad,
+      x2: Math.max(a, b) + pad,
+      color: spanBaseColor(this.highlight.kind, this.colors),
+    }
   }
 }

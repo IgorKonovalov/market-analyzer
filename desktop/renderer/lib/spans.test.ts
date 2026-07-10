@@ -8,8 +8,16 @@
  */
 import type { UTCTimestamp } from 'lightweight-charts'
 
+import type { SeriesAttachedParameter, Time } from 'lightweight-charts'
+
 import type { ChartMarker, MarkerColors } from './markers'
-import { computeSpanRects, markersToSpans, type PatternSpan } from './spans'
+import {
+  PatternSpanPrimitive,
+  computeSpanRects,
+  markerHighlightSpan,
+  markersToSpans,
+  type PatternSpan,
+} from './spans'
 
 const COLORS: MarkerColors = { bullish: '#00ff00', bearish: '#ff0000', neutral: '#888888' }
 
@@ -76,5 +84,93 @@ describe('computeSpanRects', () => {
     const [rect] = computeSpanRects([SPAN], timeToX, COLORS)
     expect(rect.x1).toBe(50)
     expect(rect.x2).toBe(200)
+  })
+})
+
+describe('markerHighlightSpan (Plan 0071 follow-up)', () => {
+  it('returns null for no hovered markers', () => {
+    expect(markerHighlightSpan([])).toBeNull()
+  })
+
+  it('uses a single-bar marker event_ts for both endpoints', () => {
+    const m: ChartMarker = { event_ts: END, kind: 'neutral_marker', pattern: 'doji' }
+    expect(markerHighlightSpan([m])).toEqual({
+      startTs: END,
+      endTs: END,
+      kind: 'neutral_marker',
+      pattern: 'doji',
+    })
+  })
+
+  it('spans a multi-bar marker from its span endpoints', () => {
+    const m: ChartMarker = {
+      event_ts: END,
+      kind: 'bullish_marker',
+      pattern: 'morning_star',
+      span_start_ts: START,
+      span_end_ts: END,
+    }
+    expect(markerHighlightSpan([m])).toMatchObject({
+      startTs: START,
+      endTs: END,
+      kind: 'bullish_marker',
+    })
+  })
+
+  it('unions the bars of several hovered markers', () => {
+    const single: ChartMarker = { event_ts: START, kind: 'bullish_marker', pattern: 'hammer' }
+    const span: ChartMarker = {
+      event_ts: END,
+      kind: 'neutral_marker',
+      pattern: 'doji',
+      span_start_ts: START,
+      span_end_ts: END,
+    }
+    expect(markerHighlightSpan([single, span])).toMatchObject({ startTs: START, endTs: END })
+  })
+})
+
+describe('PatternSpanPrimitive highlight (Plan 0071 follow-up)', () => {
+  function attach(barSpacing = 6): PatternSpanPrimitive {
+    const timeScale = {
+      timeToCoordinate: (t: UTCTimestamp): number | null =>
+        t === toUtc(START) ? 100 : t === toUtc(END) ? 160 : null,
+      options: (): { barSpacing: number } => ({ barSpacing }),
+    }
+    const p = new PatternSpanPrimitive(COLORS)
+    p.attached({
+      chart: { timeScale: () => timeScale },
+      requestUpdate: () => {},
+    } as unknown as SeriesAttachedParameter<Time>)
+    return p
+  }
+
+  it('has no highlight rect and no extra pane view until setHighlight is called', () => {
+    const p = attach()
+    expect(p.currentHighlightRect()).toBeNull()
+    expect(p.paneViews()).toHaveLength(0)
+  })
+
+  it('outlines the hovered span padded ~half a bar each side in the opaque token', () => {
+    const p = attach(6)
+    p.setHighlight(SPAN)
+    const rect = p.currentHighlightRect()
+    // pad = barSpacing/2 + 2 = 5 → [100-5, 160+5]
+    expect(rect?.x1).toBe(95)
+    expect(rect?.x2).toBe(165)
+    // Opaque bullish token (not the translucent band alpha).
+    expect(rect?.color).toBe('#00ff00')
+  })
+
+  it('adds a top-zOrder pane view while highlighting and drops it on clear', () => {
+    const p = attach()
+    p.setHighlight(SPAN)
+    const views = p.paneViews()
+    expect(views).toHaveLength(1)
+    expect(views[0].zOrder?.()).toBe('top')
+
+    p.setHighlight(null)
+    expect(p.currentHighlightRect()).toBeNull()
+    expect(p.paneViews()).toHaveLength(0)
   })
 })
