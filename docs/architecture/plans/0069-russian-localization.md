@@ -2,6 +2,7 @@
 
 > **Status:** in-progress
 > **Created:** 2026-07-08
+> **Amended:** 2026-07-10 — inserted **Phase 4b** (sidecar structured condition/signal codes) and widened **Phase 5** after implementation surfaced that the phase-4 reason-codes covered rationale/blockers/gate-checks but not the `basis.conditions`/`basis.signals` prose or the raw condition enum values, which would leak English in `ru`. See [ADR-0063](../adrs/0063-in-house-i18n-and-reason-codes.md) Notes.
 > **Owner skill(s):** ui-builder, dev, human
 > **Related ADRs:** [0063-in-house-i18n-and-reason-codes](../adrs/0063-in-house-i18n-and-reason-codes.md)
 
@@ -50,7 +51,7 @@ flowchart LR
         FMT["format.ts (en-US, unchanged)"]
     end
 
-    FUSION -->|"rationale/basis/checks prose (kept, for agent)\n+ reason_codes {code, params}"| VIEWS
+    FUSION -->|"rationale/basis/checks prose (kept, for agent)\n+ reason_codes (ph4) + condition/signal codes (ph4b)"| VIEWS
     EXPLAIN -->|"disclaimer/note prose (kept)\n+ *_code"| VIEWS
     ERRORS -->|"fixed detail= → error code\ndynamic str(exc) → passthrough (English)"| VIEWS
     LOCALE --> T
@@ -85,12 +86,19 @@ flowchart LR
 - **What:** In `advisor/fusion.py`, emit — beside the existing English `rationale`/`basis`/`checks` prose (kept verbatim for the agent/MCP consumer) — a parallel deterministic list of `{code, params}` covering every blocker, directional-rationale line, and gate-check label. In `forecast/explain.py`, add a `*_code` for the two fixed constants (`IMPORTANCE_DISCLAIMER`, `NOTE_NO_SCORED_FOLDS`). Numeric params ride as raw numbers (the renderer formats them with `en-US` `format.ts`). Extend the Pydantic models and the Zod/TS mirrors; preserve determinism and wire-pin discipline.
 - **Files touched:** `src/market_analyser/advisor/fusion.py`, `src/market_analyser/advisor/models.py`, `src/market_analyser/forecast/explain.py` (+ its provenance model); `desktop/renderer/schemas/recommendation.ts`, `desktop/renderer/schemas/forecastCompleted.ts`, `desktop/renderer/types/sidecar/*`; the advisor + forecast tests + the pydantic↔Zod parity assertions.
 - **Done when:** a `recommend` response carries a `reason_codes` list whose `{code, params}` entries cover every blocker/directional/check line, and a re-run from the same inputs is byte-identical modulo run provenance (`run_id`/`started_at`/`finished_at`); the forecast explanation carries a `disclaimer_code` and (when applicable) a `note_code`; **the English prose fields are unchanged** (existing agent-facing golden tests untouched and green); an invariant test pins `directional ⟺ reason_codes present for every gate` (mirroring the 0063 `directional ⟺ every check passed` invariant); pydantic↔Zod parity assertions extended; `mypy --strict` + ruff clean.
+- **Landed:** commit `ad291f6` (2026-07-10) — all done-when verified; full gate suite green.
+
+### Phase 4b — Sidecar structured condition/signal codes
+- **Owner skill:** dev
+- **What:** Close the gap phase 4 left: `basis.conditions`/`basis.signals` are still English *prose* lists (`"trend=up"`, `"candlestick=hammer (bullish)"`, `"rsi: position=long, fresh_signal"`), and the `reason.conditions` rationale code carries `{trend, momentum, volume}` as raw enum values — so the renderer cannot render conditions/signals in `ru` without parsing prose (which ADR-0063 forbids). In `advisor/fusion.py::_build_basis`, emit — **beside** the existing English prose lists (kept verbatim for the agent/MCP consumer, exactly as phase 4 did) — two parallel deterministic `list[ReasonCode]` fields on `RecommendationBasis`: `condition_codes` (one per condition fact) and `signal_codes` (one per live signal). Every condition/signal enum value is a **closed** set (`Trend` up/down/sideways, `MomentumStance` ×5, `VolumeStance` heavy/normal/light, pattern `Direction` bullish/bearish/neutral, `current_position` flat/long/short, and the 13 fixed candlestick pattern names), so the values ride as **raw tokens in `params`** — the renderer translates them via an enum-label catalog (phase 5), no prose-parsing. Illustrative code names: `condition.trend`/`condition.momentum`/`condition.volume` with `params={"value": <token>}`, `condition.candlestick` with `params={"pattern": <name>, "direction": <token>}`, `signal.vote` with `params={"strategy_id": <id>, "position": <token>, "fresh": 0|1}`. Extend the Pydantic model + the Zod/TS mirrors; preserve determinism and wire-pin discipline (append after `checks`, defaulted `()` so pre-4b constructors stay valid).
+- **Files touched:** `src/market_analyser/advisor/fusion.py`, `src/market_analyser/advisor/models.py`; `desktop/renderer/schemas/recommendation.ts`, `desktop/renderer/types/events.ts` (+ its parity spec `desktop/renderer/types/events.test.ts`); the advisor tests + the pydantic↔Zod parity assertions; regenerate `docs/reference/` (`uv run python -m market_analyser.apiref`).
+- **Done when:** a `recommend` response's `basis` carries `condition_codes` covering every condition fact (trend, momentum, volume, one per recent candlestick pattern) and `signal_codes` covering every live signal (1:1 with `basis.signals`, same order), with each enum value present as a raw token in `params`; a re-run from the same inputs is byte-identical modulo run provenance; **the English `basis.conditions`/`basis.signals` prose lists are unchanged** (existing agent-facing tests untouched and green); a test pins `len(condition_codes)`/`len(signal_codes)` against the prose lists and asserts the token values match the snapshot/signal enums; pydantic↔Zod parity assertions extended; `mypy --strict` + ruff clean.
 
 ### Phase 5 — Render sidecar codes, enum labels & fixed errors from the renderer catalog
 - **Owner skill:** ui-builder
-- **What:** `RecommendationsView` + `ForecastView` render from the reason-codes via `t()` (params interpolated, numbers via `en-US` `format.ts`). Add an enum-label catalog for the finite passthrough enums authored as labels — `edge_strength`, `CryptoRegime`, Fear & Greed `classification` (mapped on our side since it's upstream passthrough). A code-map in the toast/error layer translates the **fixed** HTTP `detail=` constants; dynamic `str(exc)` passthrough renders as-is.
-- **Files touched:** `desktop/renderer/views/RecommendationsView.tsx`, `desktop/renderer/views/ForecastView.tsx`, the error/toast layer (`components/AlertToaster.tsx` / `Toast.tsx` and the API error mapping in `renderer/api/client.ts`), new enum-label entries in `locales/en.ts`; their specs.
-- **Done when:** with `locale=ru`, `RecommendationsView` renders Russian rationale/basis/gate-checks and `ForecastView` renders the Russian disclaimer/note; the three enums render Russian labels; a known fixed error (`"agent mode is off"`) renders Russian in the toast while a dynamic data-layer error (`str(exc)`) renders its upstream English text unchanged; the `en` locale is unchanged.
+- **What:** `RecommendationsView` + `ForecastView` render from the reason-codes via `t()` (params interpolated, numbers via `en-US` `format.ts`) — the rationale (`reason_codes`), the gate-checks table (the gate portion of `reason_codes`, 1:1 with `basis.checks`), the `basis.conditions`/`basis.signals` lists (from phase-4b's `condition_codes`/`signal_codes`), and the forecast `disclaimer_code`/`note_code`. Add an **enum-label catalog** for (a) the closed condition/signal enums — `trend`, `momentum`, `volume_stance`, pattern `direction`, `current_position`, and the 13 candlestick pattern names — and (b) the passthrough enums authored as labels — `edge_strength`, `CryptoRegime`, Fear & Greed `classification` (mapped on our side since it's upstream passthrough). The `reason.conditions` rationale line maps its `{trend, momentum, volume}` params **through the enum catalog** before interpolation, so no raw enum word leaks into the translated line. A code-map in the toast/error layer translates the **fixed** HTTP `detail=` constants; dynamic `str(exc)` passthrough renders as-is.
+- **Files touched:** `desktop/renderer/views/RecommendationsView.tsx`, `desktop/renderer/views/ForecastView.tsx`, the error/toast layer (`components/AlertToaster.tsx` / `Toast.tsx` and the API error mapping in `renderer/api/client.ts`), new reason-code + enum-label entries in `locales/en.ts`; their specs (replacing the placeholder `condition_codes: []` / `signal_codes: []` fixtures left in `RecommendationsView.test.tsx` from phase 4/4b with real reason-code render assertions).
+- **Done when:** with `locale=ru`, `RecommendationsView` renders Russian rationale, gate-checks, and `basis.conditions`/`basis.signals` (including the condition/signal enum words and candlestick pattern names), and `ForecastView` renders the Russian disclaimer/note; the enum-label catalog resolves every closed condition/signal enum and the three passthrough enums to Russian; the `reason.conditions` rationale line contains no raw English enum word; a known fixed error (`"agent mode is off"`) renders Russian in the toast while a dynamic data-layer error (`str(exc)`) renders its upstream English text unchanged; the `en` locale is unchanged.
 
 ### Phase 6 — Author the Russian catalog + parity audit
 - **Owner skill:** ui-builder
@@ -116,8 +124,19 @@ class ReasonCode(BaseModel):
 class Recommendation(BaseModel):
     ...
     rationale: list[str]           # UNCHANGED — English, for the agent/MCP consumer
-    basis: Basis                   # UNCHANGED
-    reason_codes: list[ReasonCode] # NEW — the finite authored surface, for the renderer
+    basis: Basis                   # prose fields UNCHANGED; see condition/signal codes below
+    reason_codes: list[ReasonCode] # phase 4 — rationale/blocker/gate surface, for the renderer
+
+# advisor/models.py — phase 4b, additive on RecommendationBasis; prose lists unchanged
+class RecommendationBasis(BaseModel):
+    conditions: list[str]              # UNCHANGED — English prose, for the agent/MCP consumer
+    signals: list[str]                 # UNCHANGED
+    ...
+    condition_codes: list[ReasonCode]  # NEW — one per condition fact; enum values as raw tokens
+    signal_codes: list[ReasonCode]     # NEW — one per live signal (1:1 with `signals`)
+    # e.g. ReasonCode(code="condition.trend", params={"value": "up"})
+    #      ReasonCode(code="condition.candlestick", params={"pattern": "hammer", "direction": "bullish"})
+    #      ReasonCode(code="signal.vote", params={"strategy_id": "rsi", "position": "long", "fresh": 1})
 ```
 
 ```typescript
@@ -143,7 +162,9 @@ function t(key: string, params?: Params): string // Intl.PluralRules for `{count
 ## Risks & open questions
 
 - **Russian strings run ~15–30% longer than English** → button/nav/segmented-control overflow. Mitigation: the phase-7 manual smoke is a real gate, not a formality; audit `min-width`/`text-overflow` on the toggles and nav during phase 2.
-- **Reason-code / prose drift** — each authored fact now has two representations (English prose + code) in `fusion.py`. Mitigation: co-generate the code beside the prose in the same function, and pin the `directional ⟺ reason_codes present` invariant test in phase 4.
+- **Reason-code / prose drift** — each authored fact now has two representations (English prose + code) in `fusion.py`, across the rationale/gate surface (phase 4) *and* the condition/signal surface (phase 4b). Mitigation: co-generate the code beside the prose in the same function, and pin the count/order invariants — `directional ⟺ reason_codes present` (phase 4) and `len(condition_codes)`/`len(signal_codes)` against the prose lists (phase 4b).
+- **Condition/signal enum tokenization (phase 4b)** — the enum values (trend, momentum, volume, position, pattern name + direction) are all **closed** StrEnum/Literal sets, so tokenizing them is clean, not a brittle prose-parse; the risk is a *new* enum member landing without a matching `ru` label. Mitigation: the phase-6 parity test covers the enum-label keys too, and an unmapped enum value falls back to its `en` label (never to the raw key) — visible in the phase-7 smoke.
+- **`fallback_reason` stays English** — the forecast-basis `fallback_reason` (Plan 0066) is *dynamic composed prose with embedded counts* (`"v2-full unavailable: 3 of 240 bars survived the join (floor 500); trained v2-deep"`), not a closed enum, so it is **not** tokenized — it joins the accepted English-residue seam with `str(exc)` errors and headlines. Structuring it would be disproportionate and is explicitly out of scope.
 - **Pluralization** — counts like "N alerts / N headlines / N trades" need Russian's three-form plural. Mitigation: `Intl.PluralRules` is native (no dep); pin category selection for 1/2/5 in phase 1.
 - **Test coupling** — keeping `en` as the default and test locale keeps ~50 renderer specs green; a catalog value that drifts from the literal a spec greps for surfaces as a failing existing spec (a feature, not a hazard).
 - **Glossary restructure vs Plan 0065** — the locale-keying must not move `category`/`formulaAnchor`, or the cross-language formula-anchor test breaks. Mitigation: only the three prose fields become locale-keyed; verify in phase 3.
@@ -151,7 +172,7 @@ function t(key: string, params?: Params): string // Intl.PluralRules for `{count
 
 ## What this plan does NOT do
 
-- **Localize external / dynamic content:** news headlines (RSS/Reddit), symbol names, upstream `str(exc)` data-layer error text, and raw upstream classification values (Fear & Greed source string) stay English — they are not authored in-repo.
+- **Localize external / dynamic content:** news headlines (RSS/Reddit), symbol names, upstream `str(exc)` data-layer error text, raw upstream classification values (Fear & Greed source string), and the forecast `fallback_reason` composed diagnostic prose stay English — they are external, dynamic, or composed-with-counts, not authored closed-vocabulary strings. (Closed condition/signal enums *are* localized — phase 4b/5.)
 - **Add locale negotiation to the sidecar** (no `Accept-Language` on HTTP/MCP). The sidecar stays English-authoritative; localization is renderer-side.
 - **Localize numbers, dates or currency** — `en-US` retained by decision (ADR-0063); `format.ts` untouched.
 - **Localize agent-facing text** — MCP tool `description=` strings and strategy `META` are read by the Claude model, not the desktop UI, and stay English.
