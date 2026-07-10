@@ -1259,7 +1259,7 @@ export function CandlestickChart({
           onClick={scanVisibleRange}
           disabled={scanStatus.kind === 'scanning' || !symbol || !timeframe}
         >
-          {scanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.scanPatterns')}
+          {scanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.candlesticks')}
         </button>
         {scanStatus.kind === 'done' && (
           <span data-testid="scan-patterns-status" className={styles.scanStatus}>
@@ -1283,7 +1283,7 @@ export function CandlestickChart({
           onClick={scanChartPatternsVisibleRange}
           disabled={chartScanStatus.kind === 'scanning' || !symbol || !timeframe}
         >
-          {chartScanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.scanChartPatterns')}
+          {chartScanStatus.kind === 'scanning' ? t('chart.scanning') : t('chart.chartPatterns')}
         </button>
         {chartScanStatus.kind === 'done' && (
           <span data-testid="scan-chart-patterns-status" className={styles.scanStatus}>

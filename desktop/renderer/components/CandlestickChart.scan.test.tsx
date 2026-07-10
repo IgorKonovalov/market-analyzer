@@ -1,5 +1,6 @@
 /**
- * Plan 0049 phase 8 done-when: the "Scan patterns" button.
+ * Plan 0049 phase 8 done-when: the "Candlesticks" button (renamed from "Scan
+ * patterns" in Plan 0071 phase 1; the `scan-patterns-button` testid is stable).
  *
  * Drives the REAL component with a mocked `lightweight-charts` (a stubbed visible
  * range) and a mocked `api.scanPatterns`, so we can assert: clicking reads the

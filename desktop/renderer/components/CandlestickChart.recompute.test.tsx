@@ -128,7 +128,7 @@ it('coalesces a burst of settled range changes into a single recompute', () => {
   expect(mockScanChartPatterns).toHaveBeenCalledTimes(1)
 })
 
-it('the manual "Scan chart patterns" button fires a scan on click', () => {
+it('the manual "Chart patterns" button fires a scan on click', () => {
   render(<CandlestickChart bars={BARS} symbol="BTC-USD" timeframe="1d" />)
 
   // Click before the mount debounce fires, so this is the only call.

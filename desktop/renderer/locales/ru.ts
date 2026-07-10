@@ -179,8 +179,8 @@ export const ru = {
   'chart.selectingRange': 'Выбор диапазона… (Esc для отмены)',
   'chart.selectRange': 'Выбрать диапазон',
   'chart.scanning': 'Сканирование…',
-  'chart.scanPatterns': 'Сканировать паттерны',
-  'chart.scanChartPatterns': 'Сканировать графические паттерны',
+  'chart.candlesticks': 'Свечи',
+  'chart.chartPatterns': 'Графические паттерны',
   'chart.patternCount':
     '{count, plural, one {# паттерн} few {# паттерна} many {# паттернов} other {# паттерна}}',
   'chart.noPatternsInView': 'Нет паттернов в области',
