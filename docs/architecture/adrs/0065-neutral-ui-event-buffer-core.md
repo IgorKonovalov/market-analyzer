@@ -1,6 +1,6 @@
 # ADR-0065 — Neutral UI-event buffer core (domain loops must not import the api layer)
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-07-09
 > **Related plan(s):** 0072-codebase-remediation-audit-2026-07
 > **Related ADRs:** applies the neutral-core precedent of [0032](0032-data-layer-no-api-dependency.md) (the event **bus** was moved out of `api` for exactly this reason) to the renderer→agent feedback **buffer** of [0021](0021-renderer-to-agent-feedback.md); the buffer feeds the in-sidecar scheduler of [0055](0055-in-sidecar-watch-scheduler.md)

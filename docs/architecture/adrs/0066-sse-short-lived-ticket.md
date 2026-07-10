@@ -1,6 +1,6 @@
 # ADR-0066 — Short-lived SSE ticket instead of the durable bearer in the event-stream URL
 
-> **Status:** proposed
+> **Status:** accepted
 > **Date:** 2026-07-09
 > **Related plan(s):** 0072-codebase-remediation-audit-2026-07
 > **Related ADRs:** refines the renderer-bearer transport of [0002](0002-ipc-local-http.md) / [0011](0011-bearer-secret-transport.md) for the one endpoint — the SSE stream of [0017](0017-live-ui-updates-via-sse.md) — that cannot carry a header
