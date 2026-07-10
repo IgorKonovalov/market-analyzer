@@ -446,3 +446,115 @@ it('the forecast tier line adds no interactive control (ADR-0025/0029 no-action 
   expect(screen.getByTestId('forecast-tier')).not.toHaveAttribute('tabindex')
   expect(screen.getByTestId('forecast-fallback')).not.toHaveAttribute('tabindex')
 })
+
+// --------------------------------------------------------------------------- //
+// Plan 0069 phase 5: render the authored surfaces from the sidecar reason-codes //
+// (localized via t()), not the English prose. The prose fields are set to       //
+// placeholder text that must NOT appear — proving the render is code-driven.    //
+// --------------------------------------------------------------------------- //
+
+const CODED_REC: Recommendation = {
+  ...LONG_REC,
+  // Prose that must never render (codes drive the rationale now).
+  rationale: ['PROSE_forecast', 'PROSE_signals', 'PROSE_backtest', 'PROSE_conditions'],
+  reason_codes: [
+    {
+      code: 'reason.forecast',
+      params: {
+        direction: 'long',
+        prob: 0.6,
+        horizon_bars: 1,
+        edge_strength: 'clear',
+        skill: 0.61,
+        baseline: 0.4,
+      },
+    },
+    { code: 'reason.signals_agree', params: { direction: 'long', strategies: 'rsi' } },
+    {
+      code: 'reason.backtested_edge',
+      params: { sharpe_mean: 0.8, n_splits: 5, strategy_id: 'rsi' },
+    },
+    { code: 'reason.conditions', params: { trend: 'up', momentum: 'bullish', volume: 'heavy' } },
+    // Gate codes, 1:1 with the two basis.checks below (same order).
+    { code: 'gate.signal_live_vote', params: { strategy_id: 'rsi' } },
+    { code: 'gate.backtest_edge_positive', params: {} },
+  ],
+  basis: {
+    ...LONG_REC.basis,
+    conditions: ['PROSE_cond'],
+    signals: ['PROSE_sig'],
+    // check.check is placeholder prose — the rendered label must come from the
+    // gate code, not this string.
+    checks: [
+      { leg: 'signal', check: 'PROSE_CHECK_vote', actual: 'long', passed: true },
+      { leg: 'backtest', check: 'PROSE_CHECK_edge', threshold: 0, actual: 0.8, passed: true },
+    ],
+    condition_codes: [
+      { code: 'condition.trend', params: { value: 'up' } },
+      { code: 'condition.candlestick', params: { pattern: 'hammer', direction: 'bullish' } },
+    ],
+    signal_codes: [
+      { code: 'signal.vote', params: { strategy_id: 'rsi', position: 'long', fresh: 1 } },
+    ],
+  },
+}
+
+it('renders the rationale from reason_codes (localized), not the English prose', () => {
+  const captured = throughDispatch(CODED_REC)
+  expect(captured).not.toBeNull()
+
+  render(<RecommendationsView recommendation={captured} />)
+  const rationale = screen.getByTestId('recommendation-rationale')
+
+  expect(rationale).toHaveTextContent(
+    'forecast: P(long)=0.6 over 1 bar(s), clear edge (out-of-sample skill 0.61 vs baseline 0.4)',
+  )
+  expect(rationale).toHaveTextContent('live signals agree (long): rsi')
+  expect(rationale).toHaveTextContent(
+    'backtested edge: walk-forward sharpe_mean 0.8 over 5 folds (rsi)',
+  )
+  expect(rationale).toHaveTextContent('conditions: trend=up, momentum=bullish, volume=heavy')
+  // The prose fields never render, and no template braces leak.
+  expect(rationale).not.toHaveTextContent(/PROSE_/)
+  expect(rationale).not.toHaveTextContent(/\{/)
+})
+
+it('renders basis.conditions/basis.signals from condition_codes/signal_codes (enum tokens mapped)', () => {
+  const captured = throughDispatch(CODED_REC)
+  render(<RecommendationsView recommendation={captured} />)
+
+  const conditions = screen.getByTestId('basis-conditions')
+  expect(conditions).toHaveTextContent('trend: up')
+  expect(conditions).toHaveTextContent('candlestick: hammer (bullish)')
+  expect(conditions).not.toHaveTextContent(/PROSE_/)
+
+  const signals = screen.getByTestId('basis-signals')
+  expect(signals).toHaveTextContent('rsi: position=long, fresh signal')
+  expect(signals).not.toHaveTextContent(/PROSE_/)
+})
+
+it('renders the gate-check labels from the per-gate reason-codes, not check.check', () => {
+  const captured = throughDispatch(CODED_REC)
+  render(<RecommendationsView recommendation={captured} />)
+
+  const table = screen.getByTestId('recommendation-checks')
+  // Labels come from the gate codes…
+  expect(within(table).getByText('live vote: rsi')).toBeInTheDocument()
+  expect(within(table).getByText('backtested edge positive (sharpe_mean > 0)')).toBeInTheDocument()
+  // …never the placeholder check.check prose.
+  expect(within(table).queryByText(/PROSE_CHECK/)).not.toBeInTheDocument()
+  // The dynamic threshold/actual values still travel from the FusionCheck.
+  const edgeRow = within(table)
+    .getByText('backtested edge positive (sharpe_mean > 0)')
+    .closest('tr')
+  expect(edgeRow).toHaveTextContent('0.80')
+})
+
+it('falls back to the English prose when a payload carries no reason-codes (no regression)', () => {
+  // LONG_REC has empty reason_codes/condition_codes/signal_codes → prose renders.
+  render(<RecommendationsView recommendation={LONG_REC} />)
+  expect(screen.getByTestId('recommendation-rationale')).toHaveTextContent(
+    /beats the naive baseline/,
+  )
+  expect(screen.getByTestId('basis-conditions')).toHaveTextContent('trend: up')
+})

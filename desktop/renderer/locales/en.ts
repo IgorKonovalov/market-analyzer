@@ -193,14 +193,10 @@ export const en = {
   'forecast.noObservablePoint': '— no observable point',
   'forecast.artifactLead': 'full explanation persisted at',
   'forecast.artifactTail': "(relative to the sidecar's runs directory)",
-  'forecast.whyDisclaimer':
-    'Driver importance is out-of-sample permutation importance — association within the validated model, not causation; correlated inputs share credit.',
   'forecast.disclaimer':
     'Skill numbers are out-of-sample directional accuracy from purged walk-forward validation; the baseline is the stronger of persistence and majority-class on the same bars (ADR-0030). A marginal edge means the beat was thin — treat its probabilities as weak evidence.',
   'forecast.driversHeadingAhead': 'ahead —',
   'forecast.topDrivers': 'top drivers',
-  'forecast.noScoredFolds':
-    'no scored out-of-sample folds at this horizon — no importances were measured',
   'forecast.blockAriaLabel': 'Forecast for {horizon} ahead',
   'forecast.ahead': 'ahead',
   'forecast.directionUp': 'Up',
@@ -223,7 +219,7 @@ export const en = {
   'forecast.trainedThrough': '· trained through',
   'forecast.noModelTrained': 'no model was trained at this horizon (insufficient usable history)',
 
-  // ── Recommendations view (RecommendationsView.tsx) — chrome only; prose is phase 5 ──
+  // ── Recommendations view (RecommendationsView.tsx) chrome ──
   'recommendations.advisoryRecommendationLabel': 'Advisory recommendation',
   'recommendations.empty':
     'No recommendation yet — ask the agent for one via the `recommend` tool.',
@@ -233,6 +229,9 @@ export const en = {
   'recommendations.asOf': 'as of',
   'recommendations.lastClosedBar': '(last closed bar the basis saw)',
   'recommendations.direction': 'Direction',
+  'recommendations.directionLong': 'long',
+  'recommendations.directionShort': 'short',
+  'recommendations.directionFlat': 'flat — no actionable edge',
   'recommendations.conviction': 'Conviction',
   'recommendations.convictionDerived':
     'derived (forecast probability × backtested edge), never invented',
@@ -267,6 +266,125 @@ export const en = {
   'recommendations.forecast': 'Forecast',
   'recommendations.forecastRanOnTier': 'Forecast ran on the {name} feature set.',
   'recommendations.forecastRanOnFeatureSet': 'Forecast ran on feature set {x}.',
+
+  // ── Sidecar reason-codes (advisor fusion.py / forecast explain.py) ──
+  // Templates for the structured `{code, params}` reason-codes the renderer
+  // localizes (Plan 0069 phase 4/4b/5, ADR-0063). Enum-valued params ride as
+  // raw tokens and are mapped through the `enum.*` catalog by `localizeReasonCode`
+  // before interpolation; numeric params format `en-US`. The English prose these
+  // mirror stays authoritative for the agent/MCP consumer (untouched sidecar-side).
+  //
+  // Directional rationale.
+  'reason.forecast':
+    'forecast: P({direction})={prob} over {horizon_bars} bar(s), {edge_strength}{_skill, plural, =1 { (out-of-sample skill {skill} vs baseline {baseline})} other {}}',
+  'reason.signals_agree': 'live signals agree ({direction}): {strategies}',
+  'reason.backtested_edge':
+    'backtested edge: walk-forward sharpe_mean {sharpe_mean} over {n_splits} folds ({strategy_id})',
+  'reason.conditions': 'conditions: trend={trend}, momentum={momentum}, volume={volume}',
+  // Flat verdict.
+  'reason.no_actionable_edge': 'no actionable edge',
+  'blocker.forecast_no_edge': 'forecast shows no edge over baseline (no probability shipped)',
+  'blocker.forecast_flat': 'forecast direction is flat or undecided',
+  'blocker.signals_conflict': 'live signals conflict: long={long}, short={short}',
+  'blocker.no_directional_signal': 'no live strategy signal implies a direction',
+  'blocker.signals_disagree_forecast':
+    'live signals ({signal_dir}) disagree with the forecast direction ({forecast_dir})',
+  'blocker.no_walk_forward': 'no walk-forward backtest basis supplied',
+  'blocker.no_backtested_edge':
+    'no backtested edge{_sharpe, plural, =1 {: walk-forward sharpe_mean {sharpe_mean}} other {}}',
+  'blocker.edge_nonvoting_strategy':
+    'walk-forward edge is for {strategy_id}, which is not among the agreeing signals',
+  // Fusion gate-check labels (1:1 with basis.checks; the dynamic threshold/actual
+  // values ride in the FusionCheck itself, rendered beside these labels).
+  'gate.alignment_scope': 'inputs share symbol/timeframe',
+  'gate.alignment_asof': 'inputs share the as-of bar',
+  'gate.conditions_read': 'condition snapshot read',
+  'gate.forecast_probs_shipped': 'probabilities shipped (baseline beaten out-of-sample)',
+  'gate.forecast_argmax_directional': 'argmax direction is directional',
+  'gate.forecast_calibrated_prob': 'calibrated P(direction)',
+  'gate.signal_live_vote': 'live vote: {strategy_id}',
+  'gate.signal_no_conflict': 'no conflicting live votes',
+  'gate.signal_directional_vote': 'at least one directional live vote',
+  'gate.signal_agrees_forecast': 'live direction agrees with the forecast direction',
+  'gate.backtest_basis_supplied': 'walk-forward basis supplied',
+  'gate.backtest_edge_positive': 'backtested edge positive (sharpe_mean > 0)',
+  'gate.backtest_strategy_agrees': 'walk-forward strategy among the agreeing votes',
+  // Condition / signal facts (basis.condition_codes / basis.signal_codes, phase 4b).
+  'condition.trend': 'trend: {value}',
+  'condition.momentum': 'momentum: {value}',
+  'condition.volume': 'volume: {value}',
+  'condition.candlestick': 'candlestick: {pattern} ({direction})',
+  'signal.vote': '{strategy_id}: position={position}{fresh, plural, =1 {, fresh signal} other {}}',
+  // Forecast explanation constants (forecast explain.py).
+  'disclaimer.importance':
+    'Driver importance is out-of-sample permutation importance — association within the validated model, not causation; correlated inputs share credit.',
+  'note.no_scored_folds':
+    'no scored out-of-sample folds at this horizon — no importances were measured',
+
+  // ── Enum labels (closed condition/signal vocabularies + passthrough enums) ──
+  // Every enum value the sidecar ships as a raw token is a *closed* set, so the
+  // renderer translates it through this catalog (Plan 0069 phase 5, ADR-0063).
+  // Trend (analysis Trend).
+  'enum.trend.up': 'up',
+  'enum.trend.down': 'down',
+  'enum.trend.sideways': 'sideways',
+  // Momentum (analysis MomentumStance).
+  'enum.momentum.overbought': 'overbought',
+  'enum.momentum.bullish': 'bullish',
+  'enum.momentum.neutral': 'neutral',
+  'enum.momentum.bearish': 'bearish',
+  'enum.momentum.oversold': 'oversold',
+  // Volume (analysis VolumeStance).
+  'enum.volume.heavy': 'heavy',
+  'enum.volume.normal': 'normal',
+  'enum.volume.light': 'light',
+  // Pattern direction (analysis Direction).
+  'enum.direction.bullish': 'bullish',
+  'enum.direction.bearish': 'bearish',
+  'enum.direction.neutral': 'neutral',
+  // Live-signal / recommendation direction (current_position; long/short/flat).
+  'enum.position.long': 'long',
+  'enum.position.short': 'short',
+  'enum.position.flat': 'flat',
+  // Candlestick pattern names (analysis patterns._DETECTORS).
+  'enum.pattern.doji': 'doji',
+  'enum.pattern.hammer': 'hammer',
+  'enum.pattern.hanging_man': 'hanging man',
+  'enum.pattern.marubozu': 'marubozu',
+  'enum.pattern.bullish_engulfing': 'bullish engulfing',
+  'enum.pattern.bearish_engulfing': 'bearish engulfing',
+  'enum.pattern.dark_cloud_cover': 'dark cloud cover',
+  'enum.pattern.piercing_line': 'piercing line',
+  'enum.pattern.bullish_harami': 'bullish harami',
+  'enum.pattern.bearish_harami': 'bearish harami',
+  'enum.pattern.morning_star': 'morning star',
+  'enum.pattern.evening_star': 'evening star',
+  'enum.pattern.three_white_soldiers': 'three white soldiers',
+  'enum.pattern.three_black_crows': 'three black crows',
+  // Forecast edge strength (EdgeStrength; also the ForecastView edge badge).
+  'enum.edge_strength.no_edge': 'no edge over baseline',
+  'enum.edge_strength.marginal': 'marginal edge',
+  'enum.edge_strength.clear': 'clear edge',
+  // Passthrough enums authored as labels on our side (upstream-sourced values).
+  'enum.crypto_regime.btc_led': 'BTC-led',
+  'enum.crypto_regime.alt_structure': 'alt structure',
+  'enum.crypto_regime.risk_off_structure': 'risk-off structure',
+  'enum.crypto_regime.neutral': 'neutral',
+  'enum.fear_greed.extreme_fear': 'Extreme Fear',
+  'enum.fear_greed.fear': 'Fear',
+  'enum.fear_greed.neutral': 'Neutral',
+  'enum.fear_greed.greed': 'Greed',
+  'enum.fear_greed.extreme_greed': 'Extreme Greed',
+
+  // ── Fixed sidecar error details (client.ts localizeErrorDetail) ──
+  // Only the FIXED HTTP `detail=` constants are mapped; dynamic `str(exc)`
+  // passthrough renders its upstream English text unchanged (ADR-0063 seam).
+  'error.detail.agentModeOff': 'agent mode is off',
+  'error.detail.noWalletSource': 'no wallet-positions source configured',
+  'error.detail.noHistoricalPriceSource': 'no historical price source configured',
+  'error.detail.noSecretsStore': 'secrets store not configured',
+  'error.detail.noMcpSecretPath': 'mcp secret path not configured',
+  'error.detail.noAlertingPersistence': 'alerting persistence not configured',
 
   // ── Settings view (SettingsView.tsx) ──
   'settings.appearance.heading': 'Appearance',

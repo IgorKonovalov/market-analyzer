@@ -412,6 +412,45 @@ it('wraps forecast terms in glossary triggers and surfaces the dual-hat card on 
   expect(card?.textContent).toMatch(/What it means/)
 })
 
+// --------------------------------------------------------------------------- //
+// Plan 0069 phase 5: the fixed disclaimer / no-scored-folds note render from    //
+// the sidecar's disclaimer_code / note_code (localizable), not hardcoded chrome.//
+// --------------------------------------------------------------------------- //
+
+it('renders the Why disclaimer from the sidecar disclaimer_code', () => {
+  const captured = throughDispatch(EXPLAINED_FORECAST)
+  render(<ForecastView forecast={captured} />)
+  expect(screen.getByTestId('forecast-why')).toHaveTextContent(
+    /association within the validated model/,
+  )
+})
+
+it('renders the no-scored-folds note from note_code when a horizon had no scored folds', () => {
+  const noScored: MultiHorizonForecastResult = {
+    ...MIXED_FORECAST,
+    horizons: [
+      {
+        ...CLEAR_BLOCK,
+        provenance: provenance({
+          explanation: {
+            top_drivers: [],
+            disclaimer_code: 'disclaimer.importance',
+            note_code: 'note.no_scored_folds',
+          },
+        }),
+      },
+    ],
+  }
+  const captured = throughDispatch(noScored)
+  expect(captured).not.toBeNull()
+  expect(captured?.horizons[0]?.provenance?.explanation?.note_code).toBe('note.no_scored_folds')
+
+  render(<ForecastView forecast={captured} />)
+  expect(screen.getByTestId('forecast-why-drivers-1')).toHaveTextContent(
+    /no scored out-of-sample folds/,
+  )
+})
+
 it('shows a clear placeholder before any forecast arrives', () => {
   render(<ForecastView forecast={null} />)
   expect(screen.getByTestId('forecast-empty')).toHaveTextContent(/no forecast yet/i)

@@ -20,7 +20,8 @@
 import { GlossaryTerm } from '../components/GlossaryTerm'
 import { formatDateTime } from '../lib/format'
 import { t } from '../lib/i18n'
-import type { BasisValue, FusionCheck, Recommendation } from '../types/events'
+import { localizeReasonCode } from '../lib/reasonCodes'
+import type { BasisValue, FusionCheck, ReasonCode, Recommendation } from '../types/events'
 import styles from './RecommendationsView.module.css'
 
 interface Props {
@@ -50,10 +51,12 @@ function convictionStrength(conviction: number): ConvictionStrength {
   return 'low'
 }
 
-const DIRECTION_LABEL: Record<Recommendation['direction'], string> = {
-  long: 'long',
-  short: 'short',
-  flat: 'flat — no actionable edge',
+/** Catalog keys for the recommendation's own direction field (localized, unlike
+ * the closed condition/signal enums which go through the `enum.*` catalog). */
+const DIRECTION_LABEL_KEY: Record<Recommendation['direction'], string> = {
+  long: 'recommendations.directionLong',
+  short: 'recommendations.directionShort',
+  flat: 'recommendations.directionFlat',
 }
 
 /**
@@ -97,6 +100,27 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
       recommendation.stop != null ||
       recommendation.targets.length > 0)
 
+  // Plan 0069 phase 5: render the authored surfaces from the sidecar reason-codes
+  // (localized via `t()`), not the English prose. `reason_codes` is [one per
+  // rationale line, then one per `basis.checks` gate] (1:1, same order);
+  // `condition_codes` / `signal_codes` mirror `basis.conditions` / `basis.signals`
+  // 1:1. Each falls back to the English prose when the codes are absent (a
+  // pre-0069 or otherwise degenerate payload), so an empty code list never blanks
+  // the panel.
+  const rationaleCodes = recommendation.reason_codes.slice(0, recommendation.rationale.length)
+  const rationaleItems = recommendation.rationale.map((line, i) =>
+    rationaleCodes[i] !== undefined ? localizeReasonCode(rationaleCodes[i]) : line,
+  )
+  const gateCodes = recommendation.reason_codes.slice(recommendation.rationale.length)
+  const conditionItems =
+    recommendation.basis.condition_codes.length > 0
+      ? recommendation.basis.condition_codes.map(localizeReasonCode)
+      : recommendation.basis.conditions
+  const signalItems =
+    recommendation.basis.signal_codes.length > 0
+      ? recommendation.basis.signal_codes.map(localizeReasonCode)
+      : recommendation.basis.signals
+
   return (
     <section className={styles.view} aria-label={t('recommendations.advisoryRecommendationLabel')}>
       <p className={styles.advisoryBanner} data-testid="advisory-label" role="note">
@@ -128,7 +152,7 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
             data-direction={recommendation.direction}
             className={styles[`dir_${recommendation.direction}`]}
           >
-            {DIRECTION_LABEL[recommendation.direction]}
+            {t(DIRECTION_LABEL_KEY[recommendation.direction])}
           </dd>
         </div>
 
@@ -196,14 +220,14 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
       <section className={styles.rationale} aria-label={t('recommendations.rationaleLabel')}>
         <h3 className={styles.sectionTitle}>{t('recommendations.why')}</h3>
         <ul className={styles.rationaleList} data-testid="recommendation-rationale">
-          {recommendation.rationale.map((line) => (
-            <li key={line}>{line}</li>
+          {rationaleItems.map((line, i) => (
+            <li key={i}>{line}</li>
           ))}
         </ul>
       </section>
 
       {recommendation.basis.checks.length > 0 && (
-        <ChecksTable checks={recommendation.basis.checks} />
+        <ChecksTable checks={recommendation.basis.checks} gateCodes={gateCodes} />
       )}
 
       <section className={styles.basis} aria-label={t('recommendations.basisLabel')}>
@@ -211,12 +235,12 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
         <div className={styles.basisGrid}>
           <BasisList
             label={t('recommendations.conditions')}
-            items={recommendation.basis.conditions}
+            items={conditionItems}
             testId="basis-conditions"
           />
           <BasisList
             label={t('recommendations.liveSignals')}
-            items={recommendation.basis.signals}
+            items={signalItems}
             testId="basis-signals"
           />
           <BasisFacts
@@ -235,6 +259,11 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
 
 interface ChecksTableProps {
   checks: FusionCheck[]
+  /** Per-gate reason-codes (Plan 0069), 1:1 with `checks` in order — the
+   * localized gate *label*. The dynamic threshold/actual values still come from
+   * the `FusionCheck`. Empty (or length-mismatched) → fall back to the English
+   * `check.check` prose, so a pre-0069 payload renders exactly as before. */
+  gateCodes: ReasonCode[]
 }
 
 /** The full fusion trace (Plan 0063, ADR-0058), rendered quietly below the
@@ -242,7 +271,8 @@ interface ChecksTableProps {
  * as legible as a call's passed ones. Pass/fail is a word ("pass"/"FAIL"),
  * never color alone; an absent threshold/actual (a recorded fact with no pass
  * bar) renders as a dash. A plain table: nothing here is interactive. */
-function ChecksTable({ checks }: ChecksTableProps): JSX.Element {
+function ChecksTable({ checks, gateCodes }: ChecksTableProps): JSX.Element {
+  const codesAligned = gateCodes.length === checks.length
   return (
     <section className={styles.checks} aria-label={t('recommendations.fusionChecksLabel')}>
       <h3 className={styles.sectionTitle}>{t('recommendations.everyGateChecked')}</h3>
@@ -257,12 +287,12 @@ function ChecksTable({ checks }: ChecksTableProps): JSX.Element {
           </tr>
         </thead>
         <tbody>
-          {checks.map((check) => (
+          {checks.map((check, i) => (
             <tr key={`${check.leg}:${check.check}`} data-passed={check.passed}>
               <td className={styles.checkLeg}>
                 <GlossaryTerm termKey={check.leg}>{check.leg}</GlossaryTerm>
               </td>
-              <td>{check.check}</td>
+              <td>{codesAligned ? localizeReasonCode(gateCodes[i]) : check.check}</td>
               <td className={styles.checkValue}>{formatBasisValue(check.threshold ?? null)}</td>
               <td className={styles.checkValue}>{formatBasisValue(check.actual ?? null)}</td>
               <td className={styles.checkResult} data-passed={check.passed}>

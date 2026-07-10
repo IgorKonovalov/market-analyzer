@@ -1,4 +1,5 @@
-import { ApiError, sanitizeApiErrorBody } from './client'
+import { ApiError, localizeApiErrorBody, localizeErrorDetail, sanitizeApiErrorBody } from './client'
+import { en } from '../locales/en'
 
 describe('sanitizeApiErrorBody', () => {
   it('extracts FastAPI detail from a JSON body', () => {
@@ -46,6 +47,33 @@ describe('sanitizeApiErrorBody', () => {
     const out = sanitizeApiErrorBody(long)
     expect(out.length).toBeLessThanOrEqual(280)
     expect(out.endsWith('…')).toBe(true)
+  })
+})
+
+// ---------- Plan 0069 phase 5 — fixed-error localization ---------- //
+//
+// A FIXED HTTP `detail=` constant is routed through the renderer catalog (so it
+// reads in the active locale — Russian once phase 6 authors `ru`); a dynamic
+// `str(exc)` data-layer error keeps its upstream English text unchanged. `en` is
+// the default/test locale, so the fixed case here resolves to its `en` value —
+// but through `t()`, which is what makes the Russian flip work in phase 6.
+describe('localizeErrorDetail / localizeApiErrorBody', () => {
+  it('maps a known fixed detail through the catalog', () => {
+    expect(localizeErrorDetail('agent mode is off')).toBe(en['error.detail.agentModeOff'])
+    expect(localizeApiErrorBody('{"detail": "agent mode is off"}')).toBe(
+      en['error.detail.agentModeOff'],
+    )
+  })
+
+  it('leaves a dynamic str(exc) detail unchanged (the documented English residue)', () => {
+    expect(localizeErrorDetail('symbol XYZ not found')).toBe('symbol XYZ not found')
+    expect(localizeApiErrorBody('{"detail": "symbol XYZ not found"}')).toBe('symbol XYZ not found')
+  })
+
+  it('sanitizes before mapping — a dynamic path body stays masked and English', () => {
+    const out = localizeApiErrorBody('failed at /Users/alice/code/sidecar/bar.py')
+    expect(out).toContain('<path>')
+    expect(out).not.toContain('alice')
   })
 })
 

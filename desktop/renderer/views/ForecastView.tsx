@@ -28,6 +28,7 @@
 import { GlossaryTerm } from '../components/GlossaryTerm'
 import { formatDateTime } from '../lib/format'
 import { t } from '../lib/i18n'
+import { enumLabel } from '../lib/reasonCodes'
 import type {
   ExplanationSummary,
   HorizonForecast,
@@ -67,12 +68,6 @@ function horizonLabel(horizonBars: number): string {
   return `${horizonBars} bar${horizonBars === 1 ? '' : 's'}`
 }
 
-const EDGE_LABEL: Record<HorizonForecast['edge_strength'], string> = {
-  no_edge: 'no edge over baseline',
-  marginal: 'marginal edge',
-  clear: 'clear edge',
-}
-
 export function ForecastView({ forecast }: Props): JSX.Element {
   if (forecast === null) {
     return (
@@ -105,6 +100,10 @@ export function ForecastView({ forecast }: Props): JSX.Element {
   const artifactPath =
     explainedBlocks.map(({ explanation }) => explanation.artifact).find((path) => path != null) ??
     null
+  // Plan 0069 phase 5: the fixed association-not-causation disclaimer is rendered
+  // from the sidecar's `disclaimer_code` (every explained block carries the same
+  // one), not hardcoded chrome — so it localizes with the rest of the panel.
+  const disclaimerCode = explainedBlocks[0]?.explanation.disclaimer_code ?? 'disclaimer.importance'
 
   return (
     <section className={styles.view} aria-label={t('forecast.viewLabel')}>
@@ -180,7 +179,7 @@ export function ForecastView({ forecast }: Props): JSX.Element {
                 {t('forecast.artifactTail')}
               </p>
             )}
-            <p className={styles.whyDisclaimer}>{t('forecast.whyDisclaimer')}</p>
+            <p className={styles.whyDisclaimer}>{t(disclaimerCode)}</p>
           </div>
         </details>
       )}
@@ -215,7 +214,7 @@ function WhyDrivers({ horizonBars, explanation }: WhyDriversProps): JSX.Element 
         <GlossaryTerm termKey="permutation_importance">{t('forecast.topDrivers')}</GlossaryTerm>
       </h4>
       {drivers.length === 0 ? (
-        <p className={styles.muted}>{t('forecast.noScoredFolds')}</p>
+        <p className={styles.muted}>{t(explanation.note_code ?? 'note.no_scored_folds')}</p>
       ) : (
         <ol className={styles.driverList}>
           {drivers.map((driver) => (
@@ -271,7 +270,9 @@ function HorizonBlock({ block }: HorizonBlockProps): JSX.Element {
           data-testid={`forecast-edge-${block.horizon_bars}`}
           data-strength={block.edge_strength}
         >
-          <GlossaryTerm termKey="edge_strength">{EDGE_LABEL[block.edge_strength]}</GlossaryTerm>
+          <GlossaryTerm termKey="edge_strength">
+            {enumLabel('edge_strength', block.edge_strength)}
+          </GlossaryTerm>
         </span>
       </header>
 

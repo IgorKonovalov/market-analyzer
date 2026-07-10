@@ -23,6 +23,7 @@
  */
 import type { CandlestickData, UTCTimestamp } from 'lightweight-charts'
 
+import { t } from '../lib/i18n'
 import type { SidecarPort } from '../../shared/schemas/sidecar'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
@@ -112,11 +113,48 @@ export class ApiError extends Error {
   readonly status: number
   readonly body: string
   constructor(status: number, body: string) {
-    super(`sidecar ${status}: ${sanitizeApiErrorBody(body)}`)
+    super(`sidecar ${status}: ${localizeApiErrorBody(body)}`)
     this.name = 'ApiError'
     this.status = status
     this.body = body
   }
+}
+
+/**
+ * Fixed HTTP `detail=` constants → renderer catalog keys (Plan 0069 phase 5,
+ * ADR-0063). ONLY the finite, closed set of hardcoded route constants is here;
+ * dynamic `str(exc)` data-layer errors (authored in `data/errors.py`) carry no
+ * fixed vocabulary and stay English by design — the documented residue seam.
+ * Keyed by the exact English detail the sidecar sends, so the map is a direct
+ * lookup on the sanitized detail.
+ */
+const FIXED_ERROR_DETAIL_KEYS: Record<string, string> = {
+  'agent mode is off': 'error.detail.agentModeOff',
+  'no wallet-positions source configured': 'error.detail.noWalletSource',
+  'no historical price source configured': 'error.detail.noHistoricalPriceSource',
+  'secrets store not configured': 'error.detail.noSecretsStore',
+  'mcp secret path not configured': 'error.detail.noMcpSecretPath',
+  'alerting persistence not configured': 'error.detail.noAlertingPersistence',
+}
+
+/**
+ * Localize a sanitized error detail: a known FIXED constant maps to its catalog
+ * translation; anything else (a dynamic `str(exc)`) is returned verbatim. Public
+ * for tests.
+ */
+export function localizeErrorDetail(detail: string): string {
+  const key = FIXED_ERROR_DETAIL_KEYS[detail]
+  return key !== undefined ? t(key) : detail
+}
+
+/**
+ * `sanitizeApiErrorBody` (safe English extraction) composed with
+ * `localizeErrorDetail` (fixed-constant translation). This is what user-facing
+ * error surfaces render — a fixed error reads in the active locale, a dynamic
+ * one keeps its upstream English text. Public for tests.
+ */
+export function localizeApiErrorBody(body: string): string {
+  return localizeErrorDetail(sanitizeApiErrorBody(body))
 }
 
 const MAX_MESSAGE_LENGTH = 280
