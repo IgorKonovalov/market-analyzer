@@ -20,6 +20,7 @@
  * than crash the app.
  */
 import { en } from '../locales/en'
+import { ru } from '../locales/ru'
 
 export type Locale = 'en' | 'ru'
 export type Params = Record<string, string | number>
@@ -30,11 +31,11 @@ export type Catalog = Record<string, string>
 const STORAGE_KEY = 'ma.locale'
 const DEFAULT_LOCALE: Locale = 'en'
 
-// The `ru` catalog is authored in phase 6; until then only `en` is present and
-// every lookup falls back to it. `t()` still selects Russian plural categories
-// via `Intl.PluralRules` when the active locale is `ru`, so the resolver is
-// exercised end-to-end before the catalog exists.
-const CATALOGS: Partial<Record<Locale, Catalog>> = { en }
+// Both catalogs are present (Plan 0069 phase 6). A per-key lookup still falls
+// back to `en` when a `ru` value is somehow absent (the parity test + `ru`'s
+// `satisfies Record<keyof typeof en, string>` type make that a can't-happen),
+// so a missing key degrades to English rather than the raw key.
+const CATALOGS: Partial<Record<Locale, Catalog>> = { en, ru }
 
 type Listener = (locale: Locale) => void
 

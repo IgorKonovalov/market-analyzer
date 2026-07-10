@@ -5,6 +5,7 @@
  * `Intl.PluralRules('ru')` resolves Russian's three categories natively.
  */
 import { applyLocale, formatMessage, getStoredLocale, setLocale, subscribeLocale, t } from './i18n'
+import { ru } from '../locales/ru'
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -72,9 +73,9 @@ describe('t', () => {
     expect(t('settings.appearance.language.label')).toBe('Language')
   })
 
-  it('falls back to the en value when the active locale lacks the key', () => {
-    setLocale('ru') // ru catalog is not authored until phase 6 → per-key en fallback
-    expect(t('settings.appearance.language.label')).toBe('Language')
+  it('resolves the ru catalog value when the active locale is ru (phase 6)', () => {
+    setLocale('ru')
+    expect(t('settings.appearance.language.label')).toBe(ru['settings.appearance.language.label'])
   })
 
   it('returns the key string for a missing key and warns once (dev-only)', () => {

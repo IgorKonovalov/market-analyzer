@@ -1,748 +1,934 @@
 {
   "edge_strength": {
     "term": {
-      "en": "Edge strength"
+      "en": "Edge strength",
+      "ru": "Сила преимущества"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "no_edge when the out-of-sample baseline gate fails; otherwise clear when skill − baseline_skill ≥ EDGE_MARGIN_THRESHOLD, and marginal below it."
+      "en": "no_edge when the out-of-sample baseline gate fails; otherwise clear when skill − baseline_skill ≥ EDGE_MARGIN_THRESHOLD, and marginal below it.",
+      "ru": "no_edge, когда не пройден базисный фильтр вне выборки; иначе clear, когда skill − baseline_skill ≥ EDGE_MARGIN_THRESHOLD, и marginal ниже этого порога."
     },
     "whatItMeans": {
-      "en": "How comfortably the model beat a naive baseline. Treat a high probability under 'marginal' as thin evidence, not near-certainty."
+      "en": "How comfortably the model beat a naive baseline. Treat a high probability under 'marginal' as thin evidence, not near-certainty.",
+      "ru": "Насколько уверенно модель обошла наивный базис. Высокую вероятность при статусе «marginal» воспринимайте как слабое свидетельство, а не как почти полную уверенность."
     },
     "formulaAnchor": "edge_margin_threshold"
   },
   "skill": {
     "term": {
-      "en": "Skill"
+      "en": "Skill",
+      "ru": "Мастерство"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "Out-of-sample directional accuracy from purged walk-forward validation — the fraction of held-out bars whose direction the model called correctly."
+      "en": "Out-of-sample directional accuracy from purged walk-forward validation — the fraction of held-out bars whose direction the model called correctly.",
+      "ru": "Точность определения направления вне выборки из очищенной (purged) walk-forward валидации — доля отложенных баров, направление которых модель угадала верно."
     },
     "whatItMeans": {
-      "en": "How often the model was right on data it never trained on. Compare it to the baseline, not to 50% — beating the baseline is the bar that matters."
+      "en": "How often the model was right on data it never trained on. Compare it to the baseline, not to 50% — beating the baseline is the bar that matters.",
+      "ru": "Как часто модель оказывалась права на данных, на которых никогда не обучалась. Сравнивайте с базисом, а не с 50% — важна именно планка обхода базиса."
     }
   },
   "baseline_skill": {
     "term": {
-      "en": "Baseline skill"
+      "en": "Baseline skill",
+      "ru": "Мастерство базиса"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "The same out-of-sample accuracy for a naive baseline — the stronger of persistence (next = current) and majority-class — scored on the identical held-out bars."
+      "en": "The same out-of-sample accuracy for a naive baseline — the stronger of persistence (next = current) and majority-class — scored on the identical held-out bars.",
+      "ru": "Та же точность вне выборки для наивного базиса — более сильного из персистентности (следующее = текущее) и класса-большинства — оценённая на тех же отложенных барах."
     },
     "whatItMeans": {
-      "en": "The score to beat. A model only has an edge when its skill clears this; a skill of 0.55 means nothing if the baseline also scores 0.55."
+      "en": "The score to beat. A model only has an edge when its skill clears this; a skill of 0.55 means nothing if the baseline also scores 0.55.",
+      "ru": "Планка, которую нужно превзойти. У модели есть преимущество только тогда, когда её мастерство обходит эту планку; мастерство 0.55 ничего не значит, если базис тоже набирает 0.55."
     }
   },
   "prob_up": {
     "term": {
-      "en": "P(up)"
+      "en": "P(up)",
+      "ru": "P(up)"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "The model's calibrated probability that the next move over the horizon is up, shown only when the horizon beat its baseline out-of-sample."
+      "en": "The model's calibrated probability that the next move over the horizon is up, shown only when the horizon beat its baseline out-of-sample.",
+      "ru": "Калиброванная вероятность модели, что следующее движение на горизонте будет вверх; показывается только когда горизонт обошёл свой базис вне выборки."
     },
     "whatItMeans": {
-      "en": "The chance of an up-move as the validated model sees it. A value near one-third is barely better than a three-way coin-flip; only a decisive value under a clear edge reads as conviction."
+      "en": "The chance of an up-move as the validated model sees it. A value near one-third is barely better than a three-way coin-flip; only a decisive value under a clear edge reads as conviction.",
+      "ru": "Шанс движения вверх с точки зрения провалидированной модели. Значение около одной трети едва лучше случайного выбора из трёх исходов; только решительное значение при явном преимуществе читается как уверенность."
     }
   },
   "prob_down": {
     "term": {
-      "en": "P(down)"
+      "en": "P(down)",
+      "ru": "P(down)"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "The model's calibrated probability that the next move over the horizon is down, shown only when the horizon beat its baseline out-of-sample."
+      "en": "The model's calibrated probability that the next move over the horizon is down, shown only when the horizon beat its baseline out-of-sample.",
+      "ru": "Калиброванная вероятность модели, что следующее движение на горизонте будет вниз; показывается только когда горизонт обошёл свой базис вне выборки."
     },
     "whatItMeans": {
-      "en": "The chance of a down-move as the validated model sees it. Read it beside P(up) and P(flat) — the three sum to one across the outcomes."
+      "en": "The chance of a down-move as the validated model sees it. Read it beside P(up) and P(flat) — the three sum to one across the outcomes.",
+      "ru": "Шанс движения вниз с точки зрения провалидированной модели. Читайте его рядом с P(up) и P(flat) — три вероятности в сумме дают единицу по всем исходам."
     }
   },
   "prob_flat": {
     "term": {
-      "en": "P(flat)"
+      "en": "P(flat)",
+      "ru": "P(flat)"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "The model's calibrated probability that price is roughly unchanged over the horizon, shown only when the horizon beat its baseline out-of-sample."
+      "en": "The model's calibrated probability that price is roughly unchanged over the horizon, shown only when the horizon beat its baseline out-of-sample.",
+      "ru": "Калиброванная вероятность модели, что цена на горизонте останется примерно неизменной; показывается только когда горизонт обошёл свой базис вне выборки."
     },
     "whatItMeans": {
-      "en": "The chance of no decisive move. A high P(flat) is the model saying 'no clear direction', which is itself information."
+      "en": "The chance of no decisive move. A high P(flat) is the model saying 'no clear direction', which is itself information.",
+      "ru": "Шанс отсутствия решительного движения. Высокое P(flat) — это модель, говорящая «нет ясного направления», что само по себе является информацией."
     }
   },
   "edge_margin": {
     "term": {
-      "en": "Edge margin"
+      "en": "Edge margin",
+      "ru": "Запас преимущества"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "skill − baseline_skill when both were scored, otherwise blank."
+      "en": "skill − baseline_skill when both were scored, otherwise blank.",
+      "ru": "skill − baseline_skill, когда оба были оценены, иначе пусто."
     },
     "whatItMeans": {
-      "en": "By how much the model beat the baseline. A tiny positive margin is a marginal edge; the sign and size are what separate 'clear' from 'marginal'."
+      "en": "By how much the model beat the baseline. A tiny positive margin is a marginal edge; the sign and size are what separate 'clear' from 'marginal'.",
+      "ru": "Насколько модель обошла базис. Крошечный положительный запас — это пограничное преимущество; знак и величина как раз и отделяют «clear» от «marginal»."
     }
   },
   "n_scored": {
     "term": {
-      "en": "Scored bars"
+      "en": "Scored bars",
+      "ru": "Оценённые бары"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "The number of out-of-sample bars scored across all walk-forward folds at this horizon."
+      "en": "The number of out-of-sample bars scored across all walk-forward folds at this horizon.",
+      "ru": "Количество баров вне выборки, оценённых по всем walk-forward фолдам на этом горизонте."
     },
     "whatItMeans": {
-      "en": "How much held-out evidence the skill number rests on. A high accuracy over a handful of bars is not yet a track record."
+      "en": "How much held-out evidence the skill number rests on. A high accuracy over a handful of bars is not yet a track record.",
+      "ru": "На каком объёме отложенных данных держится значение мастерства. Высокая точность на горстке баров — ещё не послужной список."
     }
   },
   "n_splits": {
     "term": {
-      "en": "Folds"
+      "en": "Folds",
+      "ru": "Фолды"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "The number of purged walk-forward folds the model was validated across."
+      "en": "The number of purged walk-forward folds the model was validated across.",
+      "ru": "Количество очищенных (purged) walk-forward фолдов, на которых валидировалась модель."
     },
     "whatItMeans": {
-      "en": "How many independent out-of-sample windows the edge held up over. More folds means the result is less likely a single lucky stretch."
+      "en": "How many independent out-of-sample windows the edge held up over. More folds means the result is less likely a single lucky stretch.",
+      "ru": "На скольких независимых окнах вне выборки удержалось преимущество. Больше фолдов — меньше вероятность, что результат это одна удачная полоса."
     }
   },
   "horizon_bars": {
     "term": {
-      "en": "Horizon"
+      "en": "Horizon",
+      "ru": "Горизонт"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "The forecast horizon, in bars of the result's timeframe (e.g. 21 bars on a 1d series ≈ a month ahead)."
+      "en": "The forecast horizon, in bars of the result's timeframe (e.g. 21 bars on a 1d series ≈ a month ahead).",
+      "ru": "Горизонт прогноза в барах таймфрейма результата (например, 21 бар на серии 1d ≈ месяц вперёд)."
     },
     "whatItMeans": {
-      "en": "How far ahead this block looks. Edge at one horizon says nothing about another — each is trained and gated on its own."
+      "en": "How far ahead this block looks. Edge at one horizon says nothing about another — each is trained and gated on its own.",
+      "ru": "Насколько далеко вперёд смотрит этот блок. Преимущество на одном горизонте ничего не говорит о другом — каждый обучается и фильтруется отдельно."
     }
   },
   "beats_baseline": {
     "term": {
-      "en": "Beats baseline"
+      "en": "Beats baseline",
+      "ru": "Обходит базис"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "True when the model's out-of-sample skill cleared the baseline gate at this horizon."
+      "en": "True when the model's out-of-sample skill cleared the baseline gate at this horizon.",
+      "ru": "True, когда мастерство модели вне выборки прошло базисный фильтр на этом горизонте."
     },
     "whatItMeans": {
-      "en": "The go/no-go for showing probabilities. When false, no probability is shown at all — an honest 'don't know' rather than a fabricated number."
+      "en": "The go/no-go for showing probabilities. When false, no probability is shown at all — an honest 'don't know' rather than a fabricated number.",
+      "ru": "Переключатель «показывать / не показывать» вероятности. Когда false, вероятность не показывается вовсе — честное «не знаю» вместо выдуманного числа."
     }
   },
   "feature_set_id": {
     "term": {
-      "en": "Feature set"
+      "en": "Feature set",
+      "ru": "Набор признаков"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "A stable hash of the ordered feature set the model was trained on (e.g. price-only v1, or a v2 tier that adds cycle and on-chain inputs)."
+      "en": "A stable hash of the ordered feature set the model was trained on (e.g. price-only v1, or a v2 tier that adds cycle and on-chain inputs).",
+      "ru": "Устойчивый хеш упорядоченного набора признаков, на котором обучалась модель (например, только цена v1 или уровень v2, добавляющий циклические и on-chain входы)."
     },
     "whatItMeans": {
-      "en": "Which inputs the forecast saw. A v1 id means exogenous series weren't available and the model ran on price-derived features only."
+      "en": "Which inputs the forecast saw. A v1 id means exogenous series weren't available and the model ran on price-derived features only.",
+      "ru": "Какие входы видел прогноз. Идентификатор v1 означает, что экзогенные ряды были недоступны и модель работала только на признаках, выведенных из цены."
     }
   },
   "model_version": {
     "term": {
-      "en": "Model version"
+      "en": "Model version",
+      "ru": "Версия модели"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "A content hash over the training-data cutoff, feature set, and library versions — the identity of the exact trained model."
+      "en": "A content hash over the training-data cutoff, feature set, and library versions — the identity of the exact trained model.",
+      "ru": "Хеш содержимого по отсечке обучающих данных, набору признаков и версиям библиотек — идентичность конкретной обученной модели."
     },
     "whatItMeans": {
-      "en": "Provenance for reproducibility. Two forecasts with the same model_version came from the same trained model; a change means something upstream moved."
+      "en": "Provenance for reproducibility. Two forecasts with the same model_version came from the same trained model; a change means something upstream moved.",
+      "ru": "Происхождение для воспроизводимости. Два прогноза с одинаковым model_version получены из одной и той же обученной модели; изменение означает, что что-то выше по цепочке сдвинулось."
     }
   },
   "permutation_importance": {
     "term": {
-      "en": "Driver importance"
+      "en": "Driver importance",
+      "ru": "Важность драйверов"
     },
     "category": "forecast",
     "howComputed": {
-      "en": "Out-of-sample permutation importance: how much the model's validated skill drops when one feature's values are shuffled."
+      "en": "Out-of-sample permutation importance: how much the model's validated skill drops when one feature's values are shuffled.",
+      "ru": "Перестановочная важность вне выборки: насколько падает провалидированное мастерство модели, когда значения одного признака перемешиваются."
     },
     "whatItMeans": {
-      "en": "Which inputs the model leaned on — association within the validated model, not causation. Correlated inputs share the credit, so read the ranking, not the exact numbers."
+      "en": "Which inputs the model leaned on — association within the validated model, not causation. Correlated inputs share the credit, so read the ranking, not the exact numbers.",
+      "ru": "На какие входы опиралась модель — связь внутри провалидированной модели, а не причинность. Коррелированные входы делят заслугу между собой, поэтому читайте ранжирование, а не точные числа."
     }
   },
   "conviction": {
     "term": {
-      "en": "Conviction"
+      "en": "Conviction",
+      "ru": "Уверенность"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "P(direction) × clamp(sharpe_mean / SHARPE_FULL_CREDIT, 0, 1) — the calibrated forecast probability of the called direction times the walk-forward edge credit (linear up to SHARPE_FULL_CREDIT, zero at or below zero Sharpe)."
+      "en": "P(direction) × clamp(sharpe_mean / SHARPE_FULL_CREDIT, 0, 1) — the calibrated forecast probability of the called direction times the walk-forward edge credit (linear up to SHARPE_FULL_CREDIT, zero at or below zero Sharpe).",
+      "ru": "P(direction) × clamp(sharpe_mean / SHARPE_FULL_CREDIT, 0, 1) — калиброванная вероятность прогноза для названного направления, умноженная на кредит walk-forward преимущества (линейно до SHARPE_FULL_CREDIT, ноль при нулевом или отрицательном Sharpe)."
     },
     "whatItMeans": {
-      "en": "How strongly the app backs this call. Low by construction when either the forecast edge is marginal or the backtest is thin — it is derived, never invented, and a flat call has zero."
+      "en": "How strongly the app backs this call. Low by construction when either the forecast edge is marginal or the backtest is thin — it is derived, never invented, and a flat call has zero.",
+      "ru": "Насколько сильно приложение поддерживает этот вывод. По построению низкая, когда прогнозное преимущество пограничное или бэктест скудный — она выводится, а не выдумывается, и у флэт-вывода она равна нулю."
     },
     "formulaAnchor": "conviction_mapping"
   },
   "direction": {
     "term": {
-      "en": "Direction"
+      "en": "Direction",
+      "ru": "Направление"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "long or short only when the forecast, at least one agreeing live signal, and a positive walk-forward edge all point the same way; otherwise flat."
+      "en": "long or short only when the forecast, at least one agreeing live signal, and a positive walk-forward edge all point the same way; otherwise flat.",
+      "ru": "long или short только когда прогноз, хотя бы один согласный живой сигнал и положительное walk-forward преимущество указывают в одну сторону; иначе flat."
     },
     "whatItMeans": {
-      "en": "The advisory stance. 'flat — no actionable edge' is a real answer, not a missing one: at least one leg didn't line up."
+      "en": "The advisory stance. 'flat — no actionable edge' is a real answer, not a missing one: at least one leg didn't line up.",
+      "ru": "Рекомендательная позиция. «flat — no actionable edge» это реальный ответ, а не отсутствующий: хотя бы одна опора не сошлась."
     }
   },
   "entry_zone": {
     "term": {
-      "en": "Entry zone"
+      "en": "Entry zone",
+      "ru": "Зона входа"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "A band of ±ENTRY_BAND_ATR (a quarter ATR) around the last close — chart geometry, not a prediction."
+      "en": "A band of ±ENTRY_BAND_ATR (a quarter ATR) around the last close — chart geometry, not a prediction.",
+      "ru": "Полоса ±ENTRY_BAND_ATR (четверть ATR) вокруг последнего закрытия — геометрия графика, а не прогноз."
     },
     "whatItMeans": {
-      "en": "Where the call considers an entry actionable, for your judgement. Advisory only — nothing here places an order."
+      "en": "Where the call considers an entry actionable, for your judgement. Advisory only — nothing here places an order.",
+      "ru": "Где вывод считает вход осмысленным, на ваше усмотрение. Только рекомендательно — ничто здесь не выставляет ордер."
     }
   },
   "stop": {
     "term": {
-      "en": "Stop"
+      "en": "Stop",
+      "ru": "Стоп"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "Beyond the nearest opposing support/resistance level with an ATR buffer, falling back to STOP_ATR (2 ATRs) from the last close when no level sits there."
+      "en": "Beyond the nearest opposing support/resistance level with an ATR buffer, falling back to STOP_ATR (2 ATRs) from the last close when no level sits there.",
+      "ru": "За ближайшим противоположным уровнем поддержки/сопротивления с буфером ATR, откатываясь к STOP_ATR (2 ATR) от последнего закрытия, когда там нет уровня."
     },
     "whatItMeans": {
-      "en": "A suggested invalidation level derived from volatility and structure — advisory, sized to where the idea would be wrong, not a guarantee."
+      "en": "A suggested invalidation level derived from volatility and structure — advisory, sized to where the idea would be wrong, not a guarantee.",
+      "ru": "Предлагаемый уровень инвалидации, выведенный из волатильности и структуры — рекомендательный, отмеряющий, где идея окажется неверной, а не гарантия."
     }
   },
   "targets": {
     "term": {
-      "en": "Targets"
+      "en": "Targets",
+      "ru": "Цели"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The nearest favouring support/resistance level, falling back to TARGET_ATR (2 ATRs) from the last close when none exists."
+      "en": "The nearest favouring support/resistance level, falling back to TARGET_ATR (2 ATRs) from the last close when none exists.",
+      "ru": "Ближайший благоприятствующий уровень поддержки/сопротивления, откатываясь к TARGET_ATR (2 ATR) от последнего закрытия, когда такого нет."
     },
     "whatItMeans": {
-      "en": "Advisory objective(s) from chart structure — where price might travel if the call works, not a promise it will."
+      "en": "Advisory objective(s) from chart structure — where price might travel if the call works, not a promise it will.",
+      "ru": "Рекомендательные цели из структуры графика — куда цена может дойти, если вывод сработает, а не обещание, что дойдёт."
     }
   },
   "sharpe_mean": {
     "term": {
-      "en": "Sharpe (mean)"
+      "en": "Sharpe (mean)",
+      "ru": "Sharpe (среднее)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The mean out-of-sample Sharpe ratio across the strategy's walk-forward folds (risk-adjusted return: mean return over its standard deviation)."
+      "en": "The mean out-of-sample Sharpe ratio across the strategy's walk-forward folds (risk-adjusted return: mean return over its standard deviation).",
+      "ru": "Средний коэффициент Sharpe вне выборки по walk-forward фолдам стратегии (доходность с поправкой на риск: средняя доходность к её стандартному отклонению)."
     },
     "whatItMeans": {
-      "en": "The backtested edge, averaged over held-out windows. At or above SHARPE_FULL_CREDIT it earns full conviction credit; near zero is thin; negative blocks a directional call."
+      "en": "The backtested edge, averaged over held-out windows. At or above SHARPE_FULL_CREDIT it earns full conviction credit; near zero is thin; negative blocks a directional call.",
+      "ru": "Бэктестовое преимущество, усреднённое по отложенным окнам. На уровне SHARPE_FULL_CREDIT или выше оно даёт полный кредит уверенности; около нуля — скудное; отрицательное блокирует направленный вывод."
     }
   },
   "sharpe_std": {
     "term": {
-      "en": "Sharpe (std)"
+      "en": "Sharpe (std)",
+      "ru": "Sharpe (ст. откл.)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The standard deviation of the per-fold Sharpe ratios across the walk-forward folds."
+      "en": "The standard deviation of the per-fold Sharpe ratios across the walk-forward folds.",
+      "ru": "Стандартное отклонение пофолдовых коэффициентов Sharpe по walk-forward фолдам."
     },
     "whatItMeans": {
-      "en": "How much the edge wobbled fold to fold. A high spread beside a decent mean means the edge is inconsistent, not dependable."
+      "en": "How much the edge wobbled fold to fold. A high spread beside a decent mean means the edge is inconsistent, not dependable.",
+      "ru": "Насколько преимущество колебалось от фолда к фолду. Большой разброс рядом с приличным средним означает, что преимущество непостоянно, а не надёжно."
     }
   },
   "total_return_mean": {
     "term": {
-      "en": "Total return (mean)"
+      "en": "Total return (mean)",
+      "ru": "Полная доходность (среднее)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The mean of the per-fold total returns across the walk-forward folds."
+      "en": "The mean of the per-fold total returns across the walk-forward folds.",
+      "ru": "Среднее пофолдовых полных доходностей по walk-forward фолдам."
     },
     "whatItMeans": {
-      "en": "The average out-of-sample return the strategy produced per validation window — a plain-return companion to the Sharpe."
+      "en": "The average out-of-sample return the strategy produced per validation window — a plain-return companion to the Sharpe.",
+      "ru": "Средняя доходность вне выборки, которую давала стратегия за окно валидации — простой доходностный спутник Sharpe."
     }
   },
   "total_return_std": {
     "term": {
-      "en": "Total return (std)"
+      "en": "Total return (std)",
+      "ru": "Полная доходность (ст. откл.)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The standard deviation of the per-fold total returns."
+      "en": "The standard deviation of the per-fold total returns.",
+      "ru": "Стандартное отклонение пофолдовых полных доходностей."
     },
     "whatItMeans": {
-      "en": "How variable those returns were across folds. Wide swings mean the average hides a bumpy ride."
+      "en": "How variable those returns were across folds. Wide swings mean the average hides a bumpy ride.",
+      "ru": "Насколько эти доходности разнились от фолда к фолду. Широкие колебания означают, что среднее скрывает тряский путь."
     }
   },
   "strategy_id": {
     "term": {
-      "en": "Strategy"
+      "en": "Strategy",
+      "ru": "Стратегия"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The identifier of the strategy whose live signal and walk-forward edge back this call."
+      "en": "The identifier of the strategy whose live signal and walk-forward edge back this call.",
+      "ru": "Идентификатор стратегии, чей живой сигнал и walk-forward преимущество поддерживают этот вывод."
     },
     "whatItMeans": {
-      "en": "Which strategy's edge this rests on. The backtested edge only counts when this same strategy also voted the called direction live."
+      "en": "Which strategy's edge this rests on. The backtested edge only counts when this same strategy also voted the called direction live.",
+      "ru": "На преимуществе какой стратегии это держится. Бэктестовое преимущество учитывается только тогда, когда эта же стратегия вживую проголосовала за названное направление."
     }
   },
   "alignment": {
     "term": {
-      "en": "Alignment (leg)"
+      "en": "Alignment (leg)",
+      "ru": "Согласованность (опора)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The fusion gate checking that every input — snapshot, forecast, signals, backtest — shares the same symbol, timeframe, and as-of bar."
+      "en": "The fusion gate checking that every input — snapshot, forecast, signals, backtest — shares the same symbol, timeframe, and as-of bar.",
+      "ru": "Фильтр слияния, проверяющий, что каждый вход — снимок, прогноз, сигналы, бэктест — относится к одному символу, таймфрейму и опорному бару (as-of)."
     },
     "whatItMeans": {
-      "en": "A consistency guard. It always passes on a shown call, because mismatched inputs are rejected before any recommendation is formed."
+      "en": "A consistency guard. It always passes on a shown call, because mismatched inputs are rejected before any recommendation is formed.",
+      "ru": "Страж согласованности. На показанном выводе он всегда пройден, потому что несовпадающие входы отсекаются до формирования любой рекомендации."
     }
   },
   "conditions": {
     "term": {
-      "en": "Conditions (leg)"
+      "en": "Conditions (leg)",
+      "ru": "Условия (опора)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The fusion leg that records the read condition snapshot — trend, momentum, and volume stance — at the as-of bar."
+      "en": "The fusion leg that records the read condition snapshot — trend, momentum, and volume stance — at the as-of bar.",
+      "ru": "Опора слияния, фиксирующая считанный снимок условий — тренд, моментум и позицию по объёму — на опорном баре (as-of)."
     },
     "whatItMeans": {
-      "en": "The market backdrop the call was formed against. It's context that always registers, not a pass/fail hurdle."
+      "en": "The market backdrop the call was formed against. It's context that always registers, not a pass/fail hurdle.",
+      "ru": "Рыночный фон, на котором формировался вывод. Это контекст, который всегда регистрируется, а не барьер «прошёл / не прошёл»."
     }
   },
   "forecast": {
     "term": {
-      "en": "Forecast (leg)"
+      "en": "Forecast (leg)",
+      "ru": "Прогноз (опора)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The fusion leg gating on the calibrated forecast: probabilities must have shipped (baseline beaten) and their argmax must be directional."
+      "en": "The fusion leg gating on the calibrated forecast: probabilities must have shipped (baseline beaten) and their argmax must be directional.",
+      "ru": "Опора слияния, фильтрующая по калиброванному прогнозу: вероятности должны быть выданы (базис обойдён), а их argmax должен быть направленным."
     },
     "whatItMeans": {
-      "en": "Whether the model's probability supports a direction. A no-edge or flat forecast fails this leg and forces a flat call."
+      "en": "Whether the model's probability supports a direction. A no-edge or flat forecast fails this leg and forces a flat call.",
+      "ru": "Поддерживает ли вероятность модели направление. Прогноз без преимущества или флэт-прогноз проваливает эту опору и вынуждает флэт-вывод."
     }
   },
   "signal": {
     "term": {
-      "en": "Signal (leg)"
+      "en": "Signal (leg)",
+      "ru": "Сигнал (опора)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The fusion leg gating on live strategy signals: at least one must imply the called direction, none may conflict, and it must agree with the forecast."
+      "en": "The fusion leg gating on live strategy signals: at least one must imply the called direction, none may conflict, and it must agree with the forecast.",
+      "ru": "Опора слияния, фильтрующая по живым сигналам стратегий: хотя бы один должен подразумевать названное направление, ни один не должен противоречить, и он должен согласовываться с прогнозом."
     },
     "whatItMeans": {
-      "en": "Whether a live strategy actually points the same way. Conflicting or absent signals block a directional call."
+      "en": "Whether a live strategy actually points the same way. Conflicting or absent signals block a directional call.",
+      "ru": "Действительно ли живая стратегия указывает в ту же сторону. Противоречащие или отсутствующие сигналы блокируют направленный вывод."
     }
   },
   "backtest": {
     "term": {
-      "en": "Backtest (leg)"
+      "en": "Backtest (leg)",
+      "ru": "Бэктест (опора)"
     },
     "category": "recommendation",
     "howComputed": {
-      "en": "The fusion leg gating on the walk-forward edge: a basis must exist, sharpe_mean must be positive, and it must belong to one of the agreeing strategies."
+      "en": "The fusion leg gating on the walk-forward edge: a basis must exist, sharpe_mean must be positive, and it must belong to one of the agreeing strategies.",
+      "ru": "Опора слияния, фильтрующая по walk-forward преимуществу: базис (basis) должен существовать, sharpe_mean должен быть положительным, и он должен принадлежать одной из согласных стратегий."
     },
     "whatItMeans": {
-      "en": "Whether the direction has a real, out-of-sample track record behind it — not just a live hunch."
+      "en": "Whether the direction has a real, out-of-sample track record behind it — not just a live hunch.",
+      "ru": "Есть ли за направлением реальный послужной список вне выборки — а не просто живая догадка."
     }
   },
   "trend": {
     "term": {
-      "en": "Trend"
+      "en": "Trend",
+      "ru": "Тренд"
     },
     "category": "condition",
     "howComputed": {
-      "en": "The snapshot's trend classification from the trailing moving-average structure and slope (e.g. up / down / sideways)."
+      "en": "The snapshot's trend classification from the trailing moving-average structure and slope (e.g. up / down / sideways).",
+      "ru": "Классификация тренда из снимка по структуре и наклону трейлинговых скользящих средних (например, вверх / вниз / вбок)."
     },
     "whatItMeans": {
-      "en": "The prevailing direction of price. A call is easier to trust when the trend, momentum, and live signal agree."
+      "en": "The prevailing direction of price. A call is easier to trust when the trend, momentum, and live signal agree.",
+      "ru": "Преобладающее направление цены. Выводу легче доверять, когда тренд, моментум и живой сигнал согласуются."
     }
   },
   "momentum": {
     "term": {
-      "en": "Momentum"
+      "en": "Momentum",
+      "ru": "Моментум"
     },
     "category": "condition",
     "howComputed": {
-      "en": "The snapshot's momentum classification from trailing oscillators (RSI/MACD stance) at the as-of bar."
+      "en": "The snapshot's momentum classification from trailing oscillators (RSI/MACD stance) at the as-of bar.",
+      "ru": "Классификация моментума из снимка по трейлинговым осцилляторам (позиция RSI/MACD) на опорном баре (as-of)."
     },
     "whatItMeans": {
-      "en": "Whether the move is gaining or losing steam. Rising momentum supports continuation; fading momentum warns of stalling."
+      "en": "Whether the move is gaining or losing steam. Rising momentum supports continuation; fading momentum warns of stalling.",
+      "ru": "Набирает движение силу или теряет её. Растущий моментум поддерживает продолжение; угасающий моментум предупреждает о затухании."
     }
   },
   "volume_stance": {
     "term": {
-      "en": "Volume stance"
+      "en": "Volume stance",
+      "ru": "Позиция по объёму"
     },
     "category": "condition",
     "howComputed": {
-      "en": "The snapshot's volume classification — recent volume relative to its trailing average."
+      "en": "The snapshot's volume classification — recent volume relative to its trailing average.",
+      "ru": "Классификация объёма из снимка — недавний объём относительно его трейлингового среднего."
     },
     "whatItMeans": {
-      "en": "Whether participation is confirming the move. A breakout on light volume is weaker than one on heavy volume."
+      "en": "Whether participation is confirming the move. A breakout on light volume is weaker than one on heavy volume.",
+      "ru": "Подтверждает ли участие движение. Пробой на лёгком объёме слабее, чем на тяжёлом."
     }
   },
   "ret_1": {
     "term": {
-      "en": "1-bar return"
+      "en": "1-bar return",
+      "ru": "Доходность за 1 бар"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Trailing one-bar return: close[i] / close[i−1] − 1."
+      "en": "Trailing one-bar return: close[i] / close[i−1] − 1.",
+      "ru": "Трейлинговая доходность за один бар: close[i] / close[i−1] − 1."
     },
     "whatItMeans": {
-      "en": "The most recent bar's percentage change — the shortest-term momentum input the model sees."
+      "en": "The most recent bar's percentage change — the shortest-term momentum input the model sees.",
+      "ru": "Процентное изменение самого свежего бара — самый краткосрочный моментум-вход, который видит модель."
     }
   },
   "ret_5": {
     "term": {
-      "en": "5-bar return"
+      "en": "5-bar return",
+      "ru": "Доходность за 5 баров"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Trailing five-bar return: close[i] / close[i−5] − 1."
+      "en": "Trailing five-bar return: close[i] / close[i−5] − 1.",
+      "ru": "Трейлинговая доходность за пять баров: close[i] / close[i−5] − 1."
     },
     "whatItMeans": {
-      "en": "Short-horizon momentum over the last five bars — smoother than the one-bar return."
+      "en": "Short-horizon momentum over the last five bars — smoother than the one-bar return.",
+      "ru": "Краткогоризонтный моментум за последние пять баров — более сглаженный, чем однобаровая доходность."
     }
   },
   "rsi_14": {
     "term": {
-      "en": "RSI (14)"
+      "en": "RSI (14)",
+      "ru": "RSI (14)"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Wilder's 14-period Relative Strength Index, a 0–100 oscillator of average gains versus losses."
+      "en": "Wilder's 14-period Relative Strength Index, a 0–100 oscillator of average gains versus losses.",
+      "ru": "14-периодный индекс относительной силы RSI по Уайлдеру, осциллятор 0–100 средних приростов против потерь."
     },
     "whatItMeans": {
-      "en": "Overbought/oversold pressure. Above ~70 is stretched high, below ~30 stretched low — a condition, not a trigger."
+      "en": "Overbought/oversold pressure. Above ~70 is stretched high, below ~30 stretched low — a condition, not a trigger.",
+      "ru": "Давление перекупленности/перепроданности. Выше ~70 — растянут вверх, ниже ~30 — растянут вниз; это условие, а не триггер."
     }
   },
   "macd": {
     "term": {
-      "en": "MACD line"
+      "en": "MACD line",
+      "ru": "Линия MACD"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The MACD line: the 12-period EMA minus the 26-period EMA of close."
+      "en": "The MACD line: the 12-period EMA minus the 26-period EMA of close.",
+      "ru": "Линия MACD: 12-периодная EMA минус 26-периодная EMA цены закрытия."
     },
     "whatItMeans": {
-      "en": "Trend-following momentum. Above zero leans bullish, below zero bearish; its slope shows momentum shifting."
+      "en": "Trend-following momentum. Above zero leans bullish, below zero bearish; its slope shows momentum shifting.",
+      "ru": "Трендследящий моментум. Выше нуля склоняется к бычьему, ниже нуля к медвежьему; наклон линии показывает сдвиг моментума."
     }
   },
   "macd_signal": {
     "term": {
-      "en": "MACD signal"
+      "en": "MACD signal",
+      "ru": "Сигнальная линия MACD"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The 9-period EMA of the MACD line."
+      "en": "The 9-period EMA of the MACD line.",
+      "ru": "9-периодная EMA линии MACD."
     },
     "whatItMeans": {
-      "en": "A smoothed reference for the MACD line; crossings of the two are the classic momentum signal."
+      "en": "A smoothed reference for the MACD line; crossings of the two are the classic momentum signal.",
+      "ru": "Сглаженный ориентир для линии MACD; пересечения этих двух — классический сигнал моментума."
     }
   },
   "macd_hist": {
     "term": {
-      "en": "MACD histogram"
+      "en": "MACD histogram",
+      "ru": "Гистограмма MACD"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The MACD histogram: MACD line minus its signal line."
+      "en": "The MACD histogram: MACD line minus its signal line.",
+      "ru": "Гистограмма MACD: линия MACD минус её сигнальная линия."
     },
     "whatItMeans": {
-      "en": "How fast momentum is changing. Growing bars mean momentum accelerating; shrinking bars, fading."
+      "en": "How fast momentum is changing. Growing bars mean momentum accelerating; shrinking bars, fading.",
+      "ru": "Как быстро меняется моментум. Растущие столбцы означают ускорение моментума; сокращающиеся — угасание."
     }
   },
   "bb_pct_b": {
     "term": {
-      "en": "Bollinger %B"
+      "en": "Bollinger %B",
+      "ru": "Bollinger %B"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "%B: where close sits inside the 20-period Bollinger band — (close − lower) / (upper − lower)."
+      "en": "%B: where close sits inside the 20-period Bollinger band — (close − lower) / (upper − lower).",
+      "ru": "%B: где закрытие находится внутри 20-периодной полосы Bollinger — (close − lower) / (upper − lower)."
     },
     "whatItMeans": {
-      "en": "Position within the volatility envelope. Above 1 is outside the upper band (stretched up), below 0 outside the lower (stretched down)."
+      "en": "Position within the volatility envelope. Above 1 is outside the upper band (stretched up), below 0 outside the lower (stretched down).",
+      "ru": "Положение внутри волатильностного канала. Выше 1 — за верхней полосой (растянут вверх), ниже 0 — за нижней (растянут вниз)."
     }
   },
   "atr_pct": {
     "term": {
-      "en": "ATR %"
+      "en": "ATR %",
+      "ru": "ATR %"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Average True Range as a fraction of price: ATR(14) / close."
+      "en": "Average True Range as a fraction of price: ATR(14) / close.",
+      "ru": "Average True Range как доля цены: ATR(14) / close."
     },
     "whatItMeans": {
-      "en": "Recent volatility, scaled to price. Higher means wider swings — useful for sizing stops and reading risk."
+      "en": "Recent volatility, scaled to price. Higher means wider swings — useful for sizing stops and reading risk.",
+      "ru": "Недавняя волатильность, масштабированная к цене. Выше — шире колебания; полезно для отмеривания стопов и оценки риска."
     }
   },
   "adx": {
     "term": {
-      "en": "ADX"
+      "en": "ADX",
+      "ru": "ADX"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The 14-period Average Directional Index, a 0–100 measure of trend strength (direction-agnostic)."
+      "en": "The 14-period Average Directional Index, a 0–100 measure of trend strength (direction-agnostic).",
+      "ru": "14-периодный индекс среднего направленного движения ADX, мера силы тренда 0–100 (без учёта направления)."
     },
     "whatItMeans": {
-      "en": "How strong the trend is, not which way. Above ~25 is a trending market; low values mean chop where trend signals misfire."
+      "en": "How strong the trend is, not which way. Above ~25 is a trending market; low values mean chop where trend signals misfire.",
+      "ru": "Насколько силён тренд, а не в какую сторону. Выше ~25 — трендовый рынок; низкие значения означают пилу, где трендовые сигналы дают осечки."
     }
   },
   "plus_di": {
     "term": {
-      "en": "+DI"
+      "en": "+DI",
+      "ru": "+DI"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The +DI component of the 14-period directional-movement system — the strength of upward movement."
+      "en": "The +DI component of the 14-period directional-movement system — the strength of upward movement.",
+      "ru": "Компонент +DI 14-периодной системы направленного движения — сила движения вверх."
     },
     "whatItMeans": {
-      "en": "Upward directional pressure. When it leads −DI, buyers are in control."
+      "en": "Upward directional pressure. When it leads −DI, buyers are in control.",
+      "ru": "Восходящее направленное давление. Когда он ведёт над −DI, контроль у покупателей."
     }
   },
   "minus_di": {
     "term": {
-      "en": "−DI"
+      "en": "−DI",
+      "ru": "−DI"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The −DI component of the 14-period directional-movement system — the strength of downward movement."
+      "en": "The −DI component of the 14-period directional-movement system — the strength of downward movement.",
+      "ru": "Компонент −DI 14-периодной системы направленного движения — сила движения вниз."
     },
     "whatItMeans": {
-      "en": "Downward directional pressure. When it leads +DI, sellers are in control."
+      "en": "Downward directional pressure. When it leads +DI, sellers are in control.",
+      "ru": "Нисходящее направленное давление. Когда он ведёт над +DI, контроль у продавцов."
     }
   },
   "supertrend_dir": {
     "term": {
-      "en": "Supertrend direction"
+      "en": "Supertrend direction",
+      "ru": "Направление Supertrend"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The Supertrend direction at period 10: +1 in an uptrend, −1 in a downtrend."
+      "en": "The Supertrend direction at period 10: +1 in an uptrend, −1 in a downtrend.",
+      "ru": "Направление Supertrend с периодом 10: +1 в восходящем тренде, −1 в нисходящем."
     },
     "whatItMeans": {
-      "en": "A discrete trend-following stance. It flips with the ATR-based trailing stop, so it lags but filters noise."
+      "en": "A discrete trend-following stance. It flips with the ATR-based trailing stop, so it lags but filters noise.",
+      "ru": "Дискретная трендследящая позиция. Она переворачивается вместе с трейлинг-стопом на базе ATR, поэтому запаздывает, но отфильтровывает шум."
     }
   },
   "ema20_dist": {
     "term": {
-      "en": "EMA20 distance"
+      "en": "EMA20 distance",
+      "ru": "Расстояние до EMA20"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Distance of close from its 20-period EMA, as a fraction: (close − EMA20) / close."
+      "en": "Distance of close from its 20-period EMA, as a fraction: (close − EMA20) / close.",
+      "ru": "Расстояние закрытия от его 20-периодной EMA в виде доли: (close − EMA20) / close."
     },
     "whatItMeans": {
-      "en": "How far price has stretched from its short-term mean. Large values often precede a snap-back."
+      "en": "How far price has stretched from its short-term mean. Large values often precede a snap-back.",
+      "ru": "Насколько цена растянулась от своего краткосрочного среднего. Большие значения часто предшествуют откату назад."
     }
   },
   "ema50_dist": {
     "term": {
-      "en": "EMA50 distance"
+      "en": "EMA50 distance",
+      "ru": "Расстояние до EMA50"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Distance of close from its 50-period EMA, as a fraction: (close − EMA50) / close."
+      "en": "Distance of close from its 50-period EMA, as a fraction: (close − EMA50) / close.",
+      "ru": "Расстояние закрытия от его 50-периодной EMA в виде доли: (close − EMA50) / close."
     },
     "whatItMeans": {
-      "en": "Stretch from the medium-term mean — a slower, more structural version of the 20-period distance."
+      "en": "Stretch from the medium-term mean — a slower, more structural version of the 20-period distance.",
+      "ru": "Растяжение от среднесрочного среднего — более медленная, более структурная версия 20-периодного расстояния."
     }
   },
   "donchian_pos": {
     "term": {
-      "en": "Donchian position"
+      "en": "Donchian position",
+      "ru": "Положение в канале Donchian"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Position of close within the 20-period Donchian channel: (close − lower) / (upper − lower)."
+      "en": "Position of close within the 20-period Donchian channel: (close − lower) / (upper − lower).",
+      "ru": "Положение закрытия внутри 20-периодного канала Donchian: (close − lower) / (upper − lower)."
     },
     "whatItMeans": {
-      "en": "Where price sits in its recent range. Near 1 is pushing recent highs (breakout territory); near 0, recent lows."
+      "en": "Where price sits in its recent range. Near 1 is pushing recent highs (breakout territory); near 0, recent lows.",
+      "ru": "Где цена находится в своём недавнем диапазоне. Около 1 — давит на недавние максимумы (территория пробоя); около 0 — недавние минимумы."
     }
   },
   "rel_volume": {
     "term": {
-      "en": "Relative volume"
+      "en": "Relative volume",
+      "ru": "Относительный объём"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Relative volume: volume[i] / SMA(volume, 20)[i]."
+      "en": "Relative volume: volume[i] / SMA(volume, 20)[i].",
+      "ru": "Относительный объём: volume[i] / SMA(volume, 20)[i]."
     },
     "whatItMeans": {
-      "en": "Participation versus the recent norm. Above 1 means heavier-than-usual trade — moves on high relative volume carry more weight."
+      "en": "Participation versus the recent norm. Above 1 means heavier-than-usual trade — moves on high relative volume carry more weight.",
+      "ru": "Участие относительно недавней нормы. Выше 1 означает торговлю тяжелее обычного — движения на высоком относительном объёме весомее."
     }
   },
   "halving_phase": {
     "term": {
-      "en": "Halving phase"
+      "en": "Halving phase",
+      "ru": "Фаза халвинга"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Fraction of the Bitcoin halving cycle elapsed at the bar's date, in [0, 1]."
+      "en": "Fraction of the Bitcoin halving cycle elapsed at the bar's date, in [0, 1].",
+      "ru": "Доля пройденного цикла халвинга Bitcoin на дату бара, в [0, 1]."
     },
     "whatItMeans": {
-      "en": "Where we are in BTC's ~4-year supply cycle — a slow macro-timing context, not a short-term signal."
+      "en": "Where we are in BTC's ~4-year supply cycle — a slow macro-timing context, not a short-term signal.",
+      "ru": "Где мы находимся в ~4-летнем цикле предложения BTC — медленный контекст макро-тайминга, а не краткосрочный сигнал."
     }
   },
   "days_since_halving": {
     "term": {
-      "en": "Days since halving"
+      "en": "Days since halving",
+      "ru": "Дней с халвинга"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Days since the most recent Bitcoin halving at the bar's UTC date."
+      "en": "Days since the most recent Bitcoin halving at the bar's UTC date.",
+      "ru": "Количество дней с последнего халвинга Bitcoin на дату бара по UTC."
     },
     "whatItMeans": {
-      "en": "Raw cycle age. Historically, distance from a halving has tracked broad phases of the BTC cycle."
+      "en": "Raw cycle age. Historically, distance from a halving has tracked broad phases of the BTC cycle.",
+      "ru": "Сырой возраст цикла. Исторически удалённость от халвинга отслеживала широкие фазы цикла BTC."
     }
   },
   "mayer_multiple": {
     "term": {
-      "en": "Mayer Multiple"
+      "en": "Mayer Multiple",
+      "ru": "Mayer Multiple"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "close / SMA200 of daily closes."
+      "en": "close / SMA200 of daily closes.",
+      "ru": "close / SMA200 дневных закрытий."
     },
     "whatItMeans": {
-      "en": "Price relative to its long trend. Historically stretched when high, historically cheap when low — a valuation context, not a trigger."
+      "en": "Price relative to its long trend. Historically stretched when high, historically cheap when low — a valuation context, not a trigger.",
+      "ru": "Цена относительно её долгого тренда. Исторически растянута при высоких значениях, исторически дёшева при низких — оценочный контекст, а не триггер."
     }
   },
   "dist_200w_ma": {
     "term": {
-      "en": "200-week MA distance"
+      "en": "200-week MA distance",
+      "ru": "Расстояние до 200-недельной MA"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "close / SMA1400 (≈200-week MA) of daily closes − 1."
+      "en": "close / SMA1400 (≈200-week MA) of daily closes − 1.",
+      "ru": "close / SMA1400 (≈200-недельная MA) дневных закрытий − 1."
     },
     "whatItMeans": {
-      "en": "Distance from the multi-year mean — a very slow cycle-valuation gauge; extremes have marked long-cycle tops and bottoms."
+      "en": "Distance from the multi-year mean — a very slow cycle-valuation gauge; extremes have marked long-cycle tops and bottoms.",
+      "ru": "Расстояние от многолетнего среднего — очень медленный индикатор оценки цикла; экстремумы отмечали вершины и днища длинного цикла."
     }
   },
   "fng_value": {
     "term": {
-      "en": "Fear & Greed"
+      "en": "Fear & Greed",
+      "ru": "Fear & Greed"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The Fear & Greed index (0–100), read lag-1 from the metric store."
+      "en": "The Fear & Greed index (0–100), read lag-1 from the metric store.",
+      "ru": "Индекс Fear & Greed (0–100), считанный с лагом-1 из хранилища метрик."
     },
     "whatItMeans": {
-      "en": "Crowd sentiment. Extreme fear and extreme greed are contrarian context — associated with turns, not a guarantee of one."
+      "en": "Crowd sentiment. Extreme fear and extreme greed are contrarian context — associated with turns, not a guarantee of one.",
+      "ru": "Настроение толпы. Крайний страх и крайняя жадность — контрарианский контекст, связанный с разворотами, но не гарантирующий их."
     }
   },
   "fng_delta_7": {
     "term": {
-      "en": "Fear & Greed Δ7"
+      "en": "Fear & Greed Δ7",
+      "ru": "Fear & Greed Δ7"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Change in the Fear & Greed value over 7 bars: fng[i] − fng[i−7] (both lag-1)."
+      "en": "Change in the Fear & Greed value over 7 bars: fng[i] − fng[i−7] (both lag-1).",
+      "ru": "Изменение значения Fear & Greed за 7 баров: fng[i] − fng[i−7] (оба с лагом-1)."
     },
     "whatItMeans": {
-      "en": "How fast sentiment is swinging. Rapid shifts flag a changing mood before the level itself looks extreme."
+      "en": "How fast sentiment is swinging. Rapid shifts flag a changing mood before the level itself looks extreme.",
+      "ru": "Как быстро качается настроение. Резкие сдвиги сигнализируют о смене настроя раньше, чем сам уровень становится экстремальным."
     }
   },
   "btc_dominance": {
     "term": {
-      "en": "BTC dominance"
+      "en": "BTC dominance",
+      "ru": "Доминация BTC"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Bitcoin's share of total crypto market cap, in percent, read lag-1."
+      "en": "Bitcoin's share of total crypto market cap, in percent, read lag-1.",
+      "ru": "Доля Bitcoin в общей капитализации крипторынка, в процентах, считанная с лагом-1."
     },
     "whatItMeans": {
-      "en": "Whether capital is concentrating in BTC or rotating into alts — a market-structure backdrop."
+      "en": "Whether capital is concentrating in BTC or rotating into alts — a market-structure backdrop.",
+      "ru": "Концентрируется ли капитал в BTC или перетекает в альты — фон рыночной структуры."
     }
   },
   "dominance_delta_7": {
     "term": {
-      "en": "BTC dominance Δ7"
+      "en": "BTC dominance Δ7",
+      "ru": "Доминация BTC Δ7"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Change in BTC dominance over 7 bars: dominance[i] − dominance[i−7]."
+      "en": "Change in BTC dominance over 7 bars: dominance[i] − dominance[i−7].",
+      "ru": "Изменение доминации BTC за 7 баров: dominance[i] − dominance[i−7]."
     },
     "whatItMeans": {
-      "en": "The direction of capital rotation. Rising dominance often accompanies risk-off within crypto."
+      "en": "The direction of capital rotation. Rising dominance often accompanies risk-off within crypto.",
+      "ru": "Направление ротации капитала. Растущая доминация часто сопровождает risk-off внутри крипты."
     }
   },
   "funding_rate": {
     "term": {
-      "en": "Funding rate"
+      "en": "Funding rate",
+      "ru": "Ставка финансирования"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The Binance BTCUSDT perpetual funding rate, read lag-1."
+      "en": "The Binance BTCUSDT perpetual funding rate, read lag-1.",
+      "ru": "Ставка финансирования бессрочного контракта BTCUSDT на Binance, считанная с лагом-1."
     },
     "whatItMeans": {
-      "en": "What leveraged longs pay shorts (or vice versa). Persistently high positive funding flags crowded longs — a squeeze risk."
+      "en": "What leveraged longs pay shorts (or vice versa). Persistently high positive funding flags crowded longs — a squeeze risk.",
+      "ru": "Что маржинальные лонги платят шортам (или наоборот). Устойчиво высокая положительная ставка сигнализирует о перегруженности лонгами — риск сквиза."
     }
   },
   "oi_delta_7": {
     "term": {
-      "en": "Open interest Δ7"
+      "en": "Open interest Δ7",
+      "ru": "Открытый интерес Δ7"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "Fractional change in open interest over 7 bars: OI[i] / OI[i−7] − 1."
+      "en": "Fractional change in open interest over 7 bars: OI[i] / OI[i−7] − 1.",
+      "ru": "Долевое изменение открытого интереса за 7 баров: OI[i] / OI[i−7] − 1."
     },
     "whatItMeans": {
-      "en": "Whether leverage is building or unwinding. Rising OI into a move means conviction; falling OI, position-closing."
+      "en": "Whether leverage is building or unwinding. Rising OI into a move means conviction; falling OI, position-closing.",
+      "ru": "Наращивается плечо или разгружается. Рост OI в движение означает уверенность; падение OI — закрытие позиций."
     }
   },
   "mvrv": {
     "term": {
-      "en": "MVRV"
+      "en": "MVRV",
+      "ru": "MVRV"
     },
     "category": "indicator",
     "howComputed": {
-      "en": "The CoinMetrics BTC MVRV ratio (market value over realised value), read lag-1."
+      "en": "The CoinMetrics BTC MVRV ratio (market value over realised value), read lag-1.",
+      "ru": "Коэффициент MVRV по BTC от CoinMetrics (рыночная стоимость к реализованной), считанный с лагом-1."
     },
     "whatItMeans": {
-      "en": "On-chain valuation — aggregate unrealised profit. Historically high at cycle tops, low at bottoms; a slow context, not timing."
+      "en": "On-chain valuation — aggregate unrealised profit. Historically high at cycle tops, low at bottoms; a slow context, not timing.",
+      "ru": "On-chain оценка — совокупная нереализованная прибыль. Исторически высока на вершинах цикла, низка на днищах; медленный контекст, а не тайминг."
     }
   },
   "ema": {
     "term": {
-      "en": "EMA"
+      "en": "EMA",
+      "ru": "EMA"
     },
     "category": "overlay",
     "howComputed": {
-      "en": "Exponential Moving Average of close over the chosen period — a weighted average that reacts faster to recent bars than a simple average."
+      "en": "Exponential Moving Average of close over the chosen period — a weighted average that reacts faster to recent bars than a simple average.",
+      "ru": "Экспоненциальная скользящая средняя EMA цены закрытия за выбранный период — взвешенное среднее, реагирующее на недавние бары быстрее, чем простое среднее."
     },
     "whatItMeans": {
-      "en": "A smoothed trend line. Price above it leans bullish, below bearish; the shorter the period, the more closely it hugs price."
+      "en": "A smoothed trend line. Price above it leans bullish, below bearish; the shorter the period, the more closely it hugs price.",
+      "ru": "Сглаженная линия тренда. Цена выше неё склоняется к бычьему, ниже — к медвежьему; чем короче период, тем плотнее она облегает цену."
     }
   },
   "sma": {
     "term": {
-      "en": "SMA"
+      "en": "SMA",
+      "ru": "SMA"
     },
     "category": "overlay",
     "howComputed": {
-      "en": "Simple Moving Average of close over the chosen period — the unweighted mean of the last N closes."
+      "en": "Simple Moving Average of close over the chosen period — the unweighted mean of the last N closes.",
+      "ru": "Простая скользящая средняя SMA цены закрытия за выбранный период — невзвешенное среднее последних N закрытий."
     },
     "whatItMeans": {
-      "en": "A smoothed trend line that weights every bar equally, so it lags more than an EMA but is steadier."
+      "en": "A smoothed trend line that weights every bar equally, so it lags more than an EMA but is steadier.",
+      "ru": "Сглаженная линия тренда, взвешивающая каждый бар одинаково, поэтому она запаздывает сильнее EMA, но устойчивее."
     }
   },
   "supertrend": {
     "term": {
-      "en": "Supertrend"
+      "en": "Supertrend",
+      "ru": "Supertrend"
     },
     "category": "overlay",
     "howComputed": {
-      "en": "An ATR-based trailing-stop line (period 10, multiplier 3): it sits below price in an uptrend and above it in a downtrend, flipping when price pierces the band."
+      "en": "An ATR-based trailing-stop line (period 10, multiplier 3): it sits below price in an uptrend and above it in a downtrend, flipping when price pierces the band.",
+      "ru": "Линия трейлинг-стопа на базе ATR (период 10, множитель 3): в восходящем тренде она под ценой, в нисходящем — над ней, переворачиваясь, когда цена пробивает полосу."
     },
     "whatItMeans": {
-      "en": "A trend-following stop-and-direction guide. The line's side of price marks the current trend; a flip marks a potential trend change."
+      "en": "A trend-following stop-and-direction guide. The line's side of price marks the current trend; a flip marks a potential trend change.",
+      "ru": "Трендследящий ориентир стопа и направления. Сторона линии относительно цены отмечает текущий тренд; переворот отмечает возможную смену тренда."
     }
   }
 }
