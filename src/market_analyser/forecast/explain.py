@@ -74,6 +74,14 @@ IMPORTANCE_DISCLAIMER = (
     "before deleting a source."
 )
 
+# The translatable reason-codes mirroring the two fixed prose constants
+# (Plan 0069 phase 4, ADR-0063). The English prose above/below is kept
+# authoritative for the MCP/artifact consumer; these codes ride to the renderer,
+# which localizes them. `ExplanationSummary.disclaimer_code`'s literal default
+# mirrors DISCLAIMER_CODE (a test pins the two equal).
+DISCLAIMER_CODE = "disclaimer.importance"
+NOTE_NO_SCORED_FOLDS_CODE = "note.no_scored_folds"
+
 # The frozen name tuple behind each feature-set id — the spelling every
 # explanation reports its features in. A tier added to the ladder (ADR-0057)
 # must register here to be explainable.
@@ -118,6 +126,11 @@ class ForecastExplanation(BaseModel):
     predict_row: dict[str, float] | None
     note: str | None = None
     disclaimer: str = IMPORTANCE_DISCLAIMER
+    # Translatable mirrors of `disclaimer`/`note` for the renderer (Plan 0069
+    # phase 4, ADR-0063); the prose fields above stay authoritative. `note_code`
+    # is set exactly when `note` is (a horizon with no scored folds), else None.
+    disclaimer_code: str = DISCLAIMER_CODE
+    note_code: str | None = None
 
 
 class HorizonExplanationRecord(BaseModel):
@@ -230,6 +243,7 @@ def explain_horizon(
         importances=importances,
         predict_row=predict_map,
         note=None if per_fold_means else NOTE_NO_SCORED_FOLDS,
+        note_code=None if per_fold_means else NOTE_NO_SCORED_FOLDS_CODE,
     )
 
 
@@ -247,6 +261,8 @@ def summarize_explanation(
             for fi in explanation.importances[:TOP_N_DRIVERS]
         ),
         artifact=artifact,
+        disclaimer_code=explanation.disclaimer_code,
+        note_code=explanation.note_code,
     )
 
 
@@ -293,8 +309,10 @@ def build_forecast_explanation_artifact(
 
 
 __all__ = [
+    "DISCLAIMER_CODE",
     "IMPORTANCE_DISCLAIMER",
     "NOTE_NO_SCORED_FOLDS",
+    "NOTE_NO_SCORED_FOLDS_CODE",
     "N_PERMUTATION_REPEATS",
     "TOP_N_DRIVERS",
     "FeatureImportance",

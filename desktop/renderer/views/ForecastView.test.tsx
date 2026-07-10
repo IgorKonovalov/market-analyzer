@@ -304,6 +304,9 @@ const EXPLAINED_FORECAST: MultiHorizonForecastResult = {
             { feature: 'rsi_14', importance: 0.018 },
           ],
           artifact: 'forecast/20260707T101530000000Z-BTC-USD-1d/explanation.json',
+          // Plan 0069 phase 4: disclaimer_code always rides the wire (rendering
+          // it is phase 5). Present here keeps this pre-phase-5 fixture valid.
+          disclaimer_code: 'disclaimer.importance',
         },
       }),
     },
@@ -358,6 +361,7 @@ it('renders drivers without an artifact line when the sidecar had no runs direct
         provenance: provenance({
           explanation: {
             top_drivers: [{ feature: 'funding_rate', importance: 0.041 }],
+            disclaimer_code: 'disclaimer.importance',
           },
         }),
       },

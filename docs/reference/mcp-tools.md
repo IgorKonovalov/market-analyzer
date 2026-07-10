@@ -648,6 +648,7 @@ ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single lab
 | `basis` | RecommendationBasis |
 | `label` | string |
 | `as_of_bar_ts` | string (date-time) |
+| `reason_codes` | array[ReasonCode] |
 
 **Source:** [`src/market_analyser/api/mcp_tools/recommend.py`](../../src/market_analyser/api/mcp_tools/recommend.py)
 

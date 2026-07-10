@@ -58,6 +58,9 @@ const LONG_REC: Recommendation = {
   },
   label: 'advisory',
   as_of_bar_ts: '2026-01-15T00:00:00+00:00',
+  // Plan 0069 phase 4: reason_codes always ride the wire (rendering them is
+  // phase 5). Empty here keeps this pre-phase-5 fixture type-valid.
+  reason_codes: [],
 }
 
 const LOW_CONVICTION_REC: Recommendation = {
@@ -101,6 +104,7 @@ const FLAT_REC: Recommendation = {
   },
   label: 'advisory',
   as_of_bar_ts: '2026-01-10T15:00:00+00:00',
+  reason_codes: [],
 }
 
 function envelope(recommendation: Recommendation): RecommendationCompletedEnvelope {

@@ -42,12 +42,26 @@ class ExplanationSummary(BaseModel):
     ``artifact`` is ``None`` (wire-absent under ``exclude_none``) when the
     sidecar has no ``runs_dir`` — the drivers still travel; only the full JSON
     is skipped. ``top_drivers`` is empty when the horizon had no scored
-    out-of-sample folds to measure (stated in the artifact's ``note``)."""
+    out-of-sample folds to measure (stated in the artifact's ``note``).
+
+    ``disclaimer_code`` / ``note_code`` (Plan 0069 phase 4, ADR-0063) are the
+    translatable mirrors of the explanation's fixed disclaimer / no-scored-folds
+    prose, so the renderer localizes them; the English prose itself stays on the
+    full ``ForecastExplanation`` (the artifact) for the MCP/artifact consumer.
+    ``disclaimer_code`` is always present; ``note_code`` is set only when the
+    horizon had no scored folds (else ``None``, wire-absent under
+    ``exclude_none``). The literal default mirrors ``explain.DISCLAIMER_CODE``
+    (pinned no-drift by a test)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     top_drivers: tuple[ExplanationDriver, ...]
     artifact: str | None = None
+    # Appended after artifact to keep the wire-stable field order; defaulted so
+    # pre-0069 constructors stay valid (the ForecastProvenance appended-fields
+    # precedent).
+    disclaimer_code: str = "disclaimer.importance"
+    note_code: str | None = None
 
 
 class SeriesInput(BaseModel):

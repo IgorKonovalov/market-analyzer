@@ -50,6 +50,7 @@ from typing import Literal
 from market_analyser.advisor.models import (
     BasisValue,
     FusionCheck,
+    ReasonCode,
     Recommendation,
     RecommendationBasis,
 )
@@ -201,7 +202,7 @@ def _require_consistent_inputs(
             )
 
 
-def _build_checks(
+def _build_trace(
     *,
     snapshot: ConditionSnapshot,
     signals: Sequence[SignalEvaluation],
@@ -213,9 +214,16 @@ def _build_checks(
     long_ids: Sequence[str],
     short_ids: Sequence[str],
     sharpe_mean: float | None,
-) -> tuple[FusionCheck, ...]:
-    """The structured fusion trace (Plan 0063, ADR-0058): every gate, in a
-    fixed deterministic order, with the real threshold-vs-actual values.
+) -> tuple[tuple[FusionCheck, ...], tuple[ReasonCode, ...]]:
+    """The structured fusion trace (Plan 0063, ADR-0058) and, co-generated in
+    lockstep, its per-gate reason-codes (Plan 0069 phase 4, ADR-0063).
+
+    Every gate, in a fixed deterministic order, with the real
+    threshold-vs-actual values — and beside each, a stable ``gate.*`` code the
+    renderer localizes for the gate's label (the dynamic values ride in the
+    `FusionCheck` itself). The `(FusionCheck, ReasonCode)` pairing guarantees the
+    returned code tuple is index-aligned to the check tuple, so a code can never
+    drift from its gate.
 
     The invariant the trace guarantees (pinned by the replayability test):
     **the verdict is directional exactly when every check passed** — each
@@ -228,33 +236,42 @@ def _build_checks(
 
     scope = f"{snapshot.symbol}/{snapshot.timeframe}"
     as_of = snapshot.as_of.isoformat()
-    checks: list[FusionCheck] = [
+    pairs: list[tuple[FusionCheck, ReasonCode]] = [
         # Alignment is enforced by raising before any verdict exists, so an
         # emitted trace always records it as passed — the gate ran, and only
         # aligned inputs ever reach a Recommendation.
-        FusionCheck(
-            leg="alignment",
-            check="inputs share symbol/timeframe",
-            threshold=scope,
-            actual=scope,
-            passed=True,
-        ),
-        FusionCheck(
-            leg="alignment",
-            check="inputs share the as-of bar",
-            threshold=as_of,
-            actual=as_of,
-            passed=True,
-        ),
-        FusionCheck(
-            leg="conditions",
-            check="condition snapshot read",
-            threshold=None,
-            actual=(
-                f"trend={snapshot.trend}, momentum={snapshot.momentum}, "
-                f"volume={snapshot.volume_stance}"
+        (
+            FusionCheck(
+                leg="alignment",
+                check="inputs share symbol/timeframe",
+                threshold=scope,
+                actual=scope,
+                passed=True,
             ),
-            passed=True,
+            ReasonCode(code="gate.alignment_scope"),
+        ),
+        (
+            FusionCheck(
+                leg="alignment",
+                check="inputs share the as-of bar",
+                threshold=as_of,
+                actual=as_of,
+                passed=True,
+            ),
+            ReasonCode(code="gate.alignment_asof"),
+        ),
+        (
+            FusionCheck(
+                leg="conditions",
+                check="condition snapshot read",
+                threshold=None,
+                actual=(
+                    f"trend={snapshot.trend}, momentum={snapshot.momentum}, "
+                    f"volume={snapshot.volume_stance}"
+                ),
+                passed=True,
+            ),
+            ReasonCode(code="gate.conditions_read"),
         ),
     ]
 
@@ -266,96 +283,128 @@ def _build_checks(
         if forecast_dir == "short"
         else None
     )
-    checks.extend(
+    pairs.extend(
         (
-            FusionCheck(
-                leg="forecast",
-                check="probabilities shipped (baseline beaten out-of-sample)",
-                threshold=True,
-                actual=probs_shipped,
-                passed=probs_shipped,
+            (
+                FusionCheck(
+                    leg="forecast",
+                    check="probabilities shipped (baseline beaten out-of-sample)",
+                    threshold=True,
+                    actual=probs_shipped,
+                    passed=probs_shipped,
+                ),
+                ReasonCode(code="gate.forecast_probs_shipped"),
             ),
-            FusionCheck(
-                leg="forecast",
-                check="argmax direction is directional",
-                threshold="long or short",
-                actual=forecast_dir if forecast_dir is not None else "none",
-                passed=forecast_dir is not None,
+            (
+                FusionCheck(
+                    leg="forecast",
+                    check="argmax direction is directional",
+                    threshold="long or short",
+                    actual=forecast_dir if forecast_dir is not None else "none",
+                    passed=forecast_dir is not None,
+                ),
+                ReasonCode(code="gate.forecast_argmax_directional"),
             ),
-            FusionCheck(
-                leg="forecast",
-                check="calibrated P(direction)",
-                threshold=None,
-                actual=directional_prob,
-                passed=directional_prob is not None,
+            (
+                FusionCheck(
+                    leg="forecast",
+                    check="calibrated P(direction)",
+                    threshold=None,
+                    actual=directional_prob,
+                    passed=directional_prob is not None,
+                ),
+                ReasonCode(code="gate.forecast_calibrated_prob"),
             ),
         )
     )
 
-    checks.extend(
-        FusionCheck(
-            leg="signal",
-            check=f"live vote: {s.strategy_id}",
-            threshold=None,
-            actual=s.current_position,
-            passed=True,
+    pairs.extend(
+        (
+            FusionCheck(
+                leg="signal",
+                check=f"live vote: {s.strategy_id}",
+                threshold=None,
+                actual=s.current_position,
+                passed=True,
+            ),
+            ReasonCode(code="gate.signal_live_vote", params={"strategy_id": s.strategy_id}),
         )
         for s in sorted(signals, key=lambda s: s.strategy_id)
     )
     agreeing_ids: Sequence[str] = (
         long_ids if signal_dir == "long" else short_ids if signal_dir == "short" else ()
     )
-    checks.extend(
+    pairs.extend(
         (
-            FusionCheck(
-                leg="signal",
-                check="no conflicting live votes",
-                threshold=False,
-                actual=conflict,
-                passed=not conflict,
-            ),
-            FusionCheck(
-                leg="signal",
-                check="at least one directional live vote",
-                threshold="long or short",
-                actual=signal_dir if signal_dir is not None else "none",
-                passed=signal_dir is not None,
-            ),
-            FusionCheck(
-                leg="signal",
-                check="live direction agrees with the forecast direction",
-                threshold=forecast_dir if forecast_dir is not None else "none",
-                actual=signal_dir if signal_dir is not None else "none",
-                passed=forecast_dir is not None and signal_dir == forecast_dir,
-            ),
-            FusionCheck(
-                leg="backtest",
-                check="walk-forward basis supplied",
-                threshold=True,
-                actual=walk_forward is not None,
-                passed=walk_forward is not None,
-            ),
-            FusionCheck(
-                leg="backtest",
-                check="backtested edge positive (sharpe_mean > 0)",
-                threshold=0.0,
-                actual=sharpe_mean,
-                passed=sharpe_mean is not None and sharpe_mean > 0.0,
-            ),
-            FusionCheck(
-                leg="backtest",
-                check="walk-forward strategy among the agreeing votes",
-                threshold=walk_forward.strategy_id if walk_forward is not None else None,
-                actual=", ".join(agreeing_ids) if agreeing_ids else "none",
-                passed=(
-                    walk_forward is not None
-                    and signal_dir is not None
-                    and walk_forward.strategy_id in agreeing_ids
+            (
+                FusionCheck(
+                    leg="signal",
+                    check="no conflicting live votes",
+                    threshold=False,
+                    actual=conflict,
+                    passed=not conflict,
                 ),
+                ReasonCode(code="gate.signal_no_conflict"),
+            ),
+            (
+                FusionCheck(
+                    leg="signal",
+                    check="at least one directional live vote",
+                    threshold="long or short",
+                    actual=signal_dir if signal_dir is not None else "none",
+                    passed=signal_dir is not None,
+                ),
+                ReasonCode(code="gate.signal_directional_vote"),
+            ),
+            (
+                FusionCheck(
+                    leg="signal",
+                    check="live direction agrees with the forecast direction",
+                    threshold=forecast_dir if forecast_dir is not None else "none",
+                    actual=signal_dir if signal_dir is not None else "none",
+                    passed=forecast_dir is not None and signal_dir == forecast_dir,
+                ),
+                ReasonCode(code="gate.signal_agrees_forecast"),
+            ),
+            (
+                FusionCheck(
+                    leg="backtest",
+                    check="walk-forward basis supplied",
+                    threshold=True,
+                    actual=walk_forward is not None,
+                    passed=walk_forward is not None,
+                ),
+                ReasonCode(code="gate.backtest_basis_supplied"),
+            ),
+            (
+                FusionCheck(
+                    leg="backtest",
+                    check="backtested edge positive (sharpe_mean > 0)",
+                    threshold=0.0,
+                    actual=sharpe_mean,
+                    passed=sharpe_mean is not None and sharpe_mean > 0.0,
+                ),
+                ReasonCode(code="gate.backtest_edge_positive"),
+            ),
+            (
+                FusionCheck(
+                    leg="backtest",
+                    check="walk-forward strategy among the agreeing votes",
+                    threshold=walk_forward.strategy_id if walk_forward is not None else None,
+                    actual=", ".join(agreeing_ids) if agreeing_ids else "none",
+                    passed=(
+                        walk_forward is not None
+                        and signal_dir is not None
+                        and walk_forward.strategy_id in agreeing_ids
+                    ),
+                ),
+                ReasonCode(code="gate.backtest_strategy_agrees"),
             ),
         )
     )
-    return tuple(checks)
+    checks = tuple(check for check, _ in pairs)
+    gate_codes = tuple(code for _, code in pairs)
+    return checks, gate_codes
 
 
 def _blockers_from_checks(
@@ -367,61 +416,103 @@ def _blockers_from_checks(
     short_ids: Sequence[str],
     sharpe_mean: float | None,
     walk_forward: WalkForwardResult | None,
-) -> list[str]:
+) -> tuple[list[str], list[ReasonCode]]:
     """Derive the flat verdict's named blockers from the failed trace rows
-    (Plan 0072 phase 3).
+    (Plan 0072 phase 3), and — co-generated in lockstep — their translatable
+    `blocker.*` reason-codes (Plan 0069 phase 4, ADR-0063).
 
-    `_build_checks` is the single source of truth for *which* gates failed, so a
+    `_build_trace` is the single source of truth for *which* gates failed, so a
     blocker can no longer drift from its gate (finding (e)): a blocker appears
     iff its gate failed. Each leg reports its root-cause failure once — the elif
-    chains mirror `_build_checks`' gate order, and a downstream gate that fails
-    only because an upstream one did (the agreement gate when the forecast has no
+    chains mirror the trace's gate order, and a downstream gate that fails only
+    because an upstream one did (the agreement gate when the forecast has no
     direction; the strategy gate when no direction was voted) is subsumed,
     exactly as the hand-written blocker chain did before. The message strings
     (which embed the failing values) are the only thing computed here; the
-    decision of whether to emit is the check's `passed` flag."""
+    decision of whether to emit is the check's `passed` flag. The code carries
+    the same failing values as raw params for the renderer."""
 
     failed = {(c.leg, c.check) for c in checks if not c.passed}
     blockers: list[str] = []
+    codes: list[ReasonCode] = []
+
+    def add(message: str, code: ReasonCode) -> None:
+        blockers.append(message)
+        codes.append(code)
 
     # Forecast: a missing probability vs a shipped-but-flat argmax.
     if ("forecast", "probabilities shipped (baseline beaten out-of-sample)") in failed:
-        blockers.append("forecast shows no edge over baseline (no probability shipped)")
+        add(
+            "forecast shows no edge over baseline (no probability shipped)",
+            ReasonCode(code="blocker.forecast_no_edge"),
+        )
     elif ("forecast", "argmax direction is directional") in failed:
-        blockers.append("forecast direction is flat or undecided")
+        add(
+            "forecast direction is flat or undecided",
+            ReasonCode(code="blocker.forecast_flat"),
+        )
 
     # Signal: conflict, then absence, then disagreement (only a real blocker when
     # the forecast itself has a direction to disagree with — otherwise the
     # forecast leg already blocks and the agreement gate fails only in sympathy).
     if ("signal", "no conflicting live votes") in failed:
-        blockers.append(f"live signals conflict: long={long_ids}, short={short_ids}")
+        add(
+            f"live signals conflict: long={long_ids}, short={short_ids}",
+            ReasonCode(
+                code="blocker.signals_conflict",
+                params={"long": ", ".join(long_ids), "short": ", ".join(short_ids)},
+            ),
+        )
     elif ("signal", "at least one directional live vote") in failed:
-        blockers.append("no live strategy signal implies a direction")
+        add(
+            "no live strategy signal implies a direction",
+            ReasonCode(code="blocker.no_directional_signal"),
+        )
     elif (
         "signal",
         "live direction agrees with the forecast direction",
     ) in failed and forecast_dir is not None:
-        blockers.append(
-            f"live signals ({signal_dir}) disagree with the forecast direction ({forecast_dir})"
+        add(
+            f"live signals ({signal_dir}) disagree with the forecast direction ({forecast_dir})",
+            ReasonCode(
+                code="blocker.signals_disagree_forecast",
+                params={
+                    "signal_dir": signal_dir if signal_dir is not None else "none",
+                    "forecast_dir": forecast_dir,
+                },
+            ),
         )
 
     # Backtest: missing basis, then non-positive edge, then an edge backing a
     # non-agreeing strategy (only meaningful once a direction was actually voted).
     if ("backtest", "walk-forward basis supplied") in failed:
-        blockers.append("no walk-forward backtest basis supplied")
+        add(
+            "no walk-forward backtest basis supplied",
+            ReasonCode(code="blocker.no_walk_forward"),
+        )
     elif ("backtest", "backtested edge positive (sharpe_mean > 0)") in failed:
-        blockers.append(f"no backtested edge: walk-forward sharpe_mean={sharpe_mean}")
+        edge_params: dict[str, float | int | str] = {}
+        if sharpe_mean is not None:
+            edge_params["sharpe_mean"] = sharpe_mean
+        add(
+            f"no backtested edge: walk-forward sharpe_mean={sharpe_mean}",
+            ReasonCode(code="blocker.no_backtested_edge", params=edge_params),
+        )
     elif (
         ("backtest", "walk-forward strategy among the agreeing votes") in failed
         and signal_dir is not None
         and walk_forward is not None
     ):
-        blockers.append(
+        add(
             f"walk-forward edge is for {walk_forward.strategy_id!r}, "
-            "which is not among the agreeing signals"
+            "which is not among the agreeing signals",
+            ReasonCode(
+                code="blocker.edge_nonvoting_strategy",
+                params={"strategy_id": walk_forward.strategy_id},
+            ),
         )
 
-    return blockers
+    return blockers, codes
 
 
 def _build_basis(
@@ -515,7 +606,7 @@ def fuse(
     # trace rows (single source of truth — finding (e)), so a blocker and its
     # gate cannot drift. The invariant stays: directional iff no blocker iff
     # every check passed (ADR-0029 honest uncertainty; ADR-0058 replayability).
-    checks = _build_checks(
+    checks, gate_codes = _build_trace(
         snapshot=snapshot,
         signals=signals,
         walk_forward=walk_forward,
@@ -527,7 +618,7 @@ def fuse(
         short_ids=short_ids,
         sharpe_mean=sharpe_mean,
     )
-    blockers = _blockers_from_checks(
+    blockers, blocker_codes = _blockers_from_checks(
         checks,
         forecast_dir=forecast_dir,
         signal_dir=signal_dir,
@@ -539,6 +630,8 @@ def fuse(
     basis = _build_basis(snapshot, signals, walk_forward, forecast, checks)
 
     if blockers:
+        # reason_codes mirror the rationale 1:1 ("no actionable edge" + one code
+        # per blocker), then the per-gate codes 1:1 with basis.checks (Plan 0069).
         return Recommendation(
             symbol=snapshot.symbol,
             timeframe=snapshot.timeframe,
@@ -551,6 +644,11 @@ def fuse(
             basis=basis,
             label="advisory",
             as_of_bar_ts=snapshot.as_of,
+            reason_codes=(
+                ReasonCode(code="reason.no_actionable_edge"),
+                *blocker_codes,
+                *gate_codes,
+            ),
         )
 
     assert forecast_dir is not None and forecast_dir == signal_dir
@@ -563,23 +661,69 @@ def fuse(
     agreeing_ids = long_ids if direction == "long" else short_ids
     skill = forecast.validation.skill
     baseline = forecast.validation.baseline_skill
-    rationale = [
-        f"forecast: P({direction})={prob:.3f} over {forecast.horizon_bars} bar(s), "
-        f"edge={forecast.edge_strength}"
-        + (
-            f" (out-of-sample skill {skill:.3f} vs baseline {baseline:.3f})"
-            if skill is not None and baseline is not None
-            else ""
+
+    # Each rationale line is paired with its translatable reason-code in lockstep
+    # (Plan 0069 phase 4), so the code carries the same raw values the English
+    # prose embeds and cannot drift from the line. Empty lines (a missing backtest
+    # leg — never on a directional verdict, defensive) drop the pair together.
+    forecast_params: dict[str, float | int | str] = {
+        "direction": direction,
+        "prob": prob,
+        "horizon_bars": forecast.horizon_bars,
+        "edge_strength": forecast.edge_strength,
+    }
+    if skill is not None and baseline is not None:
+        forecast_params["skill"] = skill
+        forecast_params["baseline"] = baseline
+
+    backtest_params: dict[str, float | int | str] = {}
+    if walk_forward is not None and sharpe_mean is not None:
+        backtest_params = {
+            "sharpe_mean": sharpe_mean,
+            "n_splits": walk_forward.n_splits,
+            "strategy_id": walk_forward.strategy_id,
+        }
+
+    rationale_pairs: list[tuple[str, ReasonCode]] = [
+        (
+            f"forecast: P({direction})={prob:.3f} over {forecast.horizon_bars} bar(s), "
+            f"edge={forecast.edge_strength}"
+            + (
+                f" (out-of-sample skill {skill:.3f} vs baseline {baseline:.3f})"
+                if skill is not None and baseline is not None
+                else ""
+            ),
+            ReasonCode(code="reason.forecast", params=forecast_params),
         ),
-        f"live signals agree ({direction}): {', '.join(agreeing_ids)}",
-        f"backtested edge: walk-forward sharpe_mean={sharpe_mean:.3f} "
-        f"over {walk_forward.n_splits} folds ({walk_forward.strategy_id})"
-        if walk_forward is not None and sharpe_mean is not None
-        else "",
-        f"conditions: trend={snapshot.trend}, momentum={snapshot.momentum}, "
-        f"volume={snapshot.volume_stance}",
+        (
+            f"live signals agree ({direction}): {', '.join(agreeing_ids)}",
+            ReasonCode(
+                code="reason.signals_agree",
+                params={"direction": direction, "strategies": ", ".join(agreeing_ids)},
+            ),
+        ),
+        (
+            f"backtested edge: walk-forward sharpe_mean={sharpe_mean:.3f} "
+            f"over {walk_forward.n_splits} folds ({walk_forward.strategy_id})"
+            if walk_forward is not None and sharpe_mean is not None
+            else "",
+            ReasonCode(code="reason.backtested_edge", params=backtest_params),
+        ),
+        (
+            f"conditions: trend={snapshot.trend}, momentum={snapshot.momentum}, "
+            f"volume={snapshot.volume_stance}",
+            ReasonCode(
+                code="reason.conditions",
+                params={
+                    "trend": str(snapshot.trend),
+                    "momentum": str(snapshot.momentum),
+                    "volume": str(snapshot.volume_stance),
+                },
+            ),
+        ),
     ]
-    rationale = [line for line in rationale if line]
+    rationale = [line for line, _ in rationale_pairs if line]
+    rationale_codes = [code for line, code in rationale_pairs if line]
 
     return Recommendation(
         symbol=snapshot.symbol,
@@ -593,6 +737,7 @@ def fuse(
         basis=basis,
         label="advisory",
         as_of_bar_ts=snapshot.as_of,
+        reason_codes=(*rationale_codes, *gate_codes),
     )
 
 

@@ -27,7 +27,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from market_analyser.forecast.explain import (
+    DISCLAIMER_CODE,
     NOTE_NO_SCORED_FOLDS,
+    NOTE_NO_SCORED_FOLDS_CODE,
     TOP_N_DRIVERS,
     ForecastExplanation,
     ForecastExplanationArtifact,
@@ -180,6 +182,9 @@ def test_no_scored_folds_yields_honest_empty_explanation() -> None:
     assert explanation.importances == ()
     assert explanation.n_folds_used == 0
     assert explanation.note == NOTE_NO_SCORED_FOLDS
+    # The translatable mirror of `note` is set exactly when `note` is (Plan 0069).
+    assert explanation.note_code == NOTE_NO_SCORED_FOLDS_CODE
+    assert explanation.disclaimer_code == DISCLAIMER_CODE
     assert explanation.predict_row is not None  # the as-of values still travel
 
     no_row = _explain([], None)
@@ -202,6 +207,11 @@ def test_summary_is_top_n_in_ranking_order_with_artifact_passthrough() -> None:
     unwired = summarize_explanation(explanation, artifact=None)
     assert unwired.artifact is None
     assert unwired.top_drivers == expected  # drivers ride the wire regardless
+
+    # Plan 0069: the summary carries the explanation's translatable codes. A
+    # scored-folds horizon has the disclaimer code and no note code.
+    assert summary.disclaimer_code == explanation.disclaimer_code == DISCLAIMER_CODE
+    assert summary.note_code == explanation.note_code is None
 
 
 def test_artifact_round_trips_through_its_json_dump() -> None:
@@ -266,9 +276,17 @@ def test_artifact_round_trips_through_its_json_dump() -> None:
 
 
 def test_explanation_summary_wire_shape() -> None:
-    """`exclude_none` semantics the renderer Zod relies on: `artifact` absent
-    when None, `top_drivers` always present."""
+    """`exclude_none` semantics the renderer Zod relies on: `artifact`/`note_code`
+    absent when None, `top_drivers`/`disclaimer_code` always present."""
 
     summary = ExplanationSummary(top_drivers=())
     wire = summary.model_dump(mode="json", exclude_none=True)
-    assert wire == {"top_drivers": []}
+    assert wire == {"top_drivers": [], "disclaimer_code": "disclaimer.importance"}
+
+
+def test_explanation_summary_disclaimer_code_default_mirrors_explain() -> None:
+    """The wire summary's literal `disclaimer_code` default must not drift from
+    the explain-module constant it mirrors (Plan 0069 phase 4)."""
+
+    assert ExplanationSummary(top_drivers=()).disclaimer_code == DISCLAIMER_CODE
+    assert ExplanationSummary(top_drivers=()).note_code is None

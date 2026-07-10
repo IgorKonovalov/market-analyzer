@@ -47,6 +47,14 @@ const recommendationBasisSchema = z.object({
   checks: z.array(fusionCheckSchema),
 })
 
+/** One `{code, params}` reason-code (Plan 0069 / ADR-0063). `params` values are
+ * raw numbers or strings — the renderer formats numbers `en-US`. `params` has a
+ * `{}` default and is always present on the wire. */
+const reasonCodeSchema = z.object({
+  code: z.string(),
+  params: z.record(z.union([z.number(), z.string()])),
+})
+
 const recommendationSchema = z.object({
   symbol: z.string().min(1),
   timeframe: z.string().min(1),
@@ -60,6 +68,7 @@ const recommendationSchema = z.object({
   basis: recommendationBasisSchema,
   label: z.literal('advisory'),
   as_of_bar_ts: z.string(),
+  reason_codes: z.array(reasonCodeSchema),
 })
 
 export const recommendationCompletedPayloadSchema = z.object({

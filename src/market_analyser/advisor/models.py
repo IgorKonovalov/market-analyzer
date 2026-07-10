@@ -35,6 +35,24 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 BasisValue = float | int | str | bool | None
 
 
+class ReasonCode(BaseModel):
+    """One structured, translatable reason (Plan 0069 phase 4, ADR-0063).
+
+    A ``{code, params}`` pair the renderer localizes: ``code`` is a stable wire
+    identifier (e.g. ``"blocker.forecast_no_edge"``, ``"gate.signal_live_vote"``)
+    the renderer keys off verbatim; ``params`` are the raw values it
+    interpolates — numbers stay numbers, so the renderer formats them ``en-US``
+    (ADR-0063). Reason-codes ride *beside* — never replace — the English
+    ``rationale``/``basis`` prose, which stays authoritative for the agent/MCP
+    consumer. Frozen + ``extra="forbid"`` + deterministic contents, so two
+    identical fusions dump byte-identically."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    code: str
+    params: dict[str, float | int | str] = Field(default_factory=dict)
+
+
 class FusionCheck(BaseModel):
     """One recorded gate of the fusion trace (Plan 0063, ADR-0058).
 
@@ -127,6 +145,13 @@ class Recommendation(BaseModel):
     basis: RecommendationBasis
     label: Literal["advisory"]
     as_of_bar_ts: datetime  # the decision saw bars[0..=this] only (anti-lookahead)
+    # Appended after as_of_bar_ts to keep the wire-stable field order (the
+    # RecommendationBasis.checks precedent); defaulted so pre-0069 constructors
+    # stay valid. The finite authored surface the renderer localizes (Plan 0069,
+    # ADR-0063): one code per `rationale` line (1:1, same order), then one code
+    # per gate (1:1 with `basis.checks`, same order). The English prose above is
+    # unchanged and stays authoritative for the agent/MCP consumer.
+    reason_codes: tuple[ReasonCode, ...] = ()
 
     @model_validator(mode="after")
     def _enforce_advisory_shape(self) -> Recommendation:
@@ -166,4 +191,4 @@ class Recommendation(BaseModel):
         return self
 
 
-__all__ = ["BasisValue", "FusionCheck", "Recommendation", "RecommendationBasis"]
+__all__ = ["BasisValue", "FusionCheck", "ReasonCode", "Recommendation", "RecommendationBasis"]

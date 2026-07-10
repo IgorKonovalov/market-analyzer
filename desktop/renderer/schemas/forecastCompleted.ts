@@ -64,6 +64,11 @@ const explanationDriverSchema = z.object({
 const explanationSummarySchema = z.object({
   top_drivers: z.array(explanationDriverSchema),
   artifact: z.string().nullish(),
+  // Plan 0069 (ADR-0063): translatable codes for the fixed disclaimer / no-
+  // scored-folds prose. `disclaimer_code` is defaulted and always on the wire;
+  // `note_code` is absent (exclude_none) unless the horizon had no scored folds.
+  disclaimer_code: z.string(),
+  note_code: z.string().nullish(),
 })
 
 const forecastProvenanceSchema = z.object({

@@ -190,13 +190,27 @@ export interface RecommendationBasis {
   checks: FusionCheck[]
 }
 
+/** Mirror of the pydantic `ReasonCode` (Plan 0069 / ADR-0063): one structured,
+ * translatable reason. `code` is a stable wire identifier the renderer keys off
+ * (`t()`); `params` are raw values it interpolates (numbers stay numbers —
+ * formatted `en-US`). Rides beside — never replaces — the English `rationale`/
+ * `basis` prose. `params` has a `()`-style default (`{}`), so it is not
+ * schema-required but is ALWAYS present on the wire — hence required here. */
+export interface ReasonCode {
+  code: string
+  params: Record<string, number | string>
+}
+
 /** Mirror of the pydantic `Recommendation` (Plan 0038 / ADR-0029): the one
  * sanctioned advisory artifact. `label` can only ever be `"advisory"` —
  * pinned as a literal on both sides. `entry_zone`/`stop` are required-but-
  * nullable in pydantic; a flat recommendation dumps them as `None`, which
  * `exclude_none` strips from the wire — hence optional here (`targets` stays
  * required: an empty list survives the dump). `entry_zone` serialises as a
- * two-number `[low, high]` array. */
+ * two-number `[low, high]` array. `reason_codes` (Plan 0069) has a non-None
+ * default (`()`) — not schema-required but always on the wire — hence required
+ * here (the `basis.checks` shape): one code per `rationale` line (1:1), then
+ * one per `basis.checks` gate (1:1, same order). */
 export interface Recommendation {
   symbol: string
   timeframe: string
@@ -210,6 +224,7 @@ export interface Recommendation {
   label: 'advisory'
   /** ISO 8601 UTC timestamp of the last bar the whole basis saw (anti-lookahead). */
   as_of_bar_ts: string
+  reason_codes: ReasonCode[]
 }
 
 export interface RecommendationCompletedPayloadV1 {
@@ -275,10 +290,16 @@ export interface ExplanationDriver {
  * runs_dir-relative path of the complete explanation JSON. `artifact` has a
  * None default (no runs_dir wired) and is `exclude_none`-stripped from the
  * wire — hence optional here; it is a provenance fact for display, never a
- * renderer filesystem target. */
+ * renderer filesystem target. `disclaimer_code`/`note_code` (Plan 0069) are the
+ * translatable mirrors of the explanation's fixed disclaimer / no-scored-folds
+ * prose: `disclaimer_code` is defaulted and always on the wire (required here);
+ * `note_code` is set only for a horizon with no scored folds, else None and
+ * `exclude_none`-stripped — hence optional here. */
 export interface ExplanationSummary {
   top_drivers: ExplanationDriver[]
   artifact?: string | null
+  disclaimer_code: string
+  note_code?: string | null
 }
 
 /** Mirror of the pydantic `ForecastProvenance` (ADR-0040 / ADR-0054): the audit

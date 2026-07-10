@@ -668,6 +668,160 @@ class TestFusionTrace:
         assert run() == run()
 
 
+class TestReasonCodes:
+    """Plan 0069 phase 4 done-when: `reason_codes` is a parallel, translatable
+    surface — one code per rationale/blocker line (1:1 with `rationale`), then
+    one per gate (1:1 with `basis.checks`, same order) — additive to the
+    unchanged English prose; directional exactly when every gate passed."""
+
+    def test_directional_reason_codes_cover_rationale_then_gates(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"
+        assert len(rec.reason_codes) == len(rec.rationale) + len(rec.basis.checks)
+        rationale_codes = rec.reason_codes[: len(rec.rationale)]
+        gate_codes = rec.reason_codes[len(rec.rationale) :]
+        assert [c.code for c in rationale_codes] == [
+            "reason.forecast",
+            "reason.signals_agree",
+            "reason.backtested_edge",
+            "reason.conditions",
+        ]
+        assert [c.code for c in gate_codes] == [
+            "gate.alignment_scope",
+            "gate.alignment_asof",
+            "gate.conditions_read",
+            "gate.forecast_probs_shipped",
+            "gate.forecast_argmax_directional",
+            "gate.forecast_calibrated_prob",
+            "gate.signal_live_vote",
+            "gate.signal_no_conflict",
+            "gate.signal_directional_vote",
+            "gate.signal_agrees_forecast",
+            "gate.backtest_basis_supplied",
+            "gate.backtest_edge_positive",
+            "gate.backtest_strategy_agrees",
+        ]
+        # The per-strategy vote code carries its strategy_id; numeric forecast
+        # params ride raw (the renderer formats them en-US, ADR-0063).
+        assert gate_codes[6].params == {"strategy_id": "rsi"}
+        forecast_code = rationale_codes[0]
+        assert forecast_code.params["direction"] == "long"
+        assert forecast_code.params["prob"] == 0.60
+        assert forecast_code.params["horizon_bars"] == 1
+        assert forecast_code.params["edge_strength"] == "clear"
+
+    def test_english_prose_is_unchanged_reason_codes_are_additive(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        # The agent/MCP-facing English prose is untouched by the additive codes.
+        assert rec.rationale[0].startswith("forecast: P(long)=")
+        assert rec.rationale[-1].startswith("conditions: trend=")
+
+    def test_flat_reason_codes_cover_header_blockers_then_gates(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(sharpe_mean=-0.4),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        assert len(rec.reason_codes) == len(rec.rationale) + len(rec.basis.checks)
+        rationale_codes = rec.reason_codes[: len(rec.rationale)]
+        assert [c.code for c in rationale_codes] == [
+            "reason.no_actionable_edge",
+            "blocker.no_backtested_edge",
+        ]
+        # The blocker code carries the failing sharpe_mean as a raw number.
+        assert rationale_codes[1].params == {"sharpe_mean": -0.4}
+
+    def test_conflict_blocker_code_carries_the_conflicting_ids(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal("rsi", "long"), make_signal("macd", "short")],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        conflict = next(c for c in rec.reason_codes if c.code == "blocker.signals_conflict")
+        assert conflict.params == {"long": "rsi", "short": "macd"}
+
+    def test_invariant_gate_codes_align_and_directional_iff_all_gates_passed(self) -> None:
+        """Mirrors the 0063 directional ⟺ every-check-passed invariant on the
+        reason-code surface: the gate portion is 1:1 with `basis.checks` on every
+        verdict, and directional exactly when every gate passed."""
+
+        def assert_invariant(rec: Recommendation, *, expected_directional: bool) -> None:
+            gate_codes = rec.reason_codes[len(rec.rationale) :]
+            assert len(gate_codes) == len(rec.basis.checks)
+            all_passed = all(check.passed for check in rec.basis.checks)
+            assert all_passed == (rec.direction != "flat") == expected_directional
+
+        assert_invariant(
+            fuse(
+                snapshot=make_snapshot(),
+                signals=[make_signal()],
+                walk_forward=make_walk_forward(),
+                forecast=make_forecast(),
+                last_close=LAST_CLOSE,
+            ),
+            expected_directional=True,
+        )
+        assert_invariant(
+            fuse(
+                snapshot=make_snapshot(),
+                signals=[make_signal(position="short")],  # disagrees with the forecast
+                walk_forward=make_walk_forward(),
+                forecast=make_forecast(),
+                last_close=LAST_CLOSE,
+            ),
+            expected_directional=False,
+        )
+        assert_invariant(
+            fuse(
+                snapshot=make_snapshot(),
+                signals=[],
+                walk_forward=None,
+                forecast=make_forecast(
+                    prob_up=None,
+                    prob_down=None,
+                    prob_flat=None,
+                    beats_baseline=False,
+                    edge_strength="no_edge",
+                ),
+                last_close=LAST_CLOSE,
+            ),
+            expected_directional=False,
+        )
+
+    def test_reason_codes_are_deterministic(self) -> None:
+        def run() -> list[dict[str, object]]:
+            return [
+                code.model_dump(mode="json")
+                for code in fuse(
+                    snapshot=make_snapshot(),
+                    signals=[make_signal(), make_signal("macd", "long", fresh=False)],
+                    walk_forward=make_walk_forward(),
+                    forecast=make_forecast(),
+                    last_close=LAST_CLOSE,
+                ).reason_codes
+            ]
+
+        assert run() == run()
+
+
 def test_advisor_imports_only_analyst_outputs() -> None:
     """Import-lint (phase 1 done-when): the advisor consumes analyst *output*
     models through their stable surfaces and never reaches into analysis /

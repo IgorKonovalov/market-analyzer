@@ -52,6 +52,7 @@ interface DumpedSchemas {
   Recommendation: JsonSchema
   RecommendationBasis: JsonSchema
   FusionCheck: JsonSchema
+  ReasonCode: JsonSchema
   ForecastCompletedPayloadV1: JsonSchema
   MultiHorizonForecastResult: JsonSchema
   HorizonForecast: JsonSchema
@@ -81,7 +82,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'from market_analyser.advisor.models import (',
-    '    FusionCheck, Recommendation, RecommendationBasis,',
+    '    FusionCheck, ReasonCode, Recommendation, RecommendationBasis,',
     ')',
     'from market_analyser.forecast.result import (',
     '    MultiHorizonForecastResult, HorizonForecast,',
@@ -111,6 +112,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "Recommendation": Recommendation.model_json_schema(),',
     '    "RecommendationBasis": RecommendationBasis.model_json_schema(),',
     '    "FusionCheck": FusionCheck.model_json_schema(),',
+    '    "ReasonCode": ReasonCode.model_json_schema(),',
     '    "ForecastCompletedPayloadV1": ForecastCompletedPayloadV1.model_json_schema(),',
     '    "MultiHorizonForecastResult": MultiHorizonForecastResult.model_json_schema(),',
     '    "HorizonForecast": HorizonForecast.model_json_schema(),',
@@ -438,15 +440,18 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'entry_zone',
       'label',
       'rationale',
+      'reason_codes',
       'stop',
       'symbol',
       'targets',
       'timeframe',
     ])
-    // No pydantic defaults anywhere → every field is schema-required. The TS
-    // still marks `entry_zone`/`stop` optional because they are None-valued on
-    // a flat recommendation and the bus dumps with `exclude_none` — required
-    // in the model, absent on the wire (the inverse of TrendlineSpec.style).
+    // `entry_zone`/`stop` are required-but-nullable in pydantic: None-valued on a
+    // flat recommendation and `exclude_none`-stripped from the wire, so the TS
+    // marks them optional (the inverse of TrendlineSpec.style). `reason_codes`
+    // (Plan 0069) has a non-None default (`()`) → not in `required`, but never
+    // None, so `exclude_none` keeps it on the wire — the TS marks it required
+    // (the RecommendationBasis.checks shape).
     expect(requiredNames(dumped.Recommendation)).toEqual([
       'as_of_bar_ts',
       'basis',
@@ -464,6 +469,14 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     // A single-value Literal is emitted as `const`, not `enum` — the ADR-0029
     // guarantee that no non-advisory label can be constructed, pinned here.
     expect(dumped.Recommendation.properties?.label?.const).toBe('advisory')
+  })
+
+  it('ReasonCode fields match (params defaulted, always on the wire)', () => {
+    expect(propertyNames(dumped.ReasonCode)).toEqual(['code', 'params'])
+    // `code` has no default → schema-required. `params` has a `{}` default →
+    // not in `required`, but never None so `exclude_none` keeps it on the wire —
+    // the TS marks it required (the RecommendationBasis.checks shape).
+    expect(requiredNames(dumped.ReasonCode)).toEqual(['code'])
   })
 
   it('ForecastCompletedPayloadV1 carries the multi-horizon result inline (Plan 0037)', () => {
@@ -594,11 +607,19 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
   })
 
   it('ExplanationSummary fields match (artifact defaulted+nullable, absent without a runs_dir)', () => {
-    expect(propertyNames(dumped.ExplanationSummary)).toEqual(['artifact', 'top_drivers'])
+    expect(propertyNames(dumped.ExplanationSummary)).toEqual([
+      'artifact',
+      'disclaimer_code',
+      'note_code',
+      'top_drivers',
+    ])
     // `top_drivers` has no default → schema-required and always on the wire
     // (empty array when the horizon had no scored folds). `artifact` is
     // defaulted AND nullable — None without a runs_dir, then
-    // `exclude_none`-stripped — so the TS marks it optional.
+    // `exclude_none`-stripped — so the TS marks it optional. `disclaimer_code`
+    // (Plan 0069) is defaulted and never None → wire-present, TS-required;
+    // `note_code` is defaulted None and set only for a no-scored-folds horizon →
+    // `exclude_none`-stripped otherwise, so the TS marks it optional.
     expect(requiredNames(dumped.ExplanationSummary)).toEqual(['top_drivers'])
   })
 
