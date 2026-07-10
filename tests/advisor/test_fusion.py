@@ -24,6 +24,7 @@ from market_analyser.analysis.types import (
     ConditionSnapshot,
     Level,
     MomentumStance,
+    PatternHit,
     Trend,
     VolumeStance,
 )
@@ -817,6 +818,100 @@ class TestReasonCodes:
                     forecast=make_forecast(),
                     last_close=LAST_CLOSE,
                 ).reason_codes
+            ]
+
+        assert run() == run()
+
+
+class TestConditionSignalCodes:
+    """Plan 0069 phase 4b done-when: `basis.condition_codes`/`signal_codes` are
+    the translatable mirrors of the `conditions`/`signals` prose — one code per
+    line, 1:1 and in the same order, each condition/signal enum value carried as
+    a raw token in `params` — additive to the unchanged English prose lists."""
+
+    def test_condition_codes_mirror_the_conditions_prose(self) -> None:
+        hit = PatternHit(
+            bar_index=199, pattern="hammer", direction="bullish", strength=0.8, span_bars=1
+        )
+        snapshot = make_snapshot().model_copy(
+            update={
+                "momentum": MomentumStance.OVERSOLD,
+                "volume_stance": VolumeStance.HEAVY,
+                "recent_patterns": [hit],
+            }
+        )
+        basis = fuse(
+            snapshot=snapshot,
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        ).basis
+        # 1:1 with the prose, same order (trend, momentum, volume, then one per
+        # recent candlestick pattern).
+        assert len(basis.condition_codes) == len(basis.conditions)
+        assert [c.code for c in basis.condition_codes] == [
+            "condition.trend",
+            "condition.momentum",
+            "condition.volume",
+            "condition.candlestick",
+        ]
+        # Enum values ride as raw tokens the renderer localizes via an enum-label
+        # catalog (ADR-0063) — never the English prose word.
+        assert basis.condition_codes[0].params == {"value": "up"}
+        assert basis.condition_codes[1].params == {"value": "oversold"}
+        assert basis.condition_codes[2].params == {"value": "heavy"}
+        assert basis.condition_codes[3].params == {"pattern": "hammer", "direction": "bullish"}
+        # The agent/MCP-facing English prose list is untouched by the additive codes.
+        assert basis.conditions == [
+            "trend=up",
+            "momentum=oversold",
+            "volume=heavy",
+            "candlestick=hammer (bullish)",
+        ]
+
+    def test_signal_codes_mirror_the_signals_prose_in_id_order(self) -> None:
+        basis = fuse(
+            snapshot=make_snapshot(),
+            signals=[
+                make_signal("rsi", "long"),
+                make_signal("macd", "long", fresh=False),
+            ],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        ).basis
+        # 1:1 with the prose list, sorted by strategy_id (macd before rsi); the
+        # freshness rides as a 0/1 param (ReasonCode.params has no bool grain).
+        assert len(basis.signal_codes) == len(basis.signals)
+        assert [c.code for c in basis.signal_codes] == ["signal.vote", "signal.vote"]
+        assert basis.signal_codes[0].params == {
+            "strategy_id": "macd",
+            "position": "long",
+            "fresh": 0,
+        }
+        assert basis.signal_codes[1].params == {
+            "strategy_id": "rsi",
+            "position": "long",
+            "fresh": 1,
+        }
+        assert basis.signals == [
+            "macd: position=long",
+            "rsi: position=long, fresh_signal",
+        ]
+
+    def test_condition_signal_codes_are_deterministic(self) -> None:
+        def run() -> list[dict[str, object]]:
+            basis = fuse(
+                snapshot=make_snapshot(),
+                signals=[make_signal(), make_signal("macd", "long", fresh=False)],
+                walk_forward=make_walk_forward(),
+                forecast=make_forecast(),
+                last_close=LAST_CLOSE,
+            ).basis
+            return [
+                code.model_dump(mode="json")
+                for code in (*basis.condition_codes, *basis.signal_codes)
             ]
 
         assert run() == run()

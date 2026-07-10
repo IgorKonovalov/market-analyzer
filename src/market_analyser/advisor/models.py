@@ -91,6 +91,17 @@ class RecommendationBasis(BaseModel):
     superset of the rationale strings and travels on directional and flat
     verdicts alike (defaulted so pre-0063 constructors stay valid; it does
     not count toward basis non-emptiness).
+
+    `condition_codes` / `signal_codes` (Plan 0069 phase 4b, ADR-0063) are the
+    translatable mirrors of the `conditions` / `signals` prose lists: one
+    `ReasonCode` per line, index-aligned to the prose, co-generated in lockstep
+    so counts and order can never drift. Every condition/signal enum value is a
+    *closed* vocabulary (`Trend`, `MomentumStance`, `VolumeStance`, pattern
+    `Direction`, `current_position`, the fixed candlestick pattern names), so the
+    value rides as a raw token in ``params`` and the renderer translates it via
+    an enum-label catalog — no prose-parsing (ADR-0063's "the sidecar ships
+    facts, the renderer owns wording"). The English prose lists above stay
+    authoritative for the agent/MCP consumer, untouched; the codes are additive.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -103,6 +114,10 @@ class RecommendationBasis(BaseModel):
     # ForecastProvenance appended-fields precedent) — Plan 0063's deliberate,
     # versioned move of the ADR-0029 field-set pins.
     checks: tuple[FusionCheck, ...] = ()
+    # Appended after checks, same wire-stable append discipline; defaulted so
+    # pre-0069 constructors stay valid (Plan 0069 phase 4b).
+    condition_codes: tuple[ReasonCode, ...] = ()
+    signal_codes: tuple[ReasonCode, ...] = ()
 
     @model_validator(mode="after")
     def _require_non_empty(self) -> RecommendationBasis:

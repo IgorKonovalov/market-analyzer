@@ -55,6 +55,10 @@ const LONG_REC: Recommendation = {
         passed: true,
       },
     ],
+    // Plan 0069 phase 4b: condition/signal codes always ride the wire (rendering
+    // them is phase 5). Empty here keeps this pre-phase-5 fixture type-valid.
+    condition_codes: [],
+    signal_codes: [],
   },
   label: 'advisory',
   as_of_bar_ts: '2026-01-15T00:00:00+00:00',
@@ -101,6 +105,8 @@ const FLAT_REC: Recommendation = {
         passed: false,
       },
     ],
+    condition_codes: [],
+    signal_codes: [],
   },
   label: 'advisory',
   as_of_bar_ts: '2026-01-10T15:00:00+00:00',

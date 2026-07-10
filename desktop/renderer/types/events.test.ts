@@ -632,15 +632,18 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     expect(propertyNames(dumped.RecommendationBasis)).toEqual([
       'backtest',
       'checks',
+      'condition_codes',
       'conditions',
       'forecast',
+      'signal_codes',
       'signals',
     ])
     // Same required-but-nullable shape as Recommendation's levels: schema-
     // required, wire-absent for a flat call missing that leg → TS optional.
-    // `checks` (Plan 0063 — the deliberate ADR-0029 pin move) has a non-None
-    // default (`()`) → not in `required`, but it is never None so
-    // `exclude_none` keeps it on the wire — the TS marks it required (the
+    // `checks` (Plan 0063 — the deliberate ADR-0029 pin move) and
+    // `condition_codes`/`signal_codes` (Plan 0069 phase 4b) each have a non-None
+    // default (`()`) → not in `required`, but never None so `exclude_none` keeps
+    // them on the wire — the TS marks them required (the
     // ForecastProvenance.series_inputs shape).
     expect(requiredNames(dumped.RecommendationBasis)).toEqual([
       'backtest',

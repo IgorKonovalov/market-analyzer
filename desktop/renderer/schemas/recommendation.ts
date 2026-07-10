@@ -36,23 +36,27 @@ const fusionCheckSchema = z.object({
   passed: z.boolean(),
 })
 
-/** `backtest`/`forecast` are absent on the wire (exclude_none) when a flat
- * recommendation lacks that leg — hence `.nullish()`, not `.nullable()`.
- * `checks` (Plan 0063) has a non-None default and is always present. */
-const recommendationBasisSchema = z.object({
-  conditions: z.array(z.string()),
-  signals: z.array(z.string()),
-  backtest: z.record(basisValueSchema).nullish(),
-  forecast: z.record(basisValueSchema).nullish(),
-  checks: z.array(fusionCheckSchema),
-})
-
 /** One `{code, params}` reason-code (Plan 0069 / ADR-0063). `params` values are
  * raw numbers or strings — the renderer formats numbers `en-US`. `params` has a
  * `{}` default and is always present on the wire. */
 const reasonCodeSchema = z.object({
   code: z.string(),
   params: z.record(z.union([z.number(), z.string()])),
+})
+
+/** `backtest`/`forecast` are absent on the wire (exclude_none) when a flat
+ * recommendation lacks that leg — hence `.nullish()`, not `.nullable()`.
+ * `checks` (Plan 0063) has a non-None default and is always present.
+ * `condition_codes`/`signal_codes` (Plan 0069 phase 4b) are the translatable
+ * mirrors of `conditions`/`signals`, defaulted `()` and always on the wire. */
+const recommendationBasisSchema = z.object({
+  conditions: z.array(z.string()),
+  signals: z.array(z.string()),
+  backtest: z.record(basisValueSchema).nullish(),
+  forecast: z.record(basisValueSchema).nullish(),
+  checks: z.array(fusionCheckSchema),
+  condition_codes: z.array(reasonCodeSchema),
+  signal_codes: z.array(reasonCodeSchema),
 })
 
 const recommendationSchema = z.object({

@@ -522,17 +522,55 @@ def _build_basis(
     forecast: ForecastResult,
     checks: tuple[FusionCheck, ...],
 ) -> RecommendationBasis:
-    conditions = [
-        f"trend={snapshot.trend}",
-        f"momentum={snapshot.momentum}",
-        f"volume={snapshot.volume_stance}",
-        *(f"candlestick={hit.pattern} ({hit.direction})" for hit in snapshot.recent_patterns),
+    # Each prose line is paired with its translatable reason-code in lockstep
+    # (Plan 0069 phase 4b, ADR-0063), so the code tuple is index-aligned to the
+    # prose list and a code can never drift from its line. The enum values are
+    # closed vocabularies, so they ride as raw string tokens in `params` — the
+    # renderer localizes them via an enum-label catalog (no prose-parsing).
+    condition_pairs: list[tuple[str, ReasonCode]] = [
+        (
+            f"trend={snapshot.trend}",
+            ReasonCode(code="condition.trend", params={"value": snapshot.trend.value}),
+        ),
+        (
+            f"momentum={snapshot.momentum}",
+            ReasonCode(code="condition.momentum", params={"value": snapshot.momentum.value}),
+        ),
+        (
+            f"volume={snapshot.volume_stance}",
+            ReasonCode(code="condition.volume", params={"value": snapshot.volume_stance.value}),
+        ),
+        *(
+            (
+                f"candlestick={hit.pattern} ({hit.direction})",
+                ReasonCode(
+                    code="condition.candlestick",
+                    params={"pattern": hit.pattern, "direction": hit.direction},
+                ),
+            )
+            for hit in snapshot.recent_patterns
+        ),
     ]
-    signal_lines = [
-        f"{s.strategy_id}: position={s.current_position}"
-        + (", fresh_signal" if s.fresh_signal else "")
+    conditions = [line for line, _ in condition_pairs]
+    condition_codes = tuple(code for _, code in condition_pairs)
+
+    signal_pairs: list[tuple[str, ReasonCode]] = [
+        (
+            f"{s.strategy_id}: position={s.current_position}"
+            + (", fresh_signal" if s.fresh_signal else ""),
+            ReasonCode(
+                code="signal.vote",
+                params={
+                    "strategy_id": s.strategy_id,
+                    "position": s.current_position,
+                    "fresh": 1 if s.fresh_signal else 0,
+                },
+            ),
+        )
         for s in sorted(signals, key=lambda s: s.strategy_id)
     ]
+    signal_lines = [line for line, _ in signal_pairs]
+    signal_codes = tuple(code for _, code in signal_pairs)
 
     backtest: dict[str, BasisValue] | None = None
     if walk_forward is not None:
@@ -571,6 +609,8 @@ def _build_basis(
         backtest=backtest,
         forecast=forecast_summary,
         checks=checks,
+        condition_codes=condition_codes,
+        signal_codes=signal_codes,
     )
 
 

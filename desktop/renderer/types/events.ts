@@ -181,13 +181,19 @@ export interface FusionCheck {
  * keys are ABSENT (not null) when a flat recommendation lacks that leg. Hence
  * optional here. `checks` (Plan 0063) has a non-None default (`()`), so like
  * `ForecastProvenance.series_inputs` it is not schema-required but is ALWAYS
- * present on the wire — hence required here. */
+ * present on the wire — hence required here. `condition_codes`/`signal_codes`
+ * (Plan 0069 phase 4b) are the translatable mirrors of `conditions`/`signals`:
+ * one `ReasonCode` per prose line (1:1, same order), enum values as raw tokens
+ * in `params`; defaulted `()` so not schema-required but always on the wire —
+ * hence required here (the `checks` shape). */
 export interface RecommendationBasis {
   conditions: string[]
   signals: string[]
   backtest?: Record<string, BasisValue> | null
   forecast?: Record<string, BasisValue> | null
   checks: FusionCheck[]
+  condition_codes: ReasonCode[]
+  signal_codes: ReasonCode[]
 }
 
 /** Mirror of the pydantic `ReasonCode` (Plan 0069 / ADR-0063): one structured,
