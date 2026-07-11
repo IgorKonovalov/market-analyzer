@@ -159,11 +159,12 @@ describe('CandlestickChart — candle series-type switch (Plan 0068 phase 4)', (
     // The main series is now a line series (reflected in the test hook).
     expect(window.__test_chart_render__!.seriesKinds[0]).toEqual({ kind: 'line' })
 
-    // The new main line series has both primitives re-attached (span + trendline)
-    // and its markers re-set — proving the primitives/markers survived the rebuild.
+    // The new main line series has all three primitives re-attached (span +
+    // trendline + ichimoku, Plan 0073 phase 4) and its markers re-set — proving
+    // the primitives/markers survived the rebuild.
     const lineMains = primitiveBearingSeries().filter((s) => s.kind === 'line')
     expect(lineMains).toHaveLength(1)
-    expect(lineMains[0].attachPrimitive).toHaveBeenCalledTimes(2)
+    expect(lineMains[0].attachPrimitive).toHaveBeenCalledTimes(3)
     expect(lineMains[0].setMarkers).toHaveBeenCalled()
     // The line main series was fed data as {time, value} (setData called).
     expect(lineMains[0].setData).toHaveBeenCalled()

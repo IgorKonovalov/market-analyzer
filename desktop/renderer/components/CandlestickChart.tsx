@@ -38,6 +38,7 @@ import { useCandleMarkerGroups } from '../hooks/useCandleMarkerGroups'
 import { useFormingBar } from '../hooks/useFormingBar'
 import { useLayersLegend } from '../hooks/useLayersLegend'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
+import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
 import { useOverlaySeries } from '../hooks/useOverlaySeries'
 import { usePriceLines } from '../hooks/usePriceLines'
 import { useSupertrendSeries } from '../hooks/useSupertrendSeries'
@@ -62,6 +63,7 @@ import {
   type OverlayEntry,
 } from '../lib/chartSeries'
 import { formatRangeLabel, monthlyTickMarkFormatter } from '../lib/chartAxis'
+import { IchimokuPrimitive, readIchimokuColors } from '../lib/ichimoku'
 import { PatternSpanPrimitive } from '../lib/spans'
 import {
   TrendlinePrimitive,
@@ -184,6 +186,11 @@ export function CandlestickChart({
   // the hook-attach stranded it on a discarded chart under StrictMode). Fed by
   // `useTrendlines` below.
   const trendlinePrimitiveRef = useRef<TrendlinePrimitive | null>(null)
+  // Ichimoku overlay primitive (Plan 0073 phase 4, ADR-0067): attached at mount
+  // like the span/trendline primitives so it rides the live series and is disposed
+  // by `chart.remove()`. Draws the five lines + displaced filled cloud; fed by
+  // `useIchimokuSeries` below.
+  const ichimokuPrimitiveRef = useRef<IchimokuPrimitive | null>(null)
   // Always-on volume series (Plan 0027 phase 3).
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -402,6 +409,13 @@ export function CandlestickChart({
     series.attachPrimitive(trendlinePrimitive)
     trendlinePrimitiveRef.current = trendlinePrimitive
 
+    // Attach the Ichimoku primitive once (Plan 0073 phase 4), same lifecycle as the
+    // span/trendline primitives. It draws nothing until `useIchimokuSeries` feeds
+    // it geometries; `chart.remove()` detaches it.
+    const ichimokuPrimitive = new IchimokuPrimitive(readIchimokuColors(container))
+    series.attachPrimitive(ichimokuPrimitive)
+    ichimokuPrimitiveRef.current = ichimokuPrimitive
+
     chartRef.current = chart
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
@@ -422,6 +436,7 @@ export function CandlestickChart({
       seriesRef.current = null
       spanPrimitiveRef.current = null
       trendlinePrimitiveRef.current = null
+      ichimokuPrimitiveRef.current = null
       volumeSeriesRef.current = null
       volumeMaSeriesRef.current = null
       vwapSeriesRef.current = null
@@ -505,6 +520,16 @@ export function CandlestickChart({
     overlays,
     hidden,
     effectiveThemeRef,
+    rebuildToken: candleType,
+  })
+  // Ichimoku five-line + displaced filled cloud primitive (Plan 0073 phase 4).
+  // Feeds the primitive attached in the creation effect; reserves right-edge space
+  // so the projected cloud shows past the last candle.
+  useIchimokuSeries(chartRef, containerRef, ichimokuPrimitiveRef, {
+    bars,
+    overlays,
+    hidden,
+    effectiveTheme,
     rebuildToken: candleType,
   })
 

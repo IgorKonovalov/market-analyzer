@@ -207,20 +207,25 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     dumped = dumpPydanticSchemas()
   })
 
-  it('OverlaySpec fields match (price_line adds price/label/role; supertrend adds multiplier)', () => {
+  it('OverlaySpec fields match (price_line adds price/label/role; supertrend adds multiplier; ichimoku adds four periods)', () => {
     expect(propertyNames(dumped.OverlaySpec)).toEqual([
+      'base',
+      'conversion',
+      'displacement',
       'kind',
       'label',
       'multiplier',
       'period',
       'price',
       'role',
+      'span_b',
     ])
-    // price/label/role/multiplier default to None → not required (price_line's
-    // price+label are enforced by a cross-field validator, not `required`).
+    // price/label/role/multiplier and the four ichimoku periods default to None →
+    // not required (price_line's price+label are enforced by a cross-field
+    // validator, not `required`).
     expect(requiredNames(dumped.OverlaySpec)).toEqual(['kind'])
     expect(literalValues(dumped.OverlaySpec, 'kind')).toEqual(
-      ['bbands', 'ema', 'macd', 'price_line', 'rsi', 'sma', 'supertrend'].sort(),
+      ['bbands', 'ema', 'ichimoku', 'macd', 'price_line', 'rsi', 'sma', 'supertrend'].sort(),
     )
     // `role` is an optional Literal (`| None`), emitted as `anyOf` rather than a
     // top-level `enum`, so `literalValues` (enum/$ref only) can't read it — the

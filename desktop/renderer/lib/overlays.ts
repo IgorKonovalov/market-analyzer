@@ -71,6 +71,17 @@ export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> =
         ),
       ),
   },
+  // Ichimoku (Plan 0073 phase 4): the registry entry makes it a supported overlay
+  // (one toggleable legend row, no "unsupported" warning) and colours its legend
+  // swatch from the Senkou-A / cloud-bull token. The chart draws its five lines +
+  // filled cloud as a dedicated PRIMITIVE (see `useIchimokuSeries` / `lib/ichimoku`),
+  // never the generic single-line path — this `compute` returns `[]` and is never
+  // the actual draw path (the generic overlay hook skips `ichimoku`).
+  ichimoku: {
+    color: '#16a34a',
+    colorToken: '--ichimoku-span-a',
+    compute: () => [],
+  },
 }
 
 const FALLBACK_COLOR = '#888888'

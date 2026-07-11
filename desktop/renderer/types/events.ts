@@ -14,7 +14,15 @@
  * test still passes.
  */
 
-export type OverlayKind = 'ema' | 'sma' | 'rsi' | 'macd' | 'bbands' | 'price_line' | 'supertrend'
+export type OverlayKind =
+  | 'ema'
+  | 'sma'
+  | 'rsi'
+  | 'macd'
+  | 'bbands'
+  | 'price_line'
+  | 'supertrend'
+  | 'ichimoku'
 
 /** Support/resistance role for a `price_line` overlay; absent for plain levels. */
 export type PriceLineRole = 'support' | 'resistance'
@@ -24,12 +32,20 @@ export type PriceLineRole = 'support' | 'resistance'
  * `period` (+ `supertrend`'s ATR `multiplier`); a `price_line` carries `price` +
  * `label` (+ optional `role`) — the channel the agent pushes S/R levels through
  * (Plan 0047). The non-applicable fields are absent on the wire (the bus dumps
- * with `exclude_none`). `supertrend` (Plan 0049) is an additive indicator kind. */
+ * with `exclude_none`). `supertrend` (Plan 0049) is an additive indicator kind;
+ * `ichimoku` (Plan 0073) is another, carrying its own four optional period fields
+ * (`conversion`/`base`/`span_b`/`displacement`) — absent ⇒ the renderer applies
+ * the classic 9/26/52/26 defaults. */
 export interface OverlaySpec {
   kind: OverlayKind
   period?: number | null
   /** Supertrend's ATR multiplier (Plan 0049); absent on the other kinds. */
   multiplier?: number | null
+  /** Ichimoku period fields (Plan 0073); absent on the other kinds. */
+  conversion?: number | null
+  base?: number | null
+  span_b?: number | null
+  displacement?: number | null
   price?: number | null
   label?: string | null
   role?: PriceLineRole | null

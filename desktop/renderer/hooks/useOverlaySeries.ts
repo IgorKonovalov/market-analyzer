@@ -81,6 +81,9 @@ export function useOverlaySeries(
       // supertrend is a two-masked-series overlay, reconciled separately — skip
       // the generic single-series path (and its "unsupported" warning).
       if (spec.kind === 'supertrend') continue
+      // ichimoku draws its five lines + cloud as a dedicated primitive
+      // (`useIchimokuSeries`), not a generic line series — skip it here too.
+      if (spec.kind === 'ichimoku') continue
       if (!isSupportedOverlay(spec.kind)) {
         console.warn(
           `[CandlestickChart] unsupported overlay kind "${spec.kind}" — ignored (MVP renders ema/sma only)`,

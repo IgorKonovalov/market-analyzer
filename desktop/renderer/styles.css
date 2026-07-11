@@ -92,6 +92,18 @@
   --marker-bearish: #dc2626;
   --marker-neutral: #64748b;
 
+  /* Ichimoku palette (Plan 0073 / ADR-0067) — light. The five lines plus the
+   * translucent cloud fills (green where Senkou A > B, red below). Read by
+   * CandlestickChart via computed styles; keep in sync with the dark blocks and
+   * `ICHIMOKU_COLOR_FALLBACK`. */
+  --ichimoku-tenkan: #2563eb;
+  --ichimoku-kijun: #b91c1c;
+  --ichimoku-chikou: #7c3aed;
+  --ichimoku-span-a: #16a34a;
+  --ichimoku-span-b: #dc2626;
+  --ichimoku-cloud-bull: rgba(22, 163, 74, 0.18);
+  --ichimoku-cloud-bear: rgba(220, 38, 38, 0.18);
+
   /* Trendline categorical palette (Plan 0067 / ADR-0061): one distinct hue per
    * chart-pattern type so a pattern's lines read as one shape. Light values —
    * darker/saturated shades legible on the light chart background. Read by
@@ -150,6 +162,16 @@
   --marker-bearish: #f87171;
   --marker-neutral: #94a3b8;
 
+  /* Ichimoku palette — dark (mirror of the light block; brighter lines, and the
+   * cloud fills lifted to ~0.22 alpha to read on the dark background). */
+  --ichimoku-tenkan: #60a5fa;
+  --ichimoku-kijun: #f87171;
+  --ichimoku-chikou: #b197fc;
+  --ichimoku-span-a: #4ade80;
+  --ichimoku-span-b: #f87171;
+  --ichimoku-cloud-bull: rgba(74, 222, 128, 0.22);
+  --ichimoku-cloud-bear: rgba(248, 113, 113, 0.22);
+
   /* Trendline categorical palette — dark (mirror of the light block). Lighter,
    * brighter shades read against the dark chart background. */
   --trendline-head-shoulders: #ff8787;
@@ -203,6 +225,15 @@
     --marker-bullish: #4ade80;
     --marker-bearish: #f87171;
     --marker-neutral: #94a3b8;
+
+    /* Ichimoku palette — dark (mirror of the explicit dark block). */
+    --ichimoku-tenkan: #60a5fa;
+    --ichimoku-kijun: #f87171;
+    --ichimoku-chikou: #b197fc;
+    --ichimoku-span-a: #4ade80;
+    --ichimoku-span-b: #f87171;
+    --ichimoku-cloud-bull: rgba(74, 222, 128, 0.22);
+    --ichimoku-cloud-bear: rgba(248, 113, 113, 0.22);
 
     /* Trendline categorical palette — dark (mirror of the explicit block). */
     --trendline-head-shoulders: #ff8787;
