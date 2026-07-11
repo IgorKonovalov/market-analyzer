@@ -152,6 +152,126 @@ describe('computeTrendlineSegments', () => {
   })
 })
 
+describe('apex extension + breakout projection (Plan 0083 ph3 / ADR-0078)', () => {
+  // Falling upper (price 25→20 = y 20→40) and rising lower (price 10→15 = y 80→60),
+  // anchors at x 100/160. The pixel lines cross at (190, 50) — forward of the
+  // rightmost anchor (160) and well within the 3×width horizon.
+  const upper = (style: 'solid' | 'dashed'): TrendlineSpec => ({
+    points: [
+      { ts: T1, price: 25 },
+      { ts: T2, price: 20 },
+    ],
+    role: 'upper_trendline',
+    style,
+    pattern: 'symmetrical_triangle',
+  })
+  const lower = (style: 'solid' | 'dashed'): TrendlineSpec => ({
+    points: [
+      { ts: T1, price: 10 },
+      { ts: T2, price: 15 },
+    ],
+    role: 'lower_trendline',
+    style,
+    pattern: 'symmetrical_triangle',
+  })
+
+  it('extends the two converging boundaries to meet at their apex', () => {
+    const segments = computeTrendlineSegments(
+      [upper('solid'), lower('solid')],
+      timeToX,
+      priceToY,
+      COLORS,
+    )
+    expect(segments).toHaveLength(2)
+    // Both far endpoints move to the shared apex (190, 50); the left anchors stay.
+    expect(segments[0]).toMatchObject({ x1: 100, y1: 20, x2: 190, y2: 50 })
+    expect(segments[1]).toMatchObject({ x1: 100, y1: 80, x2: 190, y2: 50 })
+  })
+
+  it('leaves a near-parallel pair as plain segments (apex beyond the horizon)', () => {
+    // Barely-converging: upper (price 20→17.5 = y 40→50), lower (price 10→8 =
+    // y 80→88). The apex is at x≈1300, far beyond 160 + 3×60 = 340 → no extension.
+    const nearUpper: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 20 },
+        { ts: T2, price: 17.5 },
+      ],
+      role: 'upper_trendline',
+      style: 'solid',
+      pattern: 'rising_wedge',
+    }
+    const nearLower: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 10 },
+        { ts: T2, price: 8 },
+      ],
+      role: 'lower_trendline',
+      style: 'solid',
+      pattern: 'rising_wedge',
+    }
+    const segments = computeTrendlineSegments([nearUpper, nearLower], timeToX, priceToY, COLORS)
+    expect(segments[0]).toMatchObject({ x1: 100, y1: 40, x2: 160, y2: 50 }) // unchanged
+    expect(segments[1]).toMatchObject({ x1: 100, y1: 80, x2: 160, y2: 88 }) // unchanged
+  })
+
+  it('does not extend exactly-parallel boundaries (no apex)', () => {
+    const parUpper: TrendlineSpec = { ...upper('solid'), pattern: 'falling_wedge' }
+    const parLower: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 10 }, // y 80
+        { ts: T2, price: 5 }, // y 100 — same +20/60 pixel slope as the upper
+      ],
+      role: 'lower_trendline',
+      style: 'solid',
+      pattern: 'falling_wedge',
+    }
+    const segments = computeTrendlineSegments([parUpper, parLower], timeToX, priceToY, COLORS)
+    expect(segments[0]).toMatchObject({ x2: 160, y2: 40 }) // unchanged
+    expect(segments[1]).toMatchObject({ x2: 160, y2: 100 }) // unchanged
+  })
+
+  it('flags an up arrow on a bullish projection and a down arrow on a bearish one', () => {
+    const bullish: TrendlineSpec = {
+      points: [
+        { ts: T2, price: 20 }, // broken boundary, y 40
+        { ts: T2, price: 25 }, // target above, y 20 — vertical, points up
+      ],
+      role: 'projection',
+      style: 'solid',
+      pattern: 'symmetrical_triangle',
+    }
+    const bearish: TrendlineSpec = {
+      ...bullish,
+      points: [
+        { ts: T2, price: 20 }, // y 40
+        { ts: T2, price: 15 }, // target below, y 60 — vertical, points down
+      ],
+    }
+    const [up] = computeTrendlineSegments([bullish], timeToX, priceToY, COLORS)
+    const [down] = computeTrendlineSegments([bearish], timeToX, priceToY, COLORS)
+    expect(up).toMatchObject({ x1: 160, y1: 40, x2: 160, y2: 20, arrow: 'up' })
+    expect(down).toMatchObject({ x1: 160, y1: 40, x2: 160, y2: 60, arrow: 'down' })
+  })
+
+  it('extends a FORMING (dashed) pattern to its apex with no arrow', () => {
+    const segments = computeTrendlineSegments(
+      [upper('dashed'), lower('dashed')],
+      timeToX,
+      priceToY,
+      COLORS,
+    )
+    expect(segments[0]).toMatchObject({ x2: 190, y2: 50, dashed: true })
+    expect(segments[1]).toMatchObject({ x2: 190, y2: 50, dashed: true })
+    expect(segments.every((s) => s.arrow === undefined)).toBe(true)
+  })
+
+  it('does not extend when only one boundary of the pair is present', () => {
+    // A lone upper boundary (no matching lower) is left plain.
+    const segments = computeTrendlineSegments([upper('solid')], timeToX, priceToY, COLORS)
+    expect(segments[0]).toMatchObject({ x2: 160, y2: 40 }) // unchanged
+  })
+})
+
 describe('dedupeTrendlines', () => {
   const geom = [
     { ts: T1, price: 10 },

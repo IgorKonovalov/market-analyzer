@@ -204,6 +204,89 @@ export interface TrendlineSegment {
   /** Highlight dim (Plan 0067 phase 3): a highlight is active and this segment
    * is NOT in the hovered group — drawn at reduced opacity. */
   dimmed?: boolean
+  /** Breakout-arrow head (Plan 0083 ph3 / ADR-0078): set on a `projection`
+   * segment — the vertical measured-move indicator. `'up'` points at a target
+   * above the break (bullish), `'down'` below (bearish). The renderer draws a
+   * filled arrowhead at the far (target) endpoint. */
+  arrow?: 'up' | 'down'
+}
+
+/** Max forward horizon for apex extension, as a multiple of the pattern's pixel
+ * width (Plan 0083 ph3 / ADR-0078): the two converging boundaries are extended
+ * to their intersection only when the apex lies forward of the anchors and no
+ * farther than this. Near-parallel boundaries put the apex far to the right, so
+ * this bound is also the near-parallel fallback — beyond it, draw plain segments
+ * rather than shooting a line off-screen. */
+export const APEX_MAX_HORIZON_FACTOR = 3
+
+/** A single-segment bounding line tagged for the apex-extension pass. */
+interface ApexBoundary {
+  seg: TrendlineSegment
+  role: 'upper_trendline' | 'lower_trendline'
+  /** `${pattern}|${style}` — the same key `patternStateKey` uses, so the two
+   * boundaries of ONE formation (same pattern + state) pair up. */
+  key: string
+}
+
+/**
+ * Pure: intersection (in pixel space) of the two boundary segments' infinite
+ * lines, or `null` when they are parallel, the apex is behind the anchors, or it
+ * is beyond the forward horizon. The last two guards keep a near-parallel or
+ * diverging pair from being extended off-screen (ADR-0078).
+ */
+export function computeApex(
+  u: TrendlineSegment,
+  l: TrendlineSegment,
+): { x: number; y: number } | null {
+  const ux = u.x2 - u.x1
+  const uy = u.y2 - u.y1
+  const lx = l.x2 - l.x1
+  const ly = l.y2 - l.y1
+  const denom = ux * ly - uy * lx
+  if (denom === 0) return null // parallel — no apex
+  const t = ((l.x1 - u.x1) * ly - (l.y1 - u.y1) * lx) / denom
+  const ax = u.x1 + t * ux
+  const ay = u.y1 + t * uy
+  const rightMost = Math.max(u.x1, u.x2, l.x1, l.x2)
+  const leftMost = Math.min(u.x1, u.x2, l.x1, l.x2)
+  const width = rightMost - leftMost
+  if (width <= 0) return null
+  if (ax < rightMost) return null // apex not forward of the anchors
+  if (ax > rightMost + APEX_MAX_HORIZON_FACTOR * width) return null // too far → near-parallel
+  return { x: ax, y: ay }
+}
+
+/**
+ * Extend each formation's upper+lower boundary to their shared apex, mutating the
+ * segments' far (rightmost) endpoint in place (ADR-0078). Groups by
+ * `${pattern}|${style}`; a group is extended only when it has EXACTLY one upper
+ * and one lower boundary — multiple same-pattern formations are left as plain
+ * segments (the deferred overlapping-formations case). The two boundaries are
+ * separate specs, so this must run across specs, not per-spec.
+ */
+function extendBoundariesToApex(boundaries: readonly ApexBoundary[]): void {
+  const groups = new Map<string, { upper: ApexBoundary[]; lower: ApexBoundary[] }>()
+  for (const b of boundaries) {
+    const g = groups.get(b.key) ?? { upper: [], lower: [] }
+    if (b.role === 'upper_trendline') g.upper.push(b)
+    else g.lower.push(b)
+    groups.set(b.key, g)
+  }
+  for (const { upper, lower } of groups.values()) {
+    if (upper.length !== 1 || lower.length !== 1) continue
+    const apex = computeApex(upper[0].seg, lower[0].seg)
+    if (apex === null) continue
+    for (const { seg } of [upper[0], lower[0]]) {
+      // The rightmost endpoint is the far one (points are time-ordered ascending).
+      if (seg.x2 >= seg.x1) {
+        seg.x2 = apex.x
+        seg.y2 = apex.y
+      } else {
+        seg.x1 = apex.x
+        seg.y1 = apex.y
+      }
+    }
+  }
 }
 
 /**
@@ -221,6 +304,7 @@ export function computeTrendlineSegments(
   colors: TrendlineColors,
 ): TrendlineSegment[] {
   const segments: TrendlineSegment[] = []
+  const boundaries: ApexBoundary[] = []
   for (const spec of specs) {
     const color = trendlineColor(spec.pattern, colors)
     const dashed = spec.style === 'dashed'
@@ -232,9 +316,20 @@ export function computeTrendlineSegments(
       const x2 = timeToX(toUtcSeconds(b.ts))
       const y2 = priceToY(b.price)
       if (x1 === null || y1 === null || x2 === null || y2 === null) continue
-      segments.push({ x1, y1, x2, y2, color, dashed })
+      const seg: TrendlineSegment = { x1, y1, x2, y2, color, dashed }
+      // The measured-move projection is a vertical segment; the arrowhead sits at
+      // the far (target) end, up when the target is above the break else down.
+      if (spec.role === 'projection') seg.arrow = y2 < y1 ? 'up' : 'down'
+      segments.push(seg)
+      if (
+        spec.points.length === 2 &&
+        (spec.role === 'upper_trendline' || spec.role === 'lower_trendline')
+      ) {
+        boundaries.push({ seg, role: spec.role, key: patternStateKey(spec) })
+      }
     }
   }
+  extendBoundariesToApex(boundaries)
   return segments
 }
 
@@ -394,6 +489,20 @@ class TrendlinePaneRenderer implements ISeriesPrimitivePaneRenderer {
         ctx.moveTo(seg.x1, seg.y1)
         ctx.lineTo(seg.x2, seg.y2)
         ctx.stroke()
+        // Breakout arrowhead (Plan 0083 ph3 / ADR-0078): a filled triangle at the
+        // projection's far (target) endpoint, pointing up (bullish) or down.
+        if (seg.arrow) {
+          const size = 7
+          const dir = seg.arrow === 'up' ? -1 : 1
+          ctx.setLineDash([])
+          ctx.fillStyle = seg.color
+          ctx.beginPath()
+          ctx.moveTo(seg.x2, seg.y2)
+          ctx.lineTo(seg.x2 - size * 0.6, seg.y2 - dir * size)
+          ctx.lineTo(seg.x2 + size * 0.6, seg.y2 - dir * size)
+          ctx.closePath()
+          ctx.fill()
+        }
         ctx.restore()
       }
     })
@@ -518,9 +627,24 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
         (logical) => timeScale.logicalToCoordinate(logical as Logical),
       )
     const priceToY = (p: number): number | null => series.priceToCoordinate(p)
-    return this.specs.map((spec) =>
+    const perSpec = this.specs.map((spec) =>
       computeTrendlineSegments([spec], timeToX, priceToY, this.colors),
     )
+    // Apex extension is cross-spec: a formation's upper and lower boundaries are
+    // separate specs, so the per-spec calls above cannot pair them. Extend across
+    // the groups here — this mutates the segments in place (Plan 0083 ph3).
+    const boundaries: ApexBoundary[] = []
+    this.specs.forEach((spec, i) => {
+      const segs = perSpec[i]
+      if (
+        segs.length === 1 &&
+        (spec.role === 'upper_trendline' || spec.role === 'lower_trendline')
+      ) {
+        boundaries.push({ seg: segs[0], role: spec.role, key: patternStateKey(spec) })
+      }
+    })
+    extendBoundariesToApex(boundaries)
+    return perSpec
   }
 
   /** The trendline spec drawn nearest the pixel `(x,y)` within the hover
