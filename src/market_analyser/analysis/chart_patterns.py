@@ -94,6 +94,16 @@ MIN_TREND_SLOPE_PER_BAR = 0.002
 TRENDLINE_CONVERGENCE_MIN = 0.0005
 # Convergence rate at (or above) which a converging pattern's strength is 1.0.
 TRENDLINE_STRENGTH_CONVERGENCE_REF = 0.005
+# --- Envelope anchor selection (ADR-0078) -------------------------------------- #
+# A boundary line is anchored on the pivot pair that best forms the converging
+# envelope: the line other same-kind pivots sit at-or-inside (highs at/below the
+# upper line, lows at/above the lower line). A pivot within this price-relative
+# band of the line is a "touch"; one past it on the wrong side is an "outlier".
+# We pick the pair maximising touches while tolerating up to a bounded fraction
+# of outliers, so a single spike pivot no longer drags the boundary into a "V".
+# Real pivots, no regression — ADR-0048's core stands.
+TRENDLINE_ENVELOPE_TOUCH_BAND = 0.005  # within 0.5% of the line counts as a touch
+TRENDLINE_ENVELOPE_MAX_OUTLIER_FRAC = 0.34  # up to this fraction may sit outside
 
 _PIVOT_MATCHED_PATTERNS = (
     "head_shoulders",
@@ -329,10 +339,51 @@ def _trendline_strength(pattern: str, upper_rel: float, lower_rel: float) -> flo
     return min(1.0, (lower_rel - upper_rel) / TRENDLINE_STRENGTH_CONVERGENCE_REF)
 
 
+def _envelope_pair(same_kind: Sequence[Pivot], side: str) -> tuple[Pivot, Pivot] | None:
+    """Pick the boundary anchors for one side by the converging-envelope rule
+    (ADR-0078). `side` is ``"upper"`` (other highs should sit at/below the line)
+    or ``"lower"`` (other lows at/above). Among all pivot pairs, choose the one
+    whose line maximises touches (pivots within the band) while keeping at most a
+    bounded fraction of outliers on the wrong side — so a lone spike pivot is
+    tolerated as an outlier instead of anchoring the line. Deterministic:
+    iteration is over bar-index-sorted pivots and ties break on wider span then
+    the later end bar. Returns the pair ordered by bar index, or ``None``."""
+
+    pts = sorted(same_kind, key=lambda p: p.bar_index)
+    n = len(pts)
+    if n < 2:
+        return None
+    max_outliers = int(TRENDLINE_ENVELOPE_MAX_OUTLIER_FRAC * n)
+    best_key: tuple[int, int, int] | None = None
+    best_pair: tuple[Pivot, Pivot] | None = None
+    for i in range(n):
+        for j in range(i + 1, n):
+            a, b = pts[i], pts[j]
+            band = TRENDLINE_ENVELOPE_TOUCH_BAND * ((a.price + b.price) / 2.0)
+            touches = 0
+            outliers = 0
+            for p in pts:
+                line = _line_value(a.bar_index, a.price, b.bar_index, b.price, p.bar_index)
+                # Signed residual > 0 means p is on the WRONG side of the line.
+                residual = (p.price - line) if side == "upper" else (line - p.price)
+                if residual > band:
+                    outliers += 1
+                elif residual >= -band:
+                    touches += 1  # within the band (incl. the two anchors)
+                # else: comfortably inside the envelope — neither touch nor outlier
+            if outliers > max_outliers:
+                continue
+            key = (touches, b.bar_index - a.bar_index, b.bar_index)
+            if best_key is None or key > best_key:
+                best_key = key
+                best_pair = (a, b)
+    return best_pair
+
+
 def _trendline_formation_at(pivots: Sequence[Pivot], eval_bar: int) -> _Formation | None:
     """Connect-the-extremes at one evaluation bar: take the pivots confirmed by
-    `eval_bar` inside the trailing window, anchor the upper line on the two
-    highest highs and the lower line on the two lowest lows, classify."""
+    `eval_bar` inside the trailing window, anchor each bounding line on the pivot
+    pair forming the converging envelope for its side (ADR-0078), classify."""
 
     window = [
         p
@@ -343,15 +394,13 @@ def _trendline_formation_at(pivots: Sequence[Pivot], eval_bar: int) -> _Formatio
     lows = [p for p in window if p.kind == "low"]
     if len(highs) < 2 or len(lows) < 2:
         return None
-    # Two highest highs / two lowest lows; price ties break by bar_index so the
-    # anchor choice is deterministic.
-    upper = sorted(
-        sorted(highs, key=lambda p: (-p.price, p.bar_index))[:2], key=lambda p: p.bar_index
-    )
-    lower = sorted(
-        sorted(lows, key=lambda p: (p.price, p.bar_index))[:2], key=lambda p: p.bar_index
-    )
-    if upper[0].bar_index == upper[1].bar_index or lower[0].bar_index == lower[1].bar_index:
+    # Converging-envelope anchors (ADR-0078): the upper line rides the highs it
+    # keeps at/below it, the lower line the lows it keeps at/above it, tolerating
+    # a bounded number of outliers — so a lone spike pivot no longer drags the
+    # boundary into a "V". Deterministic; real pivots, no regression (ADR-0048).
+    upper = _envelope_pair(highs, "upper")
+    lower = _envelope_pair(lows, "lower")
+    if upper is None or lower is None:
         return None
     anchors = sorted([*upper, *lower], key=lambda p: (p.bar_index, p.kind))
     if not _width_ok(anchors[0], anchors[-1]):

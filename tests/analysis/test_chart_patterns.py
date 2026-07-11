@@ -369,6 +369,42 @@ def test_symmetrical_triangle_reports_converging_extreme_lines() -> None:
     assert confirmed.target is not None and confirmed.target > bars[confirmed.bar_index].close
 
 
+def test_symmetrical_triangle_envelope_rejects_spike_low_anchor() -> None:
+    """ADR-0078 envelope selection: a deep spike-low pivot that sits well below
+    the rising support must NOT anchor the lower trendline. Falling highs 121 @6
+    / 113 @19, rising lows 99 @10 / 105 @22, plus a spike low 87 @16 far below
+    the 99->105 support. The lower line must ride the higher-lows envelope
+    (99, 105), and the spike (87) must anchor no symmetrical-triangle line."""
+
+    anchors = [
+        (0, 110.0),
+        (6, 120.0),
+        (10, 100.0),
+        (13, 108.0),
+        (16, 88.0),  # the deep spike low
+        (19, 112.0),
+        (22, 106.0),
+        (29, 130.0),
+    ]
+    bars = _bars_from_path(anchors)
+    hits = _hits_for(bars, "symmetrical_triangle")
+    assert hits, "the spike fixture must still fire a symmetrical triangle"
+    forming = next(h for h in hits if h.state == "forming")
+
+    lower = next(line for line in forming.lines if line.role == "lower_trendline")
+    assert (lower.start.ts, lower.start.price) == (bars[10].event_ts, 99.0)
+    assert (lower.end.ts, lower.end.price) == (bars[22].event_ts, 105.0)
+    upper = next(line for line in forming.lines if line.role == "upper_trendline")
+    assert (upper.start.ts, upper.start.price) == (bars[6].event_ts, 121.0)
+    assert (upper.end.ts, upper.end.price) == (bars[19].event_ts, 113.0)
+
+    # The spike is never an anchor of any symmetrical-triangle line, in any state.
+    for h in hits:
+        for line in h.lines:
+            assert line.start.price != 87.0
+            assert line.end.price != 87.0
+
+
 def test_ascending_triangle_flat_upper_rising_lower() -> None:
     bars = _bars_from_path(_ASC_TRIANGLE_ANCHORS)
     hits = _hits_for(bars, "ascending_triangle")
