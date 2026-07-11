@@ -1,6 +1,6 @@
 # ADR-0067 — Ichimoku Cloud participates in composed trend classification
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0073 close 2026-07-11)
 > **Date:** 2026-07-09
 > **Related plan(s):** 0073-ichimoku-cloud-indicator
 > **Refines:** [ADR-0023](0023-technical-analysis-surface.md) (pure trailing indicators + composed snapshot classification)
