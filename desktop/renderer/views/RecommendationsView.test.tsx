@@ -46,13 +46,14 @@ const LONG_REC: Recommendation = {
     // parse — including a recorded fact whose None threshold is an absent
     // key, exactly as the bus's exclude_none dump produces.
     checks: [
-      { leg: 'signal', check: 'live vote: rsi', actual: 'long', passed: true },
+      { leg: 'signal', check: 'live vote: rsi', actual: 'long', passed: true, gating: true },
       {
         leg: 'backtest',
         check: 'backtested edge positive (sharpe_mean > 0)',
         threshold: 0,
         actual: 0.8,
         passed: true,
+        gating: true,
       },
     ],
     // Plan 0069 phase 4b: condition/signal codes always ride the wire (rendering
@@ -95,14 +96,16 @@ const FLAT_REC: Recommendation = {
         threshold: true,
         actual: false,
         passed: false,
+        gating: true,
       },
-      { leg: 'signal', check: 'live vote: macd', actual: 'flat', passed: true },
+      { leg: 'signal', check: 'live vote: macd', actual: 'flat', passed: true, gating: true },
       {
         leg: 'backtest',
         check: 'backtested edge positive (sharpe_mean above zero)',
         threshold: 0,
         actual: -0.4,
         passed: false,
+        gating: true,
       },
     ],
     condition_codes: [],
@@ -486,8 +489,15 @@ const CODED_REC: Recommendation = {
     // check.check is placeholder prose — the rendered label must come from the
     // gate code, not this string.
     checks: [
-      { leg: 'signal', check: 'PROSE_CHECK_vote', actual: 'long', passed: true },
-      { leg: 'backtest', check: 'PROSE_CHECK_edge', threshold: 0, actual: 0.8, passed: true },
+      { leg: 'signal', check: 'PROSE_CHECK_vote', actual: 'long', passed: true, gating: true },
+      {
+        leg: 'backtest',
+        check: 'PROSE_CHECK_edge',
+        threshold: 0,
+        actual: 0.8,
+        passed: true,
+        gating: true,
+      },
     ],
     condition_codes: [
       { code: 'condition.trend', params: { value: 'up' } },
@@ -557,4 +567,106 @@ it('falls back to the English prose when a payload carries no reason-codes (no r
     /beats the naive baseline/,
   )
   expect(screen.getByTestId('basis-conditions')).toHaveTextContent('trend: up')
+})
+
+// ── Plan 0077 phase 5/6: direction-leg demotion + non-voting vol/regime inputs ──
+//
+// The demoted direction leg is stated out loud (present but non-gating), the
+// non-voting inputs are labeled non-voting and can never read as a directional
+// vote, and a non-gating check recedes in the trace — all read-only.
+
+const DEMOTED_REC: Recommendation = {
+  ...LONG_REC,
+  direction_leg: { present: true, gating: false, skill_margin: 0.005 },
+  sizing: { size_factor: 0.75, vol_used: 0.061, vol_source: 'model', stop_vol_distance: 1200.0 },
+  regime_context: { current_regime: 'up_quiet', trusted: true, conviction_factor: 0.8 },
+}
+
+describe('direction-leg demotion note', () => {
+  it('states the leg is present but non-gating when demoted, with the skill margin', () => {
+    render(<RecommendationsView recommendation={DEMOTED_REC} />)
+    const note = screen.getByTestId('recommendation-direction-leg')
+    expect(note).toHaveAttribute('data-gating', 'false')
+    expect(note).toHaveTextContent(/present but non-gating/i)
+    expect(note).toHaveTextContent(/did not vote/i)
+    expect(note).toHaveTextContent('+0.01') // skill margin, en-US formatted
+  })
+
+  it('states the leg voted when it gates (above threshold)', () => {
+    const gatingRec: Recommendation = {
+      ...LONG_REC,
+      direction_leg: { present: true, gating: true, skill_margin: 0.05 },
+    }
+    render(<RecommendationsView recommendation={gatingRec} />)
+    const note = screen.getByTestId('recommendation-direction-leg')
+    expect(note).toHaveAttribute('data-gating', 'true')
+    expect(note).toHaveTextContent(/voting/i)
+    expect(note).not.toHaveTextContent(/did not vote/i)
+  })
+})
+
+describe('non-voting vol/regime inputs', () => {
+  it('renders the inverse-vol sizing (size factor + stop distance) labeled non-voting', () => {
+    render(<RecommendationsView recommendation={DEMOTED_REC} />)
+    const sizing = screen.getByTestId('recommendation-sizing')
+    expect(screen.getByTestId('sizing-factor')).toHaveTextContent('0.75')
+    expect(screen.getByTestId('sizing-stop')).toHaveTextContent('1,200.00')
+    // The section is explicitly labeled non-voting.
+    expect(screen.getByRole('region', { name: /non-voting/i })).toBeInTheDocument()
+    // The source token renders as a localized label, not a directional word.
+    expect(sizing).not.toHaveTextContent(/long|short/i)
+  })
+
+  it('renders the regime context (current regime localized + conviction factor)', () => {
+    render(<RecommendationsView recommendation={DEMOTED_REC} />)
+    expect(screen.getByTestId('regime-context-current')).toHaveTextContent('uptrend, quiet')
+    expect(screen.getByTestId('regime-conviction-factor')).toHaveTextContent('0.80')
+    expect(screen.getByTestId('regime-context-trust')).toHaveTextContent(/trusted/i)
+  })
+
+  it('shows a neutral-sizing message when no usable volatility reading drove the call', () => {
+    const neutralRec: Recommendation = {
+      ...LONG_REC,
+      sizing: { size_factor: 1.0, vol_used: null, vol_source: 'none', stop_vol_distance: null },
+    }
+    render(<RecommendationsView recommendation={neutralRec} />)
+    expect(screen.getByTestId('recommendation-sizing')).toHaveTextContent(/neutral sizing/i)
+    expect(screen.queryByTestId('sizing-factor')).toBeNull()
+  })
+
+  it('adds no interactive control across the demotion + non-voting blocks (no-action posture)', () => {
+    const { container } = render(<RecommendationsView recommendation={DEMOTED_REC} />)
+    expect(
+      container.querySelectorAll('button, input, select, textarea, a, [role="button"], summary'),
+    ).toHaveLength(0)
+  })
+})
+
+describe('non-gating checks in the fusion trace', () => {
+  it('marks a non-gating check and recedes its failed result (no veto)', () => {
+    const demotedTrace: Recommendation = {
+      ...LONG_REC,
+      basis: {
+        ...LONG_REC.basis,
+        checks: [
+          {
+            leg: 'forecast',
+            check: 'argmax direction is directional',
+            threshold: 'long or short',
+            actual: 'none',
+            passed: false,
+            gating: false,
+          },
+          { leg: 'signal', check: 'live vote: rsi', actual: 'long', passed: true, gating: true },
+        ],
+      },
+    }
+    render(<RecommendationsView recommendation={demotedTrace} />)
+    const table = screen.getByTestId('recommendation-checks')
+    const nonGatingRow = within(table)
+      .getAllByRole('row')
+      .find((row) => row.getAttribute('data-gating') === 'false')
+    expect(nonGatingRow).toBeDefined()
+    expect(nonGatingRow).toHaveTextContent(/non-gating/i)
+  })
 })

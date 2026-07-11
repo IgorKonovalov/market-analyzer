@@ -33,12 +33,21 @@ import type {
   ExplanationSummary,
   HorizonForecast,
   MultiHorizonForecastResult,
+  RegimeForecast,
+  RegimeState,
+  VolatilityForecast,
 } from '../types/events'
 import styles from './ForecastView.module.css'
 
 interface Props {
-  /** The latest forecast, or `null` before any `forecast.completed` event. */
+  /** The latest direction forecast, or `null` before any `forecast.completed`. */
   forecast: MultiHorizonForecastResult | null
+  /** The latest volatility forecast (Plan 0077 phase 6), or `null`/absent before
+   * any `volatility_forecast.completed`. */
+  volatility?: VolatilityForecast | null
+  /** The latest regime forecast (Plan 0077 phase 6), or `null`/absent before any
+   * `regime_forecast.completed`. */
+  regime?: RegimeForecast | null
 }
 
 const PROB_FORMAT = new Intl.NumberFormat('en-US', {
@@ -50,6 +59,24 @@ const SKILL_FORMAT = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 3,
   maximumFractionDigits: 3,
 })
+
+/** Per-bar realised volatility is a small fraction (~0.01–0.10); show four
+ * places so a 0.0143 does not collapse to 0.01. */
+const VOL_FORMAT = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+})
+
+/** The regime taxonomy in a fixed, deterministic display order (down → sideways
+ * → up, quiet before volatile) so the transition bars never reorder run-to-run. */
+const REGIME_ORDER: readonly RegimeState[] = [
+  'down_quiet',
+  'down_volatile',
+  'sideways_quiet',
+  'sideways_volatile',
+  'up_quiet',
+  'up_volatile',
+]
 
 /** A probability reads as emphatic only when it is decisively away from
  * chance — and even then only under a `clear` edge (see `barEmphasis`). A
@@ -68,10 +95,18 @@ function horizonLabel(horizonBars: number): string {
   return `${horizonBars} bar${horizonBars === 1 ? '' : 's'}`
 }
 
-export function ForecastView({ forecast }: Props): JSX.Element {
-  if (forecast === null) {
+/**
+ * The Forecast panel composes three independent, non-directional-vs-directional
+ * forecast kinds (Plan 0077 phase 6): the existing direction forecast, plus the
+ * volatility and regime forecasts. Each arrives on its own SSE event at its own
+ * time, so each renders independently with its own state — and none is shown as a
+ * confident number when it did not beat its baseline (ADR-0070's honest
+ * uncertainty). The panel is empty only until the FIRST of the three arrives.
+ */
+export function ForecastView({ forecast, volatility, regime }: Props): JSX.Element {
+  if (forecast === null && volatility == null && regime == null) {
     return (
-      <section className={styles.view} aria-label={t('forecast.viewLabel')}>
+      <section className={styles.view} aria-label={t('forecast.panelLabel')}>
         <p className={styles.empty} data-testid="forecast-empty">
           {t('forecast.emptyState')}
         </p>
@@ -79,6 +114,24 @@ export function ForecastView({ forecast }: Props): JSX.Element {
     )
   }
 
+  return (
+    <section className={styles.view} aria-label={t('forecast.panelLabel')}>
+      <p className={styles.conditionBanner} data-testid="forecast-condition-note" role="note">
+        {t('forecast.conditionBannerLead')} <strong>{t('forecast.conditionBannerStrong')}</strong>{' '}
+        {t('forecast.conditionBannerTail')}
+      </p>
+      {forecast !== null && <DirectionForecastSection forecast={forecast} />}
+      {volatility != null && <VolatilitySection volatility={volatility} />}
+      {regime != null && <RegimeSection regime={regime} />}
+    </section>
+  )
+}
+
+function DirectionForecastSection({
+  forecast,
+}: {
+  forecast: MultiHorizonForecastResult
+}): JSX.Element {
   // All blocks of one call share the same feature set; the series list lives
   // on each trained block's provenance. An empty list = the OHLCV-only v1
   // fallback — stated out loud, never silent (ADR-0054). `fallback_reason`
@@ -106,11 +159,12 @@ export function ForecastView({ forecast }: Props): JSX.Element {
   const disclaimerCode = explainedBlocks[0]?.explanation.disclaimer_code ?? 'disclaimer.importance'
 
   return (
-    <section className={styles.view} aria-label={t('forecast.viewLabel')}>
-      <p className={styles.conditionBanner} data-testid="forecast-condition-note" role="note">
-        {t('forecast.conditionBannerLead')} <strong>{t('forecast.conditionBannerStrong')}</strong>{' '}
-        {t('forecast.conditionBannerTail')}
-      </p>
+    <section
+      className={styles.kindSection}
+      aria-label={t('forecast.viewLabel')}
+      data-testid="forecast-direction-section"
+    >
+      <h3 className={styles.kindTitle}>{t('forecast.viewLabel')}</h3>
 
       <header className={styles.header}>
         <h2 className={styles.title} data-testid="forecast-title">
@@ -192,6 +246,234 @@ export function ForecastView({ forecast }: Props): JSX.Element {
 
       <p className={styles.disclaimer}>{t('forecast.disclaimer')}</p>
     </section>
+  )
+}
+
+/**
+ * The volatility forecast (Plan 0077 phase 6): a predicted realised-volatility
+ * band, its deterministic baseline, and the honest beats-baseline verdict. When
+ * the model did NOT beat baseline (the common case — phase 4), the model band is
+ * withheld and the baseline reading is surfaced as the honest estimate; zero
+ * fabricated precision. A magnitude, never a direction.
+ */
+function VolatilitySection({ volatility }: { volatility: VolatilityForecast }): JSX.Element {
+  const v = volatility
+  const trusted = v.beats_baseline && v.predicted_vol != null
+  const baselineKindLabel =
+    v.baseline_kind != null ? enumLabel('vol_baseline', v.baseline_kind) : null
+  const val = v.validation
+  return (
+    <section
+      className={styles.kindSection}
+      aria-label={t('forecast.volatilityLabel')}
+      data-testid="forecast-volatility-section"
+    >
+      <h3 className={styles.kindTitle}>{t('forecast.volatilityTitle')}</h3>
+      <p className={styles.kindLede}>{t('forecast.volatilityLede')}</p>
+      <p className={styles.asOf}>
+        <span className={styles.symbol}>{v.symbol}</span> {v.timeframe} {t('forecast.asOf')}{' '}
+        {formatDateTime(v.as_of_bar_ts)} UTC {horizonLabel(v.horizon_bars)} {t('forecast.ahead')}
+      </p>
+
+      <div className={styles.block} data-strength={trusted ? 'clear' : 'no_edge'}>
+        {trusted ? (
+          <dl className={styles.metrics} data-testid="volatility-predicted">
+            <div className={styles.metricRow}>
+              <dt className={styles.metricLabel}>{t('forecast.predictedVol')}</dt>
+              <dd className={styles.metricValue}>
+                {VOL_FORMAT.format(v.predicted_vol ?? 0)}
+                <span className={styles.muted}> {t('forecast.perBarVol')}</span>
+              </dd>
+            </div>
+            {v.band != null && (
+              <div className={styles.metricRow}>
+                <dt className={styles.metricLabel}>{t('forecast.volBand')}</dt>
+                <dd className={styles.metricValue} data-testid="volatility-band">
+                  {VOL_FORMAT.format(v.band[0])} – {VOL_FORMAT.format(v.band[1])}
+                </dd>
+              </div>
+            )}
+          </dl>
+        ) : (
+          <p className={styles.noEdge} data-testid="volatility-no-edge">
+            <strong>{t('forecast.volNoEdgeStrong')}</strong> {t('forecast.volNoEdgeBody')}
+          </p>
+        )}
+
+        {v.baseline_vol != null && (
+          <dl className={styles.metrics}>
+            <div className={styles.metricRow}>
+              <dt className={styles.metricLabel}>
+                {t('forecast.baselineVol')}
+                {baselineKindLabel != null && (
+                  <span className={styles.muted}> ({baselineKindLabel})</span>
+                )}
+              </dt>
+              <dd className={styles.metricValue} data-testid="volatility-baseline">
+                {VOL_FORMAT.format(v.baseline_vol)}
+              </dd>
+            </div>
+          </dl>
+        )}
+
+        <p className={styles.skillLine} data-testid="volatility-score">
+          {t('forecast.outOfSample')}{' '}
+          <span className={styles.skillValue}>{t('forecast.qlike')}</span>{' '}
+          <span className={styles.skillValue}>
+            {val.model_qlike != null
+              ? SKILL_FORMAT.format(val.model_qlike)
+              : t('forecast.unscored')}
+          </span>{' '}
+          {t('forecast.vs')} {t('forecast.baseline')}{' '}
+          <span className={styles.skillValue}>
+            {val.baseline_qlike != null
+              ? SKILL_FORMAT.format(val.baseline_qlike)
+              : t('forecast.unscored')}
+          </span>
+          {v.score_margin != null && (
+            <span className={styles.muted}>
+              {' '}
+              ({t('forecast.margin')} {v.score_margin >= 0 ? '+' : ''}
+              {SKILL_FORMAT.format(v.score_margin)})
+            </span>
+          )}
+          <span className={styles.muted}>
+            {' '}
+            · {val.n_scored} {t('forecast.scoredBars')} {t('forecast.across')} {val.n_splits}{' '}
+            {t('forecast.folds')}
+          </span>
+        </p>
+      </div>
+
+      <p className={styles.disclaimer}>{t('forecast.volDisclaimer')}</p>
+    </section>
+  )
+}
+
+/**
+ * The regime forecast (Plan 0077 phase 6): the trailing rule-based current
+ * regime and, when the transition model beat its persistence baseline, the full
+ * next-period distribution over the six-state taxonomy (all six bars, current
+ * marked). When it did NOT beat persistence (the common case — phase 4), the
+ * distribution is withheld and the honest expectation "the regime holds" is
+ * stated. A condition, never a direction.
+ */
+function RegimeSection({ regime }: { regime: RegimeForecast }): JSX.Element {
+  const r = regime
+  const trusted = r.beats_baseline && r.transition_probs != null
+  const currentLabel =
+    r.current_regime != null
+      ? enumLabel('regime', r.current_regime)
+      : t('recommendations.regimeUndefined')
+  const val = r.validation
+  return (
+    <section
+      className={styles.kindSection}
+      aria-label={t('forecast.regimeLabel')}
+      data-testid="forecast-regime-section"
+    >
+      <h3 className={styles.kindTitle}>{t('forecast.regimeTitle')}</h3>
+      <p className={styles.kindLede}>{t('forecast.regimeLede')}</p>
+      <p className={styles.asOf}>
+        <span className={styles.symbol}>{r.symbol}</span> {r.timeframe} {t('forecast.asOf')}{' '}
+        {formatDateTime(r.as_of_bar_ts)} UTC {horizonLabel(r.horizon_bars)} {t('forecast.ahead')}
+      </p>
+
+      <div className={styles.block} data-strength={trusted ? 'clear' : 'no_edge'}>
+        <dl className={styles.metrics}>
+          <div className={styles.metricRow}>
+            <dt className={styles.metricLabel}>{t('forecast.currentRegime')}</dt>
+            <dd className={styles.metricValue} data-testid="regime-current">
+              {currentLabel}
+            </dd>
+          </div>
+        </dl>
+
+        {trusted ? (
+          <div data-testid="regime-transition">
+            <h4 className={styles.whyGroupTitle}>
+              {t('forecast.regimeTransitionHeading', { horizon: horizonLabel(r.horizon_bars) })}
+            </h4>
+            <dl className={styles.probList}>
+              {REGIME_ORDER.map((state) => (
+                <RegimeBar
+                  key={state}
+                  label={enumLabel('regime', state)}
+                  prob={r.transition_probs?.[state] ?? 0}
+                  isCurrent={state === r.current_regime}
+                />
+              ))}
+            </dl>
+          </div>
+        ) : (
+          <p className={styles.noEdge} data-testid="regime-no-edge">
+            <strong>{t('forecast.regimeNoEdgeStrong')}</strong> {t('forecast.regimeNoEdgeBody')}
+          </p>
+        )}
+
+        <p className={styles.skillLine} data-testid="regime-score">
+          {t('forecast.outOfSample')}{' '}
+          <span className={styles.skillValue}>{t('forecast.brier')}</span>{' '}
+          <span className={styles.skillValue}>
+            {val.model_brier != null
+              ? SKILL_FORMAT.format(val.model_brier)
+              : t('forecast.unscored')}
+          </span>{' '}
+          {t('forecast.vs')} {t('forecast.persistence')}{' '}
+          <span className={styles.skillValue}>
+            {val.persistence_brier != null
+              ? SKILL_FORMAT.format(val.persistence_brier)
+              : t('forecast.unscored')}
+          </span>
+          {r.score_margin != null && (
+            <span className={styles.muted}>
+              {' '}
+              ({t('forecast.margin')} {r.score_margin >= 0 ? '+' : ''}
+              {SKILL_FORMAT.format(r.score_margin)})
+            </span>
+          )}
+          <span className={styles.muted}>
+            {' '}
+            · {val.n_scored} {t('forecast.scoredBars')} {t('forecast.across')} {val.n_splits}{' '}
+            {t('forecast.folds')}
+          </span>
+        </p>
+      </div>
+
+      <p className={styles.disclaimer}>{t('forecast.regimeDisclaimer')}</p>
+    </section>
+  )
+}
+
+interface RegimeBarProps {
+  label: string
+  prob: number
+  isCurrent: boolean
+}
+
+/** One regime's next-period probability as a quiet, direction-agnostic bar
+ * (neutral fill — regime is not bullish/bearish). The current regime is marked
+ * so "sticky" is legible. */
+function RegimeBar({ label, prob, isCurrent }: RegimeBarProps): JSX.Element {
+  return (
+    <div className={styles.probRow}>
+      <dt className={styles.probLabel}>
+        {label}
+        {isCurrent && <span className={styles.muted}> {t('forecast.regimeCurrentTag')}</span>}
+      </dt>
+      <dd className={styles.probCell}>
+        <span className={styles.track} aria-hidden="true">
+          <span
+            className={styles.fill}
+            data-kind="flat"
+            style={{ width: `${(prob * 100).toFixed(1)}%` }}
+          />
+        </span>
+        <span className={styles.probValue} data-emphasis="quiet">
+          {PROB_FORMAT.format(prob)}
+        </span>
+      </dd>
+    </div>
   )
 }
 

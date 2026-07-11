@@ -61,6 +61,10 @@ const ENUM_PARAM_GROUPS: Record<string, Record<string, string>> = {
   'reason.conditions': { trend: 'trend', momentum: 'momentum', volume: 'volume' },
   // Flat-verdict blockers (fusion.py).
   'blocker.signals_disagree_forecast': { signal_dir: 'position', forecast_dir: 'position' },
+  // Non-voting inputs (fusion.py, Plan 0077 phase 5). vol_source and the regime
+  // state ride as closed-vocab tokens mapped through the enum-label catalog.
+  'reason.sizing': { vol_source: 'vol_source' },
+  'reason.regime_context': { current_regime: 'regime' },
   // Condition/signal facts (fusion.py _build_basis, phase 4b).
   'condition.trend': { value: 'trend' },
   'condition.momentum': { value: 'momentum' },

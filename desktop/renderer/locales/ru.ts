@@ -188,6 +188,7 @@ export const ru = {
   'chart.ariaLabel': 'Свечной график, {count} баров',
 
   // ── Forecast view (ForecastView.tsx) chrome ──
+  'forecast.panelLabel': 'Прогнозы',
   'forecast.viewLabel': 'Прогноз направления',
   'forecast.emptyState': 'Прогноза пока нет — запросите его у агента через инструмент `forecast`.',
   'forecast.conditionBannerLead': 'Прогноз — это',
@@ -231,6 +232,36 @@ export const ru = {
   'forecast.trainedThrough': '· обучена до',
   'forecast.noModelTrained':
     'на этом горизонте модель не обучалась (недостаточно пригодной истории)',
+  // Volatility forecast section (Plan 0077 phase 6).
+  'forecast.volatilityLabel': 'Прогноз волатильности',
+  'forecast.volatilityTitle': 'Волатильность',
+  'forecast.volatilityLede':
+    'Прогноз реализованной волатильности на горизонте — величина, а не направление.',
+  'forecast.predictedVol': 'Прогноз волатильности',
+  'forecast.volBand': 'Интервал 1σ',
+  'forecast.baselineVol': 'Базовая линия',
+  'forecast.perBarVol': 'RMS логарифмических доходностей за бар',
+  'forecast.volNoEdgeStrong': 'Нет преимущества над базовой линией.',
+  'forecast.volNoEdgeBody':
+    'Модель не превзошла детерминированную базовую линию EWMA/персистентности вне выборки, поэтому честной оценкой волательности является базовое значение ниже — число EWMA/персистентности, а не выдуманный прогноз модели.',
+  'forecast.qlike': 'QLIKE',
+  'forecast.volDisclaimer':
+    'Волатильность оценивается по QLIKE на дисперсии (меньше — лучше); базовая линия — сильнейшая из RiskMetrics EWMA и наивной персистентности на тех же барах (ADR-0070). Детерминированная базовая линия полезна даже когда модель ничего не добавляет.',
+  // Regime forecast section (Plan 0077 phase 6).
+  'forecast.regimeLabel': 'Прогноз режима',
+  'forecast.regimeTitle': 'Режим',
+  'forecast.regimeLede':
+    'Скользящее состояние рынка (тренд × волатильность) и прогноз перехода на следующий период — условие, а не направление.',
+  'forecast.currentRegime': 'Текущий режим',
+  'forecast.regimeTransitionHeading': 'Режим следующего периода ({horizon})',
+  'forecast.regimeCurrentTag': '(текущий)',
+  'forecast.brier': 'Brier',
+  'forecast.persistence': 'персистентность',
+  'forecast.regimeNoEdgeStrong': 'Нет преимущества над персистентностью.',
+  'forecast.regimeNoEdgeBody':
+    'Модель перехода не превзошла наивную базовую линию персистентности (режим без изменений) вне выборки, поэтому честное ожидание на следующий период — что текущий режим сохранится.',
+  'forecast.regimeDisclaimer':
+    'Режим — это скользящая классификация по правилам (тренд × волатильность); модель перехода оценивается по многоклассовому Brier против базовой линии персистентности (ADR-0070). Условие, но не направление.',
 
   // ── Recommendations view (RecommendationsView.tsx) chrome ──
   'recommendations.advisoryRecommendationLabel': 'Консультативная рекомендация',
@@ -275,12 +306,44 @@ export const ru = {
   'recommendations.pass': 'пройдено',
   'recommendations.fail': 'ПРОВАЛ',
   'recommendations.checksNote':
-    'Трасса фиксирует решение слияния; направленное решение означает, что все вентили пройдены.',
+    'Трасса фиксирует решение слияния; направленное решение означает, что все блокирующие вентили пройдены.',
+  'recommendations.nonGatingTag': 'не блокирует',
   'recommendations.none': 'нет',
   'recommendations.notPartOfBasis': 'не входит в эту основу',
   'recommendations.forecast': 'Прогноз',
   'recommendations.forecastRanOnTier': 'Прогноз выполнен на наборе признаков {name}.',
   'recommendations.forecastRanOnFeatureSet': 'Прогноз выполнен на наборе признаков {x}.',
+  // Direction-leg demotion + non-voting vol/regime inputs (Plan 0077 phase 5/6).
+  'recommendations.directionLegLabel': 'Нога прогноза направления',
+  'recommendations.directionLegGating': 'голосует',
+  'recommendations.directionLegNonGating': 'присутствует, но не блокирует',
+  'recommendations.directionLegGatingNote':
+    'Прогноз направления превысил порог мастерства, поэтому он голосовал по этому решению.',
+  'recommendations.directionLegNonGatingNote':
+    'Прогноз направления не имел надёжного преимущества (запас мастерства вне выборки ниже порога), поэтому он не голосовал и не мог наложить вето на это решение — он лишь совещательный (ADR-0071). Решение опирается на условия, живой сигнал и протестированное преимущество.',
+  'recommendations.directionLegMargin': 'запас мастерства вне выборки {margin}',
+  'recommendations.directionLegNoMargin': 'нет оценённого запаса мастерства',
+  'recommendations.nonVotingLabel': 'Не голосующие входы',
+  'recommendations.nonVotingTitle': 'Размер и контекст (не голосуют)',
+  'recommendations.nonVotingNote':
+    'Волатильность и режим формируют размер, дистанцию стопа и убеждённость — они никогда не голосуют за направление и не переворачивают его (ADR-0071).',
+  'recommendations.sizingTitle': 'Размер по волатильности',
+  'recommendations.sizeFactor': 'Коэффициент размера',
+  'recommendations.sizeFactorNote':
+    'обратная волатильность · 1.00 = эталон · совещательно, не размер ордера',
+  'recommendations.volUsed': 'Использованная волатильность',
+  'recommendations.volSource': 'Источник',
+  'recommendations.stopVolDistance': 'Дистанция стопа по волатильности',
+  'recommendations.sizingNeutral': 'Нет пригодного значения волатильности — нейтральный размер.',
+  'recommendations.regimeContextTitle': 'Контекст режима',
+  'recommendations.currentRegime': 'Текущий режим',
+  'recommendations.regimeTrusted':
+    'модель перехода надёжна (превосходит персистентность вне выборки)',
+  'recommendations.regimeUntrusted':
+    'модель перехода ненадёжна — по умолчанию персистентность, убеждённость без изменений',
+  'recommendations.convictionFactor': 'Коэффициент убеждённости',
+  'recommendations.convictionFactorNote': 'множитель стабильности режима · 1.00 = нейтрально',
+  'recommendations.regimeUndefined': 'не определён',
 
   // ── Sidecar reason-codes (advisor fusion.py / forecast explain.py) ──
   // Directional rationale.
@@ -318,6 +381,15 @@ export const ru = {
   'gate.backtest_basis_supplied': 'основа walk-forward предоставлена',
   'gate.backtest_edge_positive': 'протестированное преимущество положительно (sharpe_mean > 0)',
   'gate.backtest_strategy_agrees': 'стратегия walk-forward среди согласных голосов',
+  // Non-voting inputs + direction-leg demotion (Plan 0077 phase 5, ADR-0071).
+  'gate.volatility_nonvoting': 'прогноз волатильности (не голосует: размер + стоп)',
+  'gate.regime_nonvoting': 'прогноз режима (не голосует: убеждённость)',
+  'reason.direction_leg_nongating':
+    'нога прогноза направления присутствует, но не блокирует (запас мастерства вне выборки ниже {threshold}) — лишь совещательно, решение опирается на живой сигнал и протестированное преимущество',
+  'reason.sizing':
+    'волатильность (не голосует): значение {vol_source} → коэффициент размера {size_factor}',
+  'reason.regime_context':
+    'режим (не голосует): {current_regime}, {trusted, plural, =1 {надёжно} other {ненадёжно}} → коэффициент убеждённости {conviction_factor}',
   // Condition / signal facts.
   'condition.trend': 'тренд: {value}',
   'condition.momentum': 'моментум: {value}',
@@ -372,6 +444,19 @@ export const ru = {
   'enum.edge_strength.no_edge': 'нет преимущества над базисом',
   'enum.edge_strength.marginal': 'маргинальное преимущество',
   'enum.edge_strength.clear': 'явное преимущество',
+  // Regime taxonomy (RegimeState — trend × volatility, Plan 0077 phase 2).
+  'enum.regime.down_quiet': 'нисходящий, спокойно',
+  'enum.regime.down_volatile': 'нисходящий, волатильно',
+  'enum.regime.sideways_quiet': 'боковой, спокойно',
+  'enum.regime.sideways_volatile': 'боковой, волатильно',
+  'enum.regime.up_quiet': 'восходящий, спокойно',
+  'enum.regime.up_volatile': 'восходящий, волатильно',
+  // Volatility baseline kind (BaselineKind) + advisory sizing source (Plan 0077).
+  'enum.vol_baseline.ewma': 'EWMA',
+  'enum.vol_baseline.persistence': 'персистентность',
+  'enum.vol_source.model': 'модель',
+  'enum.vol_source.baseline': 'базовая линия',
+  'enum.vol_source.none': 'нет пригодного',
   // Passthrough enums authored as labels on our side.
   'enum.crypto_regime.btc_led': 'ведёт BTC',
   'enum.crypto_regime.alt_structure': 'структура альтов',

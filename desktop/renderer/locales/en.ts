@@ -176,6 +176,7 @@ export const en = {
   'chart.ariaLabel': 'Candlestick chart, {count} bars',
 
   // ── Forecast view (ForecastView.tsx) — chrome only; sidecar prose is phase 5 ──
+  'forecast.panelLabel': 'Forecasts',
   'forecast.viewLabel': 'Direction forecast',
   'forecast.emptyState': 'No forecast yet — ask the agent for one via the `forecast` tool.',
   'forecast.conditionBannerLead': 'A forecast is a',
@@ -218,6 +219,38 @@ export const en = {
   'forecast.provenanceModelPrefix': 'model',
   'forecast.trainedThrough': '· trained through',
   'forecast.noModelTrained': 'no model was trained at this horizon (insufficient usable history)',
+  // Volatility forecast section (Plan 0077 phase 6). A magnitude, never a
+  // direction; the ML model is scored against a deterministic baseline by QLIKE.
+  'forecast.volatilityLabel': 'Volatility forecast',
+  'forecast.volatilityTitle': 'Volatility',
+  'forecast.volatilityLede':
+    'Predicted realised volatility over the horizon — a magnitude, not a direction.',
+  'forecast.predictedVol': 'Predicted volatility',
+  'forecast.volBand': '1σ band',
+  'forecast.baselineVol': 'Baseline',
+  'forecast.perBarVol': 'per-bar RMS of log returns',
+  'forecast.volNoEdgeStrong': 'No edge over baseline.',
+  'forecast.volNoEdgeBody':
+    'The model did not beat the deterministic EWMA/persistence baseline out-of-sample, so the baseline reading below is the honest volatility estimate — an EWMA/persistence number, not a fabricated model prediction.',
+  'forecast.qlike': 'QLIKE',
+  'forecast.volDisclaimer':
+    'Volatility is scored by QLIKE on variance (lower is better); the baseline is the stronger of RiskMetrics EWMA and naive persistence on the same bars (ADR-0070). The deterministic baseline is a useful reading even when the model adds nothing.',
+  // Regime forecast section (Plan 0077 phase 6). A trailing rule-based state
+  // (trend × volatility); the transition model is scored vs persistence by Brier.
+  'forecast.regimeLabel': 'Regime forecast',
+  'forecast.regimeTitle': 'Regime',
+  'forecast.regimeLede':
+    'Trailing market state (trend × volatility) and the model’s next-period transition — a condition, not a direction.',
+  'forecast.currentRegime': 'Current regime',
+  'forecast.regimeTransitionHeading': 'Next-period regime ({horizon})',
+  'forecast.regimeCurrentTag': '(current)',
+  'forecast.brier': 'Brier',
+  'forecast.persistence': 'persistence',
+  'forecast.regimeNoEdgeStrong': 'No edge over persistence.',
+  'forecast.regimeNoEdgeBody':
+    'The transition model did not beat the naive persistence baseline (regime unchanged) out-of-sample, so the honest next-period expectation is simply that the current regime holds.',
+  'forecast.regimeDisclaimer':
+    'Regime is a trailing, rule-based classification (trend × volatility); the transition model is scored by multiclass Brier vs a persistence baseline (ADR-0070). A condition, never a direction.',
 
   // ── Recommendations view (RecommendationsView.tsx) chrome ──
   'recommendations.advisoryRecommendationLabel': 'Advisory recommendation',
@@ -260,12 +293,43 @@ export const en = {
   'recommendations.pass': 'pass',
   'recommendations.fail': 'FAIL',
   'recommendations.checksNote':
-    "The trace records the fusion's decision; a directional call means every gate passed.",
+    "The trace records the fusion's decision; a directional call means every gating gate passed.",
+  'recommendations.nonGatingTag': 'non-gating',
   'recommendations.none': 'none',
   'recommendations.notPartOfBasis': 'not part of this basis',
   'recommendations.forecast': 'Forecast',
   'recommendations.forecastRanOnTier': 'Forecast ran on the {name} feature set.',
   'recommendations.forecastRanOnFeatureSet': 'Forecast ran on feature set {x}.',
+  // Direction-leg demotion + non-voting vol/regime inputs (Plan 0077 phase 5/6,
+  // ADR-0071). The demotion and the non-voting nature are stated out loud.
+  'recommendations.directionLegLabel': 'Direction forecast leg',
+  'recommendations.directionLegGating': 'voting',
+  'recommendations.directionLegNonGating': 'present but non-gating',
+  'recommendations.directionLegGatingNote':
+    'The direction forecast cleared the skill-margin threshold, so it voted on this call.',
+  'recommendations.directionLegNonGatingNote':
+    'The direction forecast had no reliable edge (out-of-sample skill margin below threshold), so it did not vote and could not veto this call — it is advisory only (ADR-0071). The call rests on the conditions, the live signal, and the backtested edge.',
+  'recommendations.directionLegMargin': 'out-of-sample skill margin {margin}',
+  'recommendations.directionLegNoMargin': 'no scored skill margin',
+  'recommendations.nonVotingLabel': 'Non-voting inputs',
+  'recommendations.nonVotingTitle': 'Sizing & context (non-voting)',
+  'recommendations.nonVotingNote':
+    'Volatility and regime shape size, stop distance, and conviction — they never vote on or flip the direction (ADR-0071).',
+  'recommendations.sizingTitle': 'Volatility sizing',
+  'recommendations.sizeFactor': 'Size factor',
+  'recommendations.sizeFactorNote': 'inverse-vol · 1.00 = reference · advisory, not an order size',
+  'recommendations.volUsed': 'Volatility used',
+  'recommendations.volSource': 'Source',
+  'recommendations.stopVolDistance': 'Vol-implied stop distance',
+  'recommendations.sizingNeutral': 'No usable volatility reading — neutral sizing.',
+  'recommendations.regimeContextTitle': 'Regime context',
+  'recommendations.currentRegime': 'Current regime',
+  'recommendations.regimeTrusted': 'transition model trusted (beats persistence out-of-sample)',
+  'recommendations.regimeUntrusted':
+    'transition model not trusted — persistence is the default, conviction unchanged',
+  'recommendations.convictionFactor': 'Conviction factor',
+  'recommendations.convictionFactorNote': 'regime-stability multiplier · 1.00 = neutral',
+  'recommendations.regimeUndefined': 'undefined',
 
   // ── Sidecar reason-codes (advisor fusion.py / forecast explain.py) ──
   // Templates for the structured `{code, params}` reason-codes the renderer
@@ -309,6 +373,14 @@ export const en = {
   'gate.backtest_basis_supplied': 'walk-forward basis supplied',
   'gate.backtest_edge_positive': 'backtested edge positive (sharpe_mean > 0)',
   'gate.backtest_strategy_agrees': 'walk-forward strategy among the agreeing votes',
+  // Non-voting inputs + direction-leg demotion (Plan 0077 phase 5, ADR-0071).
+  'gate.volatility_nonvoting': 'volatility forecast (non-voting: sizing + stop)',
+  'gate.regime_nonvoting': 'regime forecast (non-voting: conviction)',
+  'reason.direction_leg_nongating':
+    'direction forecast leg present but non-gating (out-of-sample skill margin below {threshold}) — advisory only, the call rests on the live signal and backtested edge',
+  'reason.sizing': 'volatility (non-voting): {vol_source} reading → size factor {size_factor}',
+  'reason.regime_context':
+    'regime (non-voting): {current_regime}, {trusted, plural, =1 {trusted} other {not trusted}} → conviction factor {conviction_factor}',
   // Condition / signal facts (basis.condition_codes / basis.signal_codes, phase 4b).
   'condition.trend': 'trend: {value}',
   'condition.momentum': 'momentum: {value}',
@@ -365,6 +437,19 @@ export const en = {
   'enum.edge_strength.no_edge': 'no edge over baseline',
   'enum.edge_strength.marginal': 'marginal edge',
   'enum.edge_strength.clear': 'clear edge',
+  // Regime taxonomy (RegimeState — trend × volatility, Plan 0077 phase 2).
+  'enum.regime.down_quiet': 'downtrend, quiet',
+  'enum.regime.down_volatile': 'downtrend, volatile',
+  'enum.regime.sideways_quiet': 'sideways, quiet',
+  'enum.regime.sideways_volatile': 'sideways, volatile',
+  'enum.regime.up_quiet': 'uptrend, quiet',
+  'enum.regime.up_volatile': 'uptrend, volatile',
+  // Volatility baseline kind (BaselineKind) + advisory sizing source (Plan 0077).
+  'enum.vol_baseline.ewma': 'EWMA',
+  'enum.vol_baseline.persistence': 'persistence',
+  'enum.vol_source.model': 'model',
+  'enum.vol_source.baseline': 'baseline',
+  'enum.vol_source.none': 'no usable',
   // Passthrough enums authored as labels on our side (upstream-sourced values).
   'enum.crypto_regime.btc_led': 'BTC-led',
   'enum.crypto_regime.alt_structure': 'alt structure',

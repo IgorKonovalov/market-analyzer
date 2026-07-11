@@ -31,7 +31,13 @@ import { AlertToaster } from './components/AlertToaster'
 import { ThemeToggle } from './components/ThemeToggle'
 import { t } from './lib/i18n'
 import type { Timeframe } from './lib/timeframes'
-import type { MultiHorizonForecastResult, Recommendation, SignalEvaluation } from './types/events'
+import type {
+  MultiHorizonForecastResult,
+  Recommendation,
+  RegimeForecast,
+  SignalEvaluation,
+  VolatilityForecast,
+} from './types/events'
 import { AlertsView } from './views/AlertsView'
 import { BacktestView } from './views/BacktestView'
 import { ForecastView } from './views/ForecastView'
@@ -107,6 +113,11 @@ export function App(): JSX.Element {
   // deliberately NO auto-switch: a probability must not grab the screen
   // (ADR-0030's honest-uncertainty framing); the user opens the Forecast tab.
   const [latestForecast, setLatestForecast] = useState<MultiHorizonForecastResult | null>(null)
+  // Latest volatility + regime forecasts (Plan 0077 phase 6). Same reactive-only,
+  // NO-auto-switch posture as the direction forecast — a non-directional forecast
+  // must not grab the screen either (ADR-0037); the user opens the Forecast tab.
+  const [latestVolatility, setLatestVolatility] = useState<VolatilityForecast | null>(null)
+  const [latestRegime, setLatestRegime] = useState<RegimeForecast | null>(null)
 
   const backtestState = useBacktestResult({ runId: selectedRunId })
 
@@ -138,6 +149,8 @@ export function App(): JSX.Element {
     onSignalEvaluated: (payload) => setLatestEvaluation(payload.evaluation),
     onRecommendationCompleted: (payload) => setLatestRecommendation(payload.recommendation),
     onForecastCompleted: (payload) => setLatestForecast(payload.forecast),
+    onVolatilityForecastCompleted: (payload) => setLatestVolatility(payload.forecast),
+    onRegimeForecastCompleted: (payload) => setLatestRegime(payload.forecast),
     onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
     onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
     onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
@@ -286,7 +299,13 @@ export function App(): JSX.Element {
       )}
       {view === 'signals' && <LiveSignalView evaluation={latestEvaluation} />}
       {view === 'recommendations' && <RecommendationsView recommendation={latestRecommendation} />}
-      {view === 'forecast' && <ForecastView forecast={latestForecast} />}
+      {view === 'forecast' && (
+        <ForecastView
+          forecast={latestForecast}
+          volatility={latestVolatility}
+          regime={latestRegime}
+        />
+      )}
       {view === 'alerts' && <AlertsView />}
       {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}

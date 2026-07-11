@@ -62,6 +62,17 @@ interface DumpedSchemas {
   SeriesInput: JsonSchema
   ExplanationDriver: JsonSchema
   ExplanationSummary: JsonSchema
+  DirectionLegStatus: JsonSchema
+  VolatilitySizing: JsonSchema
+  RegimeContext: JsonSchema
+  VolatilityForecastCompletedPayloadV1: JsonSchema
+  VolatilityForecast: JsonSchema
+  VolatilityValidation: JsonSchema
+  VolatilityFoldScore: JsonSchema
+  RegimeForecastCompletedPayloadV1: JsonSchema
+  RegimeForecast: JsonSchema
+  RegimeValidation: JsonSchema
+  RegimeFoldScore: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -79,10 +90,12 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
     '    SignalEvaluatedPayloadV1, AlertTriggeredPayloadV1,',
     '    RecommendationCompletedPayloadV1, ForecastCompletedPayloadV1,',
+    '    VolatilityForecastCompletedPayloadV1, RegimeForecastCompletedPayloadV1,',
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'from market_analyser.advisor.models import (',
     '    FusionCheck, ReasonCode, Recommendation, RecommendationBasis,',
+    '    DirectionLegStatus, VolatilitySizing, RegimeContext,',
     ')',
     'from market_analyser.forecast.result import (',
     '    MultiHorizonForecastResult, HorizonForecast,',
@@ -90,6 +103,12 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    ExplanationDriver, ExplanationSummary,',
     ')',
     'from market_analyser.forecast.validation import ForecastValidation, FoldSkill',
+    'from market_analyser.forecast.volatility import (',
+    '    VolatilityForecast, VolatilityValidation, VolatilityFoldScore,',
+    ')',
+    'from market_analyser.forecast.regime import (',
+    '    RegimeForecast, RegimeValidation, RegimeFoldScore,',
+    ')',
     'print(json.dumps({',
     '    "OverlaySpec": OverlaySpec.model_json_schema(),',
     '    "Marker": Marker.model_json_schema(),',
@@ -122,6 +141,17 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "SeriesInput": SeriesInput.model_json_schema(),',
     '    "ExplanationDriver": ExplanationDriver.model_json_schema(),',
     '    "ExplanationSummary": ExplanationSummary.model_json_schema(),',
+    '    "DirectionLegStatus": DirectionLegStatus.model_json_schema(),',
+    '    "VolatilitySizing": VolatilitySizing.model_json_schema(),',
+    '    "RegimeContext": RegimeContext.model_json_schema(),',
+    '    "VolatilityForecastCompletedPayloadV1": VolatilityForecastCompletedPayloadV1.model_json_schema(),',
+    '    "VolatilityForecast": VolatilityForecast.model_json_schema(),',
+    '    "VolatilityValidation": VolatilityValidation.model_json_schema(),',
+    '    "VolatilityFoldScore": VolatilityFoldScore.model_json_schema(),',
+    '    "RegimeForecastCompletedPayloadV1": RegimeForecastCompletedPayloadV1.model_json_schema(),',
+    '    "RegimeForecast": RegimeForecast.model_json_schema(),',
+    '    "RegimeValidation": RegimeValidation.model_json_schema(),',
+    '    "RegimeFoldScore": RegimeFoldScore.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -437,10 +467,13 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'basis',
       'conviction',
       'direction',
+      'direction_leg',
       'entry_zone',
       'label',
       'rationale',
       'reason_codes',
+      'regime_context',
+      'sizing',
       'stop',
       'symbol',
       'targets',
@@ -653,17 +686,20 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     ])
   })
 
-  it('FusionCheck fields match (threshold/actual nullable, absent when None; leg closed set)', () => {
+  it('FusionCheck fields match (gating added, defaulted; threshold/actual nullable; leg closed set)', () => {
     expect(propertyNames(dumped.FusionCheck)).toEqual([
       'actual',
       'check',
+      'gating',
       'leg',
       'passed',
       'threshold',
     ])
-    // No defaults → every field schema-required. The TS still marks
-    // `threshold`/`actual` optional: they are None-valued for a recorded fact
-    // with no pass bar and the bus dumps with `exclude_none`.
+    // `threshold`/`actual` have no defaults but are None-valued for a recorded
+    // fact with no pass bar and `exclude_none`-stripped → TS optional. `gating`
+    // (Plan 0077 phase 5) has a non-None default (True) → not in `required`, but
+    // never None so `exclude_none` keeps it on the wire — the TS marks it
+    // required (the `checks` shape).
     expect(requiredNames(dumped.FusionCheck)).toEqual([
       'actual',
       'check',
@@ -674,5 +710,202 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     expect(literalValues(dumped.FusionCheck, 'leg')).toEqual(
       ['alignment', 'backtest', 'conditions', 'forecast', 'signal'].sort(),
     )
+  })
+
+  it('DirectionLegStatus fields match (skill_margin nullable, absent when None)', () => {
+    expect(propertyNames(dumped.DirectionLegStatus)).toEqual(['gating', 'present', 'skill_margin'])
+    // No defaults → every field schema-required; `skill_margin` is None-valued
+    // when the forecast shipped no scored edge and `exclude_none`-stripped → TS
+    // optional.
+    expect(requiredNames(dumped.DirectionLegStatus)).toEqual(['gating', 'present', 'skill_margin'])
+  })
+
+  it('VolatilitySizing fields match (vol_used/stop_vol_distance nullable; vol_source closed set)', () => {
+    expect(propertyNames(dumped.VolatilitySizing)).toEqual([
+      'size_factor',
+      'stop_vol_distance',
+      'vol_source',
+      'vol_used',
+    ])
+    expect(requiredNames(dumped.VolatilitySizing)).toEqual([
+      'size_factor',
+      'stop_vol_distance',
+      'vol_source',
+      'vol_used',
+    ])
+    expect(literalValues(dumped.VolatilitySizing, 'vol_source')).toEqual(
+      ['baseline', 'model', 'none'].sort(),
+    )
+  })
+
+  it('RegimeContext fields match (current_regime nullable, absent when None)', () => {
+    expect(propertyNames(dumped.RegimeContext)).toEqual([
+      'conviction_factor',
+      'current_regime',
+      'trusted',
+    ])
+    expect(requiredNames(dumped.RegimeContext)).toEqual([
+      'conviction_factor',
+      'current_regime',
+      'trusted',
+    ])
+  })
+
+  it('VolatilityForecastCompletedPayloadV1 carries the forecast inline (Plan 0077)', () => {
+    expect(propertyNames(dumped.VolatilityForecastCompletedPayloadV1)).toEqual(['forecast'])
+    expect(requiredNames(dumped.VolatilityForecastCompletedPayloadV1)).toEqual(['forecast'])
+  })
+
+  it('VolatilityForecast fields match (predicted/band/baseline nullable, absent when None)', () => {
+    expect(propertyNames(dumped.VolatilityForecast)).toEqual([
+      'as_of_bar_ts',
+      'band',
+      'baseline_kind',
+      'baseline_vol',
+      'beats_baseline',
+      'horizon_bars',
+      'predicted_vol',
+      'provenance',
+      'score_margin',
+      'symbol',
+      'timeframe',
+      'validation',
+    ])
+    // No pydantic defaults → all schema-required; the nullable magnitudes are
+    // `exclude_none`-stripped from the wire, hence TS-optional.
+    expect(requiredNames(dumped.VolatilityForecast)).toEqual([
+      'as_of_bar_ts',
+      'band',
+      'baseline_kind',
+      'baseline_vol',
+      'beats_baseline',
+      'horizon_bars',
+      'predicted_vol',
+      'provenance',
+      'score_margin',
+      'symbol',
+      'timeframe',
+      'validation',
+    ])
+  })
+
+  it('VolatilityValidation fields match (qlike scalars nullable; baseline_kind closed set)', () => {
+    expect(propertyNames(dumped.VolatilityValidation)).toEqual([
+      'baseline_kind',
+      'baseline_qlike',
+      'beats_baseline',
+      'ewma_qlike',
+      'folds',
+      'horizon_bars',
+      'model_qlike',
+      'n_scored',
+      'n_splits',
+      'persistence_qlike',
+      'score_margin',
+    ])
+    expect(requiredNames(dumped.VolatilityValidation)).toEqual([
+      'baseline_kind',
+      'baseline_qlike',
+      'beats_baseline',
+      'ewma_qlike',
+      'folds',
+      'horizon_bars',
+      'model_qlike',
+      'n_scored',
+      'n_splits',
+      'persistence_qlike',
+      'score_margin',
+    ])
+  })
+
+  it('VolatilityFoldScore fields match (qlike fields nullable, absent when unscored)', () => {
+    expect(propertyNames(dumped.VolatilityFoldScore)).toEqual([
+      'ewma_qlike',
+      'fold_index',
+      'model_qlike',
+      'n_test',
+      'persistence_qlike',
+    ])
+    expect(requiredNames(dumped.VolatilityFoldScore)).toEqual([
+      'ewma_qlike',
+      'fold_index',
+      'model_qlike',
+      'n_test',
+      'persistence_qlike',
+    ])
+  })
+
+  it('RegimeForecastCompletedPayloadV1 carries the forecast inline (Plan 0077)', () => {
+    expect(propertyNames(dumped.RegimeForecastCompletedPayloadV1)).toEqual(['forecast'])
+    expect(requiredNames(dumped.RegimeForecastCompletedPayloadV1)).toEqual(['forecast'])
+  })
+
+  it('RegimeForecast fields match (current_regime/transition_probs nullable; regime closed set)', () => {
+    expect(propertyNames(dumped.RegimeForecast)).toEqual([
+      'as_of_bar_ts',
+      'beats_baseline',
+      'current_regime',
+      'horizon_bars',
+      'provenance',
+      'score_margin',
+      'symbol',
+      'timeframe',
+      'transition_probs',
+      'validation',
+    ])
+    expect(requiredNames(dumped.RegimeForecast)).toEqual([
+      'as_of_bar_ts',
+      'beats_baseline',
+      'current_regime',
+      'horizon_bars',
+      'provenance',
+      'score_margin',
+      'symbol',
+      'timeframe',
+      'transition_probs',
+      'validation',
+    ])
+    // `current_regime` is an optional Literal (`| None`), emitted as `anyOf`
+    // rather than a top-level `enum`/`$ref` — so `literalValues` can't read it;
+    // the property-name + required checks pin its presence/optionality, and the
+    // RegimeState set is pinned by the TS union + the Zod enum.
+  })
+
+  it('RegimeValidation fields match (brier scalars nullable, absent when unscored)', () => {
+    expect(propertyNames(dumped.RegimeValidation)).toEqual([
+      'beats_baseline',
+      'folds',
+      'horizon_bars',
+      'model_brier',
+      'n_scored',
+      'n_splits',
+      'persistence_brier',
+      'score_margin',
+    ])
+    expect(requiredNames(dumped.RegimeValidation)).toEqual([
+      'beats_baseline',
+      'folds',
+      'horizon_bars',
+      'model_brier',
+      'n_scored',
+      'n_splits',
+      'persistence_brier',
+      'score_margin',
+    ])
+  })
+
+  it('RegimeFoldScore fields match (brier fields nullable, absent when unscored)', () => {
+    expect(propertyNames(dumped.RegimeFoldScore)).toEqual([
+      'fold_index',
+      'model_brier',
+      'n_test',
+      'persistence_brier',
+    ])
+    expect(requiredNames(dumped.RegimeFoldScore)).toEqual([
+      'fold_index',
+      'model_brier',
+      'n_test',
+      'persistence_brier',
+    ])
   })
 })

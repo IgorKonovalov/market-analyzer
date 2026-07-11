@@ -71,7 +71,9 @@ const explanationSummarySchema = z.object({
   note_code: z.string().nullish(),
 })
 
-const forecastProvenanceSchema = z.object({
+/** Exported for reuse by the volatility/regime forecast schemas (Plan 0077
+ * phase 6) — the same `ForecastProvenance` rides on all three forecast kinds. */
+export const forecastProvenanceSchema = z.object({
   model_version: z.string().min(1),
   feature_set_id: z.string().min(1),
   training_cutoff: z.string(),

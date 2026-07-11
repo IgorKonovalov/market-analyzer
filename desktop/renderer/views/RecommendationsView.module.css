@@ -137,6 +137,32 @@
   color: var(--color-fg-muted);
 }
 
+/* The demoted direction-leg note (Plan 0077 phase 5): a quiet callout. A
+ * non-gating (advisory) leg gets a dashed left border to signal "recorded but
+ * not blocking"; a gating leg a solid one. Text carries the meaning either way. */
+.directionLeg {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.directionLeg[data-gating='false'] {
+  border-left-style: dashed;
+}
+
+/* The non-voting inputs section (Plan 0077 phase 5): grouped like the basis, but
+ * labeled explicitly non-voting so it never reads as a directional vote. */
+.nonVoting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
 .levels {
   padding: var(--space-2) var(--space-3);
   background: var(--color-bg-sunken);
@@ -222,6 +248,18 @@
 .checkResult[data-passed='false'] {
   color: var(--color-bear);
   font-weight: 700;
+}
+
+/* A non-gating check is recorded but does not block (Plan 0077 phase 5): its row
+ * recedes and a failed non-gating result is not the alarming bear red — it never
+ * vetoed anything. */
+.checksTable tr[data-gating='false'] td {
+  color: var(--color-fg-muted);
+}
+
+.checkResult[data-gating='false'][data-passed='false'] {
+  color: var(--color-fg-muted);
+  font-weight: 400;
 }
 
 .checksNote {

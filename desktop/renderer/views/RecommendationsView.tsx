@@ -20,8 +20,16 @@
 import { GlossaryTerm } from '../components/GlossaryTerm'
 import { formatDateTime } from '../lib/format'
 import { t } from '../lib/i18n'
-import { localizeReasonCode } from '../lib/reasonCodes'
-import type { BasisValue, FusionCheck, ReasonCode, Recommendation } from '../types/events'
+import { enumLabel, localizeReasonCode } from '../lib/reasonCodes'
+import type {
+  BasisValue,
+  DirectionLegStatus,
+  FusionCheck,
+  ReasonCode,
+  Recommendation,
+  RegimeContext,
+  VolatilitySizing,
+} from '../types/events'
 import styles from './RecommendationsView.module.css'
 
 interface Props {
@@ -38,6 +46,20 @@ const PRICE_FORMAT = new Intl.NumberFormat('en-US', {
 const CONVICTION_FORMAT = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
+})
+
+/** Advisory multipliers (size factor, conviction factor) — two places, 1.00 as
+ * the neutral reference. */
+const FACTOR_FORMAT = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+/** Per-bar realised volatility is a small fraction — four places so it does not
+ * collapse to two zeros. */
+const VOL_FORMAT = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
 })
 
 type ConvictionStrength = 'low' | 'moderate' | 'high'
@@ -173,6 +195,17 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
         </div>
       </dl>
 
+      {recommendation.direction_leg != null && (
+        <DirectionLegNote leg={recommendation.direction_leg} />
+      )}
+
+      {(recommendation.sizing != null || recommendation.regime_context != null) && (
+        <NonVotingInputs
+          sizing={recommendation.sizing ?? null}
+          regime={recommendation.regime_context ?? null}
+        />
+      )}
+
       {hasLevels && (
         <section className={styles.levels} aria-label={t('recommendations.advisoryLevelsLabel')}>
           <h3 className={styles.levelsTitle}>{t('recommendations.advisoryLevelsTitle')}</h3>
@@ -257,6 +290,124 @@ export function RecommendationsView({ recommendation }: Props): JSX.Element {
   )
 }
 
+/**
+ * The demoted direction-forecast leg's status (Plan 0077 phase 5, ADR-0071).
+ * Rendered on every verdict so the gating decision is visible: below the
+ * skill-margin threshold the leg is present but non-gating — advisory only, it
+ * neither voted nor could veto. Said out loud, never a silent drop.
+ */
+function DirectionLegNote({ leg }: { leg: DirectionLegStatus }): JSX.Element {
+  const margin =
+    leg.skill_margin != null
+      ? t('recommendations.directionLegMargin', {
+          margin: (leg.skill_margin >= 0 ? '+' : '') + CONVICTION_FORMAT.format(leg.skill_margin),
+        })
+      : t('recommendations.directionLegNoMargin')
+  return (
+    <p
+      className={styles.directionLeg}
+      data-testid="recommendation-direction-leg"
+      data-gating={leg.gating}
+      role="note"
+    >
+      <strong>{t('recommendations.directionLegLabel')}:</strong>{' '}
+      {leg.gating
+        ? t('recommendations.directionLegGating')
+        : t('recommendations.directionLegNonGating')}{' '}
+      <span className={styles.muted}>({margin})</span>{' '}
+      {leg.gating
+        ? t('recommendations.directionLegGatingNote')
+        : t('recommendations.directionLegNonGatingNote')}
+    </p>
+  )
+}
+
+/**
+ * The non-voting volatility/regime inputs (Plan 0077 phase 5, ADR-0071):
+ * volatility shapes size + stop distance, regime shapes conviction — labeled
+ * explicitly non-voting so a reader never mistakes them for a directional vote.
+ * Read-only, no interactive element (the ADR-0025/0029 no-action posture).
+ */
+function NonVotingInputs({
+  sizing,
+  regime,
+}: {
+  sizing: VolatilitySizing | null
+  regime: RegimeContext | null
+}): JSX.Element {
+  return (
+    <section className={styles.nonVoting} aria-label={t('recommendations.nonVotingLabel')}>
+      <h3 className={styles.sectionTitle}>{t('recommendations.nonVotingTitle')}</h3>
+      <p className={styles.muted}>{t('recommendations.nonVotingNote')}</p>
+      <div className={styles.basisGrid}>
+        {sizing != null && (
+          <div className={styles.basisBlock} data-testid="recommendation-sizing">
+            <h4 className={styles.basisLabel}>{t('recommendations.sizingTitle')}</h4>
+            {sizing.vol_source === 'none' || sizing.vol_used == null ? (
+              <p className={styles.muted}>{t('recommendations.sizingNeutral')}</p>
+            ) : (
+              <dl className={styles.factList}>
+                <div className={styles.factRow}>
+                  <dt>{t('recommendations.sizeFactor')}</dt>
+                  <dd data-testid="sizing-factor">
+                    {FACTOR_FORMAT.format(sizing.size_factor)}
+                    <span className={styles.muted}> {t('recommendations.sizeFactorNote')}</span>
+                  </dd>
+                </div>
+                <div className={styles.factRow}>
+                  <dt>{t('recommendations.volUsed')}</dt>
+                  <dd>
+                    {VOL_FORMAT.format(sizing.vol_used)}{' '}
+                    <span className={styles.muted}>
+                      ({t('recommendations.volSource')}:{' '}
+                      {enumLabel('vol_source', sizing.vol_source)})
+                    </span>
+                  </dd>
+                </div>
+                {sizing.stop_vol_distance != null && (
+                  <div className={styles.factRow}>
+                    <dt>{t('recommendations.stopVolDistance')}</dt>
+                    <dd data-testid="sizing-stop">
+                      {PRICE_FORMAT.format(sizing.stop_vol_distance)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
+          </div>
+        )}
+        {regime != null && (
+          <div className={styles.basisBlock} data-testid="recommendation-regime-context">
+            <h4 className={styles.basisLabel}>{t('recommendations.regimeContextTitle')}</h4>
+            <dl className={styles.factList}>
+              <div className={styles.factRow}>
+                <dt>{t('recommendations.currentRegime')}</dt>
+                <dd data-testid="regime-context-current">
+                  {regime.current_regime != null
+                    ? enumLabel('regime', regime.current_regime)
+                    : t('recommendations.regimeUndefined')}
+                </dd>
+              </div>
+              <div className={styles.factRow}>
+                <dt>{t('recommendations.convictionFactor')}</dt>
+                <dd data-testid="regime-conviction-factor">
+                  {FACTOR_FORMAT.format(regime.conviction_factor)}
+                  <span className={styles.muted}> {t('recommendations.convictionFactorNote')}</span>
+                </dd>
+              </div>
+            </dl>
+            <p className={styles.muted} data-testid="regime-context-trust">
+              {regime.trusted
+                ? t('recommendations.regimeTrusted')
+                : t('recommendations.regimeUntrusted')}
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 interface ChecksTableProps {
   checks: FusionCheck[]
   /** Per-gate reason-codes (Plan 0069), 1:1 with `checks` in order — the
@@ -288,14 +439,27 @@ function ChecksTable({ checks, gateCodes }: ChecksTableProps): JSX.Element {
         </thead>
         <tbody>
           {checks.map((check, i) => (
-            <tr key={`${check.leg}:${check.check}`} data-passed={check.passed}>
+            <tr
+              key={`${check.leg}:${check.check}`}
+              data-passed={check.passed}
+              data-gating={check.gating}
+            >
               <td className={styles.checkLeg}>
                 <GlossaryTerm termKey={check.leg}>{check.leg}</GlossaryTerm>
               </td>
-              <td>{codesAligned ? localizeReasonCode(gateCodes[i]) : check.check}</td>
+              <td>
+                {codesAligned ? localizeReasonCode(gateCodes[i]) : check.check}
+                {!check.gating && (
+                  <span className={styles.muted}> · {t('recommendations.nonGatingTag')}</span>
+                )}
+              </td>
               <td className={styles.checkValue}>{formatBasisValue(check.threshold ?? null)}</td>
               <td className={styles.checkValue}>{formatBasisValue(check.actual ?? null)}</td>
-              <td className={styles.checkResult} data-passed={check.passed}>
+              <td
+                className={styles.checkResult}
+                data-passed={check.passed}
+                data-gating={check.gating}
+              >
                 {check.passed ? t('recommendations.pass') : t('recommendations.fail')}
               </td>
             </tr>

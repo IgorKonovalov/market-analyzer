@@ -165,13 +165,18 @@ export type BasisValue = number | string | boolean | null
  * values, and the outcome. `threshold`/`actual` are required-but-nullable
  * `BasisValue`s (None marks a recorded fact with no pass bar, e.g. an
  * individual signal vote) and `exclude_none`-stripped from the wire — hence
- * optional here. The verdict is directional exactly when every check passed. */
+ * optional here. `gating` (Plan 0077 phase 5 / ADR-0071) is whether the check
+ * *blocks*: it has a non-None default (`True`) so it is not schema-required but
+ * is never None, so `exclude_none` keeps it on the wire — hence required here
+ * (the `checks` shape). The verdict is directional exactly when every *gating*
+ * check passed (a demoted direction leg's checks ride `gating=false`). */
 export interface FusionCheck {
   leg: 'forecast' | 'signal' | 'backtest' | 'conditions' | 'alignment'
   check: string
   threshold?: BasisValue
   actual?: BasisValue
   passed: boolean
+  gating: boolean
 }
 
 /** Mirror of the pydantic `RecommendationBasis` (Plan 0038 / ADR-0029): what
@@ -207,6 +212,50 @@ export interface ReasonCode {
   params: Record<string, number | string>
 }
 
+/** Mirror of the pydantic `DirectionLegStatus` (Plan 0077 phase 5 / ADR-0071):
+ * the direction forecast leg's gating status on a verdict. Below the pinned
+ * skill-margin threshold the leg is advisory, not gating — it cannot veto a
+ * corroborated call nor decide one alone. `skill_margin` is the leg's
+ * out-of-sample `skill - baseline_skill` (None when the forecast shipped no
+ * scored edge, then `exclude_none`-stripped — hence optional here). Travels on
+ * every verdict so the demotion is auditable beside the `basis.checks` gating
+ * flags. */
+export interface DirectionLegStatus {
+  present: boolean
+  gating: boolean
+  skill_margin?: number | null
+}
+
+/** Mirror of the pydantic `VolatilitySizing` (Plan 0077 phase 5 / ADR-0071):
+ * the non-voting volatility inputs to a directional call. Never directional —
+ * a higher predicted vol only shrinks the size hint and widens the stop.
+ * `size_factor` is a bounded relative inverse-vol multiplier (1.0 = the
+ * reference vol) — an advisory number, never an order quantity. `vol_source`
+ * says whether the trusted model prediction drove it, the deterministic
+ * baseline reading did, or nothing was usable (`none` → neutral 1.0).
+ * `vol_used`/`stop_vol_distance` are None (then `exclude_none`-stripped) when no
+ * volatility drove the call — hence optional here. */
+export interface VolatilitySizing {
+  size_factor: number
+  vol_used?: number | null
+  vol_source: 'model' | 'baseline' | 'none'
+  stop_vol_distance?: number | null
+}
+
+/** Mirror of the pydantic `RegimeContext` (Plan 0077 phase 5 / ADR-0071): the
+ * non-voting regime context of a directional call. Feeds conviction only, never
+ * direction: a trusted, unstable regime softens conviction, bounded and
+ * direction-agnostic. `current_regime` is the trailing rule-based state (None,
+ * then `exclude_none`-stripped, when undefined — hence optional); `trusted` is
+ * whether the transition model beat its persistence baseline out-of-sample;
+ * `conviction_factor` is the bounded (0, 1] multiplier it applied (1.0 =
+ * neutral). */
+export interface RegimeContext {
+  current_regime?: string | null
+  trusted: boolean
+  conviction_factor: number
+}
+
 /** Mirror of the pydantic `Recommendation` (Plan 0038 / ADR-0029): the one
  * sanctioned advisory artifact. `label` can only ever be `"advisory"` —
  * pinned as a literal on both sides. `entry_zone`/`stop` are required-but-
@@ -231,6 +280,15 @@ export interface Recommendation {
   /** ISO 8601 UTC timestamp of the last bar the whole basis saw (anti-lookahead). */
   as_of_bar_ts: string
   reason_codes: ReasonCode[]
+  /** Non-voting forecast inputs + the demoted direction leg (Plan 0077 phase 5 /
+   * ADR-0071). `sizing`/`regime_context` shape a directional call and are None
+   * on a flat verdict (then `exclude_none`-stripped); `direction_leg` travels on
+   * every verdict. All defaulted None in pydantic → schema-optional, and
+   * wire-absent when None — hence optional here. None can flip or manufacture a
+   * direction. */
+  sizing?: VolatilitySizing | null
+  regime_context?: RegimeContext | null
+  direction_leg?: DirectionLegStatus | null
 }
 
 export interface RecommendationCompletedPayloadV1 {
@@ -363,6 +421,130 @@ export interface ForecastCompletedPayloadV1 {
   forecast: MultiHorizonForecastResult
 }
 
+/** Closed set — mirror of the pydantic `BaselineKind` literal (Plan 0077): the
+ * deterministic volatility baseline the model is scored against. */
+export type BaselineKind = 'ewma' | 'persistence'
+
+/** Mirror of the pydantic `VolatilityFoldScore` (Plan 0077 phase 1): one scored
+ * walk-forward fold's out-of-sample QLIKE. The three `*_qlike` fields are
+ * required-but-nullable (None marks an unscored fold) and `exclude_none`-stripped
+ * from the wire — hence optional here. */
+export interface VolatilityFoldScore {
+  fold_index: number
+  n_test: number
+  model_qlike?: number | null
+  persistence_qlike?: number | null
+  ewma_qlike?: number | null
+}
+
+/** Mirror of the pydantic `VolatilityValidation` (Plan 0077 phase 1 / ADR-0070):
+ * the regression verdict. `model_qlike` is pooled out-of-sample QLIKE (lower is
+ * better); `baseline_qlike` the better of the two naive baselines; `beats_baseline`
+ * the gate. The nullable scalars are None when nothing scored and
+ * `exclude_none`-stripped from the wire — hence optional here. */
+export interface VolatilityValidation {
+  horizon_bars: number
+  n_splits: number
+  n_scored: number
+  model_qlike?: number | null
+  baseline_qlike?: number | null
+  baseline_kind?: BaselineKind | null
+  persistence_qlike?: number | null
+  ewma_qlike?: number | null
+  score_margin?: number | null
+  beats_baseline: boolean
+  folds: VolatilityFoldScore[]
+}
+
+/** Mirror of the pydantic `VolatilityForecast` (Plan 0077 phase 1 / ADR-0070): a
+ * realised-volatility forecast for the next `horizon_bars`. A magnitude, never a
+ * direction (ADR-0029). `predicted_vol`/`band` are None when no model trained (then
+ * the baseline is the honest answer); `beats_baseline` says whether to trust the
+ * model over `baseline_vol`. The nullable scalars are `exclude_none`-stripped from
+ * the wire — hence optional here. `band` serialises as a two-number `[low, high]`. */
+export interface VolatilityForecast {
+  symbol: string
+  timeframe: string
+  /** ISO 8601 UTC timestamp of the as-of bar (anti-lookahead). */
+  as_of_bar_ts: string
+  horizon_bars: number
+  predicted_vol?: number | null
+  band?: [number, number] | null
+  baseline_vol?: number | null
+  baseline_kind?: BaselineKind | null
+  beats_baseline: boolean
+  score_margin?: number | null
+  validation: VolatilityValidation
+  provenance?: ForecastProvenance | null
+}
+
+export interface VolatilityForecastCompletedPayloadV1 {
+  forecast: VolatilityForecast
+}
+
+/** Closed set — mirror of the pydantic `RegimeState` StrEnum (Plan 0077 phase 2):
+ * the 6-value regime taxonomy, the product of the reused trend axis (up/down/
+ * sideways) and a quiet/volatile volatility axis. */
+export type RegimeState =
+  | 'down_quiet'
+  | 'down_volatile'
+  | 'sideways_quiet'
+  | 'sideways_volatile'
+  | 'up_quiet'
+  | 'up_volatile'
+
+/** Mirror of the pydantic `RegimeFoldScore` (Plan 0077 phase 2): one scored
+ * walk-forward fold's out-of-sample multiclass Brier score. Both `*_brier`
+ * fields are required-but-nullable (None marks an unscored fold) and
+ * `exclude_none`-stripped from the wire — hence optional here. */
+export interface RegimeFoldScore {
+  fold_index: number
+  n_test: number
+  model_brier?: number | null
+  persistence_brier?: number | null
+}
+
+/** Mirror of the pydantic `RegimeValidation` (Plan 0077 phase 2 / ADR-0070): the
+ * transition verdict. `model_brier` is pooled out-of-sample Brier (lower is
+ * better); `persistence_brier` the "regime unchanged" baseline; `beats_baseline`
+ * the gate. The nullable scalars are None when nothing scored and
+ * `exclude_none`-stripped from the wire — hence optional here. */
+export interface RegimeValidation {
+  horizon_bars: number
+  n_splits: number
+  n_scored: number
+  model_brier?: number | null
+  persistence_brier?: number | null
+  score_margin?: number | null
+  beats_baseline: boolean
+  folds: RegimeFoldScore[]
+}
+
+/** Mirror of the pydantic `RegimeForecast` (Plan 0077 phase 2 / ADR-0070): a
+ * regime-transition forecast. `current_regime` is the trailing rule-based state
+ * at the as-of bar; `transition_probs` the model's probability over next-period
+ * regimes (None when no model trained — then persistence, i.e. the regime stays,
+ * is the honest fallback). Both are None-able and `exclude_none`-stripped from the
+ * wire — hence optional here. `transition_probs` serialises as an object keyed by
+ * `RegimeState`. A condition report, never a recommendation (ADR-0029). */
+export interface RegimeForecast {
+  symbol: string
+  timeframe: string
+  /** ISO 8601 UTC timestamp of the as-of bar (anti-lookahead). */
+  as_of_bar_ts: string
+  horizon_bars: number
+  current_regime?: RegimeState | null
+  transition_probs?: Partial<Record<RegimeState, number>> | null
+  beats_baseline: boolean
+  score_margin?: number | null
+  validation: RegimeValidation
+  provenance?: ForecastProvenance | null
+}
+
+export interface RegimeForecastCompletedPayloadV1 {
+  forecast: RegimeForecast
+}
+
 /** A single [start, end] coverage gap a backfill is/was filling (Plan 0013). */
 export interface GapWindow {
   start: string
@@ -423,6 +605,8 @@ export type EnvelopeType =
   | 'signal.evaluated'
   | 'recommendation.completed'
   | 'forecast.completed'
+  | 'volatility_forecast.completed'
+  | 'regime_forecast.completed'
   | 'chart.update_dropped'
   | 'ohlcv.backfill_started'
   | 'ohlcv.backfilled'
@@ -463,6 +647,14 @@ export type RecommendationCompletedEnvelope = Envelope<RecommendationCompletedPa
 }
 export type ForecastCompletedEnvelope = Envelope<ForecastCompletedPayloadV1> & {
   type: 'forecast.completed'
+  version: 1
+}
+export type VolatilityForecastCompletedEnvelope = Envelope<VolatilityForecastCompletedPayloadV1> & {
+  type: 'volatility_forecast.completed'
+  version: 1
+}
+export type RegimeForecastCompletedEnvelope = Envelope<RegimeForecastCompletedPayloadV1> & {
+  type: 'regime_forecast.completed'
   version: 1
 }
 export type OhlcvBackfillStartedEnvelope = Envelope<OhlcvBackfillStartedPayloadV1> & {

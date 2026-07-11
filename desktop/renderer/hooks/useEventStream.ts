@@ -41,6 +41,8 @@ import { api, subscribeToConfigChanges } from '../api/client'
 import { parseAlertTriggered } from '../schemas/alertTriggered'
 import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
 import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
+import { regimeForecastCompletedPayloadSchema } from '../schemas/regimeForecastCompleted'
+import { volatilityForecastCompletedPayloadSchema } from '../schemas/volatilityForecastCompleted'
 import type {
   AlertTriggeredPayloadV1,
   ChartHighlightPayloadV1,
@@ -53,8 +55,10 @@ import type {
   OhlcvBackfillFailedPayloadV1,
   OhlcvBackfillStartedPayloadV1,
   RecommendationCompletedPayloadV1,
+  RegimeForecastCompletedPayloadV1,
   RunCompletedPayloadV1,
   SignalEvaluatedPayloadV1,
+  VolatilityForecastCompletedPayloadV1,
 } from '../types/events'
 
 export type ConnectionState = 'connecting' | 'open' | 'reconnecting'
@@ -68,6 +72,8 @@ export interface EventStreamHandlers {
   onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
   onRecommendationCompleted?: (payload: RecommendationCompletedPayloadV1) => void
   onForecastCompleted?: (payload: ForecastCompletedPayloadV1) => void
+  onVolatilityForecastCompleted?: (payload: VolatilityForecastCompletedPayloadV1) => void
+  onRegimeForecastCompleted?: (payload: RegimeForecastCompletedPayloadV1) => void
   onOhlcvBackfillStarted?: (payload: OhlcvBackfillStartedPayloadV1) => void
   onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
@@ -91,6 +97,8 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'signal.evaluated': 1,
   'recommendation.completed': 1,
   'forecast.completed': 1,
+  'volatility_forecast.completed': 1,
+  'regime_forecast.completed': 1,
   'chart.update_dropped': 1,
   'ohlcv.backfill_started': 1,
   'ohlcv.backfilled': 1,
@@ -331,6 +339,36 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
         return
       }
       handlers.onForecastCompleted?.(parsed.data)
+      return
+    }
+    case 'volatility_forecast.completed': {
+      // Zod-validated before it reaches any state (Plan 0077 phase 6): a
+      // volatility magnitude read as a number is dropped loudly when malformed,
+      // never rendered half-parsed (the honest-uncertainty posture, ADR-0070).
+      const parsed = volatilityForecastCompletedPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed volatility_forecast.completed payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onVolatilityForecastCompleted?.(parsed.data)
+      return
+    }
+    case 'regime_forecast.completed': {
+      // Zod-validated before it reaches any state (Plan 0077 phase 6): a
+      // transition distribution is dropped loudly when malformed, never rendered
+      // half-parsed as a confident regime call (ADR-0070).
+      const parsed = regimeForecastCompletedPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed regime_forecast.completed payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onRegimeForecastCompleted?.(parsed.data)
       return
     }
     case 'ohlcv.backfill_started':

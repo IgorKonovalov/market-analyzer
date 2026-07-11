@@ -34,6 +34,41 @@ const fusionCheckSchema = z.object({
   threshold: basisValueSchema.nullish(),
   actual: basisValueSchema.nullish(),
   passed: z.boolean(),
+  // Plan 0077 phase 5 (ADR-0071): defaulted True on the pydantic side, so never
+  // None and always on the wire. A `gating=false` check is recorded but does not
+  // block — the direction-leg demotion flips the four direction checks to
+  // non-gating below the skill-margin threshold.
+  gating: z.boolean(),
+})
+
+/** The demoted direction leg's gating status (Plan 0077 phase 5, ADR-0071).
+ * Travels on every verdict; below the skill-margin threshold `gating` is false
+ * and the leg is advisory, not a vote or a veto. `skill_margin` is absent on the
+ * wire (exclude_none) when the forecast shipped no scored edge. */
+const directionLegStatusSchema = z.object({
+  present: z.boolean(),
+  gating: z.boolean(),
+  skill_margin: z.number().nullish(),
+})
+
+/** The non-voting volatility inputs to a directional call (Plan 0077 phase 5).
+ * `size_factor` is a bounded relative inverse-vol multiplier; `vol_source` says
+ * which reading drove it. `vol_used`/`stop_vol_distance` are absent on the wire
+ * when no volatility drove the call. */
+const volatilitySizingSchema = z.object({
+  size_factor: z.number(),
+  vol_used: z.number().nullish(),
+  vol_source: z.enum(['model', 'baseline', 'none']),
+  stop_vol_distance: z.number().nullish(),
+})
+
+/** The non-voting regime context of a directional call (Plan 0077 phase 5).
+ * Feeds conviction only. `current_regime` is absent on the wire when undefined;
+ * `conviction_factor` is the bounded (0, 1] multiplier applied. */
+const regimeContextSchema = z.object({
+  current_regime: z.string().nullish(),
+  trusted: z.boolean(),
+  conviction_factor: z.number(),
 })
 
 /** One `{code, params}` reason-code (Plan 0069 / ADR-0063). `params` values are
@@ -73,6 +108,13 @@ const recommendationSchema = z.object({
   label: z.literal('advisory'),
   as_of_bar_ts: z.string(),
   reason_codes: z.array(reasonCodeSchema),
+  // Plan 0077 phase 5 (ADR-0071): non-voting forecast inputs + the demoted
+  // direction leg. `sizing`/`regime_context` shape a directional call and are
+  // absent on the wire (exclude_none) for a flat verdict; `direction_leg`
+  // travels on every verdict. None of them can flip or manufacture a direction.
+  sizing: volatilitySizingSchema.nullish(),
+  regime_context: regimeContextSchema.nullish(),
+  direction_leg: directionLegStatusSchema.nullish(),
 })
 
 export const recommendationCompletedPayloadSchema = z.object({

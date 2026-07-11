@@ -35,6 +35,11 @@ import type {
   ForecastValidation,
   HorizonForecast,
   MultiHorizonForecastResult,
+  RegimeForecast,
+  RegimeForecastCompletedEnvelope,
+  RegimeState,
+  VolatilityForecast,
+  VolatilityForecastCompletedEnvelope,
 } from '../types/events'
 import { ForecastView } from './ForecastView'
 
@@ -484,4 +489,291 @@ it('Zod-rejects a malformed payload in the dispatcher — the handler never fire
   } finally {
     warn.mockRestore()
   }
+})
+
+// ── Plan 0077 phase 6: volatility + regime forecast sections ──
+//
+// The two non-directional forecast kinds render honestly: a magnitude/state
+// that beat its baseline shows the model reading; one that did NOT (the common
+// case — the phase-4 verdict) shows an explicit no-edge state with the
+// deterministic baseline surfaced, never a fabricated model number. Both are
+// driven through the real dispatcher → Zod → handler path, and neither adds an
+// interactive element (the ADR-0025/0029/0037 no-action, no-grab posture).
+
+const TRUSTED_VOL: VolatilityForecast = {
+  symbol: 'BTC-USD',
+  timeframe: '1d',
+  as_of_bar_ts: '2026-07-05T00:00:00+00:00',
+  horizon_bars: 5,
+  predicted_vol: 0.0421,
+  band: [0.0333, 0.0532],
+  baseline_vol: 0.0388,
+  baseline_kind: 'ewma',
+  beats_baseline: true,
+  score_margin: 0.0137,
+  validation: {
+    horizon_bars: 5,
+    n_splits: 5,
+    n_scored: 1678,
+    model_qlike: 0.6072,
+    baseline_qlike: 0.6209,
+    baseline_kind: 'ewma',
+    persistence_qlike: 0.71,
+    ewma_qlike: 0.6209,
+    score_margin: 0.0137,
+    beats_baseline: true,
+    folds: [],
+  },
+  provenance: provenance({}),
+}
+
+/** The realistic case (phase 4): the model does NOT beat the EWMA baseline, so
+ * predicted_vol/band are absent on the wire and the baseline reading stands. */
+const NO_EDGE_VOL: VolatilityForecast = {
+  symbol: 'ETH-USD',
+  timeframe: '1d',
+  as_of_bar_ts: '2026-07-05T00:00:00+00:00',
+  horizon_bars: 1,
+  baseline_vol: 0.0402,
+  baseline_kind: 'ewma',
+  beats_baseline: false,
+  score_margin: -4.125,
+  validation: {
+    horizon_bars: 1,
+    n_splits: 5,
+    n_scored: 1320,
+    model_qlike: 6.059,
+    baseline_qlike: 1.934,
+    baseline_kind: 'ewma',
+    persistence_qlike: 2.1,
+    ewma_qlike: 1.934,
+    score_margin: -4.125,
+    beats_baseline: false,
+    folds: [],
+  },
+  provenance: null,
+}
+
+function volEnvelope(forecast: VolatilityForecast): VolatilityForecastCompletedEnvelope {
+  return {
+    type: 'volatility_forecast.completed',
+    version: 1,
+    ts: '2026-07-05T00:00:01+00:00',
+    payload: { forecast },
+  }
+}
+
+function throughVolDispatch(forecast: VolatilityForecast): VolatilityForecast | null {
+  let captured: VolatilityForecast | null = null
+  dispatchEnvelope(volEnvelope(forecast), {
+    onVolatilityForecastCompleted: (payload) => {
+      captured = payload.forecast
+    },
+  })
+  return captured
+}
+
+const FULL_TRANSITION: Partial<Record<RegimeState, number>> = {
+  down_quiet: 0.05,
+  down_volatile: 0.04,
+  sideways_quiet: 0.15,
+  sideways_volatile: 0.11,
+  up_quiet: 0.44,
+  up_volatile: 0.21,
+}
+
+const TRUSTED_REGIME: RegimeForecast = {
+  symbol: 'BTC-USD',
+  timeframe: '1d',
+  as_of_bar_ts: '2026-07-05T00:00:00+00:00',
+  horizon_bars: 21,
+  current_regime: 'up_quiet',
+  transition_probs: FULL_TRANSITION,
+  beats_baseline: true,
+  score_margin: 0.09,
+  validation: {
+    horizon_bars: 21,
+    n_splits: 5,
+    n_scored: 1662,
+    model_brier: 1.294,
+    persistence_brier: 1.384,
+    score_margin: 0.09,
+    beats_baseline: true,
+    folds: [],
+  },
+  provenance: provenance({}),
+}
+
+/** The realistic case (phase 4): the transition model does NOT beat persistence,
+ * so transition_probs is absent and "the regime holds" is the honest default. */
+const NO_EDGE_REGIME: RegimeForecast = {
+  symbol: 'ETH-USD',
+  timeframe: '1d',
+  as_of_bar_ts: '2026-07-05T00:00:00+00:00',
+  horizon_bars: 1,
+  current_regime: 'sideways_volatile',
+  beats_baseline: false,
+  score_margin: -0.514,
+  validation: {
+    horizon_bars: 1,
+    n_splits: 5,
+    n_scored: 1320,
+    model_brier: 0.829,
+    persistence_brier: 0.315,
+    score_margin: -0.514,
+    beats_baseline: false,
+    folds: [],
+  },
+  provenance: null,
+}
+
+function regimeEnvelope(forecast: RegimeForecast): RegimeForecastCompletedEnvelope {
+  return {
+    type: 'regime_forecast.completed',
+    version: 1,
+    ts: '2026-07-05T00:00:01+00:00',
+    payload: { forecast },
+  }
+}
+
+function throughRegimeDispatch(forecast: RegimeForecast): RegimeForecast | null {
+  let captured: RegimeForecast | null = null
+  dispatchEnvelope(regimeEnvelope(forecast), {
+    onRegimeForecastCompleted: (payload) => {
+      captured = payload.forecast
+    },
+  })
+  return captured
+}
+
+describe('volatility forecast section', () => {
+  it('renders the predicted band, the baseline, and the QLIKE score when the model beats baseline', () => {
+    const captured = throughVolDispatch(TRUSTED_VOL)
+    expect(captured).not.toBeNull()
+    render(<ForecastView forecast={null} volatility={captured} />)
+
+    expect(screen.getByTestId('volatility-predicted')).toHaveTextContent('0.0421')
+    expect(screen.getByTestId('volatility-band')).toHaveTextContent('0.0333 – 0.0532')
+    expect(screen.getByTestId('volatility-baseline')).toHaveTextContent('0.0388')
+    // The baseline kind is a localized label, not the raw token.
+    expect(screen.getByTestId('volatility-baseline')).not.toHaveTextContent('ewma')
+    expect(screen.getByTestId('volatility-score')).toHaveTextContent(/QLIKE/)
+    expect(screen.queryByTestId('volatility-no-edge')).toBeNull()
+  })
+
+  it('shows an explicit no-edge state with the baseline surfaced and NO model band when the model loses', () => {
+    const captured = throughVolDispatch(NO_EDGE_VOL)
+    render(<ForecastView forecast={null} volatility={captured} />)
+
+    expect(screen.getByTestId('volatility-no-edge')).toHaveTextContent(/no edge over baseline/i)
+    // No fabricated model precision — the predicted band is absent entirely.
+    expect(screen.queryByTestId('volatility-predicted')).toBeNull()
+    expect(screen.queryByTestId('volatility-band')).toBeNull()
+    // The deterministic baseline reading is still surfaced as the honest number.
+    expect(screen.getByTestId('volatility-baseline')).toHaveTextContent('0.0402')
+  })
+
+  it('Zod-rejects a malformed volatility payload in the dispatcher', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const handler = jest.fn()
+      dispatchEnvelope(
+        {
+          type: 'volatility_forecast.completed',
+          version: 1,
+          ts: '2026-07-05T00:00:01+00:00',
+          // baseline_kind is a junk token — a schema violation.
+          payload: { forecast: { ...TRUSTED_VOL, baseline_kind: 'garch' } },
+        },
+        { onVolatilityForecastCompleted: handler },
+      )
+      expect(handler).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('malformed volatility_forecast.completed'),
+        expect.anything(),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('regime forecast section', () => {
+  it('renders the current regime and all six transition bars when the model beats persistence', () => {
+    const captured = throughRegimeDispatch(TRUSTED_REGIME)
+    expect(captured).not.toBeNull()
+    render(<ForecastView forecast={null} regime={captured} />)
+
+    // Current regime is a localized label (not the raw token).
+    expect(screen.getByTestId('regime-current')).toHaveTextContent('uptrend, quiet')
+    const transition = screen.getByTestId('regime-transition')
+    // The full six-state distribution — every state has a probability shown.
+    expect(within(transition).getAllByText(/0\.\d\d/)).toHaveLength(6)
+    expect(within(transition).getByText(/\(current\)/i)).toBeInTheDocument()
+    expect(screen.getByTestId('regime-score')).toHaveTextContent(/Brier/)
+    expect(screen.queryByTestId('regime-no-edge')).toBeNull()
+  })
+
+  it('shows an explicit no-edge-over-persistence state and NO transition bars when the model loses', () => {
+    const captured = throughRegimeDispatch(NO_EDGE_REGIME)
+    render(<ForecastView forecast={null} regime={captured} />)
+
+    expect(screen.getByTestId('regime-no-edge')).toHaveTextContent(/no edge over persistence/i)
+    expect(screen.queryByTestId('regime-transition')).toBeNull()
+    // The trailing current regime still stands on its own.
+    expect(screen.getByTestId('regime-current')).toHaveTextContent('sideways, volatile')
+  })
+
+  it('Zod-rejects a malformed regime payload in the dispatcher', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const handler = jest.fn()
+      dispatchEnvelope(
+        {
+          type: 'regime_forecast.completed',
+          version: 1,
+          ts: '2026-07-05T00:00:01+00:00',
+          // current_regime is not a member of the taxonomy — a schema violation.
+          payload: { forecast: { ...TRUSTED_REGIME, current_regime: 'euphoria' } },
+        },
+        { onRegimeForecastCompleted: handler },
+      )
+      expect(handler).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('malformed regime_forecast.completed'),
+        expect.anything(),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('composed forecast panel', () => {
+  it('is empty only until the first of the three kinds arrives', () => {
+    const { rerender } = render(<ForecastView forecast={null} volatility={null} regime={null} />)
+    expect(screen.getByTestId('forecast-empty')).toBeInTheDocument()
+
+    rerender(<ForecastView forecast={null} volatility={TRUSTED_VOL} regime={null} />)
+    expect(screen.queryByTestId('forecast-empty')).toBeNull()
+    expect(screen.getByTestId('forecast-volatility-section')).toBeInTheDocument()
+  })
+
+  it('renders all three kinds together, each in its own section', () => {
+    render(
+      <ForecastView forecast={MIXED_FORECAST} volatility={TRUSTED_VOL} regime={TRUSTED_REGIME} />,
+    )
+    expect(screen.getByTestId('forecast-direction-section')).toBeInTheDocument()
+    expect(screen.getByTestId('forecast-volatility-section')).toBeInTheDocument()
+    expect(screen.getByTestId('forecast-regime-section')).toBeInTheDocument()
+  })
+
+  it('adds no interactive element in the volatility or regime sections (no-action posture)', () => {
+    const { container } = render(
+      <ForecastView forecast={null} volatility={TRUSTED_VOL} regime={TRUSTED_REGIME} />,
+    )
+    expect(
+      container.querySelectorAll('button, input, select, textarea, a, [role="button"]'),
+    ).toHaveLength(0)
+  })
 })
