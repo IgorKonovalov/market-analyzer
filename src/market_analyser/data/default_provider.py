@@ -404,21 +404,35 @@ class DefaultMarketDataProvider:
                 "as_of is not supported for symbol search — search is a live "
                 "lookup (Plan 0024 / ADR-0026)",
             )
-        # Yahoo first (its native namespace), then Binance, then Coinbase
-        # (Plan 0058 phase 3 / Plan 0081 phase 4) — each merged after the prior
-        # sources, deduped by symbol, with its source labeled so `BTCUSDT`
-        # (Binance), `BTC-USD` (Coinbase), and a Yahoo composite are never
-        # presented as interchangeable (ADR-0052 / ADR-0076). Every hit is
-        # fetchable by get_ohlcv (the ADR-0026 chartable invariant) — the
-        # exchange hits come from the same membership sets the OHLCV dispatch
-        # routes by.
-        results = list(self._yahoo.search(query))
-        if self._binance is not None:
-            seen = {info.symbol for info in results}
-            results.extend(info for info in self._binance.search(query) if info.symbol not in seen)
-        if self._coinbase is not None:
-            seen = {info.symbol for info in results}
-            results.extend(info for info in self._coinbase.search(query) if info.symbol not in seen)
+        # Merge Yahoo + the exchange sources so every suggestion's source label
+        # matches where get_ohlcv would actually route it (ADR-0026
+        # searchable==fetchable; ADR-0076 single-provenance). Yahoo supplies the
+        # base list — its relevance order and its nicer display names — but a row
+        # whose symbol an exchange lists is RELABELED to that exchange, because it
+        # fetches from there, not from Yahoo: `BTC-USD` is deep USD from Coinbase,
+        # no longer a Yahoo composite. Precedence Binance > Coinbase mirrors
+        # `_ohlcv_route`. Symbols only an exchange lists are appended after,
+        # deduped, Binance before Coinbase. So `BTCUSDT` (Binance), `BTC-USD`
+        # (Coinbase), and a Yahoo-only name are never mislabeled or presented as
+        # interchangeable (ADR-0052 / ADR-0076). (Plan 0058 phase 3 / Plan 0081.)
+        binance_hits = list(self._binance.search(query)) if self._binance is not None else []
+        coinbase_hits = list(self._coinbase.search(query)) if self._coinbase is not None else []
+        # Routed exchange label per symbol: Coinbase first, Binance overrides
+        # (Binance wins precedence, exactly as `_ohlcv_route` resolves it).
+        routed_label: dict[str, str] = {info.symbol: info.exchange for info in coinbase_hits}
+        routed_label.update({info.symbol: info.exchange for info in binance_hits})
+
+        results: list[SymbolInfo] = [
+            info.model_copy(update={"exchange": routed_label[info.symbol]})
+            if info.symbol in routed_label
+            else info
+            for info in self._yahoo.search(query)
+        ]
+        seen = {info.symbol for info in results}
+        for info in (*binance_hits, *coinbase_hits):
+            if info.symbol not in seen:
+                results.append(info)
+                seen.add(info.symbol)
         return results
 
     def get_screener(

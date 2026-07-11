@@ -32,7 +32,7 @@ from market_analyser.data.adapters.coinbase import CoinbaseAdapter, CoinbaseHttp
 from market_analyser.data.adapters.yahoo import YahooAdapter
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.resample import resample_ohlcv as _real_resample
-from market_analyser.data.types import Bar
+from market_analyser.data.types import Bar, SymbolInfo
 from market_analyser.persistence.engine import apply_migrations, make_engine, make_session_factory
 from market_analyser.persistence.repository import BarRepository
 
@@ -426,3 +426,56 @@ def test_source_scoped_read_excludes_orphaned_yahoo_bars(
     assert any(b.source == "yahoo" for b in unscoped)
 
     engine.dispose()
+
+
+# --- (e) search label reflects the routed source ---------------------------------
+
+
+def test_search_relabels_dual_listed_symbol_to_its_routed_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A suggestion's source label must match where get_ohlcv routes it
+    (ADR-0026 searchable==fetchable; ADR-0076). A dual-listed `BTC-USD` (returned
+    by Yahoo AND listed by Coinbase) surfaces as Coinbase with Yahoo's nicer name
+    kept; a Yahoo-only symbol is untouched; a symbol in both exchange sets takes
+    Binance (precedence); exchange-only symbols append with their own labels."""
+    yahoo, _ = _yahoo_spy([])
+    # Yahoo's raw search: BTC-USD (its crypto composite, exch 'CCC'), a
+    # Yahoo-only future, and 'BTCX' which both exchanges also list.
+    monkeypatch.setattr(
+        yahoo,
+        "search",
+        lambda query: [
+            SymbolInfo(
+                symbol="BTC-USD", name="Bitcoin USD", exchange="CCC", quote_type="Cryptocurrency"
+            ),
+            SymbolInfo(
+                symbol="BTC=F", name="Bitcoin Futures", exchange="CME", quote_type="Futures"
+            ),
+            SymbolInfo(symbol="BTCX", name="Bitcoin X", exchange="NYS", quote_type="Equity"),
+        ],
+    )
+    cb_cache = tmp_path / "coinbase_products.json"
+    _write_coinbase_cache(cb_cache, ["BTC-USD", "BTC-USDC", "BTCX"])
+    cb = _coinbase_adapter(monkeypatch, transport=_FakeCoinbaseTransport(), cache_path=cb_cache)
+    bn_cache = tmp_path / "binance_exchange_info.json"
+    _write_binance_cache(bn_cache, ["BTCUSDT", "BTCX"])
+    bn = _binance_adapter(monkeypatch, transport=_FakeBinanceTransport(), cache_path=bn_cache)
+    provider = DefaultMarketDataProvider(yahoo=yahoo, binance=bn, coinbase=cb)
+
+    results = provider.search_symbols("BTC")
+    by_symbol = {r.symbol: r for r in results}
+
+    # Dual-listed: relabeled to Coinbase (its routed source), Yahoo name kept.
+    assert by_symbol["BTC-USD"].exchange == "Coinbase"
+    assert by_symbol["BTC-USD"].name == "Bitcoin USD"
+    # Yahoo-only future: label untouched.
+    assert by_symbol["BTC=F"].exchange == "CME"
+    # In BOTH exchange sets -> Binance wins precedence (mirrors _ohlcv_route).
+    assert by_symbol["BTCX"].exchange == "Binance"
+    # Exchange-only symbols Yahoo didn't return append with their own labels.
+    assert by_symbol["BTCUSDT"].exchange == "Binance"
+    assert by_symbol["BTC-USDC"].exchange == "Coinbase"
+    # The relabel matches what OHLCV routing would pick, for each symbol.
+    assert provider._ohlcv_route("BTC-USD")[0] == "coinbase"
+    assert provider._ohlcv_route("BTCX")[0] == "binance"
