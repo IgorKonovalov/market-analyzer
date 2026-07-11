@@ -11,5 +11,21 @@ from __future__ import annotations
 
 from market_analyser.attribution.models import Outcome, OutcomeClass
 from market_analyser.attribution.scoring import score_recommendation
+from market_analyser.attribution.track_record import (
+    MIN_TRACK_RECORD_N,
+    BucketStat,
+    ReliabilityBucket,
+    TrackRecord,
+    track_record,
+)
 
-__all__ = ["Outcome", "OutcomeClass", "score_recommendation"]
+__all__ = [
+    "MIN_TRACK_RECORD_N",
+    "BucketStat",
+    "Outcome",
+    "OutcomeClass",
+    "ReliabilityBucket",
+    "TrackRecord",
+    "score_recommendation",
+    "track_record",
+]

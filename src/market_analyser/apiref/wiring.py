@@ -59,6 +59,7 @@ from market_analyser.data.types import (
 from market_analyser.defi.models import Chain, DefiPosition
 from market_analyser.defi.tx_models import DecodedTx
 from market_analyser.events import EventBus
+from market_analyser.persistence.advice_ledger_repository import AdviceLedgerRepository
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.defi_tx_repository import DefiTxRepository
 from market_analyser.persistence.engine import (
@@ -205,6 +206,7 @@ def build_wired_mcp_server(runs_dir: Path) -> FastMCP:
             event_bus=EventBus(),
             ui_event_buffer=UIEventBuffer(),
             backtest_runs_repository=BacktestRunsRepository(session_factory),
+            advice_ledger_repository=AdviceLedgerRepository(session_factory),
             runs_dir=runs_dir,
             wallet_positions_sources={"zerion": _NullWalletSource()},
             tx_history_sources={"zerion": _NullTxSource()},

@@ -539,6 +539,7 @@ EXPECTED_FULL_TOOLSET = {
     "get_metric_series",
     "get_ohlcv",
     "get_pending_ui_events",
+    "get_track_record",
     "highlight_pattern",
     "list_alerts",
     "list_annotations",

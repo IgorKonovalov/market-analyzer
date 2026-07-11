@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 44 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 45 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -28,6 +28,7 @@ The 44 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`get_metric_series`](#getmetricseries) | Read a stored metric time series (ADR-0051): points of one registered series_id over an inclusive [start, end] epoch-second window, sorted by ts ascending. |
 | [`get_ohlcv`](#getohlcv) | Read OHLCV bars for one symbol over a [start, end] window. |
 | [`get_pending_ui_events`](#getpendinguievents) | Read recent UI events the user generated in the chart viewer — drag-selected ranges, single bar clicks, and agent-mode toggles. |
+| [`get_track_record`](#gettrackrecord) | Read the advisor's own live track record (ADR-0075): how its past recommendations turned out against realized price, scored path-dependently (did the stop or a target hit first). |
 | [`highlight_pattern`](#highlightpattern) | Highlight a pattern on a chart. |
 | [`list_alerts`](#listalerts) | Read fired-alert history, newest first, optionally scoped to one watch_id. |
 | [`list_annotations`](#listannotations) | List annotations for a symbol/timeframe over a [start, end] window. |
@@ -524,6 +525,32 @@ Read recent UI events the user generated in the chart viewer — drag-selected r
 | `result` | array[UIEventEnvelope] |
 
 **Source:** [`src/market_analyser/api/mcp_tools/get_pending_ui_events.py`](../../src/market_analyser/api/mcp_tools/get_pending_ui_events.py)
+
+## `get_track_record`
+
+Read the advisor's own live track record (ADR-0075): how its past recommendations turned out against realized price, scored path-dependently (did the stop or a target hit first). Returns {track_record, recent, partial_reason, message, total_available, offset, returned}. The track_record carries the directional hit-rate and mean R-multiple, a calibration read (Brier score + reliability buckets: stated probability vs realized frequency), and a baseline comparison (hit-rate vs a buy-and-hold over-horizon alternative) — each with its sample size, and marked insufficient below a stated floor so a handful of calls is never presented as a conclusion. `recent` is the most-recent scored calls (symbol, direction, outcome, realized R). Optionally filter by `symbol`. This is a factual record of past accuracy — what happened and how it compares to the trivial baseline, nothing more, and no call to act. Bounded to 100 recent calls per page (ADR-0046); page on with offset=offset+returned.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string \| null | no | `None` |
+| `offset` | integer | no | `0` |
+| `max_calls` | integer \| null | no | `None` |
+
+**Returns:** `GetTrackRecordResponse`
+
+| Field | Type |
+| --- | --- |
+| `track_record` | TrackRecord |
+| `recent` | array[ScoredCallOut] |
+| `partial_reason` | string \| null |
+| `message` | string \| null |
+| `total_available` | integer |
+| `offset` | integer |
+| `returned` | integer |
+
+**Source:** [`src/market_analyser/api/mcp_tools/track_record.py`](../../src/market_analyser/api/mcp_tools/track_record.py)
 
 ## `highlight_pattern`
 

@@ -72,6 +72,7 @@ from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_
 from market_analyser.api.mcp_tools.show_chart import register_show_chart
 from market_analyser.api.mcp_tools.smart_volume import register_smart_volume
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
+from market_analyser.api.mcp_tools.track_record import register_get_track_record
 from market_analyser.api.mcp_tools.update_chart import register_update_chart
 from market_analyser.api.mcp_tools.volume_breakout import register_volume_breakout
 from market_analyser.api.mcp_tools.volume_confirmation import register_volume_confirmation
@@ -276,6 +277,16 @@ def create_mcp_components(
         # publishes, the call is simply not recorded for scoring.
         advice_ledger_repository=advice_ledger_repository,
     )
+
+    # `get_track_record` (Plan 0080, ADR-0075): the read-only surface over the
+    # advisor's own live track record — hit-rate + calibration + baseline delta
+    # over the scored recommendation rows, honest small-n. Registered whenever the
+    # ledger exists (persistence wired); a factual record, never advice.
+    if advice_ledger_repository is not None:
+        register_get_track_record(
+            server,
+            advice_ledger_repository=advice_ledger_repository,
+        )
 
     if backtest_runs_repository is not None and runs_dir is not None:
         register_run_backtest(
