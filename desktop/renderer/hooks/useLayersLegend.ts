@@ -25,6 +25,9 @@ export interface UseLayersLegendParams {
   enabledCandleGroups: ReadonlySet<string>
   visibleTrendlines: ReadonlyArray<TrendlineSpec>
   hidden: ReadonlySet<string>
+  /** Whether the always-on OBV strip is drawn (Plan 0076 phase 2) — the chart
+   * passes `bars.length > 0`. Adds a single toggleable OBV legend row. */
+  hasObv: boolean
   effectiveTheme: EffectiveTheme
   styleVersion: number
 }
@@ -37,6 +40,7 @@ export function useLayersLegend(
     enabledCandleGroups,
     visibleTrendlines,
     hidden,
+    hasObv,
     effectiveTheme,
     styleVersion,
   }: UseLayersLegendParams,
@@ -55,6 +59,7 @@ export function useLayersLegend(
         enabledCandleGroups,
         visibleTrendlines,
         hidden,
+        hasObv,
         style,
         colors,
         trendlineColors,
@@ -67,6 +72,7 @@ export function useLayersLegend(
     enabledCandleGroups,
     visibleTrendlines,
     hidden,
+    hasObv,
     effectiveTheme,
     styleVersion,
   ])

@@ -23,6 +23,7 @@ export type OverlayKind =
   | 'price_line'
   | 'supertrend'
   | 'ichimoku'
+  | 'obv'
 
 /** Support/resistance role for a `price_line` overlay; absent for plain levels. */
 export type PriceLineRole = 'support' | 'resistance'
@@ -35,7 +36,8 @@ export type PriceLineRole = 'support' | 'resistance'
  * with `exclude_none`). `supertrend` (Plan 0049) is an additive indicator kind;
  * `ichimoku` (Plan 0073) is another, carrying its own four optional period fields
  * (`conversion`/`base`/`span_b`/`displacement`) — absent ⇒ the renderer applies
- * the classic 9/26/52/26 defaults. */
+ * the classic 9/26/52/26 defaults. `obv` (Plan 0076) is a fieldless indicator kind
+ * (OBV is cumulative/unparameterized); it always draws in its own bottom strip. */
 export interface OverlaySpec {
   kind: OverlayKind
   period?: number | null

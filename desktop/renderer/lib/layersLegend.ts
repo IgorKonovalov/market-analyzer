@@ -10,7 +10,7 @@
  * colour the layer is drawn with. Pure — the hook resolves the DOM tokens and
  * calls this.
  */
-import { overlayStyleColor, type ChartColors } from './chartSeries'
+import { OBV_LAYER_ID, overlayStyleColor, type ChartColors } from './chartSeries'
 import type { ResolvedChartStyle } from './chartStyle'
 import {
   CANDLE_MASTER_ID,
@@ -39,6 +39,10 @@ export interface BuildChartLayersParams {
   enabledCandleGroups: ReadonlySet<string>
   visibleTrendlines: ReadonlyArray<TrendlineSpec>
   hidden: ReadonlySet<string>
+  /** Whether the always-on OBV strip is drawn (Plan 0076 phase 2) — true when
+   * the chart has bars. Emits a single toggleable OBV legend row; unlike the
+   * agent overlays there is no per-instance identity, so the row always lists. */
+  hasObv: boolean
   style: ResolvedChartStyle
   colors: ChartColors
   trendlineColors: ReturnType<typeof readTrendlineColors>
@@ -50,6 +54,7 @@ export function buildChartLayers({
   enabledCandleGroups,
   visibleTrendlines,
   hidden,
+  hasObv,
   style,
   colors,
   trendlineColors,
@@ -67,6 +72,18 @@ export function buildChartLayers({
       // The overlay kind keys the glossary tooltip (Plan 0065) — ema/sma/
       // supertrend resolve; a future unsupported kind degrades to plain text.
       glossaryKey: spec.kind,
+    })
+  }
+  // Always-on OBV strip toggle (Plan 0076 phase 2): OBV is drawn unconditionally
+  // (Plan 0027) on its own bottom scale, so its row lists whenever the chart has
+  // bars and only carries visibility — no glossary key yet (no `obv` entry).
+  if (hasObv) {
+    next.push({
+      id: OBV_LAYER_ID,
+      label: 'OBV',
+      color: colors.obv,
+      kind: 'series',
+      visible: !hidden.has(OBV_LAYER_ID),
     })
   }
   // Candlestick marker layer (Plan 0071 phase 2): a single MASTER row for the

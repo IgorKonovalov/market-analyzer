@@ -32,6 +32,11 @@ export const OBV_SCALE_ID = 'obv'
 export const PRICE_SCALE_MARGINS = { top: 0.05, bottom: 0.4 }
 export const VOLUME_SCALE_MARGINS = { top: 0.82, bottom: 0 }
 export const OBV_SCALE_MARGINS = { top: 0.62, bottom: 0.22 }
+// Stable layers-legend id for the always-on OBV strip (Plan 0076 phase 2). Unlike
+// the agent overlays (`overlay:<kind>:<period>`) OBV is a standalone derived
+// series, so it gets its own `series:` namespace; toggling this row hides the
+// strip in place (the fixed scale margins keep its vertical space).
+export const OBV_LAYER_ID = 'series:obv'
 
 export interface ChartColors {
   text: string

@@ -48,12 +48,12 @@ function persistWidth(w: number): void {
 
 export interface ChartLayer {
   /** Stable id: `overlay:ema:20` | `marker:bullish` | `pline:<label>` |
-   * `trendlines:<pattern>|<style>`. */
+   * `trendlines:<pattern>|<style>` | `series:obv`. */
   id: string
   label: string
   /** Resolved colour — equals the colour the chart drew the layer with. */
   color: string
-  kind: 'overlay' | 'marker' | 'price_line' | 'span' | 'trendline'
+  kind: 'overlay' | 'marker' | 'price_line' | 'span' | 'trendline' | 'series'
   /** Per-item toggle; defaults true; never persisted. */
   visible: boolean
   /** Glossary key for an on-hover definition — set on indicator overlays (the

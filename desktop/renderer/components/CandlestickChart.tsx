@@ -48,6 +48,7 @@ import { ChartToolbar } from './ChartToolbar'
 import { ChartTooltip } from './ChartTooltip'
 import { LayersPanel } from './LayersPanel'
 import {
+  OBV_LAYER_ID,
   OBV_SCALE_ID,
   OBV_SCALE_MARGINS,
   PRICE_SCALE_ID,
@@ -502,6 +503,14 @@ export function CandlestickChart({
     // hook now (Plan 0072 phase 8), so this effect no longer keys on overlays/hidden.
   }, [bars, syncTestRenderHook, candleType])
 
+  // OBV strip visibility (Plan 0076 phase 2): the always-on OBV series (Plan 0027,
+  // drawn on its own bottom scale) is toggleable from the layers legend. Hiding it
+  // blanks the strip in place — the fixed scale margins keep its vertical space.
+  // Keyed on `candleType` so a rebuild's fresh series re-applies the current toggle.
+  useEffect(() => {
+    obvSeriesRef.current?.applyOptions({ visible: !hidden.has(OBV_LAYER_ID) })
+  }, [hidden, candleType])
+
   // Agent-overlay line series + supertrend two-series reconcile (Plan 0007 ph4.5 /
   // Plan 0049 ph9), split out of the bars effect (Plan 0072 phase 8). Defined
   // AFTER the bars effect so they run after `setMainData` on each commit; each
@@ -632,6 +641,7 @@ export function CandlestickChart({
     enabledCandleGroups,
     visibleTrendlines,
     hidden,
+    hasObv: bars.length > 0,
     effectiveTheme,
     styleVersion,
   })

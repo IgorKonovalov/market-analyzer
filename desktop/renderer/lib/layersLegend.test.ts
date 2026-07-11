@@ -17,6 +17,7 @@ function build(overrides: Partial<Parameters<typeof buildChartLayers>[0]>) {
     enabledCandleGroups: new Set(),
     visibleTrendlines: [],
     hidden: new Set(),
+    hasObv: false,
     style,
     colors,
     trendlineColors,
@@ -61,6 +62,26 @@ describe('buildChartLayers', () => {
   it('marks a row hidden when its id is in the hidden set', () => {
     const rows = build({ overlays: [EMA], hidden: new Set(['overlay:ema:20']) })
     expect(rows.find((r) => r.id === 'overlay:ema:20')?.visible).toBe(false)
+  })
+
+  // Plan 0076 phase 2: the always-on OBV strip gets a single toggleable row.
+  it('emits an OBV row (label, obv colour, visible) when hasObv, after the overlays', () => {
+    const rows = build({ overlays: [EMA], hasObv: true })
+    const obv = rows.find((r) => r.id === 'series:obv')
+    expect(obv).toMatchObject({ label: 'OBV', color: colors.obv, kind: 'series', visible: true })
+    // Ordered right after the indicator overlays.
+    expect(rows.map((r) => r.id)).toEqual(['overlay:ema:20', 'series:obv'])
+    // OBV is a standalone derived series — no glossary key yet.
+    expect(obv?.glossaryKey).toBeUndefined()
+  })
+
+  it('omits the OBV row when hasObv is false', () => {
+    expect(build({ hasObv: false }).some((r) => r.id === 'series:obv')).toBe(false)
+  })
+
+  it('marks the OBV row hidden when its id is in the hidden set', () => {
+    const rows = build({ hasObv: true, hidden: new Set(['series:obv']) })
+    expect(rows.find((r) => r.id === 'series:obv')?.visible).toBe(false)
   })
 
   it('groups trendlines by (pattern, state) with a count', () => {

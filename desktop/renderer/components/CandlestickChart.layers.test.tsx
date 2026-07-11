@@ -131,17 +131,32 @@ function row(id: string): HTMLElement {
   return screen.getByTestId(`layer-row:${id}`)
 }
 
-it('renders one row per layer: overlays + candlestick master/group + price line', () => {
+it('renders one row per layer: overlays + OBV + candlestick master/group + price line', () => {
   renderChart()
   const panel = screen.getByTestId('layers-panel')
   const rows = within(panel).getAllByRole('listitem')
-  // overlays ×2 + candlestick master + one (hammer, bullish) group + price line.
-  expect(rows).toHaveLength(5)
+  // overlays ×2 + always-on OBV + candlestick master + (hammer, bullish) group + price line.
+  expect(rows).toHaveLength(6)
   expect(screen.getByTestId('layer-row:overlay:ema:20')).toBeInTheDocument()
   expect(screen.getByTestId('layer-row:overlay:sma:50')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:series:obv')).toBeInTheDocument()
   expect(screen.getByTestId('layer-row:candles-master')).toBeInTheDocument()
   expect(screen.getByTestId('layer-row:candles:hammer|bullish_marker')).toBeInTheDocument()
   expect(screen.getByTestId('layer-row:pline:R1')).toBeInTheDocument()
+})
+
+// Plan 0076 phase 2: the always-on OBV strip is toggleable. Unchecking the row
+// hides the OBV series in place (applyOptions visible:false); re-checking shows it.
+it('toggling the OBV row hides and re-shows the OBV series', () => {
+  renderChart()
+  const obv = lineSeries.find((s) => s._opts.priceScaleId === 'obv')
+  expect(obv).toBeDefined()
+
+  fireEvent.click(within(row('series:obv')).getByRole('checkbox'))
+  expect(obv?.applyOptions).toHaveBeenCalledWith({ visible: false })
+
+  fireEvent.click(within(row('series:obv')).getByRole('checkbox'))
+  expect(obv?.applyOptions).toHaveBeenLastCalledWith({ visible: true })
 })
 
 it('each swatch colour equals the colour the layer was drawn with', () => {
@@ -287,8 +302,9 @@ it('hovering a group row emphasises that group and clears on leave', () => {
 
 it('still renders the empty/error states unchanged (no candlestick markers)', () => {
   render(<CandlestickChart bars={BARS} overlays={OVERLAYS} />)
-  // No annotations → no candlestick master/group rows, but overlays + pline remain.
+  // No annotations → no candlestick master/group rows, but overlays + OBV + pline remain.
   expect(screen.queryByTestId('layer-row:candles-master')).toBeNull()
   expect(screen.getByTestId('layer-row:overlay:ema:20')).toBeInTheDocument()
+  expect(screen.getByTestId('layer-row:series:obv')).toBeInTheDocument()
   expect(screen.getByTestId('layer-row:pline:R1')).toBeInTheDocument()
 })
