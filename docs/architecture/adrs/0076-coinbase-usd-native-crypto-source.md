@@ -1,6 +1,6 @@
 # ADR-0076 — Coinbase as the USD-native crypto OHLCV source; N-source membership routing
 
-> **Status:** proposed (accepts at Plan 0081's close)
+> **Status:** accepted (2026-07-11, at Plan 0081's close)
 > **Date:** 2026-07-11
 > **Related plan(s):** 0081-coinbase-usd-native-source
 > **Related ADRs:** [ADR-0052](0052-binance-exchange-data-source.md) (refines its routing section — membership routing generalises to N sources; Coinbase takes precedence over Yahoo for its listed pairs), [ADR-0069](0069-crypto-first-asset-class-positioning.md) (this is a crypto-first data-breadth investment), [ADR-0007](0007-market-data-provider.md) (the provider contract the adapter slots into), [ADR-0031](0031-data-source-adapter-contract.md) (per-capability Protocol + selector registry), [ADR-0019](0019-external-http-adapter-resilience.md) (ResilientHttpClient), [ADR-0028](0028-timeframe-resampling-and-expansion.md) (derive-on-read for non-native timeframes), [ADR-0047](0047-variable-duration-monthly-timeframe.md) (the monthly-resample concern this ADR revisits for a 24/7 series), [ADR-0026](0026-symbol-search-bound-to-ohlcv-provider.md) (chartable invariant: every searchable symbol is fetchable)

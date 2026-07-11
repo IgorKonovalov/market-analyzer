@@ -1,8 +1,18 @@
 # Plan 0081 — Coinbase as the USD-native crypto OHLCV source
 
-> **Status:** in-progress
+> **Status:** done (closed 2026-07-11, clean Mode 4 — no blockers/majors/minors; one reconciliation nit, folded in below)
 > **Owner (this plan):** architect (design) → dev (phases 1–2) → human (phase 3) → ui-builder (phase 4)
-> **Paired ADR:** [ADR-0076](../adrs/0076-coinbase-usd-native-crypto-source.md)
+> **Paired ADR:** [ADR-0076](../adrs/0076-coinbase-usd-native-crypto-source.md) (accepted at this close)
+
+## Close notes (2026-07-11)
+
+Four phases on `main`, no branch, one migration (`0009`). Commits: ph1 adapter `6d47f64`, ph2 N-source routing + provenance-scoped cache + purge migration `f34e0a2`, emergent search-relabel fix `2e4537a`, ph4 picker source badges + deep-USD hint `cba63f9`. Gates at close: **111 Python** (adapter + routing + resample + timeframes + migration + bar-repo) and **9 SymbolPicker jest** green.
+
+Every done-when read at the assertion level: routing spies on all three sources (BTC-USD/ETH-USD→Coinbase, BTCUSDT→Binance, AAPL/SPY/DOGE-USD→Yahoo) + a both-sets precedence guard; the provenance switch defended by proving a pre-seeded Yahoo `BTC-USD` row is *physically present* (unscoped read sees it) yet *never returned* once Coinbase routes it (source-scoped read, not a delete); `4h/1w/1mo` derived from the Coinbase base only (Yahoo spy empty) with golden calendar-week/month buckets **and** weekly/monthly anti-lookahead prefix-invariance (the new resample surface the risk section flagged); migration `0009` scoped `source='yahoo' AND symbol LIKE '%-USD'` (network-free, cannot touch a non-crypto symbol), a space-reclaim since the source filter already makes the rows inert, downgrade an honest no-op; the phase-1 adapter test is thorough (paging/dedup, field order, empty-page termination, inclusive filter, typed `CoinbaseError`s, 451→`GeoRestrictedError` with no retry, 429/5xx mapping, quote→USD, membership never aliases to Binance, search ranking determinism).
+
+**Phase-3 human smoke: GO** — user-confirmed `api.exchange.coinbase.com` reachable and US-clean, deep 15m history well past Yahoo's 60-day wall for ≥2 pairs, derived timeframes render. No `GeoRestrictedError`; Coinbase independently hedges ADR-0052's geo-fragility negative, as ADR-0076 predicted.
+
+**Reconciliation (the one nit):** phase 4's plan text below says *"No backend change"*. That proved wrong and is corrected here. Phase 2's search merge kept Yahoo's `CCC` label on a dual-listed `BTC-USD` even though it now routes to Coinbase — an ADR-0026 searchable==fetchable violation (the picker would read "Yahoo" while bars/quote come from Coinbase). Commit `2e4537a` (`dev`, self-flagged for this close) fixes `default_provider.search_symbols` to relabel a Yahoo row to the exchange that lists it (precedence Binance > Coinbase, mirroring `_ohlcv_route`), keeping Yahoo's nicer display name + relevance order; exchange-only symbols still append. Tested by routing case (e), which asserts the relabel matches `_ohlcv_route` per symbol. No new ADR — an in-vocabulary `dev` backend fix that phase-2's search extension should have carried; the phase-4 note is the only plan-text casualty.
 
 ## TL;DR
 
@@ -81,7 +91,7 @@ Make the three venues legible and steer crypto users toward the deep USD form. T
 
 - In the symbol picker / `SymbolPicker`, surface the `exchange` source label already carried on `SymbolInfo` for every suggestion (Yahoo / Binance / Coinbase), so a user can tell `BTC-USD` (Coinbase, deep USD) from `BTCUSDT` (Binance, USDT) from a Yahoo composite.
 - When search returns a Coinbase `-USD` match for a crypto query, present it as the preferred crypto suggestion (deep + USD-native). Keep it a hint/label, not a forced rewrite of what the user typed.
-- No backend change; consumes phase 2's extended `search` output through the typed fetch client.
+- Consumes phase 2's extended `search` output through the typed fetch client. *(Close reconciliation: this "no backend change" assumption did not hold — the routed-source relabel of dual-listed symbols required a `default_provider.search_symbols` fix, commit `2e4537a`; see Close notes.)*
 
 **Done-when:**
 - `SymbolPicker` test(s): a mixed Yahoo/Binance/Coinbase result set renders a distinct source label per suggestion; a crypto query surfaces the Coinbase `-USD` suggestion. Locale strings added to both `en.ts` and `ru.ts` ([ADR-0063](../adrs/0063-in-house-i18n-and-reason-codes.md) parity) for any new label text.
