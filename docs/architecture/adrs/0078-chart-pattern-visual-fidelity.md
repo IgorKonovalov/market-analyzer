@@ -1,6 +1,6 @@
 # ADR-0078 — Chart-pattern visual fidelity: converging-envelope anchors and apex/breakout rendering
 
-> **Status:** proposed
+> **Status:** accepted (2026-07-11, at Plan 0083's close)
 > **Date:** 2026-07-11
 > **Related plan(s):** 0083-chart-pattern-visual-fidelity (this ADR gates it)
 > **Related ADRs:** refines the anchor-selection clause of [0048](0048-classical-chart-pattern-detection.md) (connect-the-extremes); extends the render surface of [0049](0049-chart-trendline-overlay-primitive.md) (trendline primitive) and [0061](0061-trendline-pattern-identity-and-colour.md) (pattern identity/colour); the analyst boundary of [0029](0029-advisory-recommendation-boundary.md) is unchanged.
