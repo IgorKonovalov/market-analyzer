@@ -69,6 +69,24 @@ flowchart LR
 - **Files touched:** none (manual).
 - **Done when:** the user confirms the symmetrical triangle draws two converging boundaries meeting at an apex, no spike-driven V, and a breakout arrow on a confirmed hit — GO — or files specific visual deltas to fold back into phases 1-3.
 
+### Phase 5 — Head & shoulders: skeleton spec + downward projection
+- **Owner skill:** dev
+- **What:** Emit the H&S pattern outline and its measured-move target as drawable geometry. Add a `"skeleton"` value to `LineSeg.role` / `TrendlineSpec.role`; `_match_head_shoulders` emits a skeleton `LineSeg` whose `points` are the ordered pivots `LS → t1 → head → t2 → RS` (a multi-point spec — `computeTrendlineSegments` already walks consecutive pairs, so no new pixel math). Ensure the pivot-matched family also produces the ph2 `projection` segment on `confirmed` hits: for H&S the projection anchors at the **neckline-break point** and drops by the measured head-to-neckline height to `hit.target` (bearish → downward; inverse H&S → upward). The neckline `LineSeg` (already emitted) is unchanged.
+- **Files touched:** `src/market_analyser/analysis/types.py` (`LineSeg.role` += `"skeleton"`), `src/market_analyser/analysis/chart_patterns.py` (`_match_head_shoulders` skeleton line; projection anchor for pivot-matched formations in `_hit`), `src/market_analyser/events/chart_types.py` (`TrendlineSpec.role`), `src/market_analyser/api/mcp_tools/_shared/chart_patterns_response.py` (`_hit_trendlines` passes the skeleton + projection through), `tests/analysis/test_chart_patterns.py`, `tests/api/test_detect_chart_patterns.py`.
+- **Done when:** a `confirmed` head & shoulders hit carries (a) a neckline `LineSeg` through the two troughs, (b) a `skeleton` `LineSeg` whose points are exactly `LS, t1, head, t2, RS` in order, and (c) one `projection` `LineSeg` ending at `hit.target` in the neckline-break direction (down for H&S, up for inverse); a `forming` hit carries the neckline + skeleton but **no** projection. No lookahead: the projection appears only once the neckline-break bar is in `bars[0..=i]`. The tool publishes all three on `chart.trendlines v1`.
+
+### Phase 6 — Head & shoulders: skeleton + shaded-hump rendering
+- **Owner skill:** ui-builder
+- **What:** Render the skeleton polyline as the pattern outline (distinct weight, pattern colour) and **fill the humps** — the region bounded above by the skeleton and below by the neckline. Fill is a new pass in the trendline renderer (`TrendlinePaneRenderer` currently only strokes); implement it generically as "fill between a skeleton polyline and a baseline segment" so double top / bottom can reuse it. Triangles/wedges (no skeleton, no fill) are unaffected.
+- **Files touched:** `desktop/renderer/lib/trendlines.ts` (fill pass keyed on `role === "skeleton"` + its neckline; skeleton stroke styling), `desktop/renderer/lib/trendlines.test.ts`; a low-alpha fill token in `desktop/renderer/components/CandlestickChart.tsx` if needed.
+- **Done when:** a unit test feeds a 5-point skeleton + a neckline spec and asserts (a) the skeleton renders as four connected segments through the five pivots, (b) a semi-transparent fill is emitted for the region between the skeleton and the neckline, (c) a spec set with no `skeleton` role (a triangle) emits **no** fill. Existing `trendlines.test.ts` and `CandlestickChart.trendlines*.test.tsx` stay green.
+
+### Phase 7 — Human visual smoke: head & shoulders
+- **Owner skill:** human
+- **What:** Launch the app on a symbol/window containing a head & shoulders and compare against the reference.
+- **Files touched:** none (manual).
+- **Done when:** the user confirms the H&S draws the neckline, the LS/head/RS skeleton with shaded humps, and the downward measured-move projection on a confirmed break — GO — or files deltas to fold back into phases 5-6.
+
 ### Pattern backlog — appended as each pattern is reviewed
 
 Not yet phases. As the user sends the app-vs-reference screenshots for each remaining pattern, architect appends a numbered phase here (owner: `dev` for geometry/tuning, `ui-builder` if a new render capability surfaces, `human` for its smoke). Expected candidates, each to be grounded on its own screenshot before it becomes a phase:
@@ -76,10 +94,9 @@ Not yet phases. As the user sends the app-vs-reference screenshots for each rema
 - Ascending triangle — flat upper boundary along equal highs, rising lower envelope.
 - Descending triangle — flat lower boundary along equal lows, falling upper envelope.
 - Rising / falling wedge — both boundaries same-direction, converging.
-- Head & shoulders / inverse — neckline through the intervening troughs/peaks + measured-move arrow (pivot-matched family, `_match_head_shoulders`; verify the neckline + projection render).
-- Double top / bottom — horizontal neckline + measured-move arrow (`_match_double`).
+- Double top / bottom — horizontal neckline + measured-move arrow (`_match_double`); expected to reuse the phase-6 skeleton + hump-fill render (a two-hump skeleton `LineSeg`) plus the ph2 projection.
 
-The foundation (phases 1-3) is expected to fix the triangles and wedges wholesale (shared anchor selection + shared render); the pivot-matched family (H&S, doubles) mostly needs the projection-arrow render (phase 2/3 machinery) plus per-pattern smoke, not new anchor logic.
+Head & shoulders was the second reviewed pattern and is now phases 5-7 (not backlog). The foundation (phases 1-3) is expected to fix the triangles and wedges wholesale (shared anchor selection + shared render); the pivot-matched family (H&S, doubles) needs the skeleton + hump-fill render (phases 5-6) plus the ph2 projection, not new anchor logic.
 
 ## Data shapes
 
@@ -109,7 +126,8 @@ The outlier tolerance is a **new named module constant** in `chart_patterns.py` 
 
 ## What this plan does NOT do
 
-- Does not fill/shade the coil region (ADR-0078 Alternative C — reference is lines + arrow only).
+- Does not fill/shade the converging **coil** patterns (triangle / wedge) — reference is lines + arrow only (ADR-0078 Alternative C). Hump fill *is* drawn for the pivot-matched patterns (H&S phase 6, double top/bottom later).
+- Does not draw pivot text labels (LS / Head / RS / Target) — deferred to the hover tooltip as a followup.
 - Does not change pattern *detection thresholds* (symmetry, convergence, `k·ATR` breakout margin) — only anchor *selection* and rendering.
 - Does not touch the candlestick-pattern marker path (`scan_patterns` / `highlight_pattern` / `chart.highlight`) — that is a different family and renders markers, not trendlines.
 - Does not add persistence — patterns remain derived and recomputed (ADR-0048 / ADR-0045).

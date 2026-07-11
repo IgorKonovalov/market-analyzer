@@ -49,5 +49,7 @@ Fix only presentation (extend to apex, add arrow) and leave `_trendline_formatio
 ### Alternative B — Regression-fit the boundaries through all pivots
 Least-squares a line through all highs and all lows. Rejected again (as in ADR-0048 Alternative C): a fitted line sits at prices the market never traded, misrepresenting the boundary and the breakout level. The envelope keeps anchors on real pivots.
 
-### Alternative C — Fill / shade the coil region
-Shade the area between the converging boundaries. Rejected for now: the user's reference drawing is lines + arrow only, and a fill fights the candles for visual space. Kept as a possible later followup, not part of this decision.
+### Alternative C — Fill / shade the pattern region (scoped, not blanket)
+Shade the area a pattern encloses. This is **per-pattern, not blanket**, decided against each pattern's reference drawing:
+- **Converging coils** (triangle / wedge): **no fill.** The reference is lines + arrow only, and a fill fights the candles for the narrowing space. Rejected here.
+- **Pivot-matched humps** (head & shoulders, double top / bottom): **filled.** The reference fills each hump between the pattern skeleton and the neckline, and the fill is what makes the three-hump shape legible. Adopted for these patterns (Plan 0083's head & shoulders phase); the enclosed region and the skeleton polyline that bounds it are the added geometry. Text labels on the pivots (LS / Head / RS / Target) are *not* adopted — pedagogical clutter on a live chart; deferred to the hover tooltip as a followup.
