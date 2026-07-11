@@ -318,6 +318,59 @@ class AccountHoldings(BaseModel):
         return v.astimezone(UTC)
 
 
+class MarketOutcome(BaseModel):
+    """One outcome of a prediction market with its market-implied probability
+    (Plan 0040 / ADR-0041). `implied_probability` is the outcome's price directly
+    — a prediction market trades each outcome between 0 and 1 and the price *is*
+    the money-weighted probability of that outcome.
+
+    Validated into `[0, 1]` at the boundary (and required finite): an out-of-range
+    or NaN price is upstream drift, raised rather than silently clamped or zeroed
+    (the ADR-0041 honest-uncertainty discipline — never a fabricated probability).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str = Field(min_length=1)  # e.g. "Yes" / "No" / a candidate name
+    implied_probability: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+
+
+class PredictionMarket(BaseModel):
+    """A prediction market and its current outcome odds (Plan 0040 / ADR-0041) —
+    read-only facts (a market-implied probability), never a recommendation.
+
+    Boundary-validated: at least one outcome, each carrying an implied probability
+    in `[0, 1]`. `closes_at` is the published resolution/close time when the
+    upstream gives one. `volume_usd` / `liquidity_usd` are honest-uncertainty hints
+    — a thin-book market's "probability" is noisier and must never be presented as
+    ground truth (ADR-0041); they sit on the market (the upstream reports volume
+    and liquidity per market, not per outcome — the plan's illustrative shape put
+    `volume_usd` on the outcome, corrected here to the data). `queried_at` +
+    `source` are provenance: when the read was taken and which source served it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    market_id: str = Field(min_length=1)
+    question: str = Field(min_length=1)
+    outcomes: list[MarketOutcome] = Field(min_length=1)
+    closed: bool
+    closes_at: datetime | None = None
+    volume_usd: float | None = Field(default=None, ge=0.0)
+    liquidity_usd: float | None = Field(default=None, ge=0.0)
+    queried_at: datetime
+    source: str = Field(min_length=1)  # "polymarket" — the selected source identity
+
+    @field_validator("closes_at", "queried_at")
+    @classmethod
+    def _times_must_be_utc(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            raise ValueError("prediction-market times must be timezone-aware (UTC)")
+        return v.astimezone(UTC)
+
+
 @dataclass(frozen=True)
 class Coverage:
     """Cache-only read result for backfill scheduling (Plan 0013): the bars
@@ -349,8 +402,10 @@ __all__ = [
     "CryptoRegime",
     "FuturesPosition",
     "MacroContext",
+    "MarketOutcome",
     "MarketSentimentSample",
     "NewsItem",
+    "PredictionMarket",
     "Quote",
     "ScreenerRow",
     "SentimentSample",

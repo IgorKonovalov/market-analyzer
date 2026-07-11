@@ -1,6 +1,6 @@
 # 0040 — Polymarket odds read adapter
 
-> **Status:** approved (2026-06-05)
+> **Status:** in-progress (2026-06-05)
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev
 > **Related ADRs:** [ADR-0041](../adrs/0041-polymarket-odds-read-source.md) (Polymarket as a read-only odds source — accepts at this plan's close), [ADR-0031](../adrs/0031-data-source-adapter-contract.md) (the per-capability source contract this extends), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (resilience module), [ADR-0009](../adrs/0009-rewrite-data-layer-in-house.md) (in-house read adapter)

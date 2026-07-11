@@ -34,6 +34,7 @@ from market_analyser.data.types import (
     Bar,
     MarketSentimentSample,
     NewsItem,
+    PredictionMarket,
     Quote,
     ScreenerRow,
     SentimentSample,
@@ -128,6 +129,33 @@ class MarketSentimentSource(Protocol):
     market-sentiment registry."""
 
     def fetch_current(self) -> MarketSentimentSample: ...
+
+
+@runtime_checkable
+class PredictionMarketSource(Protocol):
+    """A read-only source of prediction-market odds (Plan 0040 / ADR-0041): markets
+    whose outcome prices ARE market-implied probabilities in `[0, 1]` — a new
+    signal class distinct from OHLCV or NLP sentiment (a money-weighted probability
+    of a discrete event). Read-only by charter: a conforming source holds no key,
+    signs nothing, and moves no funds (ADR-0041; Polymarket *trading* is the
+    deferred execution-pillar concern, not this).
+
+    Members of the provider's prediction-market selector registry, keyed by source
+    name ("polymarket"), built in the composition root (ADR-0031) — adding a second
+    prediction-market source is then one registry entry.
+    """
+
+    def search_markets(self, query: str, *, limit: int = 20) -> Sequence[PredictionMarket]:
+        """Resolve a free-text query to matching markets with their current odds.
+        An empty/whitespace query returns `[]`; a zero-match query returns `[]`
+        (not an error). `limit` bounds the result count."""
+        ...
+
+    def fetch_market(self, market_id: str) -> PredictionMarket:
+        """Fetch one market's current outcomes + implied probabilities by id.
+        Raises the typed error taxonomy on an unknown id or a shape-broken
+        payload — never silently returns a fabricated probability."""
+        ...
 
 
 @runtime_checkable
