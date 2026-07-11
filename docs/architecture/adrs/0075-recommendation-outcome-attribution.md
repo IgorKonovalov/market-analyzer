@@ -1,6 +1,6 @@
 # ADR-0075 — Recommendation outcome attribution: how we score the advisor's live track record
 
-> **Status:** proposed — accepts at [Plan 0080](../plans/0080-recommendation-track-record.md)'s close
+> **Status:** accepted (2026-07-11) — [Plan 0080](../plans/0080-recommendation-track-record.md) implemented and closed
 > **Date:** 2026-07-11
 > **Related ADRs:** [ADR-0074](0074-edge-selection-criteria-for-execution.md) (this is the live instrument for its ES-3 honest-validation + ES-5 decay-monitoring gates), [ADR-0029](0029-advisory-recommendation-boundary.md) (what a `Recommendation` is), [ADR-0058](0058-forecast-recommendation-explainability.md) (recommendations already persisted as `runs/advice` artifacts), [ADR-0030](0030-forecasting-subsystem.md)/[ADR-0057](0057-forecast-feature-set-tiers.md) (beats-baseline honesty, mirrored here), [ADR-0018](0018-backtest-result-schema.md) (disk-artifact + SQLite-index persistence pattern + determinism), [ADR-0056](0056-self-warming-metric-store.md) (lifespan-managed background-job pattern for the scheduled scorer), [ADR-0006](0006-persistence-layout.md) (SQLite), [ADR-0046](0046-mcp-large-result-delivery.md) (bounded results)
 > **Related plan(s):** [Plan 0080](../plans/0080-recommendation-track-record.md) (implements + accepts this ADR)
