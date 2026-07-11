@@ -1,6 +1,6 @@
 # 0080 — Advisor recommendation track record (live outcome attribution)
 
-> **Status:** draft (2026-07-11)
+> **Status:** approved (2026-07-11) — user-designated next implementation
 > **Created:** 2026-07-11
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [ADR-0075](../adrs/0075-recommendation-outcome-attribution.md) (scoring methodology + anti-cherry-pick invariant — **accepts at this plan's close**), [ADR-0074](../adrs/0074-edge-selection-criteria-for-execution.md) (this is the live instrument for ES-3/ES-5), [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (the `Recommendation`), [ADR-0058](../adrs/0058-forecast-recommendation-explainability.md) (recommendations already persisted as `runs/advice` artifacts), [ADR-0018](../adrs/0018-backtest-result-schema.md) (disk + SQLite-index pattern + determinism), [ADR-0056](../adrs/0056-self-warming-metric-store.md) (lifespan-job pattern for the scorer), [ADR-0030](../adrs/0030-forecasting-subsystem.md)/[ADR-0057](../adrs/0057-forecast-feature-set-tiers.md) (beats-baseline), [ADR-0046](../adrs/0046-mcp-large-result-delivery.md) (bounded results)
