@@ -8,7 +8,12 @@ from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
 from market_analyser.analysis import indicators as ind
-from market_analyser.analysis.snapshot import condition_snapshot
+from market_analyser.analysis.snapshot import (
+    ICHIMOKU_DISPLACEMENT,
+    _classify_trend,
+    _ema_adx_trend,
+    condition_snapshot,
+)
 from market_analyser.analysis.types import ConditionSnapshot, MomentumStance, Trend, VolumeStance
 from market_analyser.analysis.volume import volume_summary
 from market_analyser.data.types import Bar
@@ -61,6 +66,129 @@ def test_trend_down_on_falling() -> None:
 
 def test_trend_sideways_on_choppy() -> None:
     assert condition_snapshot(_choppy(), "1d").trend == Trend.SIDEWAYS
+
+
+# --------------------------------------------------------------------------- #
+# Ichimoku in trend classification (ADR-0067, Plan 0073 phase 2)              #
+# --------------------------------------------------------------------------- #
+#
+# The conjunctive-veto rule is composed in `_classify_trend`: it runs the real
+# EMA/ADX base read on `closes` and the Ichimoku regime on the displaced-cloud
+# args, so feeding real rising/falling closes plus explicit cloud args exercises
+# the actual composition (not a mock). A fully end-to-end `condition_snapshot`
+# UP->SIDEWAYS veto is *structurally* degenerate to build on smooth synthetic
+# bars: a cloud sitting above current price needs high prices in bars
+# [i-78 .. i-26], which overlaps the EMA50 window [i-49 .. i] and so forces
+# EMA50 up, preventing the EMA20 > EMA50 that a base UP requires. The two regime
+# lenses cannot diverge that starkly on clean data — hence the veto is pinned at
+# the classifier level and the wiring is proven separately below.
+
+
+def test_classifier_ichimoku_veto_matrix() -> None:
+    """ADR-0067: Ichimoku can veto a directional base read but never manufacture
+    one. `tenkan`/`kijun` set the TK side; the cloud args set price-vs-cloud."""
+
+    up_closes = [b.close for b in _rising(80)]  # base EMA/ADX read is UP
+    down_closes = [b.close for b in _falling(80)]  # base read is DOWN
+    strong = 30.0  # ADX above the trend floor
+    above = up_closes[-1] + 60.0  # a cloud sitting above the last close
+    below = down_closes[-1] - 60.0  # a cloud sitting below the last close
+
+    # Sanity: the bases really are directional before Ichimoku is applied.
+    assert _ema_adx_trend(up_closes, strong) is Trend.UP
+    assert _ema_adx_trend(down_closes, strong) is Trend.DOWN
+
+    def cls(closes: list[float], tenkan: float, kijun: float, ca: float, cb: float) -> Trend:
+        return _classify_trend(
+            closes, strong, ichimoku_tenkan=tenkan, ichimoku_kijun=kijun, cloud_a=ca, cloud_b=cb
+        )
+
+    # UP base, Ichimoku bearish (below cloud AND tenkan<kijun) -> vetoed to SIDEWAYS.
+    assert cls(up_closes, 1.0, 2.0, above, above + 10) is Trend.SIDEWAYS
+    # UP base, Ichimoku bullish (above cloud AND tenkan>kijun) -> confirmed UP.
+    assert cls(up_closes, 2.0, 1.0, below, below - 10) is Trend.UP
+    # UP base, below the cloud but tenkan>kijun -> neutral, NOT bearish -> not vetoed.
+    assert cls(up_closes, 2.0, 1.0, above, above + 10) is Trend.UP
+    # DOWN base, Ichimoku bullish -> vetoed to SIDEWAYS.
+    assert cls(down_closes, 2.0, 1.0, below, below - 10) is Trend.SIDEWAYS
+    # DOWN base, Ichimoku bearish -> confirmed DOWN.
+    assert cls(down_closes, 1.0, 2.0, above, above + 10) is Trend.DOWN
+
+
+def test_classifier_cannot_manufacture_a_trend() -> None:
+    """A SIDEWAYS base stays SIDEWAYS no matter how bullish/bearish Ichimoku reads
+    — the veto is one-directional (ADR-0067)."""
+
+    chop_closes = [b.close for b in _choppy(80)]
+    assert _ema_adx_trend(chop_closes, 5.0) is Trend.SIDEWAYS  # weak ADX -> no base trend
+    bull = _classify_trend(
+        chop_closes, 5.0, ichimoku_tenkan=2.0, ichimoku_kijun=1.0, cloud_a=0.0, cloud_b=1.0
+    )
+    assert bull is Trend.SIDEWAYS
+
+
+def test_classifier_falls_back_when_ichimoku_undefined() -> None:
+    """With no cloud (short series), the composed read equals the pre-0073
+    EMA/ADX read exactly."""
+
+    up_closes = [b.close for b in _rising(80)]
+    assert _classify_trend(up_closes, 30.0) == _ema_adx_trend(up_closes, 30.0)
+
+
+def test_snapshot_surfaces_ichimoku_scalars_and_displaced_cloud() -> None:
+    """The four Ichimoku keys ride in `indicators`; the cloud-under-price fields
+    read the spans computed `ICHIMOKU_DISPLACEMENT` bars ago (ADR-0067's trailing
+    displaced read), not the values computed at the current bar."""
+
+    bars = _rising(90)  # >= span_b + displacement, so the cloud is defined
+    snap = condition_snapshot(bars, "1d")
+    series = ind.ichimoku(bars)
+    last = series[-1]
+    cloud = series[len(bars) - 1 - ICHIMOKU_DISPLACEMENT]
+    assert last is not None and cloud is not None
+    assert snap.indicators["ichimoku_tenkan"] == last.tenkan
+    assert snap.indicators["ichimoku_kijun"] == last.kijun
+    assert snap.indicators["ichimoku_cloud_a"] == cloud.senkou_a
+    assert snap.indicators["ichimoku_cloud_b"] == cloud.senkou_b
+    assert cloud.senkou_a != last.senkou_a  # the cloud is displaced, not the current span
+
+
+def test_snapshot_trend_confirmed_when_price_above_cloud() -> None:
+    """A long clean rise reads above its (defined) cloud with tenkan>kijun —
+    Ichimoku confirms, so the trend stays UP (done-when: EMA-up + above-cloud)."""
+
+    snap = condition_snapshot(_rising(90), "1d")
+    assert snap.indicators["ichimoku_cloud_a"] is not None  # cloud is defined here
+    assert snap.trend is Trend.UP
+
+
+def test_snapshot_short_series_keeps_pre_0073_trend() -> None:
+    """Under `span_b + displacement` bars the cloud is undefined, so the trend is
+    the identical pre-0073 EMA/ADX read (fallback proven)."""
+
+    bars = _rising(60)
+    snap = condition_snapshot(bars, "1d")
+    assert snap.indicators["ichimoku_cloud_a"] is None
+    assert snap.indicators["ichimoku_cloud_b"] is None
+    assert snap.trend == _ema_adx_trend([b.close for b in bars], snap.indicators["adx"])
+    assert snap.trend is Trend.UP  # unchanged from before Ichimoku fed the classifier
+
+
+def test_snapshot_ichimoku_anti_lookahead() -> None:
+    """The displaced-cloud read is trailing: on bars[0..=k] the snapshot's Ichimoku
+    scalars equal the full-series `ichimoku()` at k (cloud at k - displacement)."""
+
+    bars = _rising(100)
+    full = ind.ichimoku(bars)
+    for k in (80, 99):
+        snap = condition_snapshot(bars[: k + 1], "1d")
+        last = full[k]
+        cloud = full[k - ICHIMOKU_DISPLACEMENT]
+        assert last is not None and cloud is not None
+        assert snap.indicators["ichimoku_tenkan"] == last.tenkan
+        assert snap.indicators["ichimoku_kijun"] == last.kijun
+        assert snap.indicators["ichimoku_cloud_a"] == cloud.senkou_a
+        assert snap.indicators["ichimoku_cloud_b"] == cloud.senkou_b
 
 
 # --------------------------------------------------------------------------- #

@@ -2,7 +2,8 @@
 
 `condition_snapshot(bars, timeframe)` composes the phase-1 indicators and phase-2
 patterns into a single trailing read: latest indicator values, a trend
-classification (EMA stack + ADX), a momentum stance (RSI zone refined by MACD),
+classification (EMA stack + ADX, with an Ichimoku cloud veto per ADR-0067), a
+momentum stance (RSI zone refined by MACD),
 trailing support/resistance pivots plus the nearest clustered support/resistance
 `Level` framing the last close (Plan 0051 phase 4), the candlestick hits on
 the most recent bars, and the classical chart patterns still in play (Plan 0052
@@ -40,6 +41,10 @@ from market_analyser.data.types import Bar
 EMA_SHORT = 20
 EMA_LONG = 50
 ADX_TREND_MIN = 20.0  # ADX below this -> no decisive trend (sideways)
+# Ichimoku periods for the trend-classifier feed (ADR-0067) — classic defaults,
+# matching `indicators.ichimoku`. The cloud sitting *under* the current bar is the
+# spans computed `ICHIMOKU_DISPLACEMENT` bars ago (the trailing displaced read).
+ICHIMOKU_DISPLACEMENT = 26
 RSI_OVERBOUGHT = 70.0
 RSI_OVERSOLD = 30.0
 RECENT_PATTERN_BARS = 5  # patterns on the last N bars are "recent"
@@ -72,7 +77,10 @@ def _percentile_rank(series: Sequence[float | None], window: int) -> float | Non
     return 100.0 * below_or_equal / len(sample)
 
 
-def _classify_trend(closes: Sequence[float], adx_val: float | None) -> Trend:
+def _ema_adx_trend(closes: Sequence[float], adx_val: float | None) -> Trend:
+    """The pre-0073 EMA-stack + ADX trend read (ADR-0023) — the base signal and
+    Ichimoku's fallback when the cloud is undefined."""
+
     ema_s = _last(ind.ema(closes, EMA_SHORT))
     ema_l = _last(ind.ema(closes, EMA_LONG))
     close = closes[-1]
@@ -89,6 +97,61 @@ def _classify_trend(closes: Sequence[float], adx_val: float | None) -> Trend:
         if close < ema_s:
             return Trend.DOWN
     return Trend.SIDEWAYS
+
+
+def _ichimoku_regime(
+    close: float,
+    tenkan: float | None,
+    kijun: float | None,
+    cloud_a: float | None,
+    cloud_b: float | None,
+) -> str | None:
+    """ADR-0067's Ichimoku regime from trailing, correctly-displaced values:
+    ``bullish`` = close above the cloud **and** ``tenkan > kijun``; ``bearish`` =
+    the mirror; ``neutral`` otherwise (price inside the cloud, or TK disagreeing
+    with the cloud side). ``None`` when any component is undefined — the caller
+    then keeps the pre-0073 EMA/ADX read unchanged.
+
+    `cloud_a`/`cloud_b` are the spans computed `displacement` bars ago (the cloud
+    under the current bar), never the values computed *at* this bar (which are
+    projected into the future) — that displaced read is what keeps this trailing."""
+
+    if tenkan is None or kijun is None or cloud_a is None or cloud_b is None:
+        return None
+    cloud_high = max(cloud_a, cloud_b)
+    cloud_low = min(cloud_a, cloud_b)
+    if close > cloud_high and tenkan > kijun:
+        return "bullish"
+    if close < cloud_low and tenkan < kijun:
+        return "bearish"
+    return "neutral"
+
+
+def _classify_trend(
+    closes: Sequence[float],
+    adx_val: float | None,
+    *,
+    ichimoku_tenkan: float | None = None,
+    ichimoku_kijun: float | None = None,
+    cloud_a: float | None = None,
+    cloud_b: float | None = None,
+) -> Trend:
+    """Compose the EMA/ADX trend with Ichimoku's conjunctive veto (ADR-0067).
+
+    Ichimoku is a gate that can **veto, not manufacture**: an EMA-stack ``UP`` is
+    kept only if Ichimoku is not bearish (else ``SIDEWAYS``); a ``DOWN`` only if
+    Ichimoku is not bullish; a ``SIDEWAYS`` base stays ``SIDEWAYS`` regardless.
+    When Ichimoku is undefined the result is the pre-0073 EMA/ADX read, unchanged."""
+
+    base = _ema_adx_trend(closes, adx_val)
+    regime = _ichimoku_regime(closes[-1], ichimoku_tenkan, ichimoku_kijun, cloud_a, cloud_b)
+    if regime is None:
+        return base
+    if base is Trend.UP and regime == "bearish":
+        return Trend.SIDEWAYS
+    if base is Trend.DOWN and regime == "bullish":
+        return Trend.SIDEWAYS
+    return base
 
 
 def _classify_momentum(rsi_val: float | None, macd_hist: float | None) -> MomentumStance:
@@ -174,6 +237,7 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
     atr_series = ind.atr(bars, 14)
     adx_series = ind.adx(bars, 14)
     st_series = ind.supertrend(bars, 10)
+    ichimoku_series = ind.ichimoku(bars)
 
     rsi_val = _last(rsi_series)
     atr_val = _last(atr_series)
@@ -181,6 +245,13 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
     last_boll = next((v for v in reversed(boll_series) if v is not None), None)
     last_adx = next((v for v in reversed(adx_series) if v is not None), None)
     last_st = next((v for v in reversed(st_series) if v is not None), None)
+    # Ichimoku has no interior gaps, so the last element is the current bar's
+    # reading (or None if < span_b bars). Tenkan/Kijun are read at the current
+    # bar `i`; the cloud *under* bar `i` is the spans computed `displacement`
+    # bars ago — `ichimoku_series[i - displacement]` (ADR-0067's trailing read).
+    last_ichi = ichimoku_series[-1]
+    _cloud_idx = len(bars) - 1 - ICHIMOKU_DISPLACEMENT
+    cloud_ichi = ichimoku_series[_cloud_idx] if _cloud_idx >= 0 else None
 
     bb_pct_b: float | None = None
     if last_boll is not None and last_boll.upper != last_boll.lower:
@@ -203,6 +274,11 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         "minus_di": last_adx.minus_di if last_adx else None,
         "supertrend": last_st.value if last_st else None,
         "supertrend_direction": float(last_st.direction) if last_st else None,
+        "ichimoku_tenkan": last_ichi.tenkan if last_ichi else None,
+        "ichimoku_kijun": last_ichi.kijun if last_ichi else None,
+        # The cloud sitting under the current bar (displaced spans, ADR-0067).
+        "ichimoku_cloud_a": cloud_ichi.senkou_a if cloud_ichi else None,
+        "ichimoku_cloud_b": cloud_ichi.senkou_b if cloud_ichi else None,
     }
 
     volume = volume_summary(bars)
@@ -218,7 +294,14 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         }
     )
 
-    trend = _classify_trend(closes, indicator_values["adx"])
+    trend = _classify_trend(
+        closes,
+        indicator_values["adx"],
+        ichimoku_tenkan=indicator_values["ichimoku_tenkan"],
+        ichimoku_kijun=indicator_values["ichimoku_kijun"],
+        cloud_a=indicator_values["ichimoku_cloud_a"],
+        cloud_b=indicator_values["ichimoku_cloud_b"],
+    )
     momentum = _classify_momentum(rsi_val, indicator_values["macd_hist"])
 
     recent_cutoff = len(bars) - RECENT_PATTERN_BARS
