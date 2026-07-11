@@ -290,6 +290,36 @@ class Recommendation(BaseModel):
         return self
 
 
+class TechnicalRead(BaseModel):
+    """A single-indicator technical read — the lesser advisory tier (ADR-0068).
+
+    A directional call (``long``/``short``/``flat``) derived from **one** curated
+    regime indicator by its textbook mechanical rule. Its honesty comes from
+    *structural omission*, not corroboration: unlike `Recommendation` it has **no**
+    ``conviction``, ``entry_zone``, ``stop``, or ``targets`` field — ``extra="forbid"``
+    makes constructing one with those a `ValidationError`, so a thin single-indicator
+    basis can never be dressed as a trade ticket. The fused `recommend` tier (ADR-0029)
+    is untouched; this is a sibling output, never an input to `fuse()`.
+
+    ``indicator_id`` names the one basis; ``regime_state`` is the indicator's read in
+    words (e.g. ``"supertrend direction=+1 (uptrend)"``); ``rationale`` states the
+    mechanical rule that produced the direction. ``as_of_bar_ts`` is the last closed
+    bar's time — the read saw ``bars[0..=this]`` only (anti-lookahead, ADR-0023).
+    Frozen + ``extra="forbid"`` + deterministic contents, so two identical reads dump
+    byte-identically.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    as_of_bar_ts: datetime  # the read saw bars[0..=this] only (anti-lookahead)
+    indicator_id: Literal["supertrend", "ema_stack", "macd", "ichimoku"]
+    direction: Literal["long", "short", "flat"]
+    regime_state: str
+    rationale: list[str]
+
+
 __all__ = [
     "BasisValue",
     "DirectionLegStatus",
@@ -298,5 +328,6 @@ __all__ = [
     "Recommendation",
     "RecommendationBasis",
     "RegimeContext",
+    "TechnicalRead",
     "VolatilitySizing",
 ]

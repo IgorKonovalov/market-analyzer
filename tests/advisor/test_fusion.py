@@ -1313,6 +1313,12 @@ def test_advisor_imports_only_analyst_outputs() -> None:
         "pydantic",
         "market_analyser.advisor",
         "market_analyser.analysis.types",
+        # The technical-read tier (Plan 0074, ADR-0068) reuses the pure, trailing
+        # indicator functions to compute a single-indicator regime, and reads raw
+        # `Bar` inputs — an architect-sanctioned widening of the advisor's consumed
+        # surface beyond the fused tier's output models.
+        "market_analyser.analysis.indicators",
+        "market_analyser.data.types",
         "market_analyser.backtest.types",
         "market_analyser.backtest.walk_forward_types",
         "market_analyser.forecast",
