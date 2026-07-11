@@ -47,6 +47,7 @@ from market_analyser.api.routes.scan_patterns import router as scan_patterns_rou
 from market_analyser.api.routes.search import router as search_router
 from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
+from market_analyser.api.routes.track_record import router as track_record_router
 from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.sse_ticket import SseTicketStore
@@ -640,6 +641,14 @@ def create_app(
     # Either alone is insufficient; require both before mounting.
     if backtest_runs_repository is not None and runs_dir is not None:
         app.include_router(backtests_router)
+
+    # `GET /track_record` (Plan 0080 phase 5, ADR-0075): the renderer's read
+    # surface over the advisor's track record — the REST twin of the
+    # `get_track_record` MCP tool. Mounted only when the advice ledger exists
+    # (persistence wired), so the route's `app.state.advice_ledger_repository`
+    # read is always populated. Renderer-bearer-gated by the central middleware.
+    if advice_ledger_repository is not None:
+        app.include_router(track_record_router)
 
     # The settings router carries both the MCP-secret routes (need a secret path)
     # and the third-party API-key routes (need a secrets store). Register it when

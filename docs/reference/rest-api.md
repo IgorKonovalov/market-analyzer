@@ -4,7 +4,7 @@
 
 # REST API
 
-The 26 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
+The 27 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
 
 | Route | Summary |
 | --- | --- |
@@ -31,6 +31,7 @@ The 26 renderer-facing REST operations, from the FastAPI OpenAPI document. Every
 | [`POST /settings/secret`](#post-settingssecret) | Post Set Secret |
 | [`GET /settings/secrets`](#get-settingssecrets) | Get Secrets Status |
 | [`POST /settings/stop`](#post-settingsstop) | Post Stop |
+| [`GET /track_record`](#get-trackrecord) | Get Track Record |
 | [`POST /ui_events`](#post-uievents) | Post Ui Event |
 | [`GET /watches`](#get-watches) | List Watches |
 | [`POST /watches/{watch_id}`](#post-watcheswatchid) | Set Watch Enabled |
@@ -354,6 +355,22 @@ Schedule a graceful sidecar shutdown after this response is sent.
 No parameters.
 
 **Response:** `any`
+
+## `GET /track_record`
+
+Get Track Record
+
+**Auth:** renderer bearer
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string \| null | no | — |
+| `offset` | integer | no | `0` |
+| `max_calls` | integer \| null | no | — |
+
+**Response:** `GetTrackRecordResponse`
 
 ## `POST /ui_events`
 
