@@ -29,6 +29,7 @@ import {
   tooltipAtTime,
   trendlineTooltipText,
 } from '../lib/tooltip'
+import { useLocale } from './useLocalePref'
 
 export interface TooltipState {
   content: TooltipContent
@@ -49,6 +50,9 @@ export function useChartTooltip(
   { drawnMarkers, rebuildToken }: UseChartTooltipParams,
 ): TooltipState | null {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
+  // The hovered candlestick's meaning line is localizable glossary content (Plan
+  // 0085); read the active locale so it re-subscribes and re-localizes on switch.
+  const locale = useLocale()
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
@@ -82,7 +86,7 @@ export function useChartTooltip(
       spanPrimitiveRef.current?.setHighlight(markerHighlightSpan(hoveredMarkers))
       const timeContent =
         param.time !== undefined
-          ? tooltipAtTime(param.time as UTCTimestamp, drawnMarkers, readings)
+          ? tooltipAtTime(param.time as UTCTimestamp, drawnMarkers, readings, locale)
           : null
       // Trendline under the cursor (Plan 0067 phase 2): the primitive hit-tests
       // the hovered pixel against its drawn segments and returns the spec, if any.
@@ -91,12 +95,13 @@ export function useChartTooltip(
       const trendlines = hovered ? [trendlineTooltipText(hovered)] : []
       const markers = timeContent?.markers ?? []
       const overlays = timeContent?.overlays ?? []
+      const markerMeaning = timeContent?.markerMeaning
       if (markers.length === 0 && overlays.length === 0 && trendlines.length === 0) {
         setTooltip(null)
         return
       }
       setTooltip({
-        content: { markers, overlays, trendlines },
+        content: { markers, overlays, trendlines, markerMeaning },
         x: param.point.x,
         y: param.point.y,
       })
@@ -111,6 +116,7 @@ export function useChartTooltip(
     trendlinePrimitiveRef,
     drawnMarkers,
     rebuildToken,
+    locale,
   ])
   return tooltip
 }

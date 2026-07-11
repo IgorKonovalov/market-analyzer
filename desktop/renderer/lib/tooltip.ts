@@ -15,6 +15,8 @@ import type { MarkerKind, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { ChartMarker } from './markers'
 import { candlePatternDisplayName } from './candleGroups'
 import { patternDisplayName, trendlineStateLabel } from './trendlines'
+import { localize, term } from '../glossary/types'
+import type { Locale } from './i18n'
 
 export interface OverlayReading {
   label: string
@@ -26,6 +28,11 @@ export interface TooltipContent {
    * display name (`Bullish engulfing`, `Doji`) when the marker carries one,
    * else its free-text `label`, else a direction word (Plan 0071 follow-up). */
   markers: string[]
+  /** The what-it-means line for a SINGLE hovered candlestick marker whose
+   * pattern token resolves in the glossary (Plan 0085). Absent when zero or
+   * several markers coincide on the bar, or the token has no entry — the tooltip
+   * then shows names only, so the meaning never overflows a stacked read-out. */
+  markerMeaning?: string
   /** Each hovered overlay line's name + value at the crosshair. */
   overlays: OverlayReading[]
   /** Hovered trendline read-outs — pattern + state (Plan 0067 phase 2 /
@@ -103,17 +110,27 @@ export function tooltipAtTime(
   time: UTCTimestamp | undefined,
   chartMarkers: ChartMarker[],
   overlays: OverlayReading[],
+  locale: Locale = 'en',
 ): TooltipContent | null {
   if (time === undefined) return null
-  const markers = chartMarkers
-    .filter((m) => Math.floor(new Date(m.event_ts).getTime() / 1000) === time)
-    .map((m) =>
-      // A candlestick sweep marker names its pattern (ADR-0045); prefer that
-      // display name over the free-text label or a bare direction word.
-      m.pattern != null
-        ? candlePatternDisplayName(m.pattern)
-        : m.label?.trim() || markerKindLabel(m.kind),
-    )
+  const onBar = chartMarkers.filter(
+    (m) => Math.floor(new Date(m.event_ts).getTime() / 1000) === time,
+  )
+  const markers = onBar.map((m) =>
+    // A candlestick sweep marker names its pattern (ADR-0045); prefer that
+    // display name over the free-text label or a bare direction word.
+    m.pattern != null
+      ? candlePatternDisplayName(m.pattern)
+      : m.label?.trim() || markerKindLabel(m.kind),
+  )
   if (markers.length === 0 && overlays.length === 0) return null
-  return { markers, overlays }
+  // A single hovered candlestick marker discloses its glossary meaning (Plan
+  // 0085); when several markers coincide the meaning lines would overflow, so
+  // names-only. An unknown token (no glossary entry) also degrades to name-only.
+  let markerMeaning: string | undefined
+  if (onBar.length === 1 && onBar[0].pattern != null) {
+    const record = term(onBar[0].pattern)
+    if (record) markerMeaning = localize(record.whatItMeans, locale)
+  }
+  return { markers, overlays, markerMeaning }
 }

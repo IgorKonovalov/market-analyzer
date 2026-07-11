@@ -69,6 +69,11 @@ export function ChartTooltip({
           {label}
         </div>
       ))}
+      {content.markerMeaning !== undefined && (
+        <div className={styles.markerMeaning} data-testid="tooltip-marker-meaning">
+          {content.markerMeaning}
+        </div>
+      )}
       {content.overlays.map((reading, i) => (
         <div key={`overlay-${i}`} className={styles.overlay} data-testid="tooltip-overlay">
           <span className={styles.overlayLabel}>{reading.label}</span>

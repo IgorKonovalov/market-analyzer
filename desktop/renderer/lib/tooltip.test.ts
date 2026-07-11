@@ -6,6 +6,7 @@ import type { UTCTimestamp } from 'lightweight-charts'
 
 import type { Annotation } from '../types/sidecar/annotation'
 import type { OverlaySpec, TrendlineSpec } from '../types/events'
+import { localize, term } from '../glossary/types'
 import { overlayLabel, tooltipAtTime, tooltipPosition, trendlineTooltipText } from './tooltip'
 
 function annotation(overrides: Partial<Annotation> = {}): Annotation {
@@ -53,6 +54,55 @@ describe('tooltipAtTime', () => {
       [],
     )
     expect(content?.markers).toEqual(['Bullish engulfing'])
+  })
+
+  it('adds the what-it-means line for a single hovered candlestick marker (Plan 0085)', () => {
+    const content = tooltipAtTime(
+      APR15,
+      [
+        {
+          event_ts: '2026-04-15T00:00:00+00:00',
+          kind: 'bullish_marker',
+          pattern: 'bullish_engulfing',
+        },
+      ],
+      [],
+    )
+    expect(content?.markers).toEqual(['Bullish engulfing'])
+    expect(content?.markerMeaning).toBe(localize(term('bullish_engulfing')!.whatItMeans, 'en'))
+  })
+
+  it('shows names only (no meaning) when several markers coincide on one bar', () => {
+    const content = tooltipAtTime(
+      APR15,
+      [
+        {
+          event_ts: '2026-04-15T00:00:00+00:00',
+          kind: 'bullish_marker',
+          pattern: 'bullish_engulfing',
+        },
+        { event_ts: '2026-04-15T00:00:00+00:00', kind: 'bullish_marker', pattern: 'hammer' },
+      ],
+      [],
+    )
+    expect(content?.markers).toEqual(['Bullish engulfing', 'Hammer'])
+    expect(content?.markerMeaning).toBeUndefined()
+  })
+
+  it('omits the meaning for a marker whose pattern token has no glossary entry', () => {
+    const content = tooltipAtTime(
+      APR15,
+      [
+        {
+          event_ts: '2026-04-15T00:00:00+00:00',
+          kind: 'bullish_marker',
+          pattern: 'mystery_pattern',
+        },
+      ],
+      [],
+    )
+    expect(content?.markers).toEqual(['Mystery pattern'])
+    expect(content?.markerMeaning).toBeUndefined()
   })
 
   it('includes overlay readings at the crosshair', () => {
