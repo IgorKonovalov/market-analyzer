@@ -4,7 +4,7 @@
 
 # SSE events
 
-The 23 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
+The 24 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
 
 | Event | Summary |
 | --- | --- |
@@ -30,6 +30,7 @@ The 23 SSE envelope kinds published on `/events`, from the event type registry. 
 | [`regime_forecast.completed`](#regimeforecastcompleted) | `regime_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_regime` tool produced a regime-transition forecast. |
 | [`run.completed`](#runcompleted) | `run.completed v1` payload: a backtest/analysis/defi artifact is ready. |
 | [`signal.evaluated`](#signalevaluated) | `signal.evaluated v1` payload (Plan 0026): the live signal state of one strategy on one symbol. |
+| [`technical_read.completed`](#technicalreadcompleted) | `technical_read.completed v1` payload (Plan 0074, ADR-0068): the `technical_read` tool produced a single-indicator `TechnicalRead`. |
 | [`volatility_forecast.completed`](#volatilityforecastcompleted) | `volatility_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_volatility` tool produced a realised-volatility forecast. |
 
 ---
@@ -470,6 +471,30 @@ never a recommendation.
 | Name | Type | Required | Default |
 | --- | --- | --- | --- |
 | `evaluation` | SignalEvaluation | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
+## `technical_read.completed`
+
+**Version:** 1
+
+`technical_read.completed v1` payload (Plan 0074, ADR-0068): the `technical_read`
+tool produced a single-indicator `TechnicalRead`.
+
+The full model rides inline — small and ephemeral, nothing persisted for the viewer
+to follow-up fetch; one envelope per tool call. The **lesser** advisory tier: a
+direction from ONE named indicator, with no conviction and no levels (structural
+omission, ADR-0068). Deliberately a **distinct type and a distinct event** from
+`recommendation.completed` so a consumer can never conflate the thin single-indicator
+read with the corroborated fused call. The `TechnicalRead` model itself has no
+conviction/entry/stop/target fields, so anything this payload validates is safe to
+render as the lesser tier and only that.
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `read` | TechnicalRead | yes | — |
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 

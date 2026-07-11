@@ -562,6 +562,7 @@ EXPECTED_FULL_TOOLSET = {
     "show_chart",
     "smart_volume",
     "stocktwits_sentiment",
+    "technical_read",
     "update_chart",
     "volume_breakout",
     "volume_confirmation",

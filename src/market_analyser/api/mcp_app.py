@@ -74,6 +74,7 @@ from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_
 from market_analyser.api.mcp_tools.show_chart import register_show_chart
 from market_analyser.api.mcp_tools.smart_volume import register_smart_volume
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
+from market_analyser.api.mcp_tools.technical_read import register_technical_read
 from market_analyser.api.mcp_tools.track_record import register_get_track_record
 from market_analyser.api.mcp_tools.update_chart import register_update_chart
 from market_analyser.api.mcp_tools.volume_breakout import register_volume_breakout
@@ -306,6 +307,18 @@ def create_mcp_components(
         # whenever persistence exists; without it the tool still returns and
         # publishes, the call is simply not recorded for scoring.
         advice_ledger_repository=advice_ledger_repository,
+    )
+
+    # `technical_read` (Plan 0074, ADR-0068): the LESSER advisory tier — a single-
+    # indicator mechanical direction (long/short/flat) with no conviction and no
+    # levels, a distinct type + event from the fused `recommend` so the thin read
+    # can never be mistaken for the corroborated call. Read-only: no key, no order,
+    # no network write. Publishes `technical_read.completed v1` so the viewer renders
+    # the read live beside (not merged into) the Recommendations surface.
+    register_technical_read(
+        server,
+        provider=provider,
+        event_bus=event_bus,
     )
 
     # `get_track_record` (Plan 0080, ADR-0075): the read-only surface over the

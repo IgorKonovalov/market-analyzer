@@ -53,6 +53,7 @@ from market_analyser.events.payloads import (
     RegimeForecastCompletedPayloadV1,
     RunCompletedPayloadV1,
     SignalEvaluatedPayloadV1,
+    TechnicalReadCompletedPayloadV1,
     VolatilityForecastCompletedPayloadV1,
 )
 
@@ -87,6 +88,7 @@ __all__ = [
     "RunCompletedPayloadV1",
     "SignalEvaluatedPayloadV1",
     "Subscription",
+    "TechnicalReadCompletedPayloadV1",
     "TrendPoint",
     "TrendlineSpec",
     "UnknownEventTypeError",

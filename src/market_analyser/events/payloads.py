@@ -18,7 +18,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from market_analyser.advisor.models import Recommendation
+from market_analyser.advisor.models import Recommendation, TechnicalRead
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.events.chart_types import Marker, OverlaySpec, TrendlineSpec
 from market_analyser.forecast.regime import RegimeForecast
@@ -203,6 +203,25 @@ class RegimeForecastCompletedPayloadV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     forecast: RegimeForecast
+
+
+class TechnicalReadCompletedPayloadV1(BaseModel):
+    """`technical_read.completed v1` payload (Plan 0074, ADR-0068): the `technical_read`
+    tool produced a single-indicator `TechnicalRead`.
+
+    The full model rides inline — small and ephemeral, nothing persisted for the viewer
+    to follow-up fetch; one envelope per tool call. The **lesser** advisory tier: a
+    direction from ONE named indicator, with no conviction and no levels (structural
+    omission, ADR-0068). Deliberately a **distinct type and a distinct event** from
+    `recommendation.completed` so a consumer can never conflate the thin single-indicator
+    read with the corroborated fused call. The `TechnicalRead` model itself has no
+    conviction/entry/stop/target fields, so anything this payload validates is safe to
+    render as the lesser tier and only that."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    read: TechnicalRead
 
 
 class ChartUpdateDroppedPayloadV1(BaseModel):
@@ -395,6 +414,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "forecast.completed": ForecastCompletedPayloadV1,
     "volatility_forecast.completed": VolatilityForecastCompletedPayloadV1,
     "regime_forecast.completed": RegimeForecastCompletedPayloadV1,
+    "technical_read.completed": TechnicalReadCompletedPayloadV1,
     "chart.update_dropped": ChartUpdateDroppedPayloadV1,
     "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
     "ohlcv.backfilled": OhlcvBackfilledPayloadV1,
@@ -434,4 +454,5 @@ __all__ = [
     "RecommendationScoredPayloadV1",
     "RunCompletedPayloadV1",
     "SignalEvaluatedPayloadV1",
+    "TechnicalReadCompletedPayloadV1",
 ]

@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 48 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 49 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -51,6 +51,7 @@ The 48 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`show_chart`](#showchart) | Render a chart in the Electron viewer. |
 | [`smart_volume`](#smartvolume) | Scan a supplied symbol list (watchlist) for a volume surge with RSI in a band on cached bars. |
 | [`stocktwits_sentiment`](#stocktwitssentiment) | Summarise StockTwits crowd sentiment for a symbol over a window by counting users' explicit Bullish/Bearish post labels (no NLP model). |
+| [`technical_read`](#technicalread) | ADVISORY ONLY, LESSER TIER — a single-indicator technical read: the mechanical direction (long/short/flat) of ONE curated regime indicator by its textbook rule, with NO conviction and NO entry/stop/target levels. |
 | [`update_chart`](#updatechart) | Apply a delta to the currently-rendered chart. |
 | [`volume_breakout`](#volumebreakout) | Scan a supplied symbol list (watchlist) for price+volume breakouts on cached bars. |
 | [`volume_confirmation`](#volumeconfirmation) | Report how well volume backs one symbol's recent price move on cached bars. |
@@ -950,6 +951,33 @@ Summarise StockTwits crowd sentiment for a symbol over a window by counting user
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/stocktwits_sentiment.py`](../../src/market_analyser/api/mcp_tools/stocktwits_sentiment.py)
+
+## `technical_read`
+
+ADVISORY ONLY, LESSER TIER — a single-indicator technical read: the mechanical direction (long/short/flat) of ONE curated regime indicator by its textbook rule, with NO conviction and NO entry/stop/target levels. This is NOT the fully-corroborated `recommend` call — it is one named indicator, said out loud, and nothing more; there is no ML forecast, no walk-forward edge, no cross-leg agreement behind it. It may say long while `recommend` says flat — that is thin vs. corroborated, not a contradiction. The user reads it and sizes it themselves. Eligible indicators: ema_stack, ichimoku, macd, supertrend. supertrend -> its direction; ema_stack -> fast-vs-slow EMA and close; macd -> histogram sign; ichimoku -> price vs the displaced cloud with tenkan/kijun. Returns a TechnicalRead (direction, the indicator's regime_state read, and the mechanical rule as rationale). Reads the last CLOSED bar; requires bars already cached for the window (backfill via get_ohlcv first). Publishes `technical_read.completed v1` so a connected viewer renders the read live. This tool holds no trade key, places no order, moves no money. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `range_start` | string (date-time) | yes | — |
+| `indicator_id` | string | yes | — |
+
+**Returns:** `TechnicalRead`
+
+| Field | Type |
+| --- | --- |
+| `symbol` | string |
+| `timeframe` | string |
+| `as_of_bar_ts` | string (date-time) |
+| `indicator_id` | enum["supertrend", "ema_stack", "macd", "ichimoku"] |
+| `direction` | enum["long", "short", "flat"] |
+| `regime_state` | string |
+| `rationale` | array[string] |
+
+**Source:** [`src/market_analyser/api/mcp_tools/technical_read.py`](../../src/market_analyser/api/mcp_tools/technical_read.py)
 
 ## `update_chart`
 
