@@ -84,6 +84,10 @@ export type TrendlineRole =
   | 'lower_trendline'
   | 'projection'
   | 'skeleton'
+  // The horizontal line through a double top/bottom's two matching extremes
+  // (Plan 0083 ph8) — a plain 2-point line the renderer strokes with no special
+  // handling; declared here so the wire role is type-complete.
+  | 'base'
 
 export type TrendlineStyle = 'solid' | 'dashed'
 
