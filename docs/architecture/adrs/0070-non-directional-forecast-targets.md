@@ -1,6 +1,6 @@
 # ADR-0070 — Non-directional forecast targets: volatility + regime-transition as distinct forecast kinds
 
-> **Status:** proposed — accepts at Plan 0077's close
+> **Status:** accepted (Plan 0077 close 2026-07-11)
 > **Date:** 2026-07-10
 > **Related plan(s):** 0077
 

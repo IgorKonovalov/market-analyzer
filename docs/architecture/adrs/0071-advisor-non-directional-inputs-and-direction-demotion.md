@@ -1,6 +1,6 @@
 # ADR-0071 — Advisor consumes non-directional forecasts as non-voting inputs; direction leg demoted to non-gating
 
-> **Status:** proposed — accepts at Plan 0077's close
+> **Status:** accepted (Plan 0077 close 2026-07-11)
 > **Date:** 2026-07-10
 > **Related plan(s):** 0077
 
