@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 47 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 48 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -42,6 +42,7 @@ The 47 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`recommend`](#recommend) | ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single labeled trade recommendation: the technical condition snapshot, the named strategy's live signal on the current bar, its walk-forward out-of-sample edge, and the calibrated direction forecast. |
 | [`run_backtest`](#runbacktest) | Run a backtest for a single strategy/symbol/timeframe window. |
 | [`scan_patterns`](#scanpatterns) | Sweep a time range for EVERY candlestick pattern on the cached bars and highlight them all at once: publishes a single `chart.highlight v1` event carrying one marker per detected pattern (multi-bar patterns carry a bar span; doji/neutral patterns are included). |
+| [`scan_pool_discrepancies`](#scanpooldiscrepancies) | Screen configured DEX pools for cross-pool price discrepancies, NET OF COST, for one or more canonical pairs (e.g. |
 | [`scan_wallet`](#scanwallet) | Discover a wallet's DeFi positions from a public EVM address across Ethereum, Base, Arbitrum, and Optimism. |
 | [`screener_query`](#screenerquery) | Screen a market universe for symbols matching indicator/price filters (e.g. |
 | [`search_prediction_markets`](#searchpredictionmarkets) | Search prediction markets by free text and get each match with its current odds. |
@@ -808,6 +809,20 @@ Sweep a time range for EVERY candlestick pattern on the cached bars and highligh
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/scan_patterns.py`](../../src/market_analyser/api/mcp_tools/scan_patterns.py)
+
+## `scan_pool_discrepancies`
+
+Screen configured DEX pools for cross-pool price discrepancies, NET OF COST, for one or more canonical pairs (e.g. 'WETH/USDC') at a given trade_size. Reads each configured pool's on-chain price and returns ranked observations {pair, trade_size, buy_pool, buy_dex, sell_pool, sell_dex, buy_price, sell_price, gross_spread, est_gas_cost, est_slippage, est_fees, net_spread, capturable_at_threshold, capturability_note, queried_at}, where net_spread = gross - gas - slippage - fees is the honest number (a gross spread is never reported as the opportunity). A sub-threshold discrepancy is flagged capturable_at_threshold=false, not dropped. IMPORTANT: net_spread is an UPPER BOUND on capturability, not a capture guarantee - an RPC poller sees prices later than a colocated searcher, so a discrepancy visible here may not be capturable in practice (see capturability_note). Facts only - this reports conditions, never a buy/sell/execute call, and it signs nothing and moves no funds. est_gas_cost (quote-token units) and min_net_spread tune the cost model and the capturable threshold. Results are bounded to 50 per page: when more remain partial_reason='too_large' and total_available/offset/returned tell you how to page (call again with offset=returned). On failure observations is null and error is a typed reason (unconfigured / config_error / rate_limited / upstream_unavailable / malformed_response).
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `params` | ScanPoolDiscrepanciesInput | yes | — |
+
+**Returns:** `dict[str, Any]`
+
+**Source:** [`src/market_analyser/api/mcp_tools/pool_discrepancies.py`](../../src/market_analyser/api/mcp_tools/pool_discrepancies.py)
 
 ## `scan_wallet`
 

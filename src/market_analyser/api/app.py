@@ -332,6 +332,7 @@ def create_app(
             runs_dir=runs_dir,
             wallet_positions_sources=effective_wallet_sources,
             lp_detail_sources=effective_lp_detail_sources,
+            pool_price_sources=effective_pool_price_sources,
             tx_history_sources=effective_tx_history_sources,
             defi_tx_repository=defi_tx_repository,
             historical_price_source=historical_price_source,

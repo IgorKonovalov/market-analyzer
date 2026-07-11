@@ -553,6 +553,7 @@ EXPECTED_FULL_TOOLSET = {
     "recommend",
     "run_backtest",
     "scan_patterns",
+    "scan_pool_discrepancies",
     "scan_wallet",
     "screener_query",
     "search_prediction_markets",

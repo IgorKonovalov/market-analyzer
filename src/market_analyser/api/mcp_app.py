@@ -60,6 +60,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     register_multi_timeframe_analysis,
 )
 from market_analyser.api.mcp_tools.news_for import register_news_for
+from market_analyser.api.mcp_tools.pool_discrepancies import register_pool_discrepancies
 from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
 from market_analyser.api.mcp_tools.prediction_markets import register_prediction_market_tools
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
@@ -90,6 +91,7 @@ from market_analyser.data.sources import (
     HistoricalPriceSource,
     LpPositionDetailSource,
     MetricSeriesSource,
+    PoolPriceSource,
     PredictionMarketSource,
     TxHistorySource,
     WalletPositionsSource,
@@ -133,6 +135,7 @@ def create_mcp_components(
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
     manual_positions_path: Path | None = None,
     prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
+    pool_price_sources: Mapping[str, PoolPriceSource] | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -230,6 +233,14 @@ def create_mcp_components(
             else {"polymarket": PolymarketOddsAdapter()}
         ),
     )
+
+    # Cross-pool discrepancy scanner (Plan 0079, ADR-0072 BA-7): the read-only
+    # arb-viability evidence tool over the ADR-0031 pool-price selector registry.
+    # Always registered — it selects its source by name at call time, so it
+    # registers even with an empty registry (returning `unconfigured` until a
+    # secrets-store-backed on-chain source is wired by create_app). Reports
+    # net-of-cost discrepancies as facts; signs nothing, moves no funds.
+    register_pool_discrepancies(server, pool_price_sources=pool_price_sources or {})
 
     # `forecast` (Plan 0036, multi-horizon per Plan 0059): direction-as-probability
     # over cached bars, per-horizon gated on beating a naive baseline
