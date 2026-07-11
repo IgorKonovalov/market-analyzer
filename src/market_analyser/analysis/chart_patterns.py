@@ -120,15 +120,11 @@ _TRENDLINE_PATTERNS = (
 )
 CHART_PATTERNS: tuple[str, ...] = _PIVOT_MATCHED_PATTERNS + _TRENDLINE_PATTERNS
 
-# Patterns whose confirmed hit draws a measured-move projection (ADR-0078).
-# The trendline family + head & shoulders / inverse now; the doubles join in
-# Plan 0083 ph8. The projection is a vertical segment from the broken line
-# (the neckline for H&S) to the target — see `_projection_line`.
-_PROJECTION_PATTERNS: tuple[str, ...] = (
-    *_TRENDLINE_PATTERNS,
-    "head_shoulders",
-    "inverse_head_shoulders",
-)
+# Patterns whose confirmed hit draws a measured-move projection (ADR-0078): the
+# trendline family + every pivot-matched pattern. The projection is a vertical
+# segment from the broken line (the neckline for H&S / doubles) to the target —
+# see `_projection_line`.
+_PROJECTION_PATTERNS: tuple[str, ...] = (*_TRENDLINE_PATTERNS, *_PIVOT_MATCHED_PATTERNS)
 
 _STATE_ORDER: dict[str, int] = {"forming": 0, "confirmed": 1}
 
@@ -265,7 +261,13 @@ def _match_double(run: Sequence[Pivot], bottom: bool) -> _Formation | None:
         direction="bullish" if bottom else "bearish",
         completion_bar=e2.bar_index + PIVOT_RIGHT,
         pivots=(e1, mid, e2),
-        lines=(LineSeg(start=neck_start, end=neck_end, role="neckline"),),
+        # Neckline through the middle pivot + a horizontal base through the two
+        # matching extremes (the two troughs / peaks) — the double's two lines
+        # (ADR-0078). Neckline stays index 0; the base rides on the real pivots.
+        lines=(
+            LineSeg(start=neck_start, end=neck_end, role="neckline"),
+            LineSeg(start=_point(e1), end=_point(e2), role="base"),
+        ),
         strength=1.0 - mismatch / DOUBLE_MATCH_TOL,
         break_x1=e1.bar_index,
         break_p1=mid.price,

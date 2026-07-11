@@ -146,7 +146,8 @@ class TrendlineSpec(BaseModel):
 
     points: list[TrendPoint]
     role: (
-        Literal["neckline", "upper_trendline", "lower_trendline", "projection", "skeleton"] | None
+        Literal["neckline", "upper_trendline", "lower_trendline", "projection", "skeleton", "base"]
+        | None
     ) = None
     style: Literal["solid", "dashed"] = "solid"
     label: str | None = None

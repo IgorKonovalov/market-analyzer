@@ -121,7 +121,7 @@ class LineSeg(BaseModel):
 
     start: PivotPoint
     end: PivotPoint
-    role: Literal["neckline", "upper_trendline", "lower_trendline", "projection"]
+    role: Literal["neckline", "upper_trendline", "lower_trendline", "projection", "base"]
 
 
 class ChartPatternHit(BaseModel):

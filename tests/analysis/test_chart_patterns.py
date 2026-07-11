@@ -222,6 +222,26 @@ def test_inverse_head_shoulders_mirrors_bullish() -> None:
     assert forming.lines[0].role == "neckline"
 
 
+def test_double_confirmed_projection_up_for_bottom_down_for_top() -> None:
+    """ph8 (ADR-0078): a confirmed double bottom carries an UPWARD projection to
+    the measured-move target (vertical at the breakout bar); a double top mirrors
+    it downward. Doubles never emit a skeleton/fill role."""
+
+    b_bars = _bars_from_path(_DOUBLE_BOTTOM_ANCHORS)
+    b_conf = next(h for h in _hits_for(b_bars, "double_bottom") if h.state == "confirmed")
+    b_proj = next(line for line in b_conf.lines if line.role == "projection")
+    assert b_conf.target is not None
+    assert b_proj.start.ts == b_proj.end.ts == b_bars[b_conf.bar_index].event_ts
+    assert abs(b_proj.end.price - b_conf.target) < _TOL
+    assert b_proj.end.price > b_proj.start.price  # bullish -> upward
+    assert all(line.role != "skeleton" for line in b_conf.lines)
+
+    top = _hits_for(_bars_from_path(_DOUBLE_TOP_ANCHORS), "double_top")
+    t_conf = next(h for h in top if h.state == "confirmed")
+    t_proj = next(line for line in t_conf.lines if line.role == "projection")
+    assert t_proj.end.price < t_proj.start.price  # bearish -> downward
+
+
 def test_head_shoulders_confirmed_projection_is_downward_to_target() -> None:
     """ph5 (ADR-0078): a confirmed head & shoulders carries a vertical
     'projection' line at the breakout bar ending at the measured-move target,
@@ -257,6 +277,11 @@ def test_double_top_and_bottom_fire_with_horizontal_neckline() -> None:
     assert neck.role == "neckline"
     assert abs(neck.start.price - 104.0) < _TOL  # horizontal at the trough
     assert abs(neck.end.price - 104.0) < _TOL
+    # ph8: a base line through the two matching peaks (121 / 120.5), after neckline.
+    base = top.lines[1]
+    assert base.role == "base"
+    assert abs(base.start.price - 121.0) < _TOL
+    assert abs(base.end.price - 120.5) < _TOL
 
     bottom_hits = _hits_for(_bars_from_path(_DOUBLE_BOTTOM_ANCHORS), "double_bottom")
     assert bottom_hits
@@ -264,6 +289,13 @@ def test_double_top_and_bottom_fire_with_horizontal_neckline() -> None:
     assert bottom.direction == "bullish"
     assert [p.price for p in bottom.pivots] == [99.0, 116.0, 99.5]
     assert abs(bottom.lines[0].start.price - 116.0) < _TOL
+    # ph8: a base line through the two matching troughs (99 / 99.5).
+    bottom_base = bottom.lines[1]
+    assert bottom_base.role == "base"
+    assert abs(bottom_base.start.price - 99.0) < _TOL
+    assert abs(bottom_base.end.price - 99.5) < _TOL
+    # A forming double never carries a projection (confirmed-only).
+    assert all(line.role != "projection" for line in bottom.lines)
 
 
 # --------------------------------------------------------------------------- #

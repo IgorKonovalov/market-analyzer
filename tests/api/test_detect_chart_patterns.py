@@ -72,6 +72,10 @@ _SYM_TRIANGLE_ANCHORS = [
     (29, 126.0),
 ]
 
+# A double bottom (two troughs ~99 / 99.5, peak 116) breaking out upward — for the
+# ph8 neckline + base + projection publish test.
+_DOUBLE_BOTTOM_ANCHORS = [(0, 120.0), (6, 100.0), (12, 115.0), (18, 100.5), (33, 135.0)]
+
 
 def _bars_from_path(anchors: list[tuple[int, float]]) -> list[Bar]:
     """Sample a piecewise-linear base path into bars (high/low straddle the
@@ -299,6 +303,34 @@ def test_detect_chart_patterns_publishes_projection_on_confirmed_trendline() -> 
     assert len(pts) == 2
     assert pts[0]["ts"] == pts[1]["ts"]  # vertical: shared timestamp
     assert pts[0]["price"] != pts[1]["price"]
+
+
+def test_detect_chart_patterns_double_publishes_neckline_base_projection() -> None:
+    """Plan 0083 ph8: a confirmed double bottom publishes a neckline + a `base`
+    horizontal through the two troughs + an upward `projection`; the forming hit
+    publishes neckline + base but no projection. No skeleton/fill for a double."""
+
+    bus = EventBus()
+    sub = bus.subscribe()
+    ack = _run_detect(
+        bus,
+        _StubProvider(_bars_from_path(_DOUBLE_BOTTOM_ANCHORS)),
+        patterns=["double_bottom"],
+    )
+    assert ack["event_published"] is True
+
+    trendlines = _drain(sub)[0].payload["trendlines"]
+    roles = [t["role"] for t in trendlines]
+    assert roles.count("neckline") == 2  # forming + confirmed
+    assert roles.count("base") == 2
+    assert roles.count("projection") == 1  # confirmed only
+    assert "skeleton" not in roles
+
+    proj = next(t for t in trendlines if t["role"] == "projection")
+    assert proj["style"] == "solid"
+    pts = proj["points"]
+    assert pts[0]["ts"] == pts[1]["ts"]  # vertical
+    assert pts[1]["price"] > pts[0]["price"]  # upward (bottom)
 
 
 def test_detect_chart_patterns_states_filter_narrows_hits_and_event() -> None:
