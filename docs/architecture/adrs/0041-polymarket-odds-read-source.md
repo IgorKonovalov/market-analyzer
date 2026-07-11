@@ -1,6 +1,6 @@
 # ADR-0041 — Polymarket as a read-only prediction-market odds source
 
-> **Status:** proposed — accepts at the Polymarket data plan close ([Plan 0040](../plans/0040-polymarket-odds-adapter.md))
+> **Status:** accepted (2026-07-11, at [Plan 0040](../plans/0040-polymarket-odds-adapter.md)'s close)
 > **Date:** 2026-06-05
 > **Related plan(s):** [Plan 0040](../plans/0040-polymarket-odds-adapter.md) (Polymarket odds read adapter)
 > **Related ADRs:** [ADR-0031](0031-data-source-adapter-contract.md) (the per-capability source contract this adds a capability to — does **not** supersede), [ADR-0009](0009-rewrite-data-layer-in-house.md) (in-house read adapters), [ADR-0019](0019-external-http-adapter-resilience.md) (the resilience module this inherits), [ADR-0015](0015-claude-code-primary-control-surface.md) ("conditions are facts" — odds are a fact, not a call), [ADR-0025](0025-trade-execution-feasibility.md) (where Polymarket *trading* belongs — not here)
