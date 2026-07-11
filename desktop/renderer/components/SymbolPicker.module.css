@@ -84,17 +84,49 @@
   color: inherit;
 }
 
-.optionTags {
+.optionMeta {
   display: flex;
-  gap: var(--space-2);
-  font-size: 11px;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+}
+
+/* Asset-type tag (e.g. Cryptocurrency / Futures) — muted, no chrome. */
+.optionType {
   color: var(--color-fg-muted);
 }
 
-.optionTags > span::before {
-  content: '· ';
+.optionActive .optionType {
+  color: inherit;
 }
 
-.optionActive .optionTags {
+/* Source badge — the routed venue (Coinbase / Binance / a Yahoo market code),
+   its own pill so the three sources read as distinct (Plan 0081 / ADR-0076). */
+.sourceBadge {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+  white-space: nowrap;
+}
+
+/* Preferred-crypto hint on a Coinbase -USD pair (deep + USD-native). An accent
+   chip, not a reorder — a label only (Plan 0081 phase 4). */
+.deepHint {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* On the highlighted row (accent background) keep both chips legible against
+   the accent fill: drop their own fills, ride the row's inherited color. */
+.optionActive .sourceBadge,
+.optionActive .deepHint {
   color: inherit;
+  background: transparent;
+  border-color: currentColor;
 }

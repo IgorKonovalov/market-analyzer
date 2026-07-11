@@ -103,6 +103,34 @@ it('renders a dropdown of results showing symbol, name, exchange and type', asyn
   expect(options[1]).toHaveTextContent('BTC=F')
 })
 
+it('renders a distinct source badge per suggestion and a deep-USD hint on Coinbase -USD rows', async () => {
+  // A mixed result set: Coinbase (deep USD), Binance (USDT), Yahoo composite.
+  setupFetch([
+    { symbol: 'BTC-USD', name: 'Bitcoin USD', exchange: 'Coinbase', quote_type: 'Cryptocurrency' },
+    {
+      symbol: 'BTCUSDT',
+      name: 'Bitcoin Tether',
+      exchange: 'Binance',
+      quote_type: 'Cryptocurrency',
+    },
+    { symbol: 'BTC=F', name: 'Bitcoin Futures', exchange: 'CME', quote_type: 'Futures' },
+  ])
+  renderPicker()
+  await typeAndOpen('BTC')
+
+  const options = within(screen.getByRole('listbox')).getAllByRole('option')
+  // Each suggestion carries its routed source label, distinctly per row.
+  expect(options[0]).toHaveTextContent('Coinbase')
+  expect(options[1]).toHaveTextContent('Binance')
+  expect(options[2]).toHaveTextContent('CME')
+
+  // Only the Coinbase -USD pair is flagged as the preferred deep-USD crypto
+  // suggestion; the Binance USDT pair and the Yahoo future are not.
+  expect(within(options[0]).getByText('deep USD')).toBeInTheDocument()
+  expect(within(options[1]).queryByText('deep USD')).not.toBeInTheDocument()
+  expect(within(options[2]).queryByText('deep USD')).not.toBeInTheDocument()
+})
+
 it('selects a row with ArrowDown + Enter, committing the picked symbol', async () => {
   const { onSymbolChange } = renderPicker()
   const input = await typeAndOpen('BTC')

@@ -115,6 +115,7 @@ export const ru = {
   'symbolPicker.symbol': 'Символ',
   'symbolPicker.timeframe': 'Таймфрейм',
   'symbolPicker.symbolSuggestions': 'Подсказки символов',
+  'symbolPicker.deepUsdHint': 'глубокий USD',
 
   // ── Agent-mode toggle (AgentModeToggle.tsx) ──
   'agentMode.toggle': 'Переключить режим агента',

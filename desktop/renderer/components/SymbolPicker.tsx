@@ -25,6 +25,15 @@ interface Props {
   disabled?: boolean
 }
 
+// A Coinbase USD-native pair (deep, USD-quoted history — Plan 0081 / ADR-0076).
+// `exchange` is the routed source (relabeled server-side in search_symbols), so
+// this is the truthful signal that the suggestion charts deep USD from Coinbase
+// rather than a shallow Yahoo composite; the picker flags it as the preferred
+// crypto suggestion with a hint label (never a rewrite of what the user typed).
+function isDeepUsd(info: SymbolInfo): boolean {
+  return info.exchange === 'Coinbase' && info.symbol.endsWith('-USD')
+}
+
 export function SymbolPicker({
   symbol,
   timeframe,
@@ -206,9 +215,14 @@ export function SymbolPicker({
             >
               <span className={styles.optionSymbol}>{info.symbol}</span>
               <span className={styles.optionName}>{info.name}</span>
-              <span className={styles.optionTags}>
-                {info.exchange ? <span>{info.exchange}</span> : null}
-                {info.quote_type ? <span>{info.quote_type}</span> : null}
+              <span className={styles.optionMeta}>
+                {isDeepUsd(info) ? (
+                  <span className={styles.deepHint}>{t('symbolPicker.deepUsdHint')}</span>
+                ) : null}
+                {info.exchange ? <span className={styles.sourceBadge}>{info.exchange}</span> : null}
+                {info.quote_type ? (
+                  <span className={styles.optionType}>{info.quote_type}</span>
+                ) : null}
               </span>
             </li>
           ))}

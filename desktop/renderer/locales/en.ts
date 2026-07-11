@@ -106,6 +106,7 @@ export const en = {
   'symbolPicker.symbol': 'Symbol',
   'symbolPicker.timeframe': 'Timeframe',
   'symbolPicker.symbolSuggestions': 'Symbol suggestions',
+  'symbolPicker.deepUsdHint': 'deep USD',
 
   // ── Agent-mode toggle (AgentModeToggle.tsx) ──
   'agentMode.toggle': 'Toggle agent mode',
