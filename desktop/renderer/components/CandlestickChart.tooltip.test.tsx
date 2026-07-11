@@ -15,6 +15,7 @@ import { CandlestickChart } from './CandlestickChart'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { ChartMarker } from '../lib/markers'
 import type { Bar } from '../types/sidecar/bar'
+import { localize, term } from '../glossary/types'
 
 let crosshairHandler: ((param: MouseEventParams) => void) | null = null
 
@@ -126,10 +127,14 @@ const SWEEP_MARKER: ChartMarker = {
   pattern: 'bullish_engulfing',
 }
 
-it('shows the candlestick pattern name on hover (Plan 0071 follow-up)', () => {
+it('shows the candlestick pattern name and its meaning on hover (Plan 0071 follow-up / Plan 0085)', () => {
   render(<CandlestickChart bars={BARS} annotations={[SWEEP_MARKER]} />)
   moveCrosshair({ time: APR15_TS, point: { x: 40, y: 60 } })
   expect(screen.getByTestId('chart-tooltip')).toHaveTextContent('Bullish engulfing')
+  // Plan 0085: a single hovered marker also discloses its what-it-means line.
+  expect(screen.getByTestId('tooltip-marker-meaning')).toHaveTextContent(
+    localize(term('bullish_engulfing')!.whatItMeans, 'en'),
+  )
 })
 
 it('shows NO hover for a group toggled off — no arrow is drawn there (bug fix)', () => {

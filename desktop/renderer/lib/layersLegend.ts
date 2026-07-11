@@ -97,6 +97,10 @@ export function buildChartLayers({
         visible: enabledCandleGroups.has(group.key),
         count: group.count,
         highlightKey: group.key,
+        // The pattern token keys the glossary tooltip (Plan 0085) — each detector
+        // token resolves to a `candlestick`-category entry; a patternless
+        // (agent-highlight) group has no token, so it degrades to a plain label.
+        glossaryKey: group.pattern ?? undefined,
       })
     }
   }

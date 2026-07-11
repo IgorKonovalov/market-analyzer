@@ -55,7 +55,7 @@ export function candleGroupKeyFromLayerId(id: string): string | null {
  * value; an unknown token humanises (`some_new` → `Some new`) so a future
  * detector pattern still reads, and `null` (agent highlight, no pattern) → the
  * generic "Pattern". */
-const PATTERN_DISPLAY_NAMES: Record<string, string> = {
+export const PATTERN_DISPLAY_NAMES: Record<string, string> = {
   doji: 'Doji',
   hammer: 'Hammer',
   hanging_man: 'Hanging man',

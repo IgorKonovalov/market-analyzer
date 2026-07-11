@@ -12,6 +12,7 @@
  */
 import glossaryJson from './glossary.json'
 import { glossaryKeys, localize, term, type GlossaryCategory, type GlossaryRecord } from './types'
+import { PATTERN_DISPLAY_NAMES } from '../lib/candleGroups'
 
 const CATEGORIES: readonly GlossaryCategory[] = [
   'forecast',
@@ -19,6 +20,7 @@ const CATEGORIES: readonly GlossaryCategory[] = [
   'condition',
   'indicator',
   'overlay',
+  'candlestick',
 ]
 const RECORD_KEYS = new Set(['term', 'category', 'howComputed', 'whatItMeans', 'formulaAnchor'])
 
@@ -216,4 +218,26 @@ it('overlay keys are disjoint from indicator keys (distinct vocabularies)', () =
   const indicator = new Set(glossaryKeys().filter((key) => term(key)?.category === 'indicator'))
   const overlap = EXPECTED_OVERLAY_KEYS.filter((key) => indicator.has(key))
   expect(overlap).toEqual([])
+})
+
+// Plan 0085: the candlestick category is complete and bidirectionally tied to the
+// renderer's detector-token → display-name map (the same keys the chart/legend
+// emit). Adding a detector without an entry, or a candlestick entry for a token
+// the chart never emits, fails here.
+it('has a candlestick entry for every detector pattern token, and no extras', () => {
+  const tokens = Object.keys(PATTERN_DISPLAY_NAMES)
+  const missing = tokens.filter((token) => term(token)?.category !== 'candlestick')
+  expect(missing).toEqual([])
+  const candlestickKeys = glossaryKeys()
+    .filter((key) => term(key)?.category === 'candlestick')
+    .sort()
+  expect(candlestickKeys).toEqual([...tokens].sort())
+})
+
+it('gives each candlestick entry both hats keyed to the wire token', () => {
+  const engulfing = term('bullish_engulfing')
+  expect(engulfing?.category).toBe('candlestick')
+  expect(localize(engulfing!.term, 'en')).toBe('Bullish engulfing')
+  expect(localize(engulfing!.howComputed, 'en')).not.toBe('')
+  expect(localize(engulfing!.whatItMeans, 'en')).toContain('bullish reversal')
 })

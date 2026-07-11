@@ -930,5 +930,173 @@
       "en": "A trend-following stop-and-direction guide. The line's side of price marks the current trend; a flip marks a potential trend change.",
       "ru": "Трендследящий ориентир стопа и направления. Сторона линии относительно цены отмечает текущий тренд; переворот отмечает возможную смену тренда."
     }
+  },
+  "doji": {
+    "term": {
+      "en": "Doji"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "Our detector flags a doji when the real body is at most 10% of the candle's high-low range (DOJI_BODY_RATIO), so open and close finish near-equal."
+    },
+    "whatItMeans": {
+      "en": "Indecision — neither side controlled the session. Often a caution flag at the end of a run, not a signal on its own."
+    }
+  },
+  "hammer": {
+    "term": {
+      "en": "Hammer"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "A small-bodied candle (body ≤ 40% of range) with a long lower shadow (≥ 2× the body) and almost no upper shadow (≤ 10% of range), appearing after a 3-bar downtrend."
+    },
+    "whatItMeans": {
+      "en": "A potential bullish reversal — sellers drove price down intrabar but buyers pushed the close back up, rejecting the lows."
+    }
+  },
+  "hanging_man": {
+    "term": {
+      "en": "Hanging man"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "The same shape as a hammer (long lower shadow ≥ 2× body, tiny upper shadow, body ≤ 40% of range) but appearing after a 3-bar uptrend instead of a downtrend."
+    },
+    "whatItMeans": {
+      "en": "A potential bearish reversal at the top of a rally — the long lower wick shows sellers testing lower, a warning the uptrend may be tiring."
+    }
+  },
+  "marubozu": {
+    "term": {
+      "en": "Marubozu"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "A candle with almost no shadows (each ≤ 5% of range) and a dominant real body (≥ 80% of range); bullish when it closes up, bearish when it closes down."
+    },
+    "whatItMeans": {
+      "en": "One-sided conviction — price ran in a single direction from open to close with no rejection, favouring continuation the body's way."
+    }
+  },
+  "bullish_engulfing": {
+    "term": {
+      "en": "Bullish engulfing"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "A down candle followed by a larger up candle whose real body fully covers the prior body (prior close < open; current open ≤ prior close and current close ≥ prior open)."
+    },
+    "whatItMeans": {
+      "en": "A potential bullish reversal after a decline — buyers overwhelmed the prior session's sellers."
+    }
+  },
+  "bearish_engulfing": {
+    "term": {
+      "en": "Bearish engulfing"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "An up candle followed by a larger down candle whose real body fully covers the prior body (prior close > open; current open ≥ prior close and current close ≤ prior open)."
+    },
+    "whatItMeans": {
+      "en": "A potential bearish reversal after an advance — sellers overwhelmed the prior session's buyers."
+    }
+  },
+  "dark_cloud_cover": {
+    "term": {
+      "en": "Dark cloud cover"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "After an up candle, a down candle that opens above the prior close but closes back below the midpoint of the prior body (yet still above the prior open)."
+    },
+    "whatItMeans": {
+      "en": "A bearish reversal warning — an early push higher failed and price closed deep into the prior candle, showing sellers seizing control."
+    }
+  },
+  "piercing_line": {
+    "term": {
+      "en": "Piercing line"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "After a down candle, an up candle that opens below the prior close but closes back above the midpoint of the prior body (yet still below the prior open)."
+    },
+    "whatItMeans": {
+      "en": "A bullish reversal warning — an early push lower was reversed and price closed deep into the prior candle, showing buyers stepping in."
+    }
+  },
+  "bullish_harami": {
+    "term": {
+      "en": "Bullish harami"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "A large down candle (body ≥ 60% of range) followed by a smaller up candle whose real body sits entirely inside the prior body."
+    },
+    "whatItMeans": {
+      "en": "A potential bullish reversal — selling momentum stalled and the small inside body signals indecision after the drop."
+    }
+  },
+  "bearish_harami": {
+    "term": {
+      "en": "Bearish harami"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "A large up candle (body ≥ 60% of range) followed by a smaller down candle whose real body sits entirely inside the prior body."
+    },
+    "whatItMeans": {
+      "en": "A potential bearish reversal — buying momentum stalled and the small inside body signals indecision after the rally."
+    }
+  },
+  "morning_star": {
+    "term": {
+      "en": "Morning star"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "Three bars: a large down candle, then a small-bodied star (body ≤ 30% of range) gapping below it, then an up candle that closes back above the midpoint of the first candle's body."
+    },
+    "whatItMeans": {
+      "en": "A bullish reversal at a bottom — a downtrend, a pause of indecision, then buyers reclaiming ground."
+    }
+  },
+  "evening_star": {
+    "term": {
+      "en": "Evening star"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "Three bars: a large up candle, then a small-bodied star (body ≤ 30% of range) gapping above it, then a down candle that closes back below the midpoint of the first candle's body."
+    },
+    "whatItMeans": {
+      "en": "A bearish reversal at a top — an uptrend, a pause of indecision, then sellers taking over."
+    }
+  },
+  "three_white_soldiers": {
+    "term": {
+      "en": "Three white soldiers"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "Three consecutive up candles, each closing higher than the last, each opening within the prior candle's body, and each with only a modest upper shadow (≤ 30% of range)."
+    },
+    "whatItMeans": {
+      "en": "Strong, steady bullish momentum — three orderly advances in a row, a sign buyers are firmly in control."
+    }
+  },
+  "three_black_crows": {
+    "term": {
+      "en": "Three black crows"
+    },
+    "category": "candlestick",
+    "howComputed": {
+      "en": "Three consecutive down candles, each closing lower than the last and each opening within the prior candle's body."
+    },
+    "whatItMeans": {
+      "en": "Strong, steady bearish momentum — three orderly declines in a row, a sign sellers are firmly in control."
+    }
   }
 }

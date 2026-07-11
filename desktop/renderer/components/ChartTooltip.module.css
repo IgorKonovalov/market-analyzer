@@ -24,6 +24,13 @@
   font-weight: 600;
 }
 
+/* What-it-means line for a single hovered candlestick marker (Plan 0085). Muted
+   and normal-weight under the bold name; wraps within the tooltip's max-width. */
+.markerMeaning {
+  color: var(--color-fg-muted);
+  font-weight: 400;
+}
+
 /* Hovered-trendline read-out (pattern + state) — Plan 0067 phase 2. Same weight
    as a marker row; it names the line under the cursor. */
 .trendline {

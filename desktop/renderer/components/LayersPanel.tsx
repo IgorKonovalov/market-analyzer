@@ -56,9 +56,10 @@ export interface ChartLayer {
   kind: 'overlay' | 'marker' | 'price_line' | 'span' | 'trendline'
   /** Per-item toggle; defaults true; never persisted. */
   visible: boolean
-  /** Glossary key for an on-hover definition (Plan 0065) — set on indicator
-   * overlays (the overlay kind: 'ema' / 'sma' / 'supertrend'). Absent for
-   * markers / price-lines / spans / trendlines, which render a plain label. */
+  /** Glossary key for an on-hover definition — set on indicator overlays (the
+   * overlay kind: 'ema' / 'sma' / 'supertrend', Plan 0065) and on candlestick
+   * marker group rows (the pattern token, Plan 0085). Absent for price-lines /
+   * spans / trendlines / patternless groups, which render a plain label. */
   glossaryKey?: string
   /** Instance count for a grouped row (Plan 0067 phase 3): the number of lines
    * in a trendline (pattern type, state) group. Absent on ungrouped rows. */
