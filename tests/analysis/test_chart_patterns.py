@@ -369,6 +369,29 @@ def test_symmetrical_triangle_reports_converging_extreme_lines() -> None:
     assert confirmed.target is not None and confirmed.target > bars[confirmed.bar_index].close
 
 
+def test_symmetrical_triangle_confirmed_hit_carries_vertical_projection() -> None:
+    """ADR-0078 / ph2: the confirmed hit carries exactly one 'projection' line —
+    a vertical measured-move segment at the breakout bar from the broken
+    boundary to the target — and the forming hit carries none."""
+
+    bars = _bars_from_path(_SYM_TRIANGLE_ANCHORS)
+    hits = _hits_for(bars, "symmetrical_triangle")
+    forming = next(h for h in hits if h.state == "forming")
+    confirmed = next(h for h in hits if h.state == "confirmed")
+
+    assert all(line.role != "projection" for line in forming.lines)
+
+    projections = [line for line in confirmed.lines if line.role == "projection"]
+    assert len(projections) == 1
+    proj = projections[0]
+    assert confirmed.target is not None
+    # Vertical at the breakout bar; both endpoints share its timestamp.
+    assert proj.start.ts == proj.end.ts == bars[confirmed.bar_index].event_ts
+    # End sits on the target; the segment points up for the bullish break.
+    assert abs(proj.end.price - confirmed.target) < _TOL
+    assert proj.end.price > proj.start.price
+
+
 def test_symmetrical_triangle_envelope_rejects_spike_low_anchor() -> None:
     """ADR-0078 envelope selection: a deep spike-low pivot that sits well below
     the rising support must NOT anchor the lower trendline. Falling highs 121 @6

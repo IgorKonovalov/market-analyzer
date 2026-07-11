@@ -59,6 +59,19 @@ _HS_ANCHORS = [
 ]
 
 
+# A symmetrical triangle (falling highs, rising lows) that breaks out upward —
+# used to exercise the confirmed-hit measured-move projection (Plan 0083 ph2).
+_SYM_TRIANGLE_ANCHORS = [
+    (0, 110.0),
+    (6, 120.0),
+    (10, 100.0),
+    (14, 116.0),
+    (18, 104.0),
+    (24, 110.0),
+    (29, 126.0),
+]
+
+
 def _bars_from_path(anchors: list[tuple[int, float]]) -> list[Bar]:
     """Sample a piecewise-linear base path into bars (high/low straddle the
     base by 1.0) — the same construction as the phase-1 detector tests."""
@@ -224,6 +237,37 @@ def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_trendlines()
         ]
     assert trendlines[0]["label"] == "head_shoulders (forming)"
     assert trendlines[1]["label"] == "head_shoulders (confirmed)"
+
+
+def test_detect_chart_patterns_publishes_projection_on_confirmed_trendline() -> None:
+    """Plan 0083 ph2: a confirmed trendline pattern publishes a `projection`
+    TrendlineSpec (the vertical measured-move) beside its two bounding lines,
+    while the forming hit publishes only the two boundaries. The projection is
+    solid (confirmed), pattern-tagged, and its two points share a timestamp."""
+
+    bus = EventBus()
+    sub = bus.subscribe()
+    ack = _run_detect(
+        bus,
+        _StubProvider(_bars_from_path(_SYM_TRIANGLE_ANCHORS)),
+        patterns=["symmetrical_triangle"],
+    )
+    assert ack["event_published"] is True
+
+    trendlines = _drain(sub)[0].payload["trendlines"]
+    roles = [t["role"] for t in trendlines]
+    # forming -> upper + lower; confirmed -> upper + lower + projection.
+    assert roles.count("projection") == 1
+    assert roles.count("upper_trendline") == 2
+    assert roles.count("lower_trendline") == 2
+
+    proj = next(t for t in trendlines if t["role"] == "projection")
+    assert proj["style"] == "solid"  # confirmed hits only
+    assert proj["pattern"] == "symmetrical_triangle"
+    pts = proj["points"]
+    assert len(pts) == 2
+    assert pts[0]["ts"] == pts[1]["ts"]  # vertical: shared timestamp
+    assert pts[0]["price"] != pts[1]["price"]
 
 
 def test_detect_chart_patterns_states_filter_narrows_hits_and_event() -> None:

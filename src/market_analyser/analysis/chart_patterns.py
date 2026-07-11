@@ -485,6 +485,7 @@ def _hit(
     bar_index: int,
     direction: Direction,
     target: float | None,
+    extra_lines: tuple[LineSeg, ...] = (),
 ) -> ChartPatternHit:
     return ChartPatternHit(
         pattern=formation.pattern,
@@ -492,9 +493,42 @@ def _hit(
         direction=direction,
         bar_index=bar_index,
         pivots=[_point(p) for p in formation.pivots],
-        lines=list(formation.lines),
+        lines=list(formation.lines) + list(extra_lines),
         target=target,
         strength=max(0.0, min(1.0, formation.strength)),
+    )
+
+
+def _projection_line(
+    formation: _Formation,
+    bars: Sequence[Bar],
+    bar: int,
+    direction: Direction,
+    target: float | None,
+) -> LineSeg | None:
+    """The measured-move projection as a **vertical** segment at the breakout bar
+    (ADR-0078): from the broken line's price straight to the `target`. Confirmed
+    hits only; ``None`` when there is no directional target. The endpoints share
+    the breakout bar's timestamp, so no future timestamp is synthesised and the
+    segment honestly shows magnitude + direction, not a time-to-target. The line
+    picked matches `_target_at` exactly so `start` sits on the broken boundary
+    and `end` on the target."""
+
+    if target is None:
+        return None
+    if formation.break_direction == 0 and direction == "bearish":
+        line = _line_value(
+            formation.alt_x1, formation.alt_p1, formation.alt_x2, formation.alt_p2, bar
+        )
+    else:
+        line = _line_value(
+            formation.break_x1, formation.break_p1, formation.break_x2, formation.break_p2, bar
+        )
+    ts = bars[bar].event_ts
+    return LineSeg(
+        start=PivotPoint(ts=ts, price=line),
+        end=PivotPoint(ts=ts, price=target),
+        role="projection",
     )
 
 
@@ -599,13 +633,24 @@ def detect_chart_patterns(bars: Sequence[Bar]) -> list[ChartPatternHit]:
         confirmed = _confirm_or_invalidate(formation, bars, atr_series)
         if confirmed is not None:
             confirm_bar, confirm_direction = confirmed
+            confirm_target = _target_at(formation, confirm_bar, confirm_direction)
+            # The measured-move projection is drawn on confirmed hits only
+            # (ADR-0078). Ph2 wires the trendline family; the pivot-matched
+            # families (H&S, doubles) are wired in Plan 0083 ph5 / ph8.
+            projection = (
+                _projection_line(formation, bars, confirm_bar, confirm_direction, confirm_target)
+                if formation.pattern in _TRENDLINE_PATTERNS
+                else None
+            )
+            extra = (projection,) if projection is not None else ()
             hits.append(
                 _hit(
                     formation,
                     "confirmed",
                     confirm_bar,
                     confirm_direction,
-                    _target_at(formation, confirm_bar, confirm_direction),
+                    confirm_target,
+                    extra,
                 )
             )
     hits.sort(key=lambda h: (h.bar_index, h.pattern, _STATE_ORDER[h.state]))
