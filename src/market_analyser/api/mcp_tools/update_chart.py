@@ -32,8 +32,14 @@ def register_update_chart(server: FastMCP, *, event_bus: EventBus) -> None:
             "`chart.update v1` event. Any subset of {overlays, range_start, "
             "range_end, focus_bar} may be supplied; unset fields are not "
             "carried on the wire (the renderer merges the delta into its "
-            "current state). If no chart for `symbol`+`timeframe` is currently "
-            "open in the viewer, the renderer treats this as a `chart.show`."
+            "current state). Overlay `kind`s: indicator overlays "
+            "`ema`/`sma`/`rsi`/`macd`/`bbands`/`supertrend`/`ichimoku` (computed "
+            "and drawn client-side — `supertrend` takes an optional `multiplier`, "
+            "`ichimoku` optional `conversion`/`base`/`span_b`/`displacement` "
+            "periods defaulting to 9/26/52/26) and `price_line` (a labelled "
+            "horizontal line for support/resistance). If no chart for "
+            "`symbol`+`timeframe` is currently open in the viewer, the renderer "
+            "treats this as a `chart.show`."
         ),
     )
     def update_chart(

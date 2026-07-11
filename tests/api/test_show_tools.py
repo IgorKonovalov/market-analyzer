@@ -798,6 +798,50 @@ def test_supertrend_overlay_rejects_price_line_fields() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Plan 0073 ph3: the ichimoku OverlaySpec kind                                 #
+# Pure-pydantic round-trips — no live server needed.                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_ichimoku_overlay_round_trips_with_custom_periods() -> None:
+    """An `ichimoku` overlay carries its four period fields and serialises to
+    exactly the fields that were set (unset periods drop under `exclude_none`)."""
+    overlay = OverlaySpec(kind="ichimoku", conversion=20, base=60, span_b=120)
+    assert OverlaySpec.model_validate(overlay.model_dump()) == overlay
+    assert overlay.model_dump(mode="json", exclude_none=True) == {
+        "kind": "ichimoku",
+        "conversion": 20,
+        "base": 60,
+        "span_b": 120,
+    }
+
+
+def test_ichimoku_overlay_bare_uses_defaults_on_the_wire() -> None:
+    """A bare `ichimoku` overlay carries only `{kind}` — absent periods mean the
+    renderer applies the classic 9/26/52/26 defaults."""
+    assert OverlaySpec(kind="ichimoku").model_dump(mode="json", exclude_none=True) == {
+        "kind": "ichimoku",
+    }
+
+
+def test_ema_overlay_wire_unchanged_by_ichimoku_fields() -> None:
+    """Adding the ichimoku period fields to the model leaves an `ema` overlay
+    byte-unchanged on the wire — `exclude_none` drops them."""
+    assert OverlaySpec(kind="ema", period=20).model_dump(mode="json", exclude_none=True) == {
+        "kind": "ema",
+        "period": 20,
+    }
+
+
+def test_ichimoku_overlay_rejects_price_line_fields() -> None:
+    """`ichimoku` is an indicator kind: the validator rejects the `price_line`-only
+    fields on it (the families stay disjoint)."""
+    for bad in ({"price": 100.0}, {"label": "x"}, {"role": "support"}):
+        with pytest.raises(ValidationError, match="does not accept price/label/role"):
+            OverlaySpec(kind="ichimoku", **bad)
+
+
+# --------------------------------------------------------------------------- #
 # Plan 0064 ph2: TrendlineSpec moves to the dedicated `chart.trendlines v1`     #
 # event; the `trendlines` field is REMOVED from chart.show/chart.update         #
 # (ADR-0059). Pure-pydantic round-trips — no live server needed.                #

@@ -31,9 +31,14 @@ def register_show_chart(server: FastMCP, *, event_bus: EventBus) -> None:
             "Render a chart in the Electron viewer. Publishes a `chart.show v1` "
             "event to the SSE stream. The renderer mounts/switches to the "
             "requested symbol+timeframe and renders the requested window with "
-            "the supplied overlays. Returns immediately whether or not a viewer "
-            "is connected — events are ephemeral; reopening Electron after a "
-            "call to this tool will not replay it."
+            "the supplied overlays. Overlay `kind`s: indicator overlays "
+            "`ema`/`sma`/`rsi`/`macd`/`bbands`/`supertrend`/`ichimoku` (computed "
+            "and drawn client-side — `supertrend` takes an optional `multiplier`, "
+            "`ichimoku` optional `conversion`/`base`/`span_b`/`displacement` "
+            "periods defaulting to 9/26/52/26) and `price_line` (a labelled "
+            "horizontal line for support/resistance). Returns immediately whether "
+            "or not a viewer is connected — events are ephemeral; reopening "
+            "Electron after a call to this tool will not replay it."
         ),
     )
     def show_chart(

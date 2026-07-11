@@ -34,13 +34,25 @@ class OverlaySpec(BaseModel):
 
     `supertrend` (Plan 0049) is additive like `price_line` was: a new indicator
     kind carrying `period` + the optional `multiplier`. The renderer mirror and
-    client-side draw land in phase 9 (ui-builder)."""
+    client-side draw land in phase 9 (ui-builder).
+
+    `ichimoku` (Plan 0073, ADR-0067) is the same additive move: a new indicator
+    kind carrying its own four optional period fields (`conversion`/`base`/
+    `span_b`/`displacement`); absent periods mean the renderer applies the classic
+    9/26/52/26 defaults. Like the other indicator kinds it accepts no
+    `price`/`label`/`role`. The displaced, filled cloud render lands in phase 4
+    (ui-builder)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["ema", "sma", "rsi", "macd", "bbands", "price_line", "supertrend"]
+    kind: Literal["ema", "sma", "rsi", "macd", "bbands", "price_line", "supertrend", "ichimoku"]
     period: int | None = None
     multiplier: float | None = None  # supertrend's ATR multiplier; None on other kinds
+    # `ichimoku`-only period fields (None on other kinds); absent -> classic defaults.
+    conversion: int | None = None
+    base: int | None = None
+    span_b: int | None = None
+    displacement: int | None = None
     # `price_line`-only fields (None on indicator overlays, enforced below).
     price: float | None = None
     label: str | None = None
@@ -50,7 +62,8 @@ class OverlaySpec(BaseModel):
     def _validate_kind_fields(self) -> OverlaySpec:
         """Keep the two overlay families disjoint: `price_line` requires both
         `price` and `label` (a labelless line is useless on the chart); the
-        indicator kinds accept neither `price`/`label`/`role`."""
+        indicator kinds (`ichimoku` included) accept neither `price`/`label`/
+        `role`."""
         if self.kind == "price_line":
             if self.price is None or self.label is None:
                 raise ValueError("price_line overlay requires both 'price' and 'label'")
