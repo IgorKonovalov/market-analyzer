@@ -1,6 +1,6 @@
 # 0083 — Chart-pattern visual fidelity (pattern-by-pattern)
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-07-11
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0078](../adrs/0078-chart-pattern-visual-fidelity.md) (gates this plan; refines [0048](../adrs/0048-classical-chart-pattern-detection.md), extends [0049](../adrs/0049-chart-trendline-overlay-primitive.md) / [0061](../adrs/0061-trendline-pattern-identity-and-colour.md))
