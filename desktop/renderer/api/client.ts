@@ -27,6 +27,7 @@ import { t } from '../lib/i18n'
 import type { SidecarPort } from '../../shared/schemas/sidecar'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
+import type { GetTrackRecordResponse } from '../types/sidecar/get-track-record-response'
 import type { McpSecretRecord } from '../types/sidecar/mcp-secret-record'
 import type { NewsResponse } from '../types/sidecar/news-response'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
@@ -232,6 +233,14 @@ export interface GetNewsParams {
   limit?: number
 }
 
+export interface GetTrackRecordParams {
+  /** Scope the record to one symbol; omitted → the whole book. */
+  symbol?: string
+  /** Page the recent-scored-calls list (ADR-0046). */
+  offset?: number
+  maxCalls?: number
+}
+
 export const api = {
   getOhlcv({ symbol, timeframe, start, end }: GetOhlcvParams): Promise<Bar[]> {
     const params = new URLSearchParams({
@@ -271,6 +280,23 @@ export const api = {
   getQuote(symbol: string): Promise<QuoteResponse> {
     const params = new URLSearchParams({ symbol })
     return callJson<QuoteResponse>(`/quote?${params.toString()}`)
+  },
+  /**
+   * The advisor's live track record (Plan 0080, ADR-0075). Hits the
+   * renderer-bearer-gated `GET /track_record` — the REST twin of the
+   * `get_track_record` MCP tool. Returns the honest aggregate (hit-rate + mean R
+   * + calibration + baseline delta, each with its sample size) plus a bounded
+   * page of the recent scored calls. A factual record of past accuracy, never
+   * advice (ADR-0029). `symbol` optionally scopes it; `offset`/`maxCalls` page
+   * the recent list (ADR-0046).
+   */
+  getTrackRecord(params: GetTrackRecordParams = {}): Promise<GetTrackRecordResponse> {
+    const query = new URLSearchParams()
+    if (params.symbol) query.set('symbol', params.symbol)
+    if (params.offset !== undefined) query.set('offset', String(params.offset))
+    if (params.maxCalls !== undefined) query.set('max_calls', String(params.maxCalls))
+    const qs = query.toString()
+    return callJson<GetTrackRecordResponse>(`/track_record${qs ? `?${qs}` : ''}`)
   },
   /**
    * Sweep the chart's current visible range for candlestick patterns (Plan 0049).

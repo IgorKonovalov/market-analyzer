@@ -47,12 +47,14 @@ import { OhlcvView } from './views/OhlcvView'
 import { RecentBacktestsView } from './views/RecentBacktestsView'
 import { RecommendationsView } from './views/RecommendationsView'
 import { SettingsView } from './views/SettingsView'
+import { TrackRecordView } from './views/TrackRecordView'
 
 type View =
   | 'chart'
   | 'news'
   | 'signals'
   | 'recommendations'
+  | 'track-record'
   | 'forecast'
   | 'settings'
   | 'backtest'
@@ -100,6 +102,13 @@ export function App(): JSX.Element {
   )
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [recentListRefresh, setRecentListRefresh] = useState(0)
+  // Track-record refetch trigger (Plan 0080 phase 5). Bumped on each
+  // `recommendation.scored` event so the TrackRecordView refetches the
+  // authoritative `GET /track_record` aggregate — deliberately WITHOUT switching
+  // the view (a scored fact must not grab the screen, the ADR-0075/ADR-0029
+  // quiet-report posture, same as the Recommendations panel); the user opens the
+  // Track-record tab when they want to read it.
+  const [trackRecordRefresh, setTrackRecordRefresh] = useState(0)
   // Latest live-signal evaluation (Plan 0026). Reactive-only: the panel reflects
   // whatever the agent last evaluated via `signal.evaluated v1`. No auto-switch —
   // the user navigates to the Signals tab; the most-recent evaluation persists.
@@ -148,6 +157,8 @@ export function App(): JSX.Element {
     onRunCompleted: handleRunCompleted,
     onSignalEvaluated: (payload) => setLatestEvaluation(payload.evaluation),
     onRecommendationCompleted: (payload) => setLatestRecommendation(payload.recommendation),
+    // Plan 0080 phase 5: a scored call refetches the track record — no auto-switch.
+    onRecommendationScored: () => setTrackRecordRefresh((n) => n + 1),
     onForecastCompleted: (payload) => setLatestForecast(payload.forecast),
     onVolatilityForecastCompleted: (payload) => setLatestVolatility(payload.forecast),
     onRegimeForecastCompleted: (payload) => setLatestRegime(payload.forecast),
@@ -247,6 +258,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'track-record' ? 'page' : undefined}
+            onClick={() => setView('track-record')}
+            data-testid="nav-track-record"
+          >
+            {t('app.nav.trackRecord')}
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'forecast' ? 'page' : undefined}
             onClick={() => setView('forecast')}
             data-testid="nav-forecast"
@@ -299,6 +319,7 @@ export function App(): JSX.Element {
       )}
       {view === 'signals' && <LiveSignalView evaluation={latestEvaluation} />}
       {view === 'recommendations' && <RecommendationsView recommendation={latestRecommendation} />}
+      {view === 'track-record' && <TrackRecordView refreshKey={trackRecordRefresh} />}
       {view === 'forecast' && (
         <ForecastView
           forecast={latestForecast}

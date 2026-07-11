@@ -49,6 +49,7 @@ interface DumpedSchemas {
   EvaluatedSignal: JsonSchema
   AlertTriggeredPayloadV1: JsonSchema
   RecommendationCompletedPayloadV1: JsonSchema
+  RecommendationScoredPayloadV1: JsonSchema
   Recommendation: JsonSchema
   RecommendationBasis: JsonSchema
   FusionCheck: JsonSchema
@@ -89,7 +90,8 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
     '    SignalEvaluatedPayloadV1, AlertTriggeredPayloadV1,',
-    '    RecommendationCompletedPayloadV1, ForecastCompletedPayloadV1,',
+    '    RecommendationCompletedPayloadV1, RecommendationScoredPayloadV1,',
+    '    ForecastCompletedPayloadV1,',
     '    VolatilityForecastCompletedPayloadV1, RegimeForecastCompletedPayloadV1,',
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
@@ -128,6 +130,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "EvaluatedSignal": EvaluatedSignal.model_json_schema(),',
     '    "AlertTriggeredPayloadV1": AlertTriggeredPayloadV1.model_json_schema(),',
     '    "RecommendationCompletedPayloadV1": RecommendationCompletedPayloadV1.model_json_schema(),',
+    '    "RecommendationScoredPayloadV1": RecommendationScoredPayloadV1.model_json_schema(),',
     '    "Recommendation": Recommendation.model_json_schema(),',
     '    "RecommendationBasis": RecommendationBasis.model_json_schema(),',
     '    "FusionCheck": FusionCheck.model_json_schema(),',
@@ -464,6 +467,49 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
   it('RecommendationCompletedPayloadV1 carries the recommendation inline (Plan 0039)', () => {
     expect(propertyNames(dumped.RecommendationCompletedPayloadV1)).toEqual(['recommendation'])
     expect(requiredNames(dumped.RecommendationCompletedPayloadV1)).toEqual(['recommendation'])
+  })
+
+  it('RecommendationScoredPayloadV1 fields match (forecast_prob nullable, absent when None; direction/outcome closed sets)', () => {
+    expect(propertyNames(dumped.RecommendationScoredPayloadV1)).toEqual([
+      'as_of_bar_ts',
+      'conviction',
+      'direction',
+      'directional_correct',
+      'forecast_prob',
+      'horizon_bars',
+      'outcome_class',
+      'realized_r',
+      'realized_return',
+      'scored_at',
+      'strategy_id',
+      'symbol',
+      'timeframe',
+    ])
+    // No pydantic defaults → every field is schema-required. The TS still marks
+    // `forecast_prob` optional because it is None-valued for a demoted no-edge
+    // forecast and the bus dumps with `exclude_none` — required in the model,
+    // absent on the wire (the HorizonForecast `prob_*` shape).
+    expect(requiredNames(dumped.RecommendationScoredPayloadV1)).toEqual([
+      'as_of_bar_ts',
+      'conviction',
+      'direction',
+      'directional_correct',
+      'forecast_prob',
+      'horizon_bars',
+      'outcome_class',
+      'realized_r',
+      'realized_return',
+      'scored_at',
+      'strategy_id',
+      'symbol',
+      'timeframe',
+    ])
+    expect(literalValues(dumped.RecommendationScoredPayloadV1, 'direction')).toEqual(
+      ['long', 'short'].sort(),
+    )
+    expect(literalValues(dumped.RecommendationScoredPayloadV1, 'outcome_class')).toEqual(
+      ['stopped', 'target_hit', 'timeout'].sort(),
+    )
   })
 
   it('Recommendation fields match (advisory label pinned as a single-value literal)', () => {

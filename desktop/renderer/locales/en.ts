@@ -21,6 +21,7 @@ export const en = {
   'app.nav.backtests': 'Backtests',
   'app.nav.signals': 'Signals',
   'app.nav.recommendations': 'Recommendations',
+  'app.nav.trackRecord': 'Track record',
   'app.nav.forecast': 'Forecast',
   'app.nav.news': 'News',
   'app.nav.alerts': 'Alerts',
@@ -331,6 +332,43 @@ export const en = {
   'recommendations.convictionFactor': 'Conviction factor',
   'recommendations.convictionFactorNote': 'regime-stability multiplier · 1.00 = neutral',
   'recommendations.regimeUndefined': 'undefined',
+
+  // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
+  'trackRecord.title': 'Track record',
+  'trackRecord.lede':
+    "How the advisor's own past recommendations turned out against realized price, scored against the ticket each one gave.",
+  'trackRecord.disclaimer':
+    'A factual record of past accuracy, not advice — and never a reason to act.',
+  'trackRecord.loading': 'Loading track record…',
+  'trackRecord.loadError': 'Failed to load the track record.',
+  'trackRecord.empty': 'No scored recommendations yet.',
+  'trackRecord.sampleSize': '{n, plural, one {# scored call} other {# scored calls}}',
+  'trackRecord.insufficient':
+    'Not enough calls to conclude — {n} of {min} needed. Percentages are withheld until the sample is large enough to mean something.',
+  'trackRecord.baselineDeltaTitle': 'Edge over baseline',
+  'trackRecord.baselineDeltaLabel':
+    'hit-rate vs a buy-and-hold-over-horizon baseline (the number that matters)',
+  'trackRecord.hitRate': 'Hit rate',
+  'trackRecord.baselineHitRate': 'Baseline hit rate',
+  'trackRecord.meanR': 'Mean R',
+  'trackRecord.calibrationTitle': 'Calibration',
+  'trackRecord.brier': 'Brier score',
+  'trackRecord.meanPredicted': 'Stated probability',
+  'trackRecord.observedFreq': 'Realized frequency',
+  'trackRecord.reliabilityBand': 'Stated band',
+  'trackRecord.colCount': 'n',
+  'trackRecord.recentTitle': 'Recent scored calls',
+  'trackRecord.recentEmpty': 'No scored calls to show.',
+  'trackRecord.colSymbol': 'Symbol',
+  'trackRecord.colDirection': 'Direction',
+  'trackRecord.colOutcome': 'Outcome',
+  'trackRecord.colRealizedR': 'Realized R',
+  'trackRecord.colAsOf': 'As of',
+  'trackRecord.directionLong': 'Long',
+  'trackRecord.directionShort': 'Short',
+  'trackRecord.outcomeTargetHit': 'Target hit',
+  'trackRecord.outcomeStopped': 'Stopped',
+  'trackRecord.outcomeTimeout': 'Timeout',
 
   // ── Sidecar reason-codes (advisor fusion.py / forecast explain.py) ──
   // Templates for the structured `{code, params}` reason-codes the renderer

@@ -197,6 +197,78 @@ describe('useEventStream', () => {
     expect(onChartUpdate).toHaveBeenCalledWith(payload)
   })
 
+  it('dispatches recommendation.scored v1 to the handler with the Zod-parsed payload', async () => {
+    const onRecommendationScored = jest.fn()
+    render(<Harness handlers={{ onRecommendationScored }} />)
+    const es = await waitForStream()
+
+    const payload = {
+      symbol: 'DOGE-USD',
+      timeframe: '1d',
+      strategy_id: 'rsi',
+      direction: 'long',
+      as_of_bar_ts: '2026-07-01T00:00:00+00:00',
+      horizon_bars: 5,
+      conviction: 0.6,
+      forecast_prob: 0.62,
+      outcome_class: 'target_hit',
+      realized_return: 0.1,
+      realized_r: 1.0,
+      directional_correct: true,
+      scored_at: '2026-07-06T00:00:00+00:00',
+    }
+    await act(async () => {
+      es._fireMessage({
+        type: 'recommendation.scored',
+        version: 1,
+        ts: '2026-07-06T00:00:01Z',
+        payload,
+      })
+    })
+
+    expect(onRecommendationScored).toHaveBeenCalledTimes(1)
+    expect(onRecommendationScored).toHaveBeenCalledWith(payload)
+  })
+
+  it('drops a malformed recommendation.scored payload loudly (Zod safeParse)', async () => {
+    const onRecommendationScored = jest.fn()
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+    render(<Harness handlers={{ onRecommendationScored }} />)
+    const es = await waitForStream()
+
+    // `direction: 'flat'` is not in the scored enum (only long/short are ever
+    // scored), so the schema rejects it — dropped, never handed to the panel.
+    const bad = {
+      symbol: 'DOGE-USD',
+      timeframe: '1d',
+      strategy_id: 'rsi',
+      direction: 'flat',
+      as_of_bar_ts: '2026-07-01T00:00:00+00:00',
+      horizon_bars: 5,
+      conviction: 0.6,
+      outcome_class: 'target_hit',
+      realized_return: 0.1,
+      realized_r: 1.0,
+      directional_correct: true,
+      scored_at: '2026-07-06T00:00:00+00:00',
+    }
+    await act(async () => {
+      es._fireMessage({
+        type: 'recommendation.scored',
+        version: 1,
+        ts: '2026-07-06T00:00:01Z',
+        payload: bad,
+      })
+    })
+
+    expect(onRecommendationScored).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('recommendation.scored'),
+      expect.anything(),
+    )
+    warnSpy.mockRestore()
+  })
+
   it('forward-compat: dispatches chart.show v2 to the v1 handler with a warning', async () => {
     const onChartShow = jest.fn()
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)

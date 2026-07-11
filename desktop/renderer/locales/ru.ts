@@ -27,6 +27,7 @@ export const ru = {
   'app.nav.backtests': 'Бэктесты',
   'app.nav.signals': 'Сигналы',
   'app.nav.recommendations': 'Рекомендации',
+  'app.nav.trackRecord': 'История точности',
   'app.nav.forecast': 'Прогноз',
   'app.nav.news': 'Новости',
   'app.nav.alerts': 'Оповещения',
@@ -346,6 +347,44 @@ export const ru = {
   'recommendations.convictionFactor': 'Коэффициент убеждённости',
   'recommendations.convictionFactorNote': 'множитель стабильности режима · 1.00 = нейтрально',
   'recommendations.regimeUndefined': 'не определён',
+
+  // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
+  'trackRecord.title': 'История точности',
+  'trackRecord.lede':
+    'Как ранее сделанные рекомендации советника оправдались по реальной цене — с учётом стопа и целей каждой из них.',
+  'trackRecord.disclaimer':
+    'Фактическая история точности, а не совет — и никогда не повод действовать.',
+  'trackRecord.loading': 'Загрузка истории точности…',
+  'trackRecord.loadError': 'Не удалось загрузить историю точности.',
+  'trackRecord.empty': 'Оценённых рекомендаций пока нет.',
+  'trackRecord.sampleSize':
+    '{n, plural, one {# оценённая рекомендация} few {# оценённые рекомендации} many {# оценённых рекомендаций} other {# оценённых рекомендаций}}',
+  'trackRecord.insufficient':
+    'Недостаточно рекомендаций для вывода — {n} из {min} необходимых. Проценты скрыты, пока выборка не станет достаточно большой, чтобы что-то значить.',
+  'trackRecord.baselineDeltaTitle': 'Преимущество над базисом',
+  'trackRecord.baselineDeltaLabel':
+    'доля успехов против базиса «купи и держи» на горизонте (главное число)',
+  'trackRecord.hitRate': 'Доля успехов',
+  'trackRecord.baselineHitRate': 'Доля успехов базиса',
+  'trackRecord.meanR': 'Средний R',
+  'trackRecord.calibrationTitle': 'Калибровка',
+  'trackRecord.brier': 'Оценка Бриера',
+  'trackRecord.meanPredicted': 'Заявленная вероятность',
+  'trackRecord.observedFreq': 'Реальная частота',
+  'trackRecord.reliabilityBand': 'Заявленный диапазон',
+  'trackRecord.colCount': 'n',
+  'trackRecord.recentTitle': 'Недавно оценённые рекомендации',
+  'trackRecord.recentEmpty': 'Нет оценённых рекомендаций для показа.',
+  'trackRecord.colSymbol': 'Тикер',
+  'trackRecord.colDirection': 'Направление',
+  'trackRecord.colOutcome': 'Исход',
+  'trackRecord.colRealizedR': 'Реализованный R',
+  'trackRecord.colAsOf': 'На дату',
+  'trackRecord.directionLong': 'Лонг',
+  'trackRecord.directionShort': 'Шорт',
+  'trackRecord.outcomeTargetHit': 'Цель достигнута',
+  'trackRecord.outcomeStopped': 'Стоп',
+  'trackRecord.outcomeTimeout': 'Тайм-аут',
 
   // ── Sidecar reason-codes (advisor fusion.py / forecast explain.py) ──
   // Directional rationale.

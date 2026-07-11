@@ -61,6 +61,14 @@ const EMIT = new Set([
   'AlertOut',
   'AlertsPage',
   'SseTicketResponse',
+  // Plan 0080 phase 5: the advisor track-record aggregate the renderer reads via
+  // GET /track_record. GetTrackRecordResponse nests TrackRecord (+ its
+  // ReliabilityBucket / BucketStat lists) and ScoredCallOut via $ref.
+  'GetTrackRecordResponse',
+  'TrackRecord',
+  'ScoredCallOut',
+  'BucketStat',
+  'ReliabilityBucket',
 ])
 
 const HEADER = [
@@ -151,7 +159,9 @@ function mapType(schema, schemas = {}, imports = new Set()) {
     // Single quotes to match the repo's prettier config (singleQuote: true);
     // emitting JSON.stringify here would drift on every commit through the
     // pre-commit prettier --write pass.
-    return schema.enum.map((v) => (typeof v === 'string' ? `'${v.replace(/'/g, "\\'")}'` : String(v))).join(' | ')
+    return schema.enum
+      .map((v) => (typeof v === 'string' ? `'${v.replace(/'/g, "\\'")}'` : String(v)))
+      .join(' | ')
   }
   if ('const' in schema) {
     // Pydantic emits a single-value Literal as `const` (often alongside

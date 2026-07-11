@@ -41,6 +41,7 @@ import { api, subscribeToConfigChanges } from '../api/client'
 import { parseAlertTriggered } from '../schemas/alertTriggered'
 import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
 import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
+import { recommendationScoredPayloadSchema } from '../schemas/recommendationScored'
 import { regimeForecastCompletedPayloadSchema } from '../schemas/regimeForecastCompleted'
 import { volatilityForecastCompletedPayloadSchema } from '../schemas/volatilityForecastCompleted'
 import type {
@@ -55,6 +56,7 @@ import type {
   OhlcvBackfillFailedPayloadV1,
   OhlcvBackfillStartedPayloadV1,
   RecommendationCompletedPayloadV1,
+  RecommendationScoredPayloadV1,
   RegimeForecastCompletedPayloadV1,
   RunCompletedPayloadV1,
   SignalEvaluatedPayloadV1,
@@ -71,6 +73,7 @@ export interface EventStreamHandlers {
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
   onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
   onRecommendationCompleted?: (payload: RecommendationCompletedPayloadV1) => void
+  onRecommendationScored?: (payload: RecommendationScoredPayloadV1) => void
   onForecastCompleted?: (payload: ForecastCompletedPayloadV1) => void
   onVolatilityForecastCompleted?: (payload: VolatilityForecastCompletedPayloadV1) => void
   onRegimeForecastCompleted?: (payload: RegimeForecastCompletedPayloadV1) => void
@@ -96,6 +99,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'run.completed': 1,
   'signal.evaluated': 1,
   'recommendation.completed': 1,
+  'recommendation.scored': 1,
   'forecast.completed': 1,
   'volatility_forecast.completed': 1,
   'regime_forecast.completed': 1,
@@ -323,6 +327,21 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
         return
       }
       handlers.onRecommendationCompleted?.(parsed.data)
+      return
+    }
+    case 'recommendation.scored': {
+      // Zod-validated before it reaches any state (Plan 0080 phase 5): the
+      // track-record panel refetches the authoritative aggregate on this nudge,
+      // so a malformed payload is dropped loudly, never acted on half-parsed.
+      const parsed = recommendationScoredPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed recommendation.scored payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onRecommendationScored?.(parsed.data)
       return
     }
     case 'forecast.completed': {

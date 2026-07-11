@@ -311,6 +311,34 @@ export interface RecommendationCompletedPayloadV1 {
   recommendation: Recommendation
 }
 
+/** Mirror of the pydantic `RecommendationScoredPayloadV1` (Plan 0080 / ADR-0075):
+ * the scheduled scorer resolved one matured advisory recommendation against
+ * realized price. A FACT (how a past call turned out), never advice. Only scored
+ * calls emit this, so `direction` is long/short (never flat) and `outcome_class`
+ * is target_hit/stopped/timeout (never pending) — every measurement field is
+ * populated. `forecast_prob` is required-but-nullable in pydantic (None for a
+ * demoted no-edge forecast) and `exclude_none`-stripped from the wire — hence
+ * optional here (the HorizonForecast `prob_*` shape). `directional_correct` is
+ * the separate direction axis: a call can be directionally right yet score a
+ * `stopped` loss (ADR-0075). Scalars only (ADR-0046). */
+export interface RecommendationScoredPayloadV1 {
+  symbol: string
+  timeframe: string
+  strategy_id: string
+  direction: 'long' | 'short'
+  /** ISO 8601 UTC timestamp of the as-of bar the call was made on. */
+  as_of_bar_ts: string
+  horizon_bars: number
+  conviction: number
+  forecast_prob?: number | null
+  outcome_class: 'target_hit' | 'stopped' | 'timeout'
+  realized_return: number
+  realized_r: number
+  directional_correct: boolean
+  /** ISO 8601 UTC timestamp when the scorer resolved the call. */
+  scored_at: string
+}
+
 /** Closed set — mirror of the pydantic `EdgeStrength` literal (Plan 0036/0059).
  * `no_edge` = the model did not beat baseline out-of-sample (prob_* are absent);
  * `marginal` / `clear` split a real beat by the sidecar's margin threshold so a
@@ -620,6 +648,7 @@ export type EnvelopeType =
   | 'run.completed'
   | 'signal.evaluated'
   | 'recommendation.completed'
+  | 'recommendation.scored'
   | 'forecast.completed'
   | 'volatility_forecast.completed'
   | 'regime_forecast.completed'
@@ -659,6 +688,10 @@ export type SignalEvaluatedEnvelope = Envelope<SignalEvaluatedPayloadV1> & {
 }
 export type RecommendationCompletedEnvelope = Envelope<RecommendationCompletedPayloadV1> & {
   type: 'recommendation.completed'
+  version: 1
+}
+export type RecommendationScoredEnvelope = Envelope<RecommendationScoredPayloadV1> & {
+  type: 'recommendation.scored'
   version: 1
 }
 export type ForecastCompletedEnvelope = Envelope<ForecastCompletedPayloadV1> & {
