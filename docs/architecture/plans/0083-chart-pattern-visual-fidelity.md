@@ -63,11 +63,11 @@ flowchart LR
 - **Files touched:** `desktop/renderer/lib/trendlines.ts` (`computeTrendlineSegments` apex extension + clip; `TrendlinePaneRenderer.draw` arrowhead for projection role), `desktop/renderer/lib/trendlines.test.ts`; if a weight/token is needed, `desktop/renderer/components/CandlestickChart.tsx`.
 - **Done when:** a unit test feeds two converging boundary specs whose anchors stop short of their intersection and asserts the computed segments meet at the apex point (within tolerance); a `projection` spec renders a segment terminated by an arrowhead; a near-parallel pair falls back to plain segments (no off-screen shoot); a `forming` pattern (boundaries only, no projection) renders apex + dashed and no arrow. Existing `trendlines.test.ts` and `CandlestickChart.trendlines*.test.tsx` stay green.
 
-### Phase 4 — Human visual smoke: symmetrical triangle
+### Phase 4 — Human visual smoke: symmetrical triangle + rising wedge
 - **Owner skill:** human
-- **What:** Launch the app on the same symbol/timeframe/window as the reported screenshot and compare the symmetrical-triangle rendering against the reference drawing.
+- **What:** Launch the app and compare two trendline-family patterns against their references: a **symmetrical triangle** (either-direction break) and a **rising wedge** (down-break). The rising wedge is the same trendline family (`_classify_trendlines` → `("rising_wedge", "bearish", -1)`) so phases 1-3 already cover it; it is smoked here as the second case because it exercises the `break_direction = -1` **downward** projection path the symmetrical triangle doesn't. The reported rising-wedge app render showed the same three defects (spike-anchored lower boundary, no apex, no downward target).
 - **Files touched:** none (manual).
-- **Done when:** the user confirms the symmetrical triangle draws two converging boundaries meeting at an apex, no spike-driven V, and a breakout arrow on a confirmed hit — GO — or files specific visual deltas to fold back into phases 1-3.
+- **Done when:** the user confirms (a) the symmetrical triangle draws two converging boundaries meeting at an apex, no spike-driven V, and a breakout arrow on a confirmed hit; **and** (b) the rising wedge draws two both-rising converging boundaries (lower anchored on the higher-lows envelope, not the spike), and its confirmed breakout arrow points **down** to the measured-move target — GO — or files specific visual deltas to fold back into phases 1-3.
 
 ### Phase 5 — Head & shoulders: skeleton spec + downward projection
 - **Owner skill:** dev
@@ -93,10 +93,9 @@ Not yet phases. As the user sends the app-vs-reference screenshots for each rema
 
 - Ascending triangle — flat upper boundary along equal highs, rising lower envelope.
 - Descending triangle — flat lower boundary along equal lows, falling upper envelope.
-- Rising / falling wedge — both boundaries same-direction, converging.
 - Double top / bottom — horizontal neckline + measured-move arrow (`_match_double`); expected to reuse the phase-6 skeleton + hump-fill render (a two-hump skeleton `LineSeg`) plus the ph2 projection.
 
-Head & shoulders was the second reviewed pattern and is now phases 5-7 (not backlog). The foundation (phases 1-3) is expected to fix the triangles and wedges wholesale (shared anchor selection + shared render); the pivot-matched family (H&S, doubles) needs the skeleton + hump-fill render (phases 5-6) plus the ph2 projection, not new anchor logic.
+Two patterns reviewed so far are already placed: **head & shoulders** (2nd reviewed) is phases 5-7; the **rising wedge** (3rd reviewed) needs no new phase — it is a trendline-family coil fully covered by the foundation (phases 1-3), verified in the phase-4 smoke as the down-break case. The remaining backlog above is expected to need no new anchor logic: the falling wedge and both directional triangles are the same trendline family (foundation-covered — a screenshot each just confirms the flat-side classification renders right); double top/bottom is the pivot-matched family reusing the phases 5-6 skeleton + hump-fill machinery.
 
 ## Data shapes
 
