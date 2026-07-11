@@ -41,11 +41,19 @@ class OverlaySpec(BaseModel):
     `span_b`/`displacement`); absent periods mean the renderer applies the classic
     9/26/52/26 defaults. Like the other indicator kinds it accepts no
     `price`/`label`/`role`. The displaced, filled cloud render lands in phase 4
-    (ui-builder)."""
+    (ui-builder).
+
+    `obv` (Plan 0076) is the leanest additive move yet: On-Balance Volume is
+    cumulative and unparameterized, so the kind carries no fields at all — a bare
+    `obv` overlay serialises to exactly `{kind}`. Like the other indicator kinds it
+    accepts no `price`/`label`/`role`. The renderer computes OBV from the bars it
+    holds and draws it in a separate auto-scaled pane (phase 2, ui-builder)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["ema", "sma", "rsi", "macd", "bbands", "price_line", "supertrend", "ichimoku"]
+    kind: Literal[
+        "ema", "sma", "rsi", "macd", "bbands", "price_line", "supertrend", "ichimoku", "obv"
+    ]
     period: int | None = None
     multiplier: float | None = None  # supertrend's ATR multiplier; None on other kinds
     # `ichimoku`-only period fields (None on other kinds); absent -> classic defaults.

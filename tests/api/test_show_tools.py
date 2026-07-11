@@ -842,6 +842,37 @@ def test_ichimoku_overlay_rejects_price_line_fields() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Plan 0076 ph1: the obv OverlaySpec kind                                      #
+# Pure-pydantic round-trips — no live server needed.                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_obv_overlay_round_trips_as_bare_kind() -> None:
+    """OBV is cumulative and unparameterized: a valid `obv` overlay carries no
+    fields and serialises to exactly `{kind: "obv"}`."""
+    overlay = OverlaySpec(kind="obv")
+    assert OverlaySpec.model_validate(overlay.model_dump()) == overlay
+    assert overlay.model_dump(mode="json", exclude_none=True) == {"kind": "obv"}
+
+
+def test_ema_overlay_wire_unchanged_by_obv_kind() -> None:
+    """Adding the `obv` kind leaves an existing `ema` overlay byte-unchanged on the
+    wire — the additive literal carries no new fields."""
+    assert OverlaySpec(kind="ema", period=20).model_dump(mode="json", exclude_none=True) == {
+        "kind": "ema",
+        "period": 20,
+    }
+
+
+def test_obv_overlay_rejects_price_line_fields() -> None:
+    """`obv` is an indicator kind: the validator rejects the `price_line`-only
+    fields on it (the families stay disjoint)."""
+    for bad in ({"price": 100.0}, {"label": "x"}, {"role": "support"}):
+        with pytest.raises(ValidationError, match="does not accept price/label/role"):
+            OverlaySpec(kind="obv", **bad)
+
+
+# --------------------------------------------------------------------------- #
 # Plan 0064 ph2: TrendlineSpec moves to the dedicated `chart.trendlines v1`     #
 # event; the `trendlines` field is REMOVED from chart.show/chart.update         #
 # (ADR-0059). Pure-pydantic round-trips — no live server needed.                #

@@ -896,7 +896,7 @@ Summarise news sentiment for a symbol over a window by running VADER over each r
 
 ## `show_chart`
 
-Render a chart in the Electron viewer. Publishes a `chart.show v1` event to the SSE stream. The renderer mounts/switches to the requested symbol+timeframe and renders the requested window with the supplied overlays. Overlay `kind`s: indicator overlays `ema`/`sma`/`rsi`/`macd`/`bbands`/`supertrend`/`ichimoku` (computed and drawn client-side — `supertrend` takes an optional `multiplier`, `ichimoku` optional `conversion`/`base`/`span_b`/`displacement` periods defaulting to 9/26/52/26) and `price_line` (a labelled horizontal line for support/resistance). Returns immediately whether or not a viewer is connected — events are ephemeral; reopening Electron after a call to this tool will not replay it.
+Render a chart in the Electron viewer. Publishes a `chart.show v1` event to the SSE stream. The renderer mounts/switches to the requested symbol+timeframe and renders the requested window with the supplied overlays. Overlay `kind`s: indicator overlays `ema`/`sma`/`rsi`/`macd`/`bbands`/`supertrend`/`ichimoku`/`obv` (computed and drawn client-side — `supertrend` takes an optional `multiplier`, `ichimoku` optional `conversion`/`base`/`span_b`/`displacement` periods defaulting to 9/26/52/26, `obv` carries no fields and draws in its own pane) and `price_line` (a labelled horizontal line for support/resistance). Returns immediately whether or not a viewer is connected — events are ephemeral; reopening Electron after a call to this tool will not replay it.
 
 **Parameters**
 
@@ -953,7 +953,7 @@ Summarise StockTwits crowd sentiment for a symbol over a window by counting user
 
 ## `update_chart`
 
-Apply a delta to the currently-rendered chart. Publishes a `chart.update v1` event. Any subset of {overlays, range_start, range_end, focus_bar} may be supplied; unset fields are not carried on the wire (the renderer merges the delta into its current state). Overlay `kind`s: indicator overlays `ema`/`sma`/`rsi`/`macd`/`bbands`/`supertrend`/`ichimoku` (computed and drawn client-side — `supertrend` takes an optional `multiplier`, `ichimoku` optional `conversion`/`base`/`span_b`/`displacement` periods defaulting to 9/26/52/26) and `price_line` (a labelled horizontal line for support/resistance). If no chart for `symbol`+`timeframe` is currently open in the viewer, the renderer treats this as a `chart.show`.
+Apply a delta to the currently-rendered chart. Publishes a `chart.update v1` event. Any subset of {overlays, range_start, range_end, focus_bar} may be supplied; unset fields are not carried on the wire (the renderer merges the delta into its current state). Overlay `kind`s: indicator overlays `ema`/`sma`/`rsi`/`macd`/`bbands`/`supertrend`/`ichimoku`/`obv` (computed and drawn client-side — `supertrend` takes an optional `multiplier`, `ichimoku` optional `conversion`/`base`/`span_b`/`displacement` periods defaulting to 9/26/52/26, `obv` carries no fields and draws in its own pane) and `price_line` (a labelled horizontal line for support/resistance). If no chart for `symbol`+`timeframe` is currently open in the viewer, the renderer treats this as a `chart.show`.
 
 **Parameters**
 

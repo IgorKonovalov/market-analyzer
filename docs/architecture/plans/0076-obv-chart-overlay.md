@@ -1,6 +1,6 @@
 # 0076 — OBV chart overlay
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-09
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0023](../adrs/0023-technical-analysis-surface.md) (OBV already computed), [0017](../adrs/0017-live-ui-updates-via-sse.md) (overlay events); render phase **sequences after [Plan 0072](0072-codebase-remediation-audit-2026-07.md) phase 8** (same overlay-drawing code as Plan 0073 phase 4)
