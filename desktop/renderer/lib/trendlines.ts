@@ -484,7 +484,10 @@ class TrendlinePaneRenderer implements ISeriesPrimitivePaneRenderer {
         // alpha/width per segment.
         ctx.lineWidth = seg.emphasis ? 3 : 2
         ctx.globalAlpha = seg.dimmed ? 0.2 : 1
-        ctx.setLineDash(seg.dashed ? [6, 4] : [])
+        // A projection (breakout arrow) draws DOTTED so it reads as a projected
+        // target, visually distinct from the solid/dashed real boundaries — a
+        // dashed forming boundary keeps its [6,4] dash (Plan 0083 ph3 / ADR-0078).
+        ctx.setLineDash(seg.arrow ? [2, 3] : seg.dashed ? [6, 4] : [])
         ctx.beginPath()
         ctx.moveTo(seg.x1, seg.y1)
         ctx.lineTo(seg.x2, seg.y2)

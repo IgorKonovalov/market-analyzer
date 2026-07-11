@@ -612,3 +612,79 @@ describe('TrendlinePrimitive', () => {
     expect(primitive.currentSegments().every((s) => !s.emphasis && !s.dimmed)).toBe(true)
   })
 })
+
+describe('TrendlinePaneRenderer draw — dotted projection + arrowhead (Plan 0083 ph3)', () => {
+  interface DrawCapture {
+    dashPatterns: number[][]
+    fills: number
+  }
+
+  /** A recording canvas context + draw target: captures every setLineDash
+   * pattern and counts fill() calls (the arrowhead is filled). */
+  function drawSpecs(specs: TrendlineSpec[]): DrawCapture {
+    const capture: DrawCapture = { dashPatterns: [], fills: 0 }
+    const ctx = {
+      save() {},
+      restore() {},
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      closePath() {},
+      stroke() {},
+      fill() {
+        capture.fills += 1
+      },
+      setLineDash(pattern: number[]) {
+        capture.dashPatterns.push(pattern)
+      },
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 0,
+      globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D
+    const primitive = new TrendlinePrimitive(COLORS)
+    attachStub(primitive)
+    primitive.setTrendlines(specs)
+    const target = {
+      useMediaCoordinateSpace(
+        cb: (scope: {
+          context: CanvasRenderingContext2D
+          mediaSize: { width: number; height: number }
+        }) => void,
+      ) {
+        cb({ context: ctx, mediaSize: { width: 300, height: 150 } })
+      },
+    }
+    const view = primitive.paneViews()[0]
+    if (!view) throw new Error('expected a pane view for the projection spec')
+    const renderer = view.renderer()
+    if (!renderer) throw new Error('expected a pane renderer')
+    renderer.draw(target as unknown as Parameters<typeof renderer.draw>[0])
+    return capture
+  }
+
+  const projection: TrendlineSpec = {
+    points: [
+      { ts: T2, price: 20 }, // broken boundary, y 40
+      { ts: T2, price: 25 }, // target above, y 20 — bullish vertical
+    ],
+    role: 'projection',
+    style: 'solid',
+    pattern: 'symmetrical_triangle',
+  }
+
+  it('strokes the projection DOTTED and fills an arrowhead', () => {
+    const { dashPatterns, fills } = drawSpecs([projection])
+    // The line stroke uses the dotted pattern; the arrowhead fill resets to solid.
+    expect(dashPatterns).toContainEqual([2, 3])
+    expect(fills).toBeGreaterThanOrEqual(1)
+  })
+
+  it('strokes a solid boundary with NO dash and NO arrowhead fill', () => {
+    const boundary: TrendlineSpec = { ...NECKLINE, style: 'solid' }
+    const { dashPatterns, fills } = drawSpecs([boundary])
+    expect(dashPatterns).toContainEqual([]) // solid: empty dash
+    expect(dashPatterns).not.toContainEqual([2, 3]) // never dotted
+    expect(fills).toBe(0) // no arrowhead
+  })
+})
