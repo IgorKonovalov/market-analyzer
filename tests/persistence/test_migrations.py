@@ -7,11 +7,19 @@ implement `downgrade()`".
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import Engine, inspect
 
-from market_analyser.persistence.engine import MIGRATIONS_PACKAGE, make_engine
+from market_analyser.data.types import Bar
+from market_analyser.persistence.engine import (
+    MIGRATIONS_PACKAGE,
+    make_engine,
+    make_session_factory,
+)
+from market_analyser.persistence.repository import BarRepository
 
 
 def _alembic_config(engine: Engine) -> AlembicConfig:
@@ -369,6 +377,96 @@ def test_advice_ledger_table_has_expected_columns_and_indexes_after_upgrade() ->
             "ix_advice_ledger_outcome_class",
             "ix_advice_ledger_created_at",
         } <= index_names
+    finally:
+        engine.dispose()
+
+
+def _seed_bar(symbol: str, source: str, *, day: int = 5) -> Bar:
+    return Bar(
+        symbol=symbol,
+        timeframe="1d",
+        event_ts=datetime(2026, 1, day, tzinfo=UTC),
+        open=100.0,
+        high=102.0,
+        low=99.0,
+        close=101.0,
+        volume=1_000.0,
+        source=source,
+    )
+
+
+def test_purge_migration_deletes_only_orphaned_yahoo_crypto_bars() -> None:
+    """Plan 0081 phase 2: upgrading through 0009 deletes the Yahoo-sourced crypto
+    -USD rows (now Coinbase-routed) and leaves everything else — Yahoo equities,
+    Binance pairs, and already-Coinbase-sourced -USD rows — intact."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+        # Stop just before the purge, seed the bars, then run the purge.
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0008_advice_ledger")
+
+        repo = BarRepository(make_session_factory(engine))
+        repo.upsert_bars(
+            [
+                _seed_bar("BTC-USD", "yahoo"),  # orphaned crypto -USD -> purged
+                _seed_bar("ETH-USD", "yahoo"),  # orphaned crypto -USD -> purged
+                _seed_bar("AAPL", "yahoo"),  # equity, no -USD -> kept
+                _seed_bar("SPY", "yahoo"),  # index ETF, no -USD -> kept
+                _seed_bar("BTCUSDT", "binance"),  # Binance pair -> kept
+                _seed_bar("SOL-USD", "coinbase", day=6),  # already Coinbase -> kept
+            ]
+        )
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+
+        window_start = datetime(2026, 1, 1, tzinfo=UTC)
+        window_end = datetime(2026, 2, 1, tzinfo=UTC)
+
+        def sources(symbol: str) -> list[str]:
+            return [b.source for b in repo.get_bars(symbol, "1d", window_start, window_end)]
+
+        # Purged: the orphaned Yahoo crypto -USD rows are gone.
+        assert sources("BTC-USD") == []
+        assert sources("ETH-USD") == []
+        # Kept: equities/indices (no -USD), Binance, and Coinbase -USD survive.
+        assert sources("AAPL") == ["yahoo"]
+        assert sources("SPY") == ["yahoo"]
+        assert sources("BTCUSDT") == ["binance"]
+        assert sources("SOL-USD") == ["coinbase"]  # source='coinbase' not matched by the purge
+    finally:
+        engine.dispose()
+
+
+def test_purge_migration_downgrade_leaves_schema_identical() -> None:
+    """0009 is a one-way DATA purge, not a schema change — `downgrade` is a
+    documented no-op, so `upgrade head -> downgrade 0008 -> upgrade head` leaves
+    the schema identical (nothing to add/drop)."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+
+        def snapshot() -> dict[str, set[str]]:
+            insp = inspect(engine)
+            return {t: {c["name"] for c in insp.get_columns(t)} for t in insp.get_table_names()}
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_first = snapshot()
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0008_advice_ledger")
+        assert snapshot() == head_first  # no-op downgrade: schema unchanged
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        assert snapshot() == head_first
     finally:
         engine.dispose()
 

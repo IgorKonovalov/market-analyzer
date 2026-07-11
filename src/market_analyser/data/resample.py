@@ -1,20 +1,30 @@
-"""In-house OHLCV resampler (Plan 0025 phase 2 / ADR-0028).
+"""In-house OHLCV resampler (Plan 0025 phase 2 / ADR-0028; Plan 0081 / ADR-0076).
 
-Yahoo serves `1h` natively but has no `4h` interval, so `4h` bars are aggregated
-in-house from native `1h` bars. The aggregation is **trailing by construction**
-(an output bar reads only the base bars inside its own closed window, never
-future bars), so it carries no lookahead — the project-wide non-negotiable for
-any financially-meaningful path.
+A source that serves a timeframe natively is fetched; one that does not has it
+**derived on read** from a native base by this aggregator. The aggregation is
+**trailing by construction** (an output bar reads only the base bars inside its
+own closed window, never future bars), so it carries no lookahead — the
+project-wide non-negotiable for any financially-meaningful path.
 
-The grid is **fixed and UTC-aligned**: 4h buckets start at `00:00, 04:00, 08:00,
-12:00, 16:00, 20:00 UTC`. This does not match any single exchange session — a
-deliberate trade of session-exactness for determinism and venue-independence,
-since we have no exchange-calendar data (ADR-0028). Bars are timestamped at their
-bucket open, consistent with how native Yahoo bars are timestamped.
+Three targets are built, one bucketing rule each:
 
-Only `1h -> 4h` is built; a general N-hour aggregator is a follow-up if a later
-plan needs `2h`/`8h` (the registry already carries the per-timeframe duration the
-aggregation reads).
+- **`4h ← 1h`** — a **fixed UTC grid**: buckets start at `00:00, 04:00, 08:00,
+  12:00, 16:00, 20:00 UTC`. This does not match any single exchange session — a
+  deliberate trade of session-exactness for determinism and venue-independence,
+  since we have no exchange-calendar data (ADR-0028). (Yahoo has no 4h interval;
+  Coinbase serves 15m/1h/1d and derives 4h from 1h.)
+- **`1w ← 1d`** — the **ISO calendar week**: buckets start Monday 00:00 UTC.
+- **`1mo ← 1d`** — the **calendar month**: buckets start on the 1st, 00:00 UTC.
+
+The weekly/monthly rules exist for Coinbase's coarse timeframes (ADR-0076): 24/7
+crypto has gap-free daily bars, so calendar bucketing is deterministic and
+trailing, materially reducing the variable-month concern ADR-0047 raised for
+Yahoo's closure-laden series. Yahoo still fetches 1w/1mo natively (the provider
+only derives when `source_resampled_from` says so), so this aggregator being able
+to bucket them changes no Yahoo behaviour.
+
+Bars are timestamped at their bucket open, consistent with how native bars are
+timestamped.
 """
 
 from __future__ import annotations
@@ -22,24 +32,36 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 
-from market_analyser.data.timeframes import bar_duration, resampled_from
+from market_analyser.data.timeframes import bar_duration, timeframe_spec
 from market_analyser.data.types import Bar
 
+# The timeframes this aggregator knows how to bucket (Plan 0081): each has a
+# derivation somewhere in the per-source registry (`source_resampled_from`). A
+# target outside this set is either native (nothing to aggregate) or unknown.
+_RESAMPLE_TARGETS: frozenset[str] = frozenset({"4h", "1w", "1mo"})
 
-def _bucket_start(ts: datetime, bucket: timedelta) -> datetime:
-    """Floor `ts` onto the UTC-aligned grid of width `bucket` anchored at 00:00
-    UTC. `bucket` (4h) divides a day evenly, so anchoring per-day reproduces the
-    continuous 00/04/08/12/16/20 grid."""
+
+def _bucket_start(ts: datetime, target: str) -> datetime:
+    """Floor `ts` onto `target`'s trailing bucket grid (see the module docstring):
+    calendar week (Monday 00:00 UTC) for `1w`, calendar month (1st 00:00 UTC) for
+    `1mo`, else the fixed sub-daily UTC grid of width `bar_duration(target)`
+    anchored at 00:00 UTC (`4h`)."""
+    if target == "1w":
+        day_start = ts.replace(hour=0, minute=0, second=0, microsecond=0)
+        return day_start - timedelta(days=day_start.weekday())
+    if target == "1mo":
+        return ts.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    width = bar_duration(target)
     day_start = ts.replace(hour=0, minute=0, second=0, microsecond=0)
-    n = (ts - day_start) // bucket
-    return day_start + n * bucket
+    n = (ts - day_start) // width
+    return day_start + n * width
 
 
 def resample_ohlcv(bars: Sequence[Bar], target: str = "4h") -> list[Bar]:
-    """Aggregate `bars` (native base-timeframe bars) into `target` bars on the
-    fixed UTC grid. Each output bar over `[bucket_start, bucket_start + width)`
-    takes open = first base bar's open, high = max high, low = min low,
-    close = last base bar's close, volume = sum.
+    """Aggregate `bars` (native base-timeframe bars) into `target` bars on
+    `target`'s trailing bucket grid. Each output bar takes open = first base
+    bar's open, high = max high, low = min low, close = last base bar's close,
+    volume = sum.
 
     A partial final bucket (fewer base bars than a full window at the series end)
     is still emitted from the bars present — never dropped, never forward-padded —
@@ -47,17 +69,16 @@ def resample_ohlcv(bars: Sequence[Bar], target: str = "4h") -> list[Bar]:
 
     Deterministic: the input is sorted by `event_ts` and buckets are emitted in
     chronological order, with no set/dict-iteration-order dependence. `target`
-    must be a resampled timeframe (e.g. `4h`); a native timeframe raises
-    `ValueError`."""
-    base = resampled_from(target)
-    if base is None:
+    must be a resampled timeframe (`4h`, `1w`, or `1mo`); a native timeframe (or
+    an unknown one) raises `ValueError`."""
+    if target not in _RESAMPLE_TARGETS:
+        timeframe_spec(target)  # raises ValueError for an unregistered timeframe
         raise ValueError(f"timeframe {target!r} is native, not resampled — nothing to aggregate")
-    width = bar_duration(target)
 
     ordered = sorted(bars, key=lambda b: b.event_ts)
     buckets: dict[datetime, list[Bar]] = {}
     for bar in ordered:
-        buckets.setdefault(_bucket_start(bar.event_ts, width), []).append(bar)
+        buckets.setdefault(_bucket_start(bar.event_ts, target), []).append(bar)
 
     out: list[Bar] = []
     for bucket_ts in sorted(buckets):

@@ -45,7 +45,15 @@ class BarRepository:
         start: datetime,
         end: datetime,
         as_of: datetime | None = None,
+        source: str | None = None,
     ) -> list[Bar]:
+        """Cached bars for `[start, end]`. When `source` is given, only bars
+        recorded under that source are returned — the provenance-scoped read
+        that makes single-provenance-per-symbol a read-time invariant rather
+        than a routing coincidence (Plan 0081 / ADR-0076): a symbol adopted by a
+        new source (e.g. `BTC-USD` Yahoo → Coinbase) never returns the old
+        source's orphaned rows. `None` (the default) reads across every source,
+        for callers that key on `(symbol, timeframe)` alone."""
         if not symbol:
             raise ValueError("symbol must be non-empty")
         if start.tzinfo is None or end.tzinfo is None:
@@ -63,6 +71,8 @@ class BarRepository:
         )
         if as_of is not None:
             stmt = stmt.where(BarRow.ingested_at <= as_of)
+        if source is not None:
+            stmt = stmt.where(BarRow.source == source)
 
         with self._session_factory() as session:
             return [_row_to_bar(row) for row in session.scalars(stmt)]

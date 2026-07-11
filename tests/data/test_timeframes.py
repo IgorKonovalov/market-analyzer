@@ -112,3 +112,35 @@ def test_unknown_timeframe_raises_value_error() -> None:
 def test_supported_label_is_cadence_ordered() -> None:
     # Sorted ascending by bar duration so the agent-facing tool docs read naturally.
     assert tf.supported_timeframes_label() == "15m, 1h, 4h, 1d, 1w, 1mo"
+
+
+# --- Plan 0081 / ADR-0076: the Coinbase per-source seam --------------------------
+
+
+def test_coinbase_history_is_uncapped_for_every_timeframe() -> None:
+    # Coinbase history reaches the listing date at every timeframe (like Binance);
+    # its routed symbols are never clamped by the registry's Yahoo caps.
+    for timeframe in ("15m", "1h", "4h", "1d", "1w", "1mo"):
+        assert tf.source_max_history(timeframe, "coinbase") is None
+
+
+def test_coinbase_derives_coarse_timeframes_from_its_own_base() -> None:
+    # Native granularities (15m/1h/1d) are fetched, not derived.
+    for native in ("15m", "1h", "1d"):
+        assert tf.source_resampled_from(native, "coinbase") is None
+    # The three coarser timeframes derive from a Coinbase base (never another
+    # venue): 4h from 1h, 1w and 1mo from 1d.
+    assert tf.source_resampled_from("4h", "coinbase") == "1h"
+    assert tf.source_resampled_from("1w", "coinbase") == "1d"
+    assert tf.source_resampled_from("1mo", "coinbase") == "1d"
+
+
+def test_coinbase_seam_does_not_disturb_yahoo_or_binance() -> None:
+    # Yahoo keeps its caps and its single 4h derivation; Binance stays uncapped
+    # and fully native — the Coinbase branch is additive.
+    assert tf.source_max_history("15m", "yahoo") == timedelta(days=60)
+    assert tf.source_resampled_from("4h", "yahoo") == "1h"
+    assert tf.source_resampled_from("1w", "yahoo") is None  # Yahoo fetches 1w natively
+    assert tf.source_resampled_from("1mo", "yahoo") is None  # and 1mo natively
+    assert tf.source_max_history("1h", "binance") is None
+    assert tf.source_resampled_from("1w", "binance") is None

@@ -23,11 +23,25 @@ from typing import Literal
 _DAY = timedelta(days=1)
 
 # The OHLCV source vocabulary for the per-source seams below (Plan 0058 phase 2
-# / ADR-0052 membership routing). The registry's `TimeframeSpec` fields describe
-# the Yahoo view (the historical default); Binance serves every canonical
-# timeframe natively (incl. 4h) with history to listing date, so its view is
-# derived, not tabulated.
-OhlcvSourceName = Literal["yahoo", "binance"]
+# / ADR-0052 membership routing; Plan 0081 / ADR-0076 adds Coinbase). The
+# registry's `TimeframeSpec` fields describe the Yahoo view (the historical
+# default); Binance serves every canonical timeframe natively (incl. 4h) with
+# history to listing date, so its view is derived, not tabulated. Coinbase serves
+# only 15m/1h/1d natively (deep to listing) and derives the coarser timeframes on
+# read from its own base — its view is tabulated in `_COINBASE_RESAMPLED_FROM`.
+OhlcvSourceName = Literal["yahoo", "binance", "coinbase"]
+
+# Coinbase's derive-on-read map (Plan 0081 / ADR-0076): the native granularities
+# are 15m/1h/1d, so the three coarser canonical timeframes are resampled from a
+# Coinbase base (never another venue — single-provenance). 24/7 crypto makes the
+# daily base gap-free, so calendar-week / calendar-month bucketing is clean
+# (ADR-0028 derive-on-read; ADR-0047 revisited for a gap-free series). Native
+# timeframes are absent (→ None) — they are fetched, not derived.
+_COINBASE_RESAMPLED_FROM: dict[str, str] = {
+    "4h": "1h",
+    "1w": "1d",
+    "1mo": "1d",
+}
 
 
 @dataclass(frozen=True)
@@ -111,23 +125,27 @@ def max_history(tf: str) -> timedelta | None:
 
 def source_resampled_from(tf: str, source: OhlcvSourceName) -> str | None:
     """The base timeframe `tf` is resampled from *for `source`*, or `None` when
-    `source` serves it natively. The per-source seam of Plan 0058 phase 2:
-    Yahoo has no 4h interval so 4h derives from 1h (ADR-0028); Binance serves
-    every canonical timeframe natively (ADR-0052), so for Binance-routed
-    symbols nothing is ever resampled."""
+    `source` serves it natively. The per-source seam of Plan 0058 phase 2 /
+    Plan 0081: Yahoo has no 4h interval so 4h derives from 1h (ADR-0028);
+    Binance serves every canonical timeframe natively (ADR-0052), so nothing is
+    ever resampled for it; Coinbase serves only 15m/1h/1d, so 4h/1w/1mo derive
+    from a Coinbase base per `_COINBASE_RESAMPLED_FROM` (ADR-0076)."""
     spec = timeframe_spec(tf)
     if source == "binance":
         return None
+    if source == "coinbase":
+        return _COINBASE_RESAMPLED_FROM.get(tf)
     return spec.resampled_from
 
 
 def source_max_history(tf: str, source: OhlcvSourceName) -> timedelta | None:
     """The furthest back `tf` bars are available *from `source`*, or `None`
     when unbounded. Yahoo's intraday caps (60d for 15m, 730d for 1h/4h) come
-    from the registry; Binance history reaches the listing date for every
-    timeframe (ADR-0052), so Binance-routed symbols are never clamped."""
+    from the registry; Binance and Coinbase history reach the listing date for
+    every timeframe (ADR-0052 / ADR-0076), so their routed symbols are never
+    clamped."""
     spec = timeframe_spec(tf)
-    if source == "binance":
+    if source in ("binance", "coinbase"):
         return None
     return spec.max_history
 

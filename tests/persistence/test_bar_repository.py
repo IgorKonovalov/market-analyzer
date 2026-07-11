@@ -88,6 +88,34 @@ def test_get_bars_filters_by_symbol_and_timeframe(repo: BarRepository) -> None:
     assert bars[0].symbol == "MSFT"
 
 
+def test_get_bars_filters_by_source_when_given(repo: BarRepository) -> None:
+    """Plan 0081 / ADR-0076: the provenance-scoped read. Two same-symbol bars at
+    different timestamps recorded under different sources — a `source`-filtered
+    read returns only the matching source; the default (no filter) returns both."""
+    yahoo_bar = Bar(
+        symbol="BTC-USD",
+        timeframe="1d",
+        event_ts=datetime(2026, 4, 15, tzinfo=UTC),
+        open=100.0,
+        high=102.0,
+        low=99.0,
+        close=101.0,
+        volume=5.0,
+        source="yahoo",
+    )
+    coinbase_bar = yahoo_bar.model_copy(
+        update={"event_ts": datetime(2026, 4, 16, tzinfo=UTC), "source": "coinbase"}
+    )
+    repo.upsert_bars([yahoo_bar, coinbase_bar])
+    window = (datetime(2026, 4, 1, tzinfo=UTC), datetime(2026, 5, 1, tzinfo=UTC))
+
+    scoped = repo.get_bars("BTC-USD", "1d", *window, source="coinbase")
+    assert [b.source for b in scoped] == ["coinbase"]
+
+    unscoped = repo.get_bars("BTC-USD", "1d", *window)
+    assert sorted(b.source for b in unscoped) == ["coinbase", "yahoo"]
+
+
 def test_as_of_filters_by_ingested_at(repo: BarRepository) -> None:
     """Anti-lookahead: a bar written `now` is invisible to an `as_of` in the past."""
     repo.upsert_bars([_bar(day=15)])

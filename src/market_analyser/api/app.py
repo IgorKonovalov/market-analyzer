@@ -60,6 +60,7 @@ from market_analyser.config import default_app_data_dir
 from market_analyser.data.adapters.binance_account import BinanceAccountAdapter
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
 from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
+from market_analyser.data.adapters.coinbase import CoinbaseAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
@@ -200,6 +201,15 @@ def create_app(
                 # the other app data.
                 binance=BinanceKlinesAdapter(
                     symbol_cache_path=default_app_data_dir() / "binance_exchange_info.json",
+                ),
+                # Coinbase (Plan 0081 / ADR-0076): the USD-native crypto source,
+                # third in the Binance → Coinbase → Yahoo membership routing.
+                # Wired only here — like Binance, the membership check may lazily
+                # fetch the product set, so an unwired provider (tests) never
+                # reaches the network. Its product-set cache persists alongside
+                # the other app data.
+                coinbase=CoinbaseAdapter(
+                    symbol_cache_path=default_app_data_dir() / "coinbase_products.json",
                 ),
             )
         if annotations_repository is None:

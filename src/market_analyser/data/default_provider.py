@@ -17,6 +17,7 @@ from itertools import pairwise
 from typing import Any, Literal
 
 from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
+from market_analyser.data.adapters.coinbase import CoinbaseAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
@@ -128,6 +129,7 @@ class DefaultMarketDataProvider:
         coingecko: CoinGeckoAdapter | None = None,
         stocktwits: StockTwitsAdapter | None = None,
         binance: BinanceKlinesAdapter | None = None,
+        coinbase: CoinbaseAdapter | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
@@ -137,6 +139,11 @@ class DefaultMarketDataProvider:
         # an unwired provider routes everything to Yahoo, exactly as before
         # Plan 0058, and offline tests never reach api.binance.com.
         self._binance = binance
+        # Same unwired-in-tests posture as `binance` (Plan 0081 / ADR-0076): the
+        # membership check may lazily fetch the Coinbase product set over the
+        # network, so only the composition root wires it — an unwired provider
+        # never reaches api.exchange.coinbase.com.
+        self._coinbase = coinbase
         self._yahoo_quote = yahoo_quote if yahoo_quote is not None else YahooQuoteAdapter()
         self._screener = screener if screener is not None else TradingViewScreenerAdapter()
         self._news = news if news is not None else RssNewsAdapter()
@@ -161,13 +168,19 @@ class DefaultMarketDataProvider:
         }
 
     def _ohlcv_route(self, symbol: str) -> tuple[OhlcvSourceName, OhlcvSource]:
-        """ADR-0052 membership routing: a symbol goes to Binance iff it is in
-        the cached `exchangeInfo` symbol set (no prefixes, no format
-        heuristics); everything else goes to Yahoo, exactly as before Plan
-        0058. A symbol therefore resolves to one source for its whole life and
-        cached bars stay single-provenance by construction."""
+        """Membership routing with precedence **Binance → Coinbase → Yahoo**
+        (ADR-0052 generalised to N sources by ADR-0076): a symbol goes to
+        Binance iff it is in the cached `exchangeInfo` set, else to Coinbase iff
+        it is in the cached `/products` set, else to Yahoo — no prefixes, no
+        format heuristics. The two exchange sets never collide (`BTCUSDT` vs
+        `BTC-USD`), so precedence only guards a hypothetical overlap and keeps
+        Binance primary. A symbol therefore resolves to one source for its whole
+        life; combined with the source-scoped cache read below, cached bars stay
+        single-provenance by construction."""
         if self._binance is not None and self._binance.is_known_symbol(symbol):
             return "binance", self._binance
+        if self._coinbase is not None and self._coinbase.is_known_symbol(symbol):
+            return "coinbase", self._coinbase
         return "yahoo", self._yahoo
 
     def get_ohlcv(
@@ -209,7 +222,7 @@ class DefaultMarketDataProvider:
             return adapter.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
 
         if as_of is not None:
-            cached = self._repo.get_bars(symbol, timeframe, start, end, as_of=as_of)
+            cached = self._repo.get_bars(symbol, timeframe, start, end, as_of=as_of, source=source)
             gaps = _coverage_gaps(cached, start, end, _min_fetch_span(timeframe))
             if gaps:
                 raise ValueError(
@@ -219,7 +232,7 @@ class DefaultMarketDataProvider:
                 )
             return _merge_gaps(cached, [], start, end)
 
-        cached = self._repo.get_bars(symbol, timeframe, start, end)
+        cached = self._repo.get_bars(symbol, timeframe, start, end, source=source)
         gaps = _coverage_gaps(cached, start, end, _min_fetch_span(timeframe))
         if not gaps:
             return cached
@@ -257,7 +270,7 @@ class DefaultMarketDataProvider:
             return self.coverage(symbol, base, start, end)
         if self._repo is None:
             return Coverage(cached=[], gaps=[(start, end)] if start < end else [])
-        cached = list(self._repo.get_bars(symbol, timeframe, start, end))
+        cached = list(self._repo.get_bars(symbol, timeframe, start, end, source=source))
         return Coverage(
             cached=cached,
             gaps=_coverage_gaps(cached, start, end, _min_fetch_span(timeframe)),
@@ -299,7 +312,11 @@ class DefaultMarketDataProvider:
         # fetch that would return a misleading empty success (Plan 0025 ph3 /
         # ADR-0028). Binance is uncapped (Plan 0058 phase 2).
         if _exceeds_history_cap(timeframe, start, end, source):
-            cached = list(self._repo.get_bars(symbol, timeframe, start, end)) if self._repo else []
+            cached = (
+                list(self._repo.get_bars(symbol, timeframe, start, end, source=source))
+                if self._repo
+                else []
+            )
             return BackfillResult(
                 bars=cached,
                 partial_reason="history_exceeded",
@@ -310,7 +327,7 @@ class DefaultMarketDataProvider:
             bars = adapter.fetch_ohlcv(symbol, timeframe, start, end, now=_now())
             return BackfillResult(bars=list(bars), partial_reason=None, message=None)
 
-        cached = self._repo.get_bars(symbol, timeframe, start, end)
+        cached = self._repo.get_bars(symbol, timeframe, start, end, source=source)
         gaps = _coverage_gaps(cached, start, end, _min_fetch_span(timeframe))
         if not gaps:
             return BackfillResult(bars=list(cached), partial_reason=None, message=None)
@@ -355,12 +372,16 @@ class DefaultMarketDataProvider:
                 "as_of is not supported for live quotes — a quote is wall-clock-"
                 "sensitive; use get_ohlcv for historical price (Plan 0019)",
             )
-        # Membership-routed, mirroring `_ohlcv_route` (ADR-0052 / Plan 0058
-        # follow-up): a Binance-only pair (e.g. BTCUSDT) quotes from Binance —
-        # the Yahoo quote endpoint 404s on it. An unwired `self._binance`
-        # (offline tests) keeps everything on Yahoo, exactly as before.
+        # Membership-routed, mirroring `_ohlcv_route` precedence
+        # Binance → Coinbase → Yahoo (ADR-0052 / ADR-0076): a Binance-only pair
+        # (e.g. BTCUSDT) quotes from Binance and a Coinbase pair (e.g. BTC-USD)
+        # from Coinbase — the Yahoo quote endpoint 404s on the former and serves
+        # only a shallow composite for the latter. Unwired adapters (offline
+        # tests) keep everything on Yahoo, exactly as before.
         if self._binance is not None and self._binance.is_known_symbol(symbol):
             return self._binance.get_quote(symbol)
+        if self._coinbase is not None and self._coinbase.is_known_symbol(symbol):
+            return self._coinbase.get_quote(symbol)
         return self._yahoo_quote.get_quote(symbol)
 
     def search_symbols(
@@ -383,10 +404,21 @@ class DefaultMarketDataProvider:
                 "as_of is not supported for symbol search — search is a live "
                 "lookup (Plan 0024 / ADR-0026)",
             )
+        # Yahoo first (its native namespace), then Binance, then Coinbase
+        # (Plan 0058 phase 3 / Plan 0081 phase 4) — each merged after the prior
+        # sources, deduped by symbol, with its source labeled so `BTCUSDT`
+        # (Binance), `BTC-USD` (Coinbase), and a Yahoo composite are never
+        # presented as interchangeable (ADR-0052 / ADR-0076). Every hit is
+        # fetchable by get_ohlcv (the ADR-0026 chartable invariant) — the
+        # exchange hits come from the same membership sets the OHLCV dispatch
+        # routes by.
         results = list(self._yahoo.search(query))
         if self._binance is not None:
             seen = {info.symbol for info in results}
             results.extend(info for info in self._binance.search(query) if info.symbol not in seen)
+        if self._coinbase is not None:
+            seen = {info.symbol for info in results}
+            results.extend(info for info in self._coinbase.search(query) if info.symbol not in seen)
         return results
 
     def get_screener(
