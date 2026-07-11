@@ -80,7 +80,9 @@ def test_migration_applies_and_chain_stays_linear() -> None:
     config.set_main_option("script_location", MIGRATIONS_PACKAGE)
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
-    assert heads == ["0007_price_snapshots"], f"expected a single 0007 head, got {heads}"
+    # The chain head advanced to 0008 (Plan 0080's advice_ledger); it must still
+    # be a single linear head, and 0007 must still chain onto 0006.
+    assert heads == ["0008_advice_ledger"], f"expected a single head, got {heads}"
     revision = script.get_revision("0007_price_snapshots")
     assert revision.down_revision == "0006_defi_tx_cache", (
         "the two Plan 0035 migrations must form one linear chain"

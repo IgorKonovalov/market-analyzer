@@ -326,6 +326,91 @@ def test_plan_0035_migrations_are_reversible_as_a_pair() -> None:
         engine.dispose()
 
 
+def test_advice_ledger_table_has_expected_columns_and_indexes_after_upgrade() -> None:
+    """Plan 0080 phase 1: `advice_ledger` lands at head with the ADR-0075 shape —
+    the call-identity + ticket columns, the nullable outcome columns the phase-3
+    scorer fills, and the symbol / outcome / created_at indexes."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        inspector = inspect(engine)
+        assert "advice_ledger" in inspector.get_table_names()
+        columns = {c["name"] for c in inspector.get_columns("advice_ledger")}
+        assert columns == {
+            "call_id",
+            "symbol",
+            "timeframe",
+            "strategy_id",
+            "as_of_bar_ts",
+            "horizon_bars",
+            "direction",
+            "entry_low",
+            "entry_high",
+            "stop",
+            "targets_json",
+            "conviction",
+            "forecast_prob",
+            "artifact_path",
+            "created_at",
+            "outcome_class",
+            "realized_return",
+            "realized_r",
+            "directional_correct",
+            "scored_at",
+        }
+        pk = inspector.get_pk_constraint("advice_ledger")
+        assert pk["constrained_columns"] == ["call_id"]
+        index_names = {idx["name"] for idx in inspector.get_indexes("advice_ledger")}
+        assert {
+            "ix_advice_ledger_symbol",
+            "ix_advice_ledger_outcome_class",
+            "ix_advice_ledger_created_at",
+        } <= index_names
+    finally:
+        engine.dispose()
+
+
+def test_advice_ledger_migration_is_reversible_single_step() -> None:
+    """`upgrade head -> downgrade 0007 -> upgrade head` removes and restores
+    `advice_ledger` without disturbing the rest of the schema. The target is the
+    explicit revision below 0008, not `-1` — head-relative steps break the moment
+    a later plan moves the head."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+
+        def snapshot() -> dict[str, set[str]]:
+            insp = inspect(engine)
+            return {
+                table: {c["name"] for c in insp.get_columns(table)}
+                for table in insp.get_table_names()
+            }
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_first = snapshot()
+        assert "advice_ledger" in head_first
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0007_price_snapshots")
+        after_down = snapshot()
+        assert "advice_ledger" not in after_down
+        assert "price_snapshots" in after_down  # other tables survive
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        head_second = snapshot()
+        assert head_first == head_second
+    finally:
+        engine.dispose()
+
+
 def test_metric_points_migration_is_reversible_single_step() -> None:
     """`upgrade head -> downgrade below 0004 -> upgrade head` removes and
     restores `metric_points` without disturbing the rest of the schema. The

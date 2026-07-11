@@ -68,6 +68,10 @@ from market_analyser.forecast.model import DEFAULT_SEED
 from market_analyser.forecast.regime import RegimeForecast, forecast_regime
 from market_analyser.forecast.result import ForecastResult, MultiHorizonForecastResult
 from market_analyser.forecast.volatility import VolatilityForecast, forecast_volatility
+from market_analyser.persistence.advice_ledger_repository import (
+    AdviceLedgerEntry,
+    AdviceLedgerRepository,
+)
 
 RECOMMEND_DESCRIPTION = (
     "ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single "
@@ -155,6 +159,48 @@ def _as_forecast_result(multi: MultiHorizonForecastResult) -> ForecastResult:
         provenance=block.provenance,
         edge_margin=block.edge_margin,
         edge_strength=block.edge_strength,
+    )
+
+
+def ledger_entry_from_recommendation(
+    recommendation: Recommendation,
+    *,
+    strategy_id: str,
+    horizon_bars: int,
+    forecast: ForecastResult,
+    artifact_path: str | None,
+    created_at: datetime,
+) -> AdviceLedgerEntry:
+    """Project a fused ``Recommendation`` onto its append-only ledger entry (Plan
+    0080, ADR-0075). Shared by the live write path below and the one-shot
+    back-fill of the pre-existing ``runs/advice`` artifacts, so both record a call
+    identically.
+
+    The probability recorded for calibration is the one the call staked on its
+    own direction — ``prob_up`` for a long, ``prob_down`` for a short — and
+    ``None`` for a flat call or a demoted no-edge forecast whose direction the
+    forecaster never committed to (ADR-0071)."""
+
+    if recommendation.direction == "long":
+        forecast_prob = forecast.prob_up
+    elif recommendation.direction == "short":
+        forecast_prob = forecast.prob_down
+    else:
+        forecast_prob = None
+    return AdviceLedgerEntry(
+        symbol=recommendation.symbol,
+        timeframe=recommendation.timeframe,
+        strategy_id=strategy_id,
+        as_of_bar_ts=recommendation.as_of_bar_ts,
+        horizon_bars=horizon_bars,
+        direction=recommendation.direction,
+        entry_zone=recommendation.entry_zone,
+        stop=recommendation.stop,
+        targets=list(recommendation.targets),
+        conviction=recommendation.conviction,
+        forecast_prob=forecast_prob,
+        artifact_path=artifact_path,
+        created_at=created_at,
     )
 
 
@@ -266,6 +312,7 @@ async def _recommend_response(
     metric_lookup: MetricAsOfLookup | None = None,
     now: datetime | None = None,
     runs_dir: Path | None = None,
+    advice_ledger_repository: AdviceLedgerRepository | None = None,
 ) -> Recommendation:
     """Body of the `recommend` tool. `now` is injectable so tests run on a
     fixed instant; production passes `None` and reads `datetime.now(UTC)`
@@ -352,8 +399,10 @@ async def _recommend_response(
         now=resolved_now,
     )
 
+    artifact_rel_path: str | None = None
     if runs_dir is not None:
         stamp = resolved_now.strftime("%Y%m%dT%H%M%S%fZ")
+        artifact_rel_path = f"advice/{stamp}-{_fs_safe(symbol)}/explanation.json"
         artifact = RecommendationExplanationArtifact(
             symbol=symbol,
             timeframe=timeframe,
@@ -366,8 +415,25 @@ async def _recommend_response(
             _write_explanation_artifact,
             artifact.model_dump_json(indent=2),
             runs_dir,
-            f"advice/{stamp}-{_fs_safe(symbol)}/explanation.json",
+            artifact_rel_path,
         )
+
+    # Plan 0080 (ADR-0075): record every call in the append-only ledger —
+    # directional and flat alike — beside (not replacing) its explanation
+    # artifact. Independent of `runs_dir`: the row is written whenever the ledger
+    # is wired, so no call can escape the track record. First-write-wins, so a
+    # re-run at the same bar does not duplicate the row or clobber an outcome the
+    # scorer already wrote.
+    if advice_ledger_repository is not None:
+        entry = ledger_entry_from_recommendation(
+            recommendation,
+            strategy_id=strategy_id,
+            horizon_bars=horizon_bars,
+            forecast=leg_inputs.forecast,
+            artifact_path=artifact_rel_path,
+            created_at=resolved_now,
+        )
+        await asyncio.to_thread(advice_ledger_repository.record, entry)
 
     # Publish AFTER a successful fusion — every raise above this line leaves
     # the bus untouched (zero envelopes on failure).
@@ -388,6 +454,7 @@ def register_recommend(
     models_dir: Path | None,
     metric_lookup: MetricAsOfLookup | None = None,
     runs_dir: Path | None = None,
+    advice_ledger_repository: AdviceLedgerRepository | None = None,
 ) -> None:
     """Bind the `recommend` tool to `server`. Dependencies are captured by
     closure so the tool body keeps the parameter list FastMCP introspects for
@@ -397,7 +464,9 @@ def register_recommend(
     computes on the v1 OHLCV-only set and says so in its provenance. ``runs_dir``
     (Plan 0063, ADR-0058) enables the per-call advice explanation artifact under
     ``runs_dir/advice/…``; without it the fusion trace still rides the wire,
-    only the full JSON is skipped."""
+    only the full JSON is skipped. ``advice_ledger_repository`` (Plan 0080,
+    ADR-0075) enables the append-only track-record row per call; without it the
+    call is returned + published but not indexed for scoring."""
 
     @server.tool(description=RECOMMEND_DESCRIPTION)
     async def recommend(
@@ -427,6 +496,7 @@ def register_recommend(
             seed=seed,
             metric_lookup=metric_lookup,
             runs_dir=runs_dir,
+            advice_ledger_repository=advice_ledger_repository,
         )
 
 
@@ -437,5 +507,6 @@ __all__ = [
     "_as_forecast_result",
     "_assemble_and_fuse",
     "_recommend_response",
+    "ledger_entry_from_recommendation",
     "register_recommend",
 ]

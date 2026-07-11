@@ -23,6 +23,7 @@ from sqlalchemy import DateTime, Float, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from market_analyser.persistence.models._base import Base
+from market_analyser.persistence.models.advice_ledger import AdviceLedgerRow
 from market_analyser.persistence.models.backtest_runs import BacktestRunRow
 from market_analyser.persistence.models.defi_tx import DefiTxRow
 from market_analyser.persistence.models.metric_points import MetricPointRow
@@ -72,6 +73,7 @@ class AnnotationRow(Base):
 
 
 __all__ = [
+    "AdviceLedgerRow",
     "AlertRow",
     "AnnotationRow",
     "BacktestRunRow",

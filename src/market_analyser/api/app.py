@@ -32,6 +32,7 @@ from starlette.routing import Route
 
 from market_analyser import __version__
 from market_analyser.alerts.scheduler import WatchScheduler
+from market_analyser.api.advice_backfill import backfill_advice_ledger
 from market_analyser.api.mcp_app import create_mcp_components
 from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.annotations import router as annotations_router
@@ -77,6 +78,7 @@ from market_analyser.data.sources import (
     WalletPositionsSource,
 )
 from market_analyser.events import EventBus
+from market_analyser.persistence.advice_ledger_repository import AdviceLedgerRepository
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.defi_tx_repository import DefiTxRepository
 from market_analyser.persistence.engine import apply_migrations, make_session_factory
@@ -156,6 +158,7 @@ def create_app(
     watches_repository: WatchesRepository | None = None
     alerts_repository: AlertsRepository | None = None
     defi_tx_repository: DefiTxRepository | None = None
+    advice_ledger_repository: AdviceLedgerRepository | None = None
     if engine is not None:
         apply_migrations(engine)
         session_factory = make_session_factory(engine)
@@ -196,6 +199,15 @@ def create_app(
             annotations_repository = AnnotationsRepository(session_factory)
         if backtest_runs_repository is None:
             backtest_runs_repository = BacktestRunsRepository(session_factory)
+        # The advisor track-record ledger (Plan 0080, ADR-0075): the append-only
+        # index the `recommend` tool writes a row into per call, and the phase-3
+        # scorer later fills with outcomes. Built whenever persistence exists.
+        advice_ledger_repository = AdviceLedgerRepository(session_factory)
+        # One-shot back-fill of the pre-existing runs/advice artifacts (ADR-0058)
+        # into the ledger, so the record starts with history rather than empty.
+        # Idempotent (first-write-wins), so it runs safely on every boot.
+        if runs_dir is not None:
+            backfill_advice_ledger(advice_ledger_repository, runs_dir)
 
     if mcp_secret is not None and annotations_repository is None:
         raise ValueError(
@@ -279,6 +291,7 @@ def create_app(
             ui_event_buffer=ui_event_buffer,
             backfill_coordinator=backfill_coordinator,
             backtest_runs_repository=backtest_runs_repository,
+            advice_ledger_repository=advice_ledger_repository,
             runs_dir=runs_dir,
             wallet_positions_sources=effective_wallet_sources,
             lp_detail_sources=effective_lp_detail_sources,
@@ -397,6 +410,10 @@ def create_app(
     app.state.provider = effective_provider
     app.state.annotations_repository = annotations_repository
     app.state.backtest_runs_repository = backtest_runs_repository
+    # The advisor track-record ledger (Plan 0080, ADR-0075) — None without an
+    # engine. The phase-3 scheduled scorer reads matured rows from it; the
+    # `recommend` tool writes rows via create_mcp_components.
+    app.state.advice_ledger_repository = advice_ledger_repository
     # The metric-points store (Plan 0055, ADR-0051) — None without an engine;
     # the MCP metric-series tools receive it directly via create_mcp_components.
     app.state.metric_points_repository = metric_points_repository

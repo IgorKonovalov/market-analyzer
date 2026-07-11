@@ -91,6 +91,7 @@ from market_analyser.data.sources import (
     WalletPositionsSource,
 )
 from market_analyser.events import EventBus
+from market_analyser.persistence.advice_ledger_repository import AdviceLedgerRepository
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.defi_tx_repository import DefiTxRepository
 from market_analyser.persistence.repositories.backtest_runs import (
@@ -113,6 +114,7 @@ def create_mcp_components(
     ui_event_buffer: UIEventBuffer,
     backfill_coordinator: BackfillCoordinator | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
+    advice_ledger_repository: AdviceLedgerRepository | None = None,
     runs_dir: Path | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
@@ -269,6 +271,10 @@ def create_mcp_components(
         models_dir=forecast_models_dir,
         metric_lookup=metric_points_repository,
         runs_dir=runs_dir,
+        # Plan 0080 (ADR-0075): the append-only track-record index. Wired
+        # whenever persistence exists; without it the tool still returns and
+        # publishes, the call is simply not recorded for scoring.
+        advice_ledger_repository=advice_ledger_repository,
     )
 
     if backtest_runs_repository is not None and runs_dir is not None:

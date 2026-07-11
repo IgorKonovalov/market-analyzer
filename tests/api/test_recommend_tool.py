@@ -34,6 +34,7 @@ from typing import Any, Literal
 import pytest
 
 import market_analyser.advisor
+from market_analyser.api.advice_backfill import backfill_advice_ledger
 from market_analyser.api.mcp_tools import recommend as recommend_tool
 from market_analyser.api.mcp_tools.forecast import (
     FALLBACK_REASON_UNWIRED,
@@ -63,6 +64,7 @@ from market_analyser.forecast.result import (
 )
 from market_analyser.forecast.validation import ForecastValidation
 from market_analyser.forecast.volatility import VolatilityForecast, VolatilityValidation
+from market_analyser.persistence.advice_ledger_repository import AdviceLedgerRepository
 from market_analyser.persistence.engine import (
     apply_migrations,
     make_engine,
@@ -910,6 +912,135 @@ class TestExplanationArtifact:
         assert "threshold" not in vote
         assert vote["actual"] == "long"
         assert vote["passed"] is True
+
+
+def _ledger_repo() -> AdviceLedgerRepository:
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    return AdviceLedgerRepository(make_session_factory(engine))
+
+
+class TestLedgerWrite:
+    """Plan 0080 phase 1 (ADR-0075): the tool writes exactly one append-only
+    ledger row per call — directional and flat alike — capturing the ticket +
+    forecast probability, beside (not replacing) its explanation artifact. A
+    re-run at the same bar does not duplicate the row (append-only). No
+    cherry-pick path exists: the tool always writes when the ledger is wired."""
+
+    def test_directional_call_writes_one_row(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _patch_legs(monkeypatch)
+        repo = _ledger_repo()
+        rec = _run(runs_dir=tmp_path, advice_ledger_repository=repo)
+
+        rows = repo.list()
+        assert len(rows) == 1  # exactly one, not "at least one"
+        row = rows[0]
+        assert row.direction == "long" == rec.direction
+        assert row.symbol == "SYN" and row.timeframe == "1d"
+        assert row.strategy_id == "rsi"
+        assert row.horizon_bars == 1
+        assert row.as_of_bar_ts == rec.as_of_bar_ts == LAST_TS
+        assert row.entry_zone == rec.entry_zone
+        assert row.stop == rec.stop
+        assert row.targets == rec.targets
+        assert row.conviction == rec.conviction
+        assert row.forecast_prob == 0.60  # prob_up for the long — the calibration input
+        stamp = NOW.strftime("%Y%m%dT%H%M%S%fZ")
+        assert row.artifact_path == f"advice/{stamp}-SYN/explanation.json"
+        assert row.outcome_class is None  # unscored until the horizon matures
+
+    def test_flat_call_writes_non_directional_row_even_without_artifact(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_legs(
+            monkeypatch,
+            position="flat",
+            prob_up=None,
+            prob_down=None,
+            prob_flat=None,
+            beats_baseline=False,
+            edge_strength="no_edge",
+        )
+        repo = _ledger_repo()
+        rec = _run(advice_ledger_repository=repo)  # no runs_dir → no artifact
+        assert rec.direction == "flat"
+
+        rows = repo.list()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.direction == "flat"
+        assert row.entry_zone is None and row.stop is None and row.targets == []
+        assert row.forecast_prob is None
+        # The call is recorded even with no artifact on disk — the ledger does not
+        # depend on runs_dir, so a flat call can't slip out of the denominator.
+        assert row.artifact_path is None
+
+    def test_rerun_same_call_does_not_duplicate(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _patch_legs(monkeypatch)
+        repo = _ledger_repo()
+        _run(runs_dir=tmp_path, advice_ledger_repository=repo)
+        _run(runs_dir=tmp_path, advice_ledger_repository=repo, now=NOW + timedelta(seconds=1))
+        # Same as-of bar (LAST_TS) → same call identity → one row, append-only.
+        assert len(repo.list()) == 1
+
+    def test_no_ledger_wired_still_returns_and_publishes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_legs(monkeypatch)
+        rec, envelopes = _run_draining_bus()  # no advice_ledger_repository
+        assert rec.direction == "long"
+        assert len(envelopes) == 1  # the ledger is optional; the tool degrades cleanly
+
+
+class TestBackfill:
+    """Plan 0080 phase 1: the one-shot back-fill ingests the pre-existing
+    runs/advice artifacts into the ledger, idempotently, so the record starts
+    with history rather than empty."""
+
+    def test_backfill_ingests_existing_artifact(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _patch_legs(monkeypatch)
+        _run(runs_dir=tmp_path)  # writes an artifact, no ledger wired
+
+        repo = _ledger_repo()
+        assert backfill_advice_ledger(repo, tmp_path) == 1
+        rows = repo.list()
+        assert len(rows) == 1
+        assert rows[0].symbol == "SYN"
+        assert rows[0].direction == "long"
+        assert rows[0].horizon_bars == 1
+        assert rows[0].as_of_bar_ts == LAST_TS
+        assert rows[0].artifact_path is not None
+        assert rows[0].artifact_path.endswith("explanation.json")
+
+    def test_backfill_is_idempotent(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        _patch_legs(monkeypatch)
+        _run(runs_dir=tmp_path)
+        repo = _ledger_repo()
+        assert backfill_advice_ledger(repo, tmp_path) == 1
+        assert backfill_advice_ledger(repo, tmp_path) == 0  # nothing new on the second pass
+        assert len(repo.list()) == 1
+
+    def test_backfill_missing_advice_dir_is_noop(self, tmp_path: Path) -> None:
+        repo = _ledger_repo()
+        assert backfill_advice_ledger(repo, tmp_path) == 0
+
+    def test_backfill_of_already_recorded_call_is_noop(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A live write and a back-fill of the same call resolve to one row: the
+        back-filled identity matches the live one exactly."""
+        _patch_legs(monkeypatch)
+        repo = _ledger_repo()
+        _run(runs_dir=tmp_path, advice_ledger_repository=repo)  # live write + artifact
+        assert len(repo.list()) == 1
+        assert backfill_advice_ledger(repo, tmp_path) == 0  # already present
+        assert len(repo.list()) == 1
 
 
 class TestBoundaryValidation:
