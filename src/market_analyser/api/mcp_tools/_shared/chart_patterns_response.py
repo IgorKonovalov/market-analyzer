@@ -29,15 +29,25 @@ from market_analyser.events import ChartTrendlinesPayloadV1, EventBus, Trendline
 
 _PATTERN_STATES = ("forming", "confirmed")
 
+# Patterns that additionally draw a multi-point skeleton polyline through their
+# ordered pivots (Plan 0083 ph5 / ADR-0078): head & shoulders and its inverse.
+# The skeleton is derived here from `hit.pivots` — it carries no new information
+# beyond the pivots, so it lives in the draw layer, not on the hit. Doubles are
+# drawn as horizontals (ph8), not a skeleton, so they are deliberately excluded.
+_SKELETON_PATTERNS = frozenset({"head_shoulders", "inverse_head_shoulders"})
+
 
 def _hit_trendlines(hits: list[ChartPatternHit]) -> list[TrendlineSpec]:
     """One `TrendlineSpec` per hit line, in hit order: anchors on the line's
     real pivot endpoints, dashed for forming / solid for confirmed, labelled
-    with the pattern id + state so the chart reads unambiguously."""
+    with the pattern id + state so the chart reads unambiguously. A head &
+    shoulders / inverse additionally emits a `skeleton` polyline through its
+    ordered pivots (LS → t1 → head → t2 → RS)."""
 
     specs: list[TrendlineSpec] = []
     for hit in hits:
         style: Literal["solid", "dashed"] = "dashed" if hit.state == "forming" else "solid"
+        label = f"{hit.pattern} ({hit.state})"
         for line in hit.lines:
             specs.append(
                 TrendlineSpec(
@@ -47,7 +57,17 @@ def _hit_trendlines(hits: list[ChartPatternHit]) -> list[TrendlineSpec]:
                     ],
                     role=line.role,
                     style=style,
-                    label=f"{hit.pattern} ({hit.state})",
+                    label=label,
+                    pattern=hit.pattern,
+                )
+            )
+        if hit.pattern in _SKELETON_PATTERNS:
+            specs.append(
+                TrendlineSpec(
+                    points=[TrendPoint(ts=p.ts, price=p.price) for p in hit.pivots],
+                    role="skeleton",
+                    style=style,
+                    label=label,
                     pattern=hit.pattern,
                 )
             )

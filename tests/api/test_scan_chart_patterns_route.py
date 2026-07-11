@@ -8,8 +8,9 @@ renderer bearer and a single `chart.trendlines` event whose trendlines match the
 timeframe → 422 (never a 500).
 
 Fixture: the head & shoulders path from `test_detect_chart_patterns` — a forming
-hit at bar 25 and a confirmed hit at bar 27, each drawing one neckline, so a
-sweep publishes two trendlines.
+hit at bar 25 and a confirmed hit at bar 27. Each hit draws a neckline + a
+skeleton polyline; the confirmed hit adds a measured-move projection (Plan 0083
+ph5), so a sweep publishes five trendlines for two hits.
 """
 
 from __future__ import annotations
@@ -186,9 +187,13 @@ def test_scan_chart_patterns_publishes_event_and_returns_ack() -> None:
     assert env.payload["symbol"] == "AAPL"
     assert env.payload["timeframe"] == "1d"
     trendlines = env.payload["trendlines"]
-    assert len(trendlines) == 2  # one neckline per hit
-    assert [t["style"] for t in trendlines] == ["dashed", "solid"]
-    assert all(t["role"] == "neckline" for t in trendlines)
+    roles = [t["role"] for t in trendlines]
+    # Each H&S hit draws a neckline + a skeleton polyline; the confirmed hit adds
+    # a measured-move projection (Plan 0083 ph5).
+    assert roles.count("neckline") == 2
+    assert roles.count("skeleton") == 2
+    assert roles.count("projection") == 1
+    assert all(t["pattern"] == "head_shoulders" for t in trendlines)
 
 
 def test_route_trendlines_identical_to_mcp_tool() -> None:

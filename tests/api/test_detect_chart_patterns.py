@@ -22,6 +22,7 @@ import inspect
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
+from typing import Any
 
 import pytest
 
@@ -189,11 +190,18 @@ def _run_detect(
     )
 
 
+def _iso(bars: list[Bar], b: int) -> str:
+    """The published ISO timestamp of bar `b` (Zulu, matching the bus dump)."""
+    return bars[b].event_ts.isoformat().replace("+00:00", "Z")
+
+
 def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_trendlines() -> None:
     """On the seeded H&S fixture: the typed hit list comes back as data AND
-    exactly one `chart.trendlines v1` event lands on the bus, its trendlines
-    carrying the expected neckline anchor `(ts, price)` points with `style`
-    matching each hit's state (dashed=forming, solid=confirmed). The layer-only
+    exactly one `chart.trendlines v1` event lands on the bus. Its trendlines
+    carry, per hit, the neckline through the two troughs and a `skeleton`
+    polyline through the five pivots (LS→t1→head→t2→RS), plus — on the confirmed
+    hit only — a vertical `projection` to the measured-move target. `style`
+    matches each hit's state (dashed=forming, solid=confirmed); the layer-only
     payload carries symbol/timeframe/trendlines and NO range fields."""
 
     bus = EventBus()
@@ -214,7 +222,7 @@ def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_trendlines()
     assert all(h["direction"] == "bearish" for h in hits)
     assert all("action" not in h and "buy" not in h and "sell" not in h for h in hits)
 
-    # --- the bus: exactly one chart.trendlines, anchors + styles ------------- #
+    # --- the bus: exactly one chart.trendlines, grouped by role -------------- #
     events = _drain(sub)
     assert len(events) == 1
     env = events[0]
@@ -224,19 +232,42 @@ def test_detect_chart_patterns_returns_hits_and_publishes_one_chart_trendlines()
     assert "range_start" not in env.payload and "range_end" not in env.payload
     trendlines = env.payload["trendlines"]
     assert isinstance(trendlines, list)
-    assert len(trendlines) == 2  # one neckline per hit (forming + confirmed)
-    neck_start_ts = bars[10].event_ts.isoformat().replace("+00:00", "Z")
-    neck_end_ts = bars[18].event_ts.isoformat().replace("+00:00", "Z")
-    for spec, style in zip(trendlines, ["dashed", "solid"], strict=True):
-        assert spec["role"] == "neckline"
-        assert spec["pattern"] == "head_shoulders"
-        assert spec["style"] == style
+    by_role: dict[str, list[Any]] = {}
+    for t in trendlines:
+        assert t["pattern"] == "head_shoulders"
+        by_role.setdefault(t["role"], []).append(t)
+    assert set(by_role) == {"neckline", "skeleton", "projection"}
+
+    # Neckline: one per state, through the two troughs.
+    assert [t["style"] for t in by_role["neckline"]] == ["dashed", "solid"]
+    for spec in by_role["neckline"]:
         assert [(p["ts"], p["price"]) for p in spec["points"]] == [
-            (neck_start_ts, 99.0),
-            (neck_end_ts, 100.0),
+            (_iso(bars, 10), 99.0),
+            (_iso(bars, 18), 100.0),
         ]
-    assert trendlines[0]["label"] == "head_shoulders (forming)"
-    assert trendlines[1]["label"] == "head_shoulders (confirmed)"
+
+    # Skeleton: one per state, LS→t1→head→t2→RS through the five pivots.
+    expected_skeleton = [
+        (_iso(bars, 6), 111.0),
+        (_iso(bars, 10), 99.0),
+        (_iso(bars, 14), 121.0),
+        (_iso(bars, 18), 100.0),
+        (_iso(bars, 22), 111.5),
+    ]
+    assert [t["style"] for t in by_role["skeleton"]] == ["dashed", "solid"]
+    for spec in by_role["skeleton"]:
+        assert [(p["ts"], p["price"]) for p in spec["points"]] == expected_skeleton
+
+    # Projection: confirmed only, vertical, ending below the break (bearish).
+    assert len(by_role["projection"]) == 1
+    proj = by_role["projection"][0]
+    assert proj["style"] == "solid"
+    assert proj["points"][0]["ts"] == proj["points"][1]["ts"]  # vertical
+    assert proj["points"][1]["price"] < proj["points"][0]["price"]  # downward
+    assert {t["label"] for t in trendlines} == {
+        "head_shoulders (forming)",
+        "head_shoulders (confirmed)",
+    }
 
 
 def test_detect_chart_patterns_publishes_projection_on_confirmed_trendline() -> None:
@@ -282,7 +313,10 @@ def test_detect_chart_patterns_states_filter_narrows_hits_and_event() -> None:
     assert isinstance(hits, list)
     assert [(h["state"], h["bar_index"]) for h in hits] == [("confirmed", 27)]
     trendlines = _drain(sub)[0].payload["trendlines"]
-    assert [t["style"] for t in trendlines] == ["solid"]
+    # The forming hit is dropped: only the confirmed hit's solid specs remain —
+    # neckline + skeleton + projection.
+    assert all(t["style"] == "solid" for t in trendlines)
+    assert {t["role"] for t in trendlines} == {"neckline", "skeleton", "projection"}
 
 
 def test_detect_chart_patterns_pattern_filter_can_empty_the_result() -> None:

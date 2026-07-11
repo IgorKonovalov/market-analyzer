@@ -120,6 +120,16 @@ _TRENDLINE_PATTERNS = (
 )
 CHART_PATTERNS: tuple[str, ...] = _PIVOT_MATCHED_PATTERNS + _TRENDLINE_PATTERNS
 
+# Patterns whose confirmed hit draws a measured-move projection (ADR-0078).
+# The trendline family + head & shoulders / inverse now; the doubles join in
+# Plan 0083 ph8. The projection is a vertical segment from the broken line
+# (the neckline for H&S) to the target — see `_projection_line`.
+_PROJECTION_PATTERNS: tuple[str, ...] = (
+    *_TRENDLINE_PATTERNS,
+    "head_shoulders",
+    "inverse_head_shoulders",
+)
+
 _STATE_ORDER: dict[str, int] = {"forming": 0, "confirmed": 1}
 
 
@@ -635,11 +645,11 @@ def detect_chart_patterns(bars: Sequence[Bar]) -> list[ChartPatternHit]:
             confirm_bar, confirm_direction = confirmed
             confirm_target = _target_at(formation, confirm_bar, confirm_direction)
             # The measured-move projection is drawn on confirmed hits only
-            # (ADR-0078). Ph2 wires the trendline family; the pivot-matched
-            # families (H&S, doubles) are wired in Plan 0083 ph5 / ph8.
+            # (ADR-0078). Trendline family + H&S/inverse here (ph2 + ph5); the
+            # doubles join in Plan 0083 ph8.
             projection = (
                 _projection_line(formation, bars, confirm_bar, confirm_direction, confirm_target)
-                if formation.pattern in _TRENDLINE_PATTERNS
+                if formation.pattern in _PROJECTION_PATTERNS
                 else None
             )
             extra = (projection,) if projection is not None else ()

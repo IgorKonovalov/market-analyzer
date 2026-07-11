@@ -222,6 +222,31 @@ def test_inverse_head_shoulders_mirrors_bullish() -> None:
     assert forming.lines[0].role == "neckline"
 
 
+def test_head_shoulders_confirmed_projection_is_downward_to_target() -> None:
+    """ph5 (ADR-0078): a confirmed head & shoulders carries a vertical
+    'projection' line at the breakout bar ending at the measured-move target,
+    pointing DOWN (bearish); the forming hit has the neckline but no projection.
+    The inverse head & shoulders projects UP."""
+
+    bars = _bars_from_path(_HS_ANCHORS)
+    hits = _hits_for(bars, "head_shoulders")
+    forming = next(h for h in hits if h.state == "forming")
+    confirmed = next(h for h in hits if h.state == "confirmed")
+
+    assert all(line.role != "projection" for line in forming.lines)
+
+    proj = next(line for line in confirmed.lines if line.role == "projection")
+    assert confirmed.target is not None
+    assert proj.start.ts == proj.end.ts == bars[confirmed.bar_index].event_ts
+    assert abs(proj.end.price - confirmed.target) < _TOL
+    assert proj.end.price < proj.start.price  # bearish -> downward
+
+    inv = _hits_for(_bars_from_path(_INVERSE_HS_ANCHORS), "inverse_head_shoulders")
+    inv_confirmed = next(h for h in inv if h.state == "confirmed")
+    inv_proj = next(line for line in inv_confirmed.lines if line.role == "projection")
+    assert inv_proj.end.price > inv_proj.start.price  # bullish -> upward
+
+
 def test_double_top_and_bottom_fire_with_horizontal_neckline() -> None:
     top_hits = _hits_for(_bars_from_path(_DOUBLE_TOP_ANCHORS), "double_top")
     assert top_hits
