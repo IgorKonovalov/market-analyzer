@@ -1,6 +1,6 @@
 # 0085 — Candlestick pattern explanations
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-07-11
 > **Owner skill(s):** ui-builder, human
 > **Related ADRs:** extends [0060](../adrs/0060-glossary-tooltip-interaction-posture.md) (glossary hover-explanations) and honours [0046](../adrs/0046-mcp-large-result-delivery.md) (glossary is a build-time asset, never on the wire); no new ADR (this realizes ADR-0060 for a new content category, no new decision).
