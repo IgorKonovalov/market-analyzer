@@ -349,6 +349,74 @@ it('re-anchor — overlapping range keeps the buffer and fetches only the missin
   expect(edgeCall.end.toISOString()).toBe(START.toISOString()) // A = buffer earliest
 })
 
+// ── Initial-load history clamp (over-horizon 422 → retry clamped to the cap) ──
+
+const TF_15M = '15m'
+const CAP_DAYS_15M = 60
+const CAP_MS_15M = CAP_DAYS_15M * DAY_MS
+// A window wider than the 15m Yahoo horizon (~60d) so the initial request 422s.
+const WIDE_END = new Date('2026-05-01T00:00:00.000Z')
+const WIDE_START = new Date(WIDE_END.getTime() - 365 * DAY_MS)
+
+function fifteenMinBars(from: Date, count: number): Bar[] {
+  return Array.from({ length: count }, (_, i) =>
+    bar(new Date(from.getTime() + i * 15 * 60_000).toISOString(), 100 + i),
+  )
+}
+
+it('history clamp: an over-horizon 15m 422 retries once clamped to the 60d cap and shows what is available', async () => {
+  const clamped = fifteenMinBars(new Date(WIDE_END.getTime() - CAP_MS_15M), 4)
+  getOhlcv.mockRejectedValueOnce(new ApiError(422, 'spans 365d but Yahoo serves only ~60d'))
+  getOhlcv.mockResolvedValueOnce(clamped)
+
+  const { result } = renderHistory({
+    symbol: SYMBOL,
+    timeframe: TF_15M,
+    start: WIDE_START,
+    end: WIDE_END,
+  })
+
+  await waitFor(() => expect(result.current.historyClampedDays).toBe(CAP_DAYS_15M))
+  expect(result.current.error).toBeNull()
+  expect(result.current.isLoading).toBe(false)
+  expect(result.current.bars).toHaveLength(4)
+
+  // Exactly two calls: the doomed wide window, then the clamped [end - 60d, end].
+  expect(getOhlcv).toHaveBeenCalledTimes(2)
+  const wide = getOhlcv.mock.calls[0][0]
+  expect(wide.start.toISOString()).toBe(WIDE_START.toISOString())
+  const retry = getOhlcv.mock.calls[1][0]
+  expect(retry.end.toISOString()).toBe(WIDE_END.toISOString())
+  expect(retry.start.toISOString()).toBe(new Date(WIDE_END.getTime() - CAP_MS_15M).toISOString())
+})
+
+it('history clamp: a 422 on a non-capped timeframe (1d) still surfaces the error, no retry', async () => {
+  getOhlcv.mockRejectedValueOnce(new ApiError(422, 'some other 422'))
+
+  const { result } = renderHistory() // default props are 1d (cap = null)
+
+  await waitFor(() => expect(result.current.error).not.toBeNull())
+  expect(result.current.historyClampedDays).toBeNull()
+  expect(getOhlcv).toHaveBeenCalledTimes(1) // no clamped retry
+})
+
+it('history clamp: a within-cap 15m load succeeds unclamped — no retry, no notice', async () => {
+  const withinStart = new Date(WIDE_END.getTime() - 30 * DAY_MS) // 30d < 60d cap
+  getOhlcv.mockResolvedValueOnce(fifteenMinBars(withinStart, 5))
+
+  const { result } = renderHistory({
+    symbol: SYMBOL,
+    timeframe: TF_15M,
+    start: withinStart,
+    end: WIDE_END,
+  })
+
+  await waitFor(() => expect(result.current.isLoading).toBe(false))
+  expect(result.current.bars).toHaveLength(5)
+  expect(result.current.historyClampedDays).toBeNull()
+  expect(getOhlcv).toHaveBeenCalledTimes(1)
+})
+
 it('re-anchor — disjoint range resets the buffer and fetches the new window fresh', async () => {
   const first = dailyBars(START, 5)
   // A window entirely after the buffer extent (no overlap).

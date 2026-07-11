@@ -70,6 +70,7 @@ export function OhlcvView({
     isLoading,
     isRefetching,
     error,
+    historyClampedDays,
     refetch,
     loadOlder,
     isLoadingOlder,
@@ -202,6 +203,12 @@ export function OhlcvView({
         {!isLoading && !error && bars && bars.length === 0 && (
           <div className={styles.empty} role="status" data-testid="ohlcv-empty">
             {t('ohlcv.emptyBars', { symbol, timeframe })}
+          </div>
+        )}
+        {!isLoading && !error && historyClampedDays !== null && (
+          <div className={styles.historyNotice} role="status" data-testid="ohlcv-history-clamped">
+            <span aria-hidden="true">ℹ</span>{' '}
+            {t('ohlcv.historyClampedNotice', { days: historyClampedDays, timeframe })}
           </div>
         )}
         {!isLoading && !error && bars && bars.length > 0 && (

@@ -57,3 +57,39 @@ export function timeframeDurationMs(timeframe: string | undefined): number | nul
   }
   return null
 }
+
+/**
+ * The furthest back (in days) Yahoo serves each timeframe — its intraday history
+ * horizon — or `null` when unbounded (daily and coarser). Mirrors
+ * `data/timeframes.py` `_REGISTRY` `max_history` for the *Yahoo* source: 15m is
+ * capped at ~60 days, 1h/4h at ~730 days, and 1d/1w/1mo reach the listing date.
+ *
+ * IMPORTANT: this is the YAHOO cap only. The backend clamp is per-source
+ * (`source_max_history`) — a Binance-routed symbol is uncapped for every
+ * timeframe. So this table must never be used to *proactively* shorten a request
+ * (that would wrongly truncate a Binance symbol's intraday history); it exists to
+ * size the *reactive* clamp after the sidecar has already answered a too-wide
+ * window with a 422 (which proves the symbol is Yahoo-routed and capped).
+ *
+ * Hand-maintained + parity-tested (`timeframes.test.ts`), exactly like
+ * `TIMEFRAME_DURATION_MS` — the registry isn't on the HTTP surface, so there is
+ * nothing for `gen-types` to generate. Update this if `data/timeframes.py`'s
+ * intraday caps change.
+ */
+const TIMEFRAME_MAX_HISTORY_DAYS: Record<Timeframe, number | null> = {
+  '15m': 60,
+  '1h': 730,
+  '4h': 730,
+  '1d': null,
+  '1w': null,
+  '1mo': null,
+}
+
+/** Yahoo history horizon (days) for a timeframe string: a finite cap for the
+ * intraday cadences, or `null` when unbounded or the timeframe is unrecognised. */
+export function timeframeMaxHistoryDays(timeframe: string | undefined): number | null {
+  if (timeframe !== undefined && isTimeframe(timeframe)) {
+    return TIMEFRAME_MAX_HISTORY_DAYS[timeframe]
+  }
+  return null
+}

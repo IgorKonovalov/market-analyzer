@@ -27,6 +27,7 @@ jest.mock('../hooks/useOhlcvHistory', () => ({
     isLoading: false,
     isRefetching: false,
     error: null,
+    historyClampedDays: null,
     refetch: jest.fn(),
     loadOlder: jest.fn(),
     isLoadingOlder: false,
@@ -69,6 +70,7 @@ function baseHook(): ReturnType<typeof useOhlcvHistory> {
     isLoading: false,
     isRefetching: false,
     error: null,
+    historyClampedDays: null,
     refetch: jest.fn(),
     loadOlder: jest.fn(),
     isLoadingOlder: false,
@@ -285,6 +287,32 @@ describe('lazy-history affordances (Plan 0030 phase 2)', () => {
     renderView()
     expect(screen.queryByTestId('ohlcv-history-loading')).not.toBeInTheDocument()
     expect(screen.queryByTestId('ohlcv-history-error')).not.toBeInTheDocument()
+  })
+})
+
+describe('history-clamped notice', () => {
+  it('renders the info notice with the cap + timeframe when historyClampedDays is set', () => {
+    mockUseOhlcvHistory.mockReturnValue({ ...baseHook(), historyClampedDays: 60 })
+    renderView('15m')
+    const notice = screen.getByTestId('ohlcv-history-clamped')
+    expect(notice).toBeInTheDocument()
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('showing max available history (~60d) for 15m')
+  })
+
+  it('does not render the notice when historyClampedDays is null', () => {
+    renderView('15m')
+    expect(screen.queryByTestId('ohlcv-history-clamped')).not.toBeInTheDocument()
+  })
+
+  it('suppresses the notice while an error is showing (error path wins)', () => {
+    mockUseOhlcvHistory.mockReturnValue({
+      ...baseHook(),
+      error: new Error('boom'),
+      historyClampedDays: 60,
+    })
+    renderView('15m')
+    expect(screen.queryByTestId('ohlcv-history-clamped')).not.toBeInTheDocument()
   })
 })
 

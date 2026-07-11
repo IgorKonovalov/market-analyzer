@@ -96,6 +96,7 @@ export const en = {
   'ohlcv.loadingOlder': 'Loading older bars',
   'ohlcv.loadingHistory': 'Loading history…',
   'ohlcv.olderBarsError': 'Couldn’t load older bars:',
+  'ohlcv.historyClampedNotice': 'showing max available history (~{days}d) for {timeframe}',
   'ohlcv.currentPriceLabel': 'Current price for {symbol}',
   'ohlcv.disconnectedLabel': 'Live price for {symbol} disconnected — showing last known value',
   'ohlcv.disconnected': 'disconnected',

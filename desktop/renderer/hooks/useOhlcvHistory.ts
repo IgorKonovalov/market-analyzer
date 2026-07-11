@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ApiError, api } from '../api/client'
+import { timeframeMaxHistoryDays } from '../lib/timeframes'
 import type { Bar } from '../types/sidecar/bar'
 
 export interface UseOhlcvHistoryParams {
@@ -42,6 +43,12 @@ export interface UseOhlcvHistoryResult {
   isRefetching: boolean
   /** Initial-window error (parity with `useOhlcv`). */
   error: Error | null
+  /** When the requested initial window reached past the timeframe's Yahoo
+   * history horizon, the sidecar 422s; rather than surfacing that as an error the
+   * hook retries clamped to the cap and renders what's available. This is the cap
+   * (in days) that the shown window was clamped to, or `null` when the load was
+   * un-clamped. The view turns it into a subtle info notice. */
+  historyClampedDays: number | null
   /** Reload the initial `[start, end]` window from scratch. */
   refetch: () => void
   /** Fetch + prepend one older chunk; no-op while in flight or after `reachedStart`. */
@@ -82,6 +89,7 @@ export function useOhlcvHistory({
   const [isLoading, setIsLoading] = useState(true)
   const [isRefetching, setIsRefetching] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const [historyClampedDays, setHistoryClampedDays] = useState<number | null>(null)
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const [olderError, setOlderError] = useState<Error | null>(null)
   const [reachedStart, setReachedStart] = useState(false)
@@ -150,24 +158,59 @@ export function useOhlcvHistory({
       if (keepBuffer) setIsRefetching(true)
       else setIsLoading(true)
       setError(null)
+      setHistoryClampedDays(null)
       // A pending older fetch from the previous buffer is now irrelevant.
       loadingOlderRef.current = false
       setIsLoadingOlder(false)
       setOlderError(null)
 
+      const settle = (result: Bar[], clampedDays: number | null): void => {
+        if (cancelled) return
+        setBuffer(mergeBars([], result))
+        setHistoryClampedDays(clampedDays)
+        setIsLoading(false)
+        setIsRefetching(false)
+      }
+      const fail = (err: unknown): void => {
+        if (cancelled) return
+        setError(err instanceof Error ? err : new Error(String(err)))
+        setIsLoading(false)
+        setIsRefetching(false)
+      }
+
       api
         .getOhlcv({ symbol, timeframe, start: new Date(reqStartMs), end: new Date(reqEndMs) })
-        .then((result) => {
-          if (cancelled) return
-          setBuffer(mergeBars([], result))
-          setIsLoading(false)
-          setIsRefetching(false)
-        })
+        .then((result) => settle(result, null))
         .catch((err: unknown) => {
           if (cancelled) return
-          setError(err instanceof Error ? err : new Error(String(err)))
-          setIsLoading(false)
-          setIsRefetching(false)
+          // Over-horizon window: the sidecar 422s a request that reaches past the
+          // timeframe's Yahoo history cap. The 422 itself proves this symbol is
+          // Yahoo-routed and capped (a Binance-routed symbol is uncapped and never
+          // 422s here), so rather than surfacing an error we retry ONCE clamped to
+          // the cap and show what's available (with a notice). Any other error —
+          // or a non-capped timeframe, or an already-within-cap window — surfaces
+          // as before.
+          const capDays = timeframeMaxHistoryDays(timeframe)
+          const is422 = err instanceof ApiError && err.status === 422
+          if (!is422 || capDays === null) {
+            fail(err)
+            return
+          }
+          const capMs = capDays * 24 * 60 * 60 * 1000
+          if (reqEndMs - reqStartMs <= capMs) {
+            fail(err)
+            return
+          }
+          chunkSpanMsRef.current = Math.min(capMs, MAX_OLDER_CHUNK_MS)
+          api
+            .getOhlcv({
+              symbol,
+              timeframe,
+              start: new Date(reqEndMs - capMs),
+              end: new Date(reqEndMs),
+            })
+            .then((result) => settle(result, capDays))
+            .catch(fail)
         })
       return () => {
         cancelled = true
@@ -285,6 +328,7 @@ export function useOhlcvHistory({
     isLoading,
     isRefetching,
     error,
+    historyClampedDays,
     refetch,
     loadOlder,
     isLoadingOlder,

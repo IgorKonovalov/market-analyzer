@@ -196,6 +196,28 @@
   cursor: pointer;
 }
 
+/* History-clamped notice (info, NOT error): the initial window reached past the
+   timeframe's Yahoo horizon, so the chart shows the available sub-window. Pinned
+   top-right as an overlay so it doesn't collide with the top-left lazy-history
+   affordances and doesn't take a flex slot beside the chart. */
+.historyNotice {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 2;
+  max-width: min(20rem, 60%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  box-shadow: var(--shadow-1);
+}
+
 .body > * {
   flex: 1;
 }

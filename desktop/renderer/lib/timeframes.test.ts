@@ -11,6 +11,7 @@ import {
   TIMEFRAMES,
   isTimeframe,
   timeframeDurationMs,
+  timeframeMaxHistoryDays,
 } from './timeframes'
 
 describe('timeframe vocabulary', () => {
@@ -56,5 +57,18 @@ describe('timeframe vocabulary', () => {
     expect(timeframeDurationMs('1mo')).toBe(31 * 24 * 60 * 60_000)
     expect(timeframeDurationMs('5m')).toBeNull()
     expect(timeframeDurationMs(undefined)).toBeNull()
+  })
+
+  it('timeframeMaxHistoryDays mirrors the backend Yahoo caps (data/timeframes.py)', () => {
+    // Yahoo intraday horizons from `_REGISTRY` max_history: 15m→60d, 1h/4h→730d;
+    // 1d/1w/1mo are unbounded (null). A silent drift from the backend fails here.
+    expect(timeframeMaxHistoryDays('15m')).toBe(60)
+    expect(timeframeMaxHistoryDays('1h')).toBe(730)
+    expect(timeframeMaxHistoryDays('4h')).toBe(730)
+    expect(timeframeMaxHistoryDays('1d')).toBeNull()
+    expect(timeframeMaxHistoryDays('1w')).toBeNull()
+    expect(timeframeMaxHistoryDays('1mo')).toBeNull()
+    expect(timeframeMaxHistoryDays('5m')).toBeNull()
+    expect(timeframeMaxHistoryDays(undefined)).toBeNull()
   })
 })

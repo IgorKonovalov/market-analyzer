@@ -103,6 +103,8 @@ export const ru = {
   'ohlcv.loadingOlder': 'Загрузка более ранних баров',
   'ohlcv.loadingHistory': 'Загрузка истории…',
   'ohlcv.olderBarsError': 'Не удалось загрузить более ранние бары:',
+  'ohlcv.historyClampedNotice':
+    'показана максимально доступная история (~{days} дн.) для {timeframe}',
   'ohlcv.currentPriceLabel': 'Текущая цена для {symbol}',
   'ohlcv.disconnectedLabel':
     'Поток цены для {symbol} отключён — показано последнее известное значение',
