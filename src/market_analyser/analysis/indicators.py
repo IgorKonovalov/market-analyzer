@@ -1,8 +1,9 @@
 """Pure, trailing technical indicators (Plan 0018 phase 1, ADR-0023).
 
-Nine indicators — EMA, SMA, RSI (Wilder), Bollinger Bands, MACD, ATR, Supertrend,
-Donchian channel, ADX — each returning a series aligned to the input length with
-`None` for the leading bars where the indicator is mathematically undefined. No
+Ten indicators — EMA, SMA, RSI (Wilder), Bollinger Bands, MACD, ATR, Supertrend,
+Donchian channel, ADX, Ichimoku — each returning a series aligned to the input
+length with `None` for the leading bars where the indicator is mathematically
+undefined. No
 module-level state, no wall-clock, no RNG. `result[i]` reads only `values[0..=i]`
 / `bars[0..=i]`, so truncating the future never changes the past (the load-bearing
 anti-lookahead property tested in `tests/analysis/test_indicators.py`).
@@ -76,6 +77,27 @@ class AdxValue:
     adx: float
     plus_di: float
     minus_di: float
+
+
+@dataclass(frozen=True)
+class IchimokuValue:
+    """One Ichimoku reading, every field **as computed at bar `i` from
+    `bars[0..=i]`** — purely trailing, like every other value object here.
+
+    Ichimoku is the one indicator whose *plotted* position differs from its
+    *computed* bar, so the as-computed-vs-as-plotted split (mirroring the Donchian
+    inclusive-window note) is explicit and load-bearing: displacement is applied by
+    the *consumer/renderer*, never baked into the series. A chart plots
+    `senkou_a`/`senkou_b` at `i + displacement` and `chikou` at `i - displacement`;
+    the cloud sitting *under* bar `i` is `senkou_*[i - displacement]` — the trailing
+    read ADR-0067 pins for trend classification. Keeping the series trailing is what
+    makes `ichimoku(bars[:k])[k-1] == ichimoku(bars)[k-1]` (anti-lookahead)."""
+
+    tenkan: float  # midpoint of the trailing `conversion`-bar high/low
+    kijun: float  # ...over `base` bars
+    senkou_a: float  # (tenkan + kijun) / 2 — PLOTTED at i + displacement
+    senkou_b: float  # midpoint over `span_b` bars — PLOTTED at i + displacement
+    chikou: float  # close[i] — PLOTTED at i - displacement
 
 
 # --------------------------------------------------------------------------- #
@@ -435,6 +457,63 @@ def adx(bars: Sequence[Bar], period: int = 14) -> list[AdxValue | None]:
     return out
 
 
+def _hl_midpoint(bars: Sequence[Bar], i: int, period: int) -> float:
+    """Midpoint of the highest high and lowest low over the trailing `period` bars
+    inclusive of bar `i` — the shared Ichimoku/Donchian line convention."""
+
+    window = bars[i - period + 1 : i + 1]
+    return (max(b.high for b in window) + min(b.low for b in window)) / 2
+
+
+def ichimoku(
+    bars: Sequence[Bar],
+    conversion: int = 9,
+    base: int = 26,
+    span_b: int = 52,
+    displacement: int = 26,
+) -> list[IchimokuValue | None]:
+    """Ichimoku Kinkō Hyō — Tenkan, Kijun, Senkou A/B, Chikou — all TRAILING.
+
+    Each field is computed at bar `i` from `bars[0..=i]`, classic 9/26/52/26
+    defaults:
+
+    * `tenkan[i]` = midpoint of the trailing `conversion`-bar high/low;
+    * `kijun[i]`  = midpoint over `base`;
+    * `senkou_a[i]` = `(tenkan[i] + kijun[i]) / 2`;
+    * `senkou_b[i]` = midpoint over `span_b`;
+    * `chikou[i]` = `close[i]`.
+
+    Displacement is **not** baked into the series — it is a consumption/display
+    concern (the chart plots Senkou at `i + displacement`, Chikou at
+    `i - displacement`; the cloud under bar `i` is `senkou_*[i - displacement]`,
+    ADR-0067). Validating it here (`>= 1`) keeps the eventual consumer honest, but
+    it does not shift the defined-from index — that is set by the widest trailing
+    *computed* window (`span_b` with the classic defaults, `max(conversion, base,
+    span_b)` in general). The value object is emitted only once every component is
+    defined, so it never holds a `None` field; earlier bars are `None`.
+    """
+
+    if conversion < 1 or base < 1 or span_b < 1 or displacement < 1:
+        raise ValueError(
+            "conversion, base, span_b, displacement must all be >= 1, got "
+            f"{conversion}, {base}, {span_b}, {displacement}"
+        )
+    n = len(bars)
+    out: list[IchimokuValue | None] = [None] * n
+    defined_from = max(conversion, base, span_b) - 1
+    for i in range(defined_from, n):
+        tenkan = _hl_midpoint(bars, i, conversion)
+        kijun = _hl_midpoint(bars, i, base)
+        out[i] = IchimokuValue(
+            tenkan=tenkan,
+            kijun=kijun,
+            senkou_a=(tenkan + kijun) / 2,
+            senkou_b=_hl_midpoint(bars, i, span_b),
+            chikou=bars[i].close,
+        )
+    return out
+
+
 def _unwrap(value: float | None) -> float:
     """Assert a series entry is defined and return it — narrows `float | None` to
     `float` for the dense interior of a smoothed series (mypy-strict friendly)."""
@@ -447,6 +526,7 @@ __all__ = [
     "AdxValue",
     "BollingerValue",
     "DonchianValue",
+    "IchimokuValue",
     "MacdValue",
     "SupertrendValue",
     "adx",
@@ -454,6 +534,7 @@ __all__ = [
     "bollinger",
     "donchian",
     "ema",
+    "ichimoku",
     "macd",
     "rsi",
     "sma",

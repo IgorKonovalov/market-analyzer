@@ -1,4 +1,5 @@
-"""Phase-1 done-when for Plan 0018: the nine indicators in `analysis/indicators.py`.
+"""Phase-1 done-when for Plan 0018: the indicators in `analysis/indicators.py`
+(Ichimoku added by Plan 0073 phase 1).
 
 Strategy of the suite:
 
@@ -23,6 +24,8 @@ import statistics
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from market_analyser.analysis import indicators as ind
 from market_analyser.data.types import Bar
@@ -214,6 +217,53 @@ def test_donchian_matches_independent_window() -> None:
         assert abs(val.middle - (upper + lower) / 2) < _TOL
 
 
+def _hl_mid(bars: Sequence[Bar], i: int, period: int) -> float:
+    window = bars[i - period + 1 : i + 1]
+    return (max(b.high for b in window) + min(b.low for b in window)) / 2
+
+
+def test_ichimoku_matches_independent_window() -> None:
+    """Each field is the trailing high/low midpoint (Senkou A the mean of the two)
+    over its own period, computed independently of the implementation."""
+
+    series = ind.ichimoku(BARS)  # classic 9 / 26 / 52 / 26
+    for i in _INDICES:
+        val = series[i]
+        assert val is not None
+        tenkan = _hl_mid(BARS, i, 9)
+        kijun = _hl_mid(BARS, i, 26)
+        assert abs(val.tenkan - tenkan) < _TOL
+        assert abs(val.kijun - kijun) < _TOL
+        assert abs(val.senkou_a - (tenkan + kijun) / 2) < _TOL
+        assert abs(val.senkou_b - _hl_mid(BARS, i, 52)) < _TOL
+        assert abs(val.chikou - BARS[i].close) < _TOL  # trailing close, no lag baked in
+
+
+def test_ichimoku_custom_periods_shift_defined_from() -> None:
+    """Custom periods move the defined-from index to the widest computed window
+    (span_b - 1) — displacement, a plotting offset, never shifts it."""
+
+    series = ind.ichimoku(BARS, conversion=20, base=60, span_b=120, displacement=30)
+    # Widest window is span_b = 120, so the first (and, on the 120-bar fixture, only)
+    # defined value is at index 119.
+    assert all(series[i] is None for i in range(119))
+    last = series[119]
+    assert last is not None
+    assert abs(last.tenkan - _hl_mid(BARS, 119, 20)) < _TOL
+    assert abs(last.senkou_b - _hl_mid(BARS, 119, 120)) < _TOL
+
+
+def test_ichimoku_rejects_non_positive_periods() -> None:
+    for kwargs in (
+        {"conversion": 0},
+        {"base": 0},
+        {"span_b": 0},
+        {"displacement": 0},
+    ):
+        with pytest.raises(ValueError, match=">= 1"):
+            ind.ichimoku(BARS, **kwargs)  # type: ignore[arg-type]
+
+
 # --------------------------------------------------------------------------- #
 # Per-indicator correctness — closed-form pins on degenerate fixtures          #
 # --------------------------------------------------------------------------- #
@@ -258,7 +308,7 @@ def test_strong_uptrend_locks_supertrend_up() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Generic properties across all nine indicators                                #
+# Generic properties across all ten indicators                                 #
 # --------------------------------------------------------------------------- #
 
 
@@ -281,6 +331,9 @@ _INDICATORS: list[tuple[str, Callable[[Sequence[Bar]], list[tuple[float, ...] | 
     ("supertrend10", lambda b: [_floats(v) for v in ind.supertrend(b, 10)], 10),
     ("donchian20", lambda b: [_floats(v) for v in ind.donchian(b, 20)], 19),
     ("adx14", lambda b: [_floats(v) for v in ind.adx(b, 14)], 27),
+    # Ichimoku's defined-from is the widest computed window, span_b - 1 = 51 for
+    # the classic defaults; displacement (a plotting offset) does not shift it.
+    ("ichimoku", lambda b: [_floats(v) for v in ind.ichimoku(b)], 51),
 ]
 
 

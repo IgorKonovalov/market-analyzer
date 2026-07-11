@@ -1,6 +1,6 @@
 # 0073 — Ichimoku Cloud indicator: analysis surface, trend-classification input, and chart render
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-09
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0067](../adrs/0067-ichimoku-in-trend-classification.md) (Ichimoku in trend classification — accepts at close), refines [0023](../adrs/0023-technical-analysis-surface.md); consumes [0017](../adrs/0017-live-ui-updates-via-sse.md) (overlay events), [0059](../adrs/0059-trendline-event-channel-and-recompute.md)/[0049](../adrs/0049-chart-trendline-overlay-primitive.md) (off-grid render precedent)
