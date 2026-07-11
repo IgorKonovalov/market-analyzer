@@ -15,7 +15,13 @@
 import type { Locale } from '../lib/i18n'
 import glossaryJson from './glossary.json'
 
-export type GlossaryCategory = 'forecast' | 'recommendation' | 'condition' | 'indicator' | 'overlay'
+export type GlossaryCategory =
+  | 'forecast'
+  | 'recommendation'
+  | 'condition'
+  | 'indicator'
+  | 'overlay'
+  | 'candlestick'
 
 /**
  * A locale-keyed prose field (Plan 0069 phase 3). `en` is always present (the

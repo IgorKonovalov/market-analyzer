@@ -76,4 +76,29 @@ describe('buildChartLayers', () => {
     const rows = build({ overlays: [EMA] })
     expect(rows.some((r) => r.id === 'candles-master')).toBe(false)
   })
+
+  // Plan 0085: the group's pattern token keys the glossary tooltip, so the legend
+  // row discloses the pattern's explanation via <GlossaryTerm>.
+  it('keys a candlestick group row to the glossary by its pattern token', () => {
+    const rows = build({
+      candleGroups: [HAMMER_GROUP],
+      enabledCandleGroups: new Set(['hammer|bullish_marker']),
+    })
+    expect(rows.find((r) => r.id === 'candles:hammer|bullish_marker')?.glossaryKey).toBe('hammer')
+  })
+
+  it('sets no glossary key on a patternless (agent-highlight) candlestick group', () => {
+    const nullGroup: CandlestickPatternGroup = {
+      key: 'null|bullish_marker',
+      pattern: null,
+      kind: 'bullish_marker',
+      count: 1,
+      latestTs: '2026-04-10T00:00:00+00:00',
+    }
+    const rows = build({
+      candleGroups: [nullGroup],
+      enabledCandleGroups: new Set(['null|bullish_marker']),
+    })
+    expect(rows.find((r) => r.id === 'candles:null|bullish_marker')?.glossaryKey).toBeUndefined()
+  })
 })
