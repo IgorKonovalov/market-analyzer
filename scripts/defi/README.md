@@ -13,6 +13,41 @@ what this evidence layer exists to decide before any execution is written.
 RPC-observed persistence is an **upper bound** on capturability, never a capture
 guarantee (a colocated searcher sees and executes faster than an RPC poller).
 
+## Phase 4 result — 2026-07-11: NULL (no-go)
+
+First live run, Base WETH/USDC, all five constant-product venues discovered +
+validated on-chain, priced through the production `OnchainPoolPriceAdapter` +
+`scan_discrepancies`. Marginal prices spanned 1,821.86–1,829.66 USDC/WETH (a
+real ~0.3% gross spread), but **no trade size cleared net of cost:**
+
+| Size | buy → sell | gross | slippage | fees | gas | **net** | capturable |
+|---|---|---|---|---|---|---|---|
+| 0.05 WETH | Alien Base → Sushi | 0.39 | 48.80 | 0.55 | 0.50 | **−49.46** | no |
+| 0.5 WETH | Alien Base → Sushi | 3.90 | 3,791 | 5.48 | 0.50 | **−3,793** | no |
+| 2.0 WETH | Alien Base → Sushi | 15.60 | 3,791\* | 21.91 | 0.50 | **−3,798** | no |
+
+\*depth-exceeded sentinel (size > buy pool base depth).
+
+**The binding constraint is liquidity, not the spread.** Only Aerodrome's vAMM
+is deep (~$8.25M TVL); every other constant-product WETH/USDC pool is dust
+($539–$18.6k). A cross-pool arb needs *two* deep venues; in constant-product
+scope there is only one. The deep liquidity that would matter lives in
+concentrated-liquidity venues (Aerodrome Slipstream / Uniswap-v3) — **out of the
+v1 adapter's scope**, and precisely where colocated searchers already compete.
+
+Verdict: the retail-observable constant-product edge is nonexistent net-of-cost
+— a no-go for an arb-execution build from this evidence (aligned with
+[ADR-0074](../../docs/architecture/adrs/0074-edge-selection-criteria-for-execution.md):
+refuse latency-arms-race niches). Operational note: this public RPC 403s the
+adapter's default `market-analyser/…` User-Agent — a productionised Phase 4 needs
+a permissive/paid RPC or a configurable adapter UA.
+
+**Open follow-up (the real limiter): concentrated-liquidity pricing.** Until the
+scanner can price Slipstream / Uni-v3 pools it only measures the shallow
+constant-product tail — it cannot evaluate the venues that actually hold the
+liquidity. A Quoter-based executable-price source is the natural next step (still
+read-only — a Quoter is reached by `eth_call`).
+
 ## Scripts
 
 | Script | Purpose |
