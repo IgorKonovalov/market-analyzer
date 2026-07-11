@@ -225,7 +225,9 @@ def test_inverse_head_shoulders_mirrors_bullish() -> None:
 def test_double_confirmed_projection_up_for_bottom_down_for_top() -> None:
     """ph8 (ADR-0078): a confirmed double bottom carries an UPWARD projection to
     the measured-move target (vertical at the breakout bar); a double top mirrors
-    it downward. Doubles never emit a skeleton/fill role."""
+    it downward. (A `LineSeg` can never carry a `skeleton` role — the skeleton is
+    a wire-only derived spec — so "no skeleton for a double" is pinned at the
+    wire level in `test_detect_chart_patterns_double_publishes_neckline_base_projection`.)"""
 
     b_bars = _bars_from_path(_DOUBLE_BOTTOM_ANCHORS)
     b_conf = next(h for h in _hits_for(b_bars, "double_bottom") if h.state == "confirmed")
@@ -234,7 +236,6 @@ def test_double_confirmed_projection_up_for_bottom_down_for_top() -> None:
     assert b_proj.start.ts == b_proj.end.ts == b_bars[b_conf.bar_index].event_ts
     assert abs(b_proj.end.price - b_conf.target) < _TOL
     assert b_proj.end.price > b_proj.start.price  # bullish -> upward
-    assert all(line.role != "skeleton" for line in b_conf.lines)
 
     top = _hits_for(_bars_from_path(_DOUBLE_TOP_ANCHORS), "double_top")
     t_conf = next(h for h in top if h.state == "confirmed")
