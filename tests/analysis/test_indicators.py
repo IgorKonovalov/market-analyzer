@@ -261,7 +261,7 @@ def test_ichimoku_rejects_non_positive_periods() -> None:
         {"displacement": 0},
     ):
         with pytest.raises(ValueError, match=">= 1"):
-            ind.ichimoku(BARS, **kwargs)  # type: ignore[arg-type]
+            ind.ichimoku(BARS, **kwargs)
 
 
 # --------------------------------------------------------------------------- #
