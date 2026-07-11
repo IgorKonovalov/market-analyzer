@@ -61,6 +61,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
 )
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
+from market_analyser.api.mcp_tools.prediction_markets import register_prediction_market_tools
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.recommend import register_recommend
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
@@ -81,6 +82,7 @@ from market_analyser.api.mcp_tools.watches import register_watch_tools
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
+from market_analyser.data.adapters.polymarket import PolymarketOddsAdapter
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
@@ -88,6 +90,7 @@ from market_analyser.data.sources import (
     HistoricalPriceSource,
     LpPositionDetailSource,
     MetricSeriesSource,
+    PredictionMarketSource,
     TxHistorySource,
     WalletPositionsSource,
 )
@@ -129,6 +132,7 @@ def create_mcp_components(
     alerts_repository: AlertsRepository | None = None,
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
     manual_positions_path: Path | None = None,
+    prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -211,6 +215,21 @@ def create_mcp_components(
     register_bitcoin_market_pulse(server, provider=provider)
     register_market_snapshot(server, provider=provider)
     register_stocktwits_sentiment(server, provider=provider)
+
+    # Prediction-market odds (Plan 0040, ADR-0041): read-only Polymarket odds via
+    # the ADR-0031 selector registry. Keyless (public Gamma reads — no secret, no
+    # signing, no funds), so it is always registered: an explicit registry wins
+    # (tests inject a spy); otherwise the keyless Polymarket adapter is the default.
+    # Construction is network-free (it only builds the resilient client), so the
+    # default reaches the network only on an actual search/odds call.
+    register_prediction_market_tools(
+        server,
+        prediction_market_sources=(
+            prediction_market_sources
+            if prediction_market_sources is not None
+            else {"polymarket": PolymarketOddsAdapter()}
+        ),
+    )
 
     # `forecast` (Plan 0036, multi-horizon per Plan 0059): direction-as-probability
     # over cached bars, per-horizon gated on beating a naive baseline

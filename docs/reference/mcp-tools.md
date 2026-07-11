@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 45 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 47 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -37,12 +37,14 @@ The 45 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`multi_timeframe_analysis`](#multitimeframeanalysis) | Report whether one symbol's trend is aligned across a ladder of timeframes. |
 | [`news_for`](#newsfor) | Fetch recent news headlines for a symbol (or across all feeds when `symbol` is null) from a curated set of free RSS feeds (CoinDesk, CoinTelegraph, Yahoo Finance, MarketWatch, CNBC). |
 | [`portfolio_summary`](#portfoliosummary) | Aggregate cross-venue holdings into one read-only view (facts only, no recommendation of any kind): the Binance account leg (spot balances + USDS-M futures positions, read via the read-only API key), the DeFi leg (wallet discovery across Ethereum/Base/Arbitrum/Optimism when a 0x wallet address is given, with average-cost basis joined from the reconstructed on-chain history), and the manual positions file (positions/portfolio.json). |
+| [`prediction_market_odds`](#predictionmarketodds) | Get one prediction market's current outcomes and implied probabilities by market_id (from search_prediction_markets). |
 | [`quote_for`](#quotefor) | Get a live quote for one symbol: price, change_pct, previous_close, day high/low, 52-week high/low, currency, market_state (REGULAR/PRE/POST/CLOSED) and volume. |
 | [`recommend`](#recommend) | ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single labeled trade recommendation: the technical condition snapshot, the named strategy's live signal on the current bar, its walk-forward out-of-sample edge, and the calibrated direction forecast. |
 | [`run_backtest`](#runbacktest) | Run a backtest for a single strategy/symbol/timeframe window. |
 | [`scan_patterns`](#scanpatterns) | Sweep a time range for EVERY candlestick pattern on the cached bars and highlight them all at once: publishes a single `chart.highlight v1` event carrying one marker per detected pattern (multi-bar patterns carry a bar span; doji/neutral patterns are included). |
 | [`scan_wallet`](#scanwallet) | Discover a wallet's DeFi positions from a public EVM address across Ethereum, Base, Arbitrum, and Optimism. |
 | [`screener_query`](#screenerquery) | Screen a market universe for symbols matching indicator/price filters (e.g. |
+| [`search_prediction_markets`](#searchpredictionmarkets) | Search prediction markets by free text and get each match with its current odds. |
 | [`search_symbols`](#searchsymbols) | Resolve a loose or free-text name/ticker to fetchable symbols (e.g. |
 | [`sentiment_for_news`](#sentimentfornews) | Summarise news sentiment for a symbol over a window by running VADER over each recent headline and aggregating. |
 | [`show_chart`](#showchart) | Render a chart in the Electron viewer. |
@@ -698,6 +700,20 @@ Aggregate cross-venue holdings into one read-only view (facts only, no recommend
 
 **Source:** [`src/market_analyser/api/mcp_tools/portfolio.py`](../../src/market_analyser/api/mcp_tools/portfolio.py)
 
+## `prediction_market_odds`
+
+Get one prediction market's current outcomes and implied probabilities by market_id (from search_prediction_markets). Returns {market, queried_at, source, error, message}: market is {market_id, question, outcomes, closed, closes_at, volume_usd, liquidity_usd, queried_at, source} with outcomes a list of {label, implied_probability in [0, 1]}. The price IS the money-weighted probability of the outcome; a binary market's outcomes sum to about 1. Facts only - a market-implied probability is a condition, never a buy/sell/hold call. On failure market is null and error is a typed reason: not_found (no such market_id), rate_limited, upstream_unavailable, or malformed_response. Data from Polymarket public endpoints (no account, no funds).
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `params` | PredictionMarketOddsInput | yes | — |
+
+**Returns:** `dict[str, Any]`
+
+**Source:** [`src/market_analyser/api/mcp_tools/prediction_markets.py`](../../src/market_analyser/api/mcp_tools/prediction_markets.py)
+
 ## `quote_for`
 
 Get a live quote for one symbol: price, change_pct, previous_close, day high/low, 52-week high/low, currency, market_state (REGULAR/PRE/POST/CLOSED) and volume. Returns {quote, error, message, queried_at}: quote is an object with those fields on success; on failure quote is null and error is a typed reason (e.g. 'unknown_symbol' for a symbol the source doesn't carry — recover via search_symbols, then retry — or 'rate_limited'/'upstream_unavailable'), with a human message. change_pct is derived from previous_close. Live and wall-clock-current: there is no as_of/historical replay (use get_ohlcv for historical price). Data from Yahoo Finance.
@@ -820,6 +836,20 @@ Screen a market universe for symbols matching indicator/price filters (e.g. RSI 
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/screener_query.py`](../../src/market_analyser/api/mcp_tools/screener_query.py)
+
+## `search_prediction_markets`
+
+Search prediction markets by free text and get each match with its current odds. Returns {query, markets, count, queried_at, source, error, message}: markets is a list of {market_id, question, outcomes, closed, closes_at, volume_usd, liquidity_usd, queried_at, source}, where outcomes is a list of {label, implied_probability}. implied_probability is the market-implied probability of that outcome in [0, 1] (a prediction market trades each outcome between 0 and 1, and the price IS the money-weighted probability) - the outcomes of a binary market sum to about 1. volume_usd / liquidity_usd are honest-uncertainty hints: a thin-book market's probability is noisier and must not be read as ground truth. Facts only (a market-implied probability is a condition, never a call - no buy/sell/hold advice). limit caps the results (default 20). On failure markets is null and error is a typed reason (rate_limited / upstream_unavailable / malformed_response). Data from Polymarket public endpoints (no account, no funds).
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `params` | SearchPredictionMarketsInput | yes | — |
+
+**Returns:** `dict[str, Any]`
+
+**Source:** [`src/market_analyser/api/mcp_tools/prediction_markets.py`](../../src/market_analyser/api/mcp_tools/prediction_markets.py)
 
 ## `search_symbols`
 
