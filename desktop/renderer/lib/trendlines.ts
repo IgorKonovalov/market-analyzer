@@ -209,7 +209,24 @@ export interface TrendlineSegment {
    * above the break (bullish), `'down'` below (bearish). The renderer draws a
    * filled arrowhead at the far (target) endpoint. */
   arrow?: 'up' | 'down'
+  /** Skeleton outline (Plan 0083 ph6): a segment of the head & shoulders
+   * pattern outline — stroked a touch heavier so it reads over the neckline. */
+  skeleton?: boolean
 }
+
+/** A filled polygon in media (pixel) coordinates — the shaded region between a
+ * head & shoulders skeleton (top) and its neckline (bottom) (Plan 0083 ph6 /
+ * ADR-0078). Drawn semi-transparent, beneath the strokes. */
+export interface TrendlineFill {
+  /** Closed-polygon vertices, in draw order. */
+  points: ReadonlyArray<{ x: number; y: number }>
+  /** Pattern-type hue; the renderer applies the fill alpha. */
+  color: string
+}
+
+/** Fill opacity for the H&S hump region (Plan 0083 ph6) — low enough that the
+ * candles stay legible through it. */
+export const TRENDLINE_FILL_ALPHA = 0.12
 
 /** Max forward horizon for apex extension, as a multiple of the pattern's pixel
  * width (Plan 0083 ph3 / ADR-0078): the two converging boundaries are extended
@@ -320,6 +337,9 @@ export function computeTrendlineSegments(
       // The measured-move projection is a vertical segment; the arrowhead sits at
       // the far (target) end, up when the target is above the break else down.
       if (spec.role === 'projection') seg.arrow = y2 < y1 ? 'up' : 'down'
+      // The skeleton (H&S outline) strokes a touch heavier — it reads as the
+      // pattern shape over the neckline base (Plan 0083 ph6).
+      if (spec.role === 'skeleton') seg.skeleton = true
       segments.push(seg)
       if (
         spec.points.length === 2 &&
@@ -331,6 +351,60 @@ export function computeTrendlineSegments(
   }
   extendBoundariesToApex(boundaries)
   return segments
+}
+
+/**
+ * Pure: the shaded hump region(s) for head & shoulders patterns (Plan 0083 ph6 /
+ * ADR-0078). Pairs a `skeleton` spec with the `neckline` spec of the same
+ * formation (same `patternStateKey`) and builds ONE closed polygon: the skeleton
+ * pivots across the top (LS→t1→head→t2→RS) and the neckline back along the
+ * bottom. Because the skeleton touches the neckline at the two troughs, the fill
+ * pinches there and reads as humps. Only H&S/inverse carry a skeleton, so a
+ * spec set without one (a triangle) yields no fills. Canvas-free, unit-tested.
+ */
+export function computeTrendlineFills(
+  specs: ReadonlyArray<TrendlineSpec>,
+  timeToX: (t: UTCTimestamp) => number | null,
+  priceToY: (price: number) => number | null,
+  colors: TrendlineColors,
+): TrendlineFill[] {
+  const groups = new Map<string, { skeleton?: TrendlineSpec; neckline?: TrendlineSpec }>()
+  for (const spec of specs) {
+    if (spec.role !== 'skeleton' && spec.role !== 'neckline') continue
+    const g = groups.get(patternStateKey(spec)) ?? {}
+    g[spec.role] = spec
+    groups.set(patternStateKey(spec), g)
+  }
+
+  const toPixels = (spec: TrendlineSpec): { x: number; y: number }[] | null => {
+    const pts: { x: number; y: number }[] = []
+    for (const p of spec.points) {
+      const x = timeToX(toUtcSeconds(p.ts))
+      const y = priceToY(p.price)
+      if (x === null || y === null) return null
+      pts.push({ x, y })
+    }
+    return pts
+  }
+
+  const fills: TrendlineFill[] = []
+  for (const { skeleton, neckline } of groups.values()) {
+    if (skeleton === undefined || neckline === undefined) continue
+    const top = toPixels(skeleton)
+    const neck = toPixels(neckline)
+    if (top === null || neck === null || top.length < 2 || neck.length < 2) continue
+    const [n1, n2] = [neck[0], neck[neck.length - 1]]
+    if (n2.x === n1.x) continue // vertical neckline — degenerate, no fill
+    const slope = (n2.y - n1.y) / (n2.x - n1.x)
+    const necklineY = (x: number): number => n1.y + slope * (x - n1.x)
+    const first = top[0]
+    const last = top[top.length - 1]
+    fills.push({
+      points: [...top, { x: last.x, y: necklineY(last.x) }, { x: first.x, y: necklineY(first.x) }],
+      color: trendlineColor(skeleton.pattern, colors),
+    })
+  }
+  return fills
 }
 
 /** Default pixel tolerance for hovering a trendline (Plan 0067 phase 2 /
@@ -471,18 +545,36 @@ interface TrendlineDrawTarget {
 }
 
 class TrendlinePaneRenderer implements ISeriesPrimitivePaneRenderer {
-  constructor(private readonly segments: TrendlineSegment[]) {}
+  constructor(
+    private readonly segments: TrendlineSegment[],
+    private readonly fills: TrendlineFill[] = [],
+  ) {}
 
   draw(target: TrendlineDrawTarget): void {
     target.useMediaCoordinateSpace((scope) => {
       const ctx = scope.context
+      // Hump fills first, beneath every stroke (Plan 0083 ph6): a semi-transparent
+      // polygon between the H&S skeleton and its neckline.
+      for (const fill of this.fills) {
+        if (fill.points.length < 3) continue
+        ctx.save()
+        ctx.globalAlpha = TRENDLINE_FILL_ALPHA
+        ctx.fillStyle = fill.color
+        ctx.beginPath()
+        ctx.moveTo(fill.points[0].x, fill.points[0].y)
+        for (const p of fill.points.slice(1)) ctx.lineTo(p.x, p.y)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+      }
       for (const seg of this.segments) {
         ctx.save()
         ctx.strokeStyle = seg.color
         // Highlight (Plan 0067 phase 3): the hovered group's lines draw thicker
         // at full opacity, the rest dim to a wash. `save`/`restore` isolate the
-        // alpha/width per segment.
-        ctx.lineWidth = seg.emphasis ? 3 : 2
+        // alpha/width per segment. The skeleton outline (ph6) strokes a touch
+        // heavier than the 2px base so it reads as the pattern shape.
+        ctx.lineWidth = seg.emphasis ? 3 : seg.skeleton ? 2.5 : 2
         ctx.globalAlpha = seg.dimmed ? 0.2 : 1
         // A projection (breakout arrow) draws DOTTED so it reads as a projected
         // target, visually distinct from the solid/dashed real boundaries — a
@@ -522,7 +614,10 @@ class TrendlinePaneView implements ISeriesPrimitivePaneView {
   }
 
   renderer(): ISeriesPrimitivePaneRenderer {
-    return new TrendlinePaneRenderer(this.primitive.currentSegments())
+    return new TrendlinePaneRenderer(
+      this.primitive.currentSegments(),
+      this.primitive.currentFills(),
+    )
   }
 }
 
@@ -617,10 +712,16 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
   /** Pixel segments grouped per spec (parallel to `this.specs`) so a hit test
    * can map a hovered pixel back to the owning spec. `currentSegments()` is just
    * the flattened form. Empty until attached (chart/series present). */
-  private currentSegmentsBySpec(): TrendlineSegment[][] {
+  /** The time→x / price→y converters against the current chart + candle series,
+   * or `null` before attach. Shared by the segment and fill computations so they
+   * agree on the coordinate mapping (incl. the off-grid `resolveTimeX` fallback). */
+  private converters(): {
+    timeToX: (t: UTCTimestamp) => number | null
+    priceToY: (price: number) => number | null
+  } | null {
     const timeScale = this.chart?.timeScale()
     const series = this.series
-    if (!timeScale || !series) return []
+    if (!timeScale || !series) return null
     const barTimes = barTimesFromSeries(series.data())
     const timeToX = (t: UTCTimestamp): number | null =>
       resolveTimeX(
@@ -630,6 +731,21 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
         (logical) => timeScale.logicalToCoordinate(logical as Logical),
       )
     const priceToY = (p: number): number | null => series.priceToCoordinate(p)
+    return { timeToX, priceToY }
+  }
+
+  /** The shaded H&S hump fills (media coords), or empty until attached / when no
+   * skeleton is present. Read by the pane renderer, asserted in tests (ph6). */
+  currentFills(): TrendlineFill[] {
+    const conv = this.converters()
+    if (conv === null) return []
+    return computeTrendlineFills(this.specs, conv.timeToX, conv.priceToY, this.colors)
+  }
+
+  private currentSegmentsBySpec(): TrendlineSegment[][] {
+    const conv = this.converters()
+    if (conv === null) return []
+    const { timeToX, priceToY } = conv
     const perSpec = this.specs.map((spec) =>
       computeTrendlineSegments([spec], timeToX, priceToY, this.colors),
     )

@@ -16,6 +16,7 @@ import type { TrendlineSpec } from '../types/events'
 import {
   TRENDLINE_HIT_TOLERANCE_PX,
   TrendlinePrimitive,
+  computeTrendlineFills,
   computeTrendlineSegments,
   dedupeTrendlines,
   nearestTrendlineGroup,
@@ -269,6 +270,96 @@ describe('apex extension + breakout projection (Plan 0083 ph3 / ADR-0078)', () =
     // A lone upper boundary (no matching lower) is left plain.
     const segments = computeTrendlineSegments([upper('solid')], timeToX, priceToY, COLORS)
     expect(segments[0]).toMatchObject({ x2: 160, y2: 40 }) // unchanged
+  })
+})
+
+describe('head & shoulders skeleton + hump fill (Plan 0083 ph6 / ADR-0078)', () => {
+  const T4 = '2026-05-19T00:00:00Z'
+  const T5 = '2026-05-21T00:00:00Z'
+  // A 5-point x mapper (the module stub only knows T1/T2/T3): even 40px spacing.
+  const fillX = (t: UTCTimestamp): number | null =>
+    ({
+      [toUtc(T1)]: 100,
+      [toUtc(T2)]: 140,
+      [toUtc(T3)]: 180,
+      [toUtc(T4)]: 220,
+      [toUtc(T5)]: 260,
+    })[t] ?? null
+
+  // LS 20 (y40) / t1 10 (y80) / head 25 (y20) / t2 10 (y80) / RS 20 (y40);
+  // neckline horizontal through the two troughs at price 10 (y80).
+  const skeleton: TrendlineSpec = {
+    points: [
+      { ts: T1, price: 20 },
+      { ts: T2, price: 10 },
+      { ts: T3, price: 25 },
+      { ts: T4, price: 10 },
+      { ts: T5, price: 20 },
+    ],
+    role: 'skeleton',
+    style: 'solid',
+    pattern: 'head_shoulders',
+  }
+  const neckline: TrendlineSpec = {
+    points: [
+      { ts: T2, price: 10 },
+      { ts: T4, price: 10 },
+    ],
+    role: 'neckline',
+    style: 'solid',
+    pattern: 'head_shoulders',
+  }
+
+  it('draws the skeleton as four connected segments through the five pivots, flagged', () => {
+    const segments = computeTrendlineSegments([skeleton], fillX, priceToY, COLORS)
+    expect(segments).toHaveLength(4)
+    expect(segments.every((s) => s.skeleton === true)).toBe(true)
+    expect(segments[0]).toMatchObject({ x1: 100, y1: 40, x2: 140, y2: 80 })
+    expect(segments[1]).toMatchObject({ x1: 140, y1: 80, x2: 180, y2: 20 })
+    expect(segments[2]).toMatchObject({ x1: 180, y1: 20, x2: 220, y2: 80 })
+    expect(segments[3]).toMatchObject({ x1: 220, y1: 80, x2: 260, y2: 40 })
+  })
+
+  it('builds one hump-fill polygon between the skeleton and its neckline', () => {
+    const fills = computeTrendlineFills([skeleton, neckline], fillX, priceToY, COLORS)
+    expect(fills).toHaveLength(1)
+    expect(fills[0].color).toBe(COLORS.head_shoulders)
+    // Skeleton top (L→R) then the neckline back along the bottom (y80 horizontal).
+    expect(fills[0].points).toEqual([
+      { x: 100, y: 40 },
+      { x: 140, y: 80 },
+      { x: 180, y: 20 },
+      { x: 220, y: 80 },
+      { x: 260, y: 40 },
+      { x: 260, y: 80 },
+      { x: 100, y: 80 },
+    ])
+  })
+
+  it('emits NO fill for a spec set without a skeleton (a triangle)', () => {
+    const upper: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 25 },
+        { ts: T2, price: 20 },
+      ],
+      role: 'upper_trendline',
+      style: 'solid',
+      pattern: 'symmetrical_triangle',
+    }
+    const lower: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 10 },
+        { ts: T2, price: 15 },
+      ],
+      role: 'lower_trendline',
+      style: 'solid',
+      pattern: 'symmetrical_triangle',
+    }
+    expect(computeTrendlineFills([upper, lower], timeToX, priceToY, COLORS)).toEqual([])
+  })
+
+  it('emits no fill when the skeleton has no matching neckline', () => {
+    expect(computeTrendlineFills([skeleton], fillX, priceToY, COLORS)).toEqual([])
   })
 })
 
@@ -686,5 +777,31 @@ describe('TrendlinePaneRenderer draw — dotted projection + arrowhead (Plan 008
     expect(dashPatterns).toContainEqual([]) // solid: empty dash
     expect(dashPatterns).not.toContainEqual([2, 3]) // never dotted
     expect(fills).toBe(0) // no arrowhead
+  })
+
+  it('fills the hump polygon beneath the strokes for a skeleton + neckline', () => {
+    // A 3-point skeleton (T1/T2/T3, mapped by the attachStub) + its neckline —
+    // enough to exercise the fill pass without a custom converter.
+    const skel: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 20 },
+        { ts: T2, price: 10 },
+        { ts: T3, price: 20 },
+      ],
+      role: 'skeleton',
+      style: 'solid',
+      pattern: 'head_shoulders',
+    }
+    const neck: TrendlineSpec = {
+      points: [
+        { ts: T1, price: 10 },
+        { ts: T3, price: 10 },
+      ],
+      role: 'neckline',
+      style: 'solid',
+      pattern: 'head_shoulders',
+    }
+    const { fills } = drawSpecs([skel, neck])
+    expect(fills).toBeGreaterThanOrEqual(1) // the hump polygon was filled
   })
 })

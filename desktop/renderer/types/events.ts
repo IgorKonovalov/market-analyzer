@@ -78,7 +78,12 @@ export interface TrendPoint {
   price: number
 }
 
-export type TrendlineRole = 'neckline' | 'upper_trendline' | 'lower_trendline' | 'projection'
+export type TrendlineRole =
+  | 'neckline'
+  | 'upper_trendline'
+  | 'lower_trendline'
+  | 'projection'
+  | 'skeleton'
 
 export type TrendlineStyle = 'solid' | 'dashed'
 
