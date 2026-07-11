@@ -1,6 +1,6 @@
 # Plan 0081 — Coinbase as the USD-native crypto OHLCV source
 
-> **Status:** draft
+> **Status:** approved
 > **Owner (this plan):** architect (design) → dev (phases 1–2) → human (phase 3) → ui-builder (phase 4)
 > **Paired ADR:** [ADR-0076](../adrs/0076-coinbase-usd-native-crypto-source.md)
 
