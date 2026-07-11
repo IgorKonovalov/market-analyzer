@@ -22,6 +22,7 @@ change; here they stay `None`.
 from __future__ import annotations
 
 import math
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -142,10 +143,62 @@ class LpPositionDetail(BaseModel):
         return self
 
 
+class PoolQuote(BaseModel):
+    """One DEX pool's current price for a canonical pair, read on-chain by a
+    `PoolPriceSource` (Plan 0079 / ADR-0031) — the input the cross-pool
+    discrepancy screener compares across venues.
+
+    **`price` is the pool's *marginal* (spot) price**, quote-per-base and
+    decimals-adjusted (for a constant-product pool: `liquidity_quote /
+    liquidity_base`). It is the price at zero size — the honest number for a
+    *gross* cross-pool spread. The size-dependent execution cost is **not** folded
+    into `price`; it is modeled separately by the screener (`defi/discrepancy.py`)
+    as slippage from the pool depth, so the net-of-cost breakdown stays explicit
+    and never double-counts. `trade_size` is the base-token size that downstream
+    slippage estimate is computed for (carried as provenance; identical across a
+    scan call's quotes).
+
+    **`liquidity_base` / `liquidity_quote`** are the decimals-adjusted pool depth
+    on each side. For the v1 constant-product sources they are the pool reserves;
+    the screener's exact constant-product price-impact formula reads them. A
+    concentrated-liquidity (Uniswap-v3) source is a documented followup — it would
+    populate a comparable in-range depth or the model would grow a v3 field.
+
+    Boundary-validated in the house style (`DefiPosition`): every measurement is
+    finite, `price` / `trade_size` / the depths strictly positive, `fee_bps`
+    finite and non-negative — a NaN / Inf / non-positive read is rejected at
+    construction, never silently zeroed (ADR-0035, best-practices "no garbage past
+    the boundary"). Downstream code may trust the fields."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pool_id: str = Field(min_length=1)  # pool contract address (0x…)
+    dex: str = Field(min_length=1)  # "aerodrome" | "uniswap-v2" | …
+    chain: Chain
+    pair: str = Field(min_length=1)  # canonical "BASE/QUOTE", e.g. "WETH/USDC"
+    base_token: str = Field(min_length=1)  # base token contract address
+    quote_token: str = Field(min_length=1)  # quote token contract address
+    trade_size: float = Field(gt=0)  # base-token size the slippage estimate is for
+    price: float = Field(gt=0)  # marginal/spot quote-per-base, decimals-adjusted
+    fee_bps: float = Field(ge=0)  # pool swap fee in basis points (30 = 0.30%)
+    liquidity_base: float = Field(gt=0)  # decimals-adjusted base-side depth (CP reserve)
+    liquidity_quote: float = Field(gt=0)  # decimals-adjusted quote-side depth (CP reserve)
+    as_of: datetime  # read time (provenance)
+
+    @field_validator("trade_size", "price", "fee_bps", "liquidity_base", "liquidity_quote")
+    @classmethod
+    def _must_be_finite(cls, v: float) -> float:
+        # `gt=0` / `ge=0` already reject NaN and negatives; this also rejects +Inf.
+        if not math.isfinite(v):
+            raise ValueError("pool-quote measurement must be finite (no NaN/Inf)")
+        return v
+
+
 __all__ = [
     "Chain",
     "DefiPosition",
     "LpPositionDetail",
+    "PoolQuote",
     "PositionKind",
     "PositionToken",
 ]

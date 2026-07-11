@@ -66,6 +66,7 @@ from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapte
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.defillama import DefiLlamaAdapter
 from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
+from market_analyser.data.adapters.onchain_pools import OnchainPoolPriceAdapter
 from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.adapters.zerion_tx import ZerionTxAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
@@ -80,6 +81,7 @@ from market_analyser.data.sources import (
     AccountHoldingsSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
+    PoolPriceSource,
     TxHistorySource,
     WalletPositionsSource,
 )
@@ -114,6 +116,7 @@ def create_app(
     secrets_store: SecretsStore | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
+    pool_price_sources: Mapping[str, PoolPriceSource] | None = None,
     tx_history_sources: Mapping[str, TxHistorySource] | None = None,
     historical_price_source: HistoricalPriceSource | None = None,
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
@@ -276,6 +279,23 @@ def create_app(
         effective_lp_detail_sources = {"rpc": RpcLpDetailAdapter(secrets_store=secrets_store)}
     else:
         effective_lp_detail_sources = {}
+    # DeFi pool-price sources (Plan 0079, ADR-0031/0072): the read-only selector
+    # registry behind the cross-pool discrepancy scanner (the arb-viability
+    # evidence layer). An explicit map wins (tests inject a fake); otherwise the
+    # on-chain adapter is built from the secrets store (lazy RPC-URL read, so it
+    # constructs before a URL is set — a scan without one fails typed at call
+    # time). Its default pool set is empty until a live evidence run (phase 4)
+    # supplies verified pool addresses, so an out-of-the-box scan reports zero
+    # configured pools rather than pricing fabricated ones. Empty when no store is
+    # wired.
+    if pool_price_sources is not None:
+        effective_pool_price_sources: dict[str, PoolPriceSource] = dict(pool_price_sources)
+    elif secrets_store is not None:
+        effective_pool_price_sources = {
+            "onchain": OnchainPoolPriceAdapter(secrets_store=secrets_store),
+        }
+    else:
+        effective_pool_price_sources = {}
     # DeFi tx-history sources (Plan 0035, ADR-0031/0035/0036): the selector
     # registry behind the P&L ingestion path. An explicit map wins (tests inject
     # a fake); otherwise the Zerion tx adapter is built from the secrets store
@@ -490,6 +510,10 @@ def create_app(
     # The DeFi LP-detail registry (Plan 0034) — consumed by the enrichment step
     # (phase 5) to deepen discovered LP positions with on-chain tick/fee state.
     app.state.lp_detail_sources = effective_lp_detail_sources
+    # The DeFi pool-price registry (Plan 0079) — consumed by the read-only
+    # `scan_pool_discrepancies` tool (phase 3) that screens cross-pool spreads
+    # net-of-cost as the arb-viability evidence layer.
+    app.state.pool_price_sources = effective_pool_price_sources
     # The DeFi tx-history registry (Plan 0035) — consumed by the P&L ingestion
     # path (`POST /defi/pnl` + the `compute_wallet_pnl` tool, phase 7).
     app.state.tx_history_sources = effective_tx_history_sources

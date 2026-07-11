@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     # domain (the adapter that *produces* DefiPosition imports it at runtime;
     # this Protocol only names the return type). `defi/models` imports nothing
     # from `data/`, so there is no import cycle.
-    from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail
+    from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail, PoolQuote
     from market_analyser.defi.tx_models import DecodedTx
 
 
@@ -156,6 +156,32 @@ class PredictionMarketSource(Protocol):
         Raises the typed error taxonomy on an unknown id or a shape-broken
         payload — never silently returns a fabricated probability."""
         ...
+
+
+@runtime_checkable
+class PoolPriceSource(Protocol):
+    """A read-only source of current per-pool DEX prices for a canonical pair
+    across one or more venues (Plan 0079 / ADR-0031) — the cross-pool discrepancy
+    scanner's input, the *evidence layer* for the arbitrage-viability question
+    (ADR-0072 BA-7). Read-only by charter: a conforming source holds no private
+    key, signs nothing, submits no state-changing RPC, and moves no funds; its
+    only credential is a read-only JSON-RPC endpoint URL (ADR-0038 — a read URL,
+    not a trade key). It reports prices as facts, never a trade instruction.
+
+    `fetch_pool_quotes` returns one `PoolQuote` per pool the source has configured
+    for `pair` — each pool's *marginal* (spot) price plus the depth the screener
+    needs to estimate the size-dependent execution cost. `trade_size` is the
+    base-token size the downstream slippage estimate is computed for (the price
+    itself is the marginal price, not size-adjusted — see `PoolQuote`). An unknown
+    or unconfigured pair returns `[]` (not an error); a shape-broken on-chain read
+    raises the source's typed error taxonomy, never a fabricated price.
+
+    Members of the pool-price selector registry, keyed by source name ("onchain"),
+    built in the composition root (ADR-0031) — adding a second pool-price source is
+    then one registry entry.
+    """
+
+    def fetch_pool_quotes(self, pair: str, *, trade_size: float) -> Sequence[PoolQuote]: ...
 
 
 @runtime_checkable
