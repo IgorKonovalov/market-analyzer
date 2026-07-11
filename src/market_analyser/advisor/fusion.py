@@ -49,15 +49,20 @@ from typing import Literal
 
 from market_analyser.advisor.models import (
     BasisValue,
+    DirectionLegStatus,
     FusionCheck,
     ReasonCode,
     Recommendation,
     RecommendationBasis,
+    RegimeContext,
+    VolatilitySizing,
 )
 from market_analyser.analysis.types import ConditionSnapshot
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
+from market_analyser.forecast.regime import RegimeForecast
 from market_analyser.forecast.result import ForecastResult
+from market_analyser.forecast.volatility import VolatilityForecast
 
 # The walk-forward sharpe_mean at (or above) which the backtested edge earns
 # full credit in the conviction mapping. Below it, credit scales linearly;
@@ -81,7 +86,116 @@ LEVEL_BUFFER_ATR = 0.1
 # fraction of the last close as the volatility unit for level geometry.
 ATR_FALLBACK_FRACTION = 0.02
 
+# ADR-0071: the direction forecast leg gates (votes) only when its out-of-sample
+# beats-baseline margin (``skill - baseline_skill``) is at least this. Below it the
+# leg is advisory — it can neither veto a corroborated call nor be the deciding
+# vote. The direction target has near-absent edge (ADR-0070), and when it clears
+# baseline it does so thinly (Plan 0062: roughly h=21 only), so a 2-percentage-point
+# out-of-sample accuracy margin is the floor at which the leg earns a directional
+# vote; below it is noise. Pinned with a boundary test (Plan 0077 phase 5).
+DIRECTION_SKILL_MARGIN = 0.02
+
+# Non-voting inverse-vol sizing (ADR-0071): the reference per-bar RMS volatility at
+# which the advisory size factor is 1.0. A predicted vol above it shrinks size,
+# below it grows size, all clamped to [SIZE_FLOOR, SIZE_CAP]. A documented reference
+# for a daily crypto-first series (~3% per-bar log-return vol), not a tuned
+# parameter — the factor is relative and advisory, never an order size.
+REFERENCE_VOL = 0.03
+SIZE_FLOOR = 0.25
+SIZE_CAP = 2.0
+
+# Non-voting vol-implied stop (ADR-0071): the stop is widened to at least this many
+# predicted-vol price units from the last close, so a higher-vol forecast gives a
+# wider stop (never a tighter one). Capped at STOP_VOL_CAP_FRACTION of the close so
+# a degenerate vol forecast cannot produce an absurd stop distance (done-when (d)).
+STOP_VOL_MULT = 2.0
+STOP_VOL_CAP_FRACTION = 0.5
+
+# Non-voting regime conviction dampening (ADR-0071): a trusted transition model that
+# expects the current regime to persist leaves conviction unchanged (factor 1.0);
+# one that expects a transition softens it toward this floor. Bounded and
+# direction-agnostic — regime never implies a direction, only how much to trust a
+# setup the voting legs already called.
+REGIME_CONVICTION_FLOOR = 0.5
+
 _Directional = Literal["long", "short"]
+_VolSource = Literal["model", "baseline", "none"]
+
+
+def _direction_leg_gating(forecast: ForecastResult) -> bool:
+    """Whether the direction forecast leg votes (gates) this verdict: its
+    out-of-sample skill margin must clear `DIRECTION_SKILL_MARGIN` (ADR-0071). A
+    forecast that shipped no scored edge (`edge_margin is None`) or clears baseline
+    only thinly is demoted — advisory, not gating."""
+
+    return forecast.edge_margin is not None and forecast.edge_margin >= DIRECTION_SKILL_MARGIN
+
+
+def _vol_reading(volatility: VolatilityForecast | None) -> tuple[float | None, _VolSource]:
+    """The volatility reading that drives sizing/stops, and its source. Prefer the
+    model prediction only when it beat a baseline out-of-sample; otherwise fall back
+    to the deterministic baseline reading (the phase-4 finding: the baseline is the
+    useful output). ``(None, "none")`` when no usable reading exists — neutral."""
+
+    if volatility is None:
+        return None, "none"
+    if volatility.beats_baseline and volatility.predicted_vol is not None:
+        return volatility.predicted_vol, "model"
+    if volatility.baseline_vol is not None:
+        return volatility.baseline_vol, "baseline"
+    return None, "none"
+
+
+def _size_factor(vol_used: float | None) -> float:
+    """Bounded inverse-vol advisory size multiplier: ``REFERENCE_VOL / vol``, clamped
+    to ``[SIZE_FLOOR, SIZE_CAP]``. ``1.0`` (neutral) when no vol reading — an absent
+    or degenerate forecast can never blow up the size (done-when (d))."""
+
+    if vol_used is None or vol_used <= 0.0:
+        return 1.0
+    return min(max(REFERENCE_VOL / vol_used, SIZE_FLOOR), SIZE_CAP)
+
+
+def _widen_stop_for_vol(
+    direction: _Directional, last_close: float, stop: float, vol_used: float | None
+) -> tuple[float, float | None]:
+    """Widen ``stop`` to at least the vol-implied distance from ``last_close`` (never
+    tighter), and return ``(stop, vol_stop_distance)``. The distance is capped at
+    ``STOP_VOL_CAP_FRACTION`` of the close so a degenerate vol cannot produce an
+    absurd stop. ``(stop, None)`` when no vol reading — the level/ATR stop stands."""
+
+    if vol_used is None or vol_used <= 0.0:
+        return stop, None
+    dist = min(STOP_VOL_MULT * vol_used * last_close, STOP_VOL_CAP_FRACTION * last_close)
+    widened = last_close - dist if direction == "long" else last_close + dist
+    stop = min(stop, widened) if direction == "long" else max(stop, widened)
+    return stop, dist
+
+
+def _regime_conviction(regime: RegimeForecast | None) -> tuple[float, RegimeContext | None]:
+    """The non-voting regime conviction multiplier and its recorded context. A
+    trusted transition model (beats persistence out-of-sample) that expects the
+    current regime to persist leaves conviction unchanged (``1.0``); one expecting a
+    transition softens it toward ``REGIME_CONVICTION_FLOOR``. Direction-agnostic and
+    bounded — regime never implies long or short. ``(1.0, None)`` when no regime."""
+
+    if regime is None:
+        return 1.0, None
+    current = regime.current_regime
+    probs = regime.transition_probs
+    trusted = regime.beats_baseline and probs is not None and current is not None
+    if trusted:
+        assert probs is not None and current is not None
+        p_stay = probs.get(current, 0.0)
+        factor = REGIME_CONVICTION_FLOOR + (1.0 - REGIME_CONVICTION_FLOOR) * p_stay
+    else:
+        factor = 1.0
+    context = RegimeContext(
+        current_regime=current.value if current is not None else None,
+        trusted=bool(trusted),
+        conviction_factor=round(factor, 4),
+    )
+    return factor, context
 
 
 def _forecast_direction(forecast: ForecastResult) -> _Directional | None:
@@ -169,11 +283,15 @@ def _require_consistent_inputs(
     signals: Sequence[SignalEvaluation],
     walk_forward: WalkForwardResult | None,
     forecast: ForecastResult,
+    volatility: VolatilityForecast | None,
+    regime: RegimeForecast | None,
 ) -> None:
     """All inputs must describe the same symbol, timeframe, and as-of bar —
     fusing across symbols/timeframes, or a fresh snapshot with a stale leg,
-    would produce a well-formed but meaningless call. (`WalkForwardResult`
-    carries no as-of field; its currency is the caller's bar series.)"""
+    would produce a well-formed but meaningless call. The non-voting volatility
+    and regime forecasts (Plan 0077 phase 5) are checked on the same footing when
+    present. (`WalkForwardResult` carries no as-of field; its currency is the
+    caller's bar series.)"""
 
     expected = (snapshot.symbol, snapshot.timeframe)
     for name, got in (
@@ -184,6 +302,8 @@ def _require_consistent_inputs(
             if walk_forward is not None
             else ()
         ),
+        *((("volatility", (volatility.symbol, volatility.timeframe)),) if volatility else ()),
+        *((("regime", (regime.symbol, regime.timeframe)),) if regime else ()),
     ):
         if got != expected:
             raise ValueError(f"inconsistent fusion inputs: snapshot is {expected}, {name} is {got}")
@@ -194,6 +314,8 @@ def _require_consistent_inputs(
             (f"signals[{s.strategy_id}].evaluated_through_ts", s.evaluated_through_ts)
             for s in signals
         ),
+        *((("volatility.as_of_bar_ts", volatility.as_of_bar_ts),) if volatility else ()),
+        *((("regime.as_of_bar_ts", regime.as_of_bar_ts),) if regime else ()),
     ):
         if got_ts != snapshot.as_of:
             raise ValueError(
@@ -214,6 +336,9 @@ def _build_trace(
     long_ids: Sequence[str],
     short_ids: Sequence[str],
     sharpe_mean: float | None,
+    gating: bool,
+    volatility: VolatilityForecast | None,
+    regime: RegimeForecast | None,
 ) -> tuple[tuple[FusionCheck, ...], tuple[ReasonCode, ...]]:
     """The structured fusion trace (Plan 0063, ADR-0058) and, co-generated in
     lockstep, its per-gate reason-codes (Plan 0069 phase 4, ADR-0063).
@@ -283,6 +408,10 @@ def _build_trace(
         if forecast_dir == "short"
         else None
     )
+    # The three direction-forecast gates and the agreement gate below are `gating`
+    # only when the leg cleared the skill-margin threshold (ADR-0071). Demoted, they
+    # carry their real pass/fail but `gating=False`, so they are recorded and
+    # replayable yet can no longer veto a call the voting legs corroborate.
     pairs.extend(
         (
             (
@@ -292,6 +421,7 @@ def _build_trace(
                     threshold=True,
                     actual=probs_shipped,
                     passed=probs_shipped,
+                    gating=gating,
                 ),
                 ReasonCode(code="gate.forecast_probs_shipped"),
             ),
@@ -302,6 +432,7 @@ def _build_trace(
                     threshold="long or short",
                     actual=forecast_dir if forecast_dir is not None else "none",
                     passed=forecast_dir is not None,
+                    gating=gating,
                 ),
                 ReasonCode(code="gate.forecast_argmax_directional"),
             ),
@@ -312,6 +443,7 @@ def _build_trace(
                     threshold=None,
                     actual=directional_prob,
                     passed=directional_prob is not None,
+                    gating=gating,
                 ),
                 ReasonCode(code="gate.forecast_calibrated_prob"),
             ),
@@ -363,6 +495,7 @@ def _build_trace(
                     threshold=forecast_dir if forecast_dir is not None else "none",
                     actual=signal_dir if signal_dir is not None else "none",
                     passed=forecast_dir is not None and signal_dir == forecast_dir,
+                    gating=gating,
                 ),
                 ReasonCode(code="gate.signal_agrees_forecast"),
             ),
@@ -402,6 +535,46 @@ def _build_trace(
             ),
         )
     )
+
+    # Non-voting inputs (Plan 0077 phase 5, ADR-0071): recorded in the trace as
+    # informational (`gating=False`) rows so a reader sees they were consumed —
+    # they shape sizing/stop/conviction but never block or vote a direction. Only
+    # present when supplied, so a call without them keeps the pre-0077 trace.
+    if volatility is not None:
+        pairs.append(
+            (
+                FusionCheck(
+                    leg="forecast",
+                    check="volatility forecast (non-voting: sizing + stop)",
+                    threshold=None,
+                    actual=volatility.beats_baseline,
+                    passed=True,
+                    gating=False,
+                ),
+                ReasonCode(
+                    code="gate.volatility_nonvoting",
+                    params={"beats_baseline": 1 if volatility.beats_baseline else 0},
+                ),
+            )
+        )
+    if regime is not None:
+        pairs.append(
+            (
+                FusionCheck(
+                    leg="forecast",
+                    check="regime forecast (non-voting: conviction)",
+                    threshold=None,
+                    actual=regime.beats_baseline,
+                    passed=True,
+                    gating=False,
+                ),
+                ReasonCode(
+                    code="gate.regime_nonvoting",
+                    params={"beats_baseline": 1 if regime.beats_baseline else 0},
+                ),
+            )
+        )
+
     checks = tuple(check for check, _ in pairs)
     gate_codes = tuple(code for _, code in pairs)
     return checks, gate_codes
@@ -432,7 +605,10 @@ def _blockers_from_checks(
     decision of whether to emit is the check's `passed` flag. The code carries
     the same failing values as raw params for the renderer."""
 
-    failed = {(c.leg, c.check) for c in checks if not c.passed}
+    # Only *gating* checks block (Plan 0077 phase 5, ADR-0071): a demoted
+    # direction leg's failed checks carry `gating=False`, so they no longer
+    # produce a blocker — the whole point of the demotion.
+    failed = {(c.leg, c.check) for c in checks if c.gating and not c.passed}
     blockers: list[str] = []
     codes: list[ReasonCode] = []
 
@@ -621,31 +797,48 @@ def fuse(
     walk_forward: WalkForwardResult | None,
     forecast: ForecastResult,
     last_close: float,
+    volatility: VolatilityForecast | None = None,
+    regime: RegimeForecast | None = None,
 ) -> Recommendation:
-    """Fuse the four analyst outputs into one advisory `Recommendation`.
+    """Fuse the analyst outputs into one advisory `Recommendation`.
 
     `last_close` is the close of the last bar the inputs were computed from
     (the as-of bar) — the price anchor for the level geometry. `walk_forward`
     is the out-of-sample validation of the strategy whose live signal is being
     considered; ``None`` means no backtested basis exists, which blocks any
-    directional call. Raises `ValueError` on inconsistent symbol/timeframe or
-    as-of inputs, or a non-positive `last_close`.
+    directional call.
+
+    `volatility` and `regime` (Plan 0077 phase 5, ADR-0071) are **non-voting**
+    inputs: volatility shapes the advisory size hint (inverse-vol) and widens the
+    stop, regime softens conviction on an unstable regime. Neither can flip or
+    manufacture a direction — that still rests on the voting legs agreeing. The
+    direction forecast leg itself is **demoted** below `DIRECTION_SKILL_MARGIN`:
+    it no longer vetoes a corroborated call nor decides one alone (ADR-0070/0071).
+
+    Raises `ValueError` on inconsistent symbol/timeframe or as-of inputs, or a
+    non-positive `last_close`.
     """
 
     if last_close <= 0.0:
         raise ValueError(f"last_close must be positive, got {last_close}")
-    _require_consistent_inputs(snapshot, signals, walk_forward, forecast)
+    _require_consistent_inputs(snapshot, signals, walk_forward, forecast, volatility, regime)
 
     forecast_dir = _forecast_direction(forecast)
     signal_dir, conflict, long_ids, short_ids = _signal_votes(signals)
     sharpe_mean = _sharpe_mean(walk_forward)
     edge_factor = _edge_factor(sharpe_mean)
+    gating = _direction_leg_gating(forecast)
+    direction_leg = DirectionLegStatus(
+        present=True, gating=gating, skill_margin=forecast.edge_margin
+    )
 
-    # Every leg must agree for a directional call. The structured trace records
-    # every gate; the flat verdict's named blockers are derived FROM the failed
-    # trace rows (single source of truth — finding (e)), so a blocker and its
-    # gate cannot drift. The invariant stays: directional iff no blocker iff
-    # every check passed (ADR-0029 honest uncertainty; ADR-0058 replayability).
+    # The voting legs (conditions + backtested edge + live signal) must agree for a
+    # directional call; the demoted direction leg contributes `gating=False` checks
+    # that record but no longer block (ADR-0071). The structured trace records every
+    # gate; the flat verdict's named blockers are derived FROM the failed *gating*
+    # trace rows (single source of truth), so a blocker and its gate cannot drift.
+    # The invariant holds: directional iff no blocker iff every gating check passed
+    # (ADR-0029 honest uncertainty; ADR-0058 replayability).
     checks, gate_codes = _build_trace(
         snapshot=snapshot,
         signals=signals,
@@ -657,6 +850,9 @@ def fuse(
         long_ids=long_ids,
         short_ids=short_ids,
         sharpe_mean=sharpe_mean,
+        gating=gating,
+        volatility=volatility,
+        regime=regime,
     )
     blockers, blocker_codes = _blockers_from_checks(
         checks,
@@ -689,32 +885,87 @@ def fuse(
                 *blocker_codes,
                 *gate_codes,
             ),
+            direction_leg=direction_leg,
         )
 
-    assert forecast_dir is not None and forecast_dir == signal_dir
-    direction: _Directional = forecast_dir
-    prob = forecast.prob_up if direction == "long" else forecast.prob_down
-    assert prob is not None  # forecast_dir is directional only when probs shipped
-    conviction = round(prob * edge_factor, 4)
+    # Direction comes from the voting legs. When the forecast gates it corroborates
+    # (and the agreement gate proved forecast_dir == signal_dir); when it is demoted
+    # the call rests on the live signal alone, which the gating checks proved
+    # directional and backtest-corroborated. Either way the voting legs decide —
+    # the non-voting vol/regime inputs cannot reach this choice (ADR-0071).
+    if gating:
+        assert forecast_dir is not None and forecast_dir == signal_dir
+        direction: _Directional = forecast_dir
+    else:
+        assert signal_dir is not None
+        direction = signal_dir
+    agreeing_ids = long_ids if direction == "long" else short_ids
+
+    # Conviction is derived, never invented: the forecast probability of the called
+    # direction (when the leg shipped one) times the backtested-edge credit, then
+    # dampened by the non-voting regime factor. When the leg is demoted with no
+    # probability, conviction rests on the validated backtested edge alone.
+    directional_prob = forecast.prob_up if direction == "long" else forecast.prob_down
+    base_conviction = (
+        directional_prob * edge_factor if directional_prob is not None else edge_factor
+    )
+    regime_factor, regime_context = _regime_conviction(regime)
+    conviction = round(min(max(base_conviction * regime_factor, 0.0), 1.0), 4)
 
     entry_zone, stop, targets = _levels(direction, last_close, snapshot)
-    agreeing_ids = long_ids if direction == "long" else short_ids
+    # Non-voting volatility: an inverse-vol size hint and a vol-widened stop.
+    vol_used, vol_source = _vol_reading(volatility)
+    stop, stop_vol_distance = _widen_stop_for_vol(direction, last_close, stop, vol_used)
+    sizing = (
+        VolatilitySizing(
+            size_factor=round(_size_factor(vol_used), 4),
+            vol_used=vol_used,
+            vol_source=vol_source,
+            stop_vol_distance=stop_vol_distance,
+        )
+        if volatility is not None
+        else None
+    )
+
     skill = forecast.validation.skill
     baseline = forecast.validation.baseline_skill
 
     # Each rationale line is paired with its translatable reason-code in lockstep
     # (Plan 0069 phase 4), so the code carries the same raw values the English
-    # prose embeds and cannot drift from the line. Empty lines (a missing backtest
-    # leg — never on a directional verdict, defensive) drop the pair together.
-    forecast_params: dict[str, float | int | str] = {
-        "direction": direction,
-        "prob": prob,
-        "horizon_bars": forecast.horizon_bars,
-        "edge_strength": forecast.edge_strength,
-    }
-    if skill is not None and baseline is not None:
-        forecast_params["skill"] = skill
-        forecast_params["baseline"] = baseline
+    # prose embeds and cannot drift from the line. Empty lines drop the pair
+    # together. The forecast line branches on the leg's gating status (ADR-0071).
+    if gating:
+        assert directional_prob is not None  # gating implies a shipped directional prob
+        forecast_params: dict[str, float | int | str] = {
+            "direction": direction,
+            "prob": directional_prob,
+            "horizon_bars": forecast.horizon_bars,
+            "edge_strength": forecast.edge_strength,
+        }
+        if skill is not None and baseline is not None:
+            forecast_params["skill"] = skill
+            forecast_params["baseline"] = baseline
+        forecast_line = (
+            f"forecast: P({direction})={directional_prob:.3f} over {forecast.horizon_bars} "
+            f"bar(s), edge={forecast.edge_strength}"
+            + (
+                f" (out-of-sample skill {skill:.3f} vs baseline {baseline:.3f})"
+                if skill is not None and baseline is not None
+                else ""
+            )
+        )
+        forecast_code = ReasonCode(code="reason.forecast", params=forecast_params)
+    else:
+        margin = forecast.edge_margin
+        demotion_params: dict[str, float | int | str] = {"threshold": DIRECTION_SKILL_MARGIN}
+        if margin is not None:
+            demotion_params["skill_margin"] = margin
+        forecast_line = (
+            "direction forecast leg present but non-gating: out-of-sample skill margin "
+            f"{f'{margin:.3f}' if margin is not None else 'none'} < {DIRECTION_SKILL_MARGIN} "
+            "— advisory only, the call rests on the live signal and backtested edge (ADR-0071)"
+        )
+        forecast_code = ReasonCode(code="reason.direction_leg_nongating", params=demotion_params)
 
     backtest_params: dict[str, float | int | str] = {}
     if walk_forward is not None and sharpe_mean is not None:
@@ -725,16 +976,7 @@ def fuse(
         }
 
     rationale_pairs: list[tuple[str, ReasonCode]] = [
-        (
-            f"forecast: P({direction})={prob:.3f} over {forecast.horizon_bars} bar(s), "
-            f"edge={forecast.edge_strength}"
-            + (
-                f" (out-of-sample skill {skill:.3f} vs baseline {baseline:.3f})"
-                if skill is not None and baseline is not None
-                else ""
-            ),
-            ReasonCode(code="reason.forecast", params=forecast_params),
-        ),
+        (forecast_line, forecast_code),
         (
             f"live signals agree ({direction}): {', '.join(agreeing_ids)}",
             ReasonCode(
@@ -762,6 +1004,46 @@ def fuse(
             ),
         ),
     ]
+    # Non-voting rationale lines, appended after the voting legs so the reason-code
+    # order stays stable for a call without them (Plan 0077 phase 5).
+    if sizing is not None:
+        rationale_pairs.append(
+            (
+                f"volatility (non-voting): {vol_source} vol {vol_used:.4f} "
+                f"→ size factor {sizing.size_factor:.2f}"
+                + (
+                    f", stop widened to {stop_vol_distance:.4f}"
+                    if stop_vol_distance is not None
+                    else ""
+                )
+                if vol_used is not None
+                else "volatility (non-voting): no usable reading → neutral sizing",
+                ReasonCode(
+                    code="reason.sizing",
+                    params={
+                        "vol_source": vol_source,
+                        "size_factor": sizing.size_factor,
+                        **({"vol_used": vol_used} if vol_used is not None else {}),
+                    },
+                ),
+            )
+        )
+    if regime_context is not None:
+        rationale_pairs.append(
+            (
+                f"regime (non-voting): {regime_context.current_regime or 'undefined'}, "
+                f"transition-trusted={regime_context.trusted} "
+                f"→ conviction factor {regime_context.conviction_factor:.2f}",
+                ReasonCode(
+                    code="reason.regime_context",
+                    params={
+                        "current_regime": regime_context.current_regime or "undefined",
+                        "trusted": 1 if regime_context.trusted else 0,
+                        "conviction_factor": regime_context.conviction_factor,
+                    },
+                ),
+            )
+        )
     rationale = [line for line, _ in rationale_pairs if line]
     rationale_codes = [code for line, code in rationale_pairs if line]
 
@@ -778,15 +1060,25 @@ def fuse(
         label="advisory",
         as_of_bar_ts=snapshot.as_of,
         reason_codes=(*rationale_codes, *gate_codes),
+        sizing=sizing,
+        regime_context=regime_context,
+        direction_leg=direction_leg,
     )
 
 
 __all__ = [
     "ATR_FALLBACK_FRACTION",
+    "DIRECTION_SKILL_MARGIN",
     "ENTRY_BAND_ATR",
     "LEVEL_BUFFER_ATR",
+    "REFERENCE_VOL",
+    "REGIME_CONVICTION_FLOOR",
     "SHARPE_FULL_CREDIT",
+    "SIZE_CAP",
+    "SIZE_FLOOR",
     "STOP_ATR",
+    "STOP_VOL_CAP_FRACTION",
+    "STOP_VOL_MULT",
     "TARGET_ATR",
     "fuse",
 ]

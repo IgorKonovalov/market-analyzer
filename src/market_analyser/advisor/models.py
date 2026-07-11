@@ -71,6 +71,75 @@ class FusionCheck(BaseModel):
     threshold: BasisValue
     actual: BasisValue
     passed: bool
+    # Appended after passed to keep the wire-stable field order; defaulted True so
+    # pre-0077 constructors (every check gated then) stay valid. `gating` (Plan
+    # 0077 phase 5, ADR-0071) is whether the check *blocks*: a failed gating check
+    # forces flat; an informational check (`gating=False`) is recorded and
+    # replayable but never blocks. The direction-leg demotion flips the four
+    # direction checks to `gating=False` below the skill-margin threshold, and the
+    # non-voting vol/regime inputs ride as `gating=False` rows. The invariant
+    # becomes: directional exactly when every *gating* check passed.
+    gating: bool = True
+
+
+class DirectionLegStatus(BaseModel):
+    """The direction-forecast leg's gating status on a verdict (Plan 0077 phase 5,
+    ADR-0071). The direction forecaster has near-absent edge (ADR-0070); when its
+    out-of-sample skill margin (``skill - baseline_skill``) is below
+    ``fusion.DIRECTION_SKILL_MARGIN`` the leg is **advisory, not gating** — it can
+    neither veto a call the voting legs (conditions + backtested edge + live
+    signal) corroborate nor be the sole deciding vote. ``present`` is whether a
+    forecast leg was supplied; ``gating`` whether it voted this verdict;
+    ``skill_margin`` its out-of-sample margin (``None`` when the forecast shipped
+    no scored edge). Travels on every verdict so the demotion is auditable beside
+    the ``gating=False`` flags in the ``basis.checks`` trace."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    present: bool
+    gating: bool
+    skill_margin: float | None
+
+
+class VolatilitySizing(BaseModel):
+    """Non-voting volatility inputs to a directional advisory call (Plan 0077
+    phase 5, ADR-0071). The volatility forecast (ADR-0070) is **never
+    directional**: it only shrinks the size hint and widens the stop as predicted
+    volatility rises — it can never turn a long into a short. ``size_factor`` is a
+    bounded relative inverse-vol multiplier (``1.0`` = the reference vol, ``< 1``
+    smaller, ``> 1`` larger) — an advisory number, never an order quantity
+    (execution is untaken, ADR-0025). ``vol_source`` says whether the trusted
+    model prediction drove it, the deterministic baseline reading did (the model
+    beat no baseline — the plan's phase-4 finding), or nothing was usable
+    (``none`` ⇒ neutral ``1.0``). ``vol_used`` is the per-bar RMS volatility that
+    drove it; ``stop_vol_distance`` the vol-implied stop distance (in price) the
+    call widened its stop to when it exceeded the level/ATR stop (``None`` when no
+    volatility drove it)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    size_factor: float
+    vol_used: float | None
+    vol_source: Literal["model", "baseline", "none"]
+    stop_vol_distance: float | None
+
+
+class RegimeContext(BaseModel):
+    """The non-voting regime context of a directional advisory call (Plan 0077
+    phase 5, ADR-0071). The regime-transition forecast (ADR-0070) feeds
+    **conviction only**, never direction: an unstable regime (one a *trusted*
+    transition model expects to leave) softens conviction, bounded and
+    direction-agnostic — it can never imply long or short. ``current_regime`` is
+    the trailing rule-based state at the as-of bar; ``trusted`` whether the
+    transition model beat its persistence baseline out-of-sample (else persistence
+    is the honest default and the context is neutral); ``conviction_factor`` the
+    bounded ``(0, 1]`` multiplier it applied (``1.0`` = neutral)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    current_regime: str | None
+    trusted: bool
+    conviction_factor: float
 
 
 class RecommendationBasis(BaseModel):
@@ -167,6 +236,16 @@ class Recommendation(BaseModel):
     # per gate (1:1 with `basis.checks`, same order). The English prose above is
     # unchanged and stays authoritative for the agent/MCP consumer.
     reason_codes: tuple[ReasonCode, ...] = ()
+    # Appended after reason_codes, same wire-stable append discipline; all
+    # defaulted so pre-0077 constructors stay valid (Plan 0077 phase 5, ADR-0071).
+    # The non-voting forecast inputs and the demoted direction leg's status:
+    # `sizing`/`regime_context` shape a directional call and are `None` on a flat
+    # verdict (which has no size or conviction to shape); `direction_leg` travels
+    # on every verdict so the gating decision is always auditable. None of these
+    # can flip or manufacture a direction — that rests on the voting legs alone.
+    sizing: VolatilitySizing | None = None
+    regime_context: RegimeContext | None = None
+    direction_leg: DirectionLegStatus | None = None
 
     @model_validator(mode="after")
     def _enforce_advisory_shape(self) -> Recommendation:
@@ -178,6 +257,11 @@ class Recommendation(BaseModel):
                 )
             if self.conviction != 0.0:
                 raise ValueError("a flat recommendation has zero conviction by definition")
+            if self.sizing is not None or self.regime_context is not None:
+                raise ValueError(
+                    "a flat recommendation carries no sizing or regime context — it has "
+                    "no size or conviction for the non-voting inputs to shape (ADR-0071)"
+                )
             return self
 
         # Directional call — ADR-0029's three containment rules, structurally.
@@ -206,4 +290,13 @@ class Recommendation(BaseModel):
         return self
 
 
-__all__ = ["BasisValue", "FusionCheck", "ReasonCode", "Recommendation", "RecommendationBasis"]
+__all__ = [
+    "BasisValue",
+    "DirectionLegStatus",
+    "FusionCheck",
+    "ReasonCode",
+    "Recommendation",
+    "RecommendationBasis",
+    "RegimeContext",
+    "VolatilitySizing",
+]

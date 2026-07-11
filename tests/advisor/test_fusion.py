@@ -18,7 +18,14 @@ from typing import Literal
 import pytest
 
 import market_analyser.advisor
-from market_analyser.advisor.fusion import fuse
+from market_analyser.advisor.fusion import (
+    DIRECTION_SKILL_MARGIN,
+    REFERENCE_VOL,
+    SIZE_CAP,
+    SIZE_FLOOR,
+    STOP_VOL_CAP_FRACTION,
+    fuse,
+)
 from market_analyser.advisor.models import Recommendation
 from market_analyser.analysis.types import (
     ConditionSnapshot,
@@ -31,12 +38,22 @@ from market_analyser.analysis.types import (
 from market_analyser.backtest.result import BacktestMetrics
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.backtest.walk_forward_types import WalkForwardResult
+from market_analyser.forecast.regime import (
+    RegimeForecast,
+    RegimeState,
+    RegimeValidation,
+)
 from market_analyser.forecast.result import (
     EdgeStrength,
     ForecastProvenance,
     ForecastResult,
 )
 from market_analyser.forecast.validation import ForecastValidation
+from market_analyser.forecast.volatility import (
+    BaselineKind,
+    VolatilityForecast,
+    VolatilityValidation,
+)
 
 SYMBOL = "BTC-USD"
 TIMEFRAME = "1d"
@@ -133,7 +150,12 @@ def make_forecast(
     edge_strength: EdgeStrength = "clear",
     feature_set_id: str = "fs-v1",
     fallback_reason: str | None = None,
+    edge_margin: float | None = None,
 ) -> ForecastResult:
+    # A clear edge (0.05) clears DIRECTION_SKILL_MARGIN so the leg gates by
+    # default; callers pass `edge_margin` to exercise the demotion boundary.
+    default_margin = 0.05 if beats_baseline else -0.02
+    resolved_margin = edge_margin if edge_margin is not None else default_margin
     return ForecastResult(
         symbol=SYMBOL,
         timeframe=TIMEFRAME,
@@ -161,8 +183,82 @@ def make_forecast(
             lib_versions={"scikit-learn": "1.8.0"},
             fallback_reason=fallback_reason,
         ),
-        edge_margin=0.05 if beats_baseline else -0.02,
+        edge_margin=resolved_margin,
         edge_strength=edge_strength,
+    )
+
+
+def make_volatility(
+    *,
+    predicted_vol: float | None = 0.04,
+    baseline_vol: float | None = 0.03,
+    beats_baseline: bool = True,
+    baseline_kind: BaselineKind = "ewma",
+) -> VolatilityForecast:
+    """A volatility forecast fixture (Plan 0077 phase 5). Defaults to a trusted
+    model reading above the reference vol, so it shrinks size and widens the stop."""
+
+    return VolatilityForecast(
+        symbol=SYMBOL,
+        timeframe=TIMEFRAME,
+        as_of_bar_ts=AS_OF,
+        horizon_bars=1,
+        predicted_vol=predicted_vol,
+        band=(predicted_vol * 0.8, predicted_vol * 1.2) if predicted_vol is not None else None,
+        baseline_vol=baseline_vol,
+        baseline_kind=baseline_kind,
+        beats_baseline=beats_baseline,
+        score_margin=0.1 if beats_baseline else -0.1,
+        validation=VolatilityValidation(
+            horizon_bars=1,
+            n_splits=5,
+            n_scored=100,
+            model_qlike=1.0 if beats_baseline else 1.3,
+            baseline_qlike=1.1,
+            baseline_kind=baseline_kind,
+            persistence_qlike=1.2,
+            ewma_qlike=1.1,
+            score_margin=0.1 if beats_baseline else -0.2,
+            beats_baseline=beats_baseline,
+            folds=[],
+        ),
+        provenance=None,
+    )
+
+
+def make_regime(
+    *,
+    current: RegimeState = RegimeState.UP_QUIET,
+    p_stay: float = 0.9,
+    beats_baseline: bool = True,
+) -> RegimeForecast:
+    """A regime-transition forecast fixture (Plan 0077 phase 5). `p_stay` is the
+    probability the current regime persists; a trusted low `p_stay` softens
+    conviction. Defaults to a trusted, sticky (high `p_stay`) regime → neutral."""
+
+    others = [s for s in RegimeState if s != current]
+    probs = {s: (1.0 - p_stay) / len(others) for s in others}
+    probs[current] = p_stay
+    return RegimeForecast(
+        symbol=SYMBOL,
+        timeframe=TIMEFRAME,
+        as_of_bar_ts=AS_OF,
+        horizon_bars=1,
+        current_regime=current,
+        transition_probs=probs,
+        beats_baseline=beats_baseline,
+        score_margin=0.05 if beats_baseline else -0.05,
+        validation=RegimeValidation(
+            horizon_bars=1,
+            n_splits=5,
+            n_scored=100,
+            model_brier=0.5 if beats_baseline else 0.7,
+            persistence_brier=0.6,
+            score_margin=0.1 if beats_baseline else -0.1,
+            beats_baseline=beats_baseline,
+            folds=[],
+        ),
+        provenance=None,
     )
 
 
@@ -280,7 +376,12 @@ class TestConvictionMapping:
 
 
 class TestFlatVerdicts:
-    def test_no_edge_forecast_yields_flat(self) -> None:
+    def test_no_edge_forecast_alone_no_longer_vetoes_a_corroborated_call(self) -> None:
+        """Plan 0077 phase 5 done-when (b): a no-edge (demoted) direction forecast
+        no longer vetoes a call the voting legs corroborate — it is advisory, not
+        gating. (Pre-0077 this exact input was flat; that veto is the bug ADR-0071
+        fixes.) The demotion is recorded in the trace and on `direction_leg`."""
+
         rec = fuse(
             snapshot=make_snapshot(),
             signals=[make_signal()],
@@ -294,10 +395,17 @@ class TestFlatVerdicts:
             ),
             last_close=LAST_CLOSE,
         )
-        assert rec.direction == "flat"
-        assert rec.conviction == 0.0
-        assert rec.entry_zone is None and rec.stop is None and rec.targets == []
-        assert any("no edge over baseline" in line for line in rec.rationale)
+        assert rec.direction == "long"  # corroborated by signal + backtest, not vetoed
+        assert rec.direction_leg is not None
+        assert rec.direction_leg.present is True and rec.direction_leg.gating is False
+        # The four direction-leg checks are recorded but non-gating.
+        forecast_checks = [c for c in rec.basis.checks if c.leg == "forecast"]
+        assert forecast_checks and all(not c.gating for c in forecast_checks)
+        agreement = next(
+            c for c in rec.basis.checks if c.check.endswith("agrees with the forecast direction")
+        )
+        assert agreement.gating is False
+        assert any("non-gating" in line for line in rec.rationale)
 
     def test_conflicting_signals_yield_flat(self) -> None:
         rec = fuse(
@@ -384,6 +492,280 @@ class TestFlatVerdicts:
         )
         assert rec.direction == "flat"
         assert rec.basis.conditions  # never a groundless artifact, even flat
+
+
+class TestDirectionDemotion:
+    """Plan 0077 phase 5 (ADR-0071): the direction leg gates only when its
+    out-of-sample skill margin clears `DIRECTION_SKILL_MARGIN`; below it the leg
+    is advisory — it neither vetoes nor solely decides a call."""
+
+    def test_at_threshold_the_leg_gates_and_votes_as_before(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(edge_margin=DIRECTION_SKILL_MARGIN),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"
+        assert rec.direction_leg is not None and rec.direction_leg.gating is True
+        assert all(c.gating for c in rec.basis.checks if c.leg == "forecast")
+        assert rec.rationale[0].startswith("forecast: P(long)=")
+
+    def test_just_below_threshold_the_leg_is_demoted(self) -> None:
+        margin = DIRECTION_SKILL_MARGIN - 1e-6
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(edge_margin=margin),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"  # still corroborated by signal + backtest
+        assert rec.direction_leg is not None and rec.direction_leg.gating is False
+        assert rec.direction_leg.skill_margin == pytest.approx(margin)
+        assert rec.rationale[0].startswith("direction forecast leg present but non-gating")
+
+    def test_gating_forecast_disagreement_still_vetoes(self) -> None:
+        """Done-when (c): above the threshold the leg votes as before — a live
+        signal disagreeing with the gating forecast still blocks the call."""
+
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal(position="short")],
+            walk_forward=make_walk_forward(),  # rsi
+            forecast=make_forecast(edge_margin=DIRECTION_SKILL_MARGIN),  # long, gating
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "flat"
+        assert any("disagree" in line for line in rec.rationale)
+
+    def test_demoted_forecast_disagreement_no_longer_vetoes(self) -> None:
+        """Done-when (b): a demoted forecast leaning one way cannot veto a call
+        the voting legs corroborate the other way — the signal + backtest carry
+        the short, the advisory-long forecast is recorded but non-gating."""
+
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal(position="short")],
+            walk_forward=make_walk_forward(),  # rsi, positive → among the short voters
+            forecast=make_forecast(edge_margin=0.01),  # argmax long, but demoted
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "short"
+        assert rec.direction_leg is not None and rec.direction_leg.gating is False
+
+    def test_demotion_is_deterministic(self) -> None:
+        def run() -> dict[str, object]:
+            return fuse(
+                snapshot=make_snapshot(nearest_support=make_level(95.0, "support")),
+                signals=[make_signal()],
+                walk_forward=make_walk_forward(),
+                forecast=make_forecast(
+                    edge_margin=0.01,
+                    prob_up=None,
+                    prob_down=None,
+                    prob_flat=None,
+                    beats_baseline=False,
+                    edge_strength="no_edge",
+                ),
+                last_close=LAST_CLOSE,
+            ).model_dump(mode="json")
+
+        assert run() == run()
+
+
+class TestNonVotingVolatility:
+    """Plan 0077 phase 5 (ADR-0071): volatility is a non-voting input — it shapes
+    the inverse-vol size hint and widens the stop, never a direction."""
+
+    def _long_with_sr(self, **vol_kwargs: object) -> Recommendation:
+        return fuse(
+            snapshot=make_snapshot(
+                nearest_support=make_level(95.0, "support"),
+                nearest_resistance=make_level(108.0, "resistance"),
+            ),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+            **vol_kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_high_vol_shrinks_size_and_widens_stop(self) -> None:
+        base = self._long_with_sr()
+        hot = self._long_with_sr(
+            volatility=make_volatility(predicted_vol=0.10, beats_baseline=True)
+        )
+        assert hot.direction == "long"
+        assert hot.sizing is not None and hot.sizing.vol_source == "model"
+        assert hot.sizing.size_factor < 1.0  # inverse-vol: high vol → smaller
+        assert base.stop is not None and hot.stop is not None
+        assert hot.stop < base.stop  # long: a wider stop sits lower
+        assert hot.sizing.stop_vol_distance is not None
+
+    def test_low_vol_grows_size_up_to_the_cap(self) -> None:
+        rec = self._long_with_sr(
+            volatility=make_volatility(predicted_vol=0.005, beats_baseline=True)
+        )
+        assert rec.sizing is not None
+        assert rec.sizing.size_factor == pytest.approx(SIZE_CAP)  # 0.03/0.005 clamped
+
+    def test_untrained_model_falls_back_to_the_baseline_reading(self) -> None:
+        rec = self._long_with_sr(
+            volatility=make_volatility(predicted_vol=None, baseline_vol=0.03, beats_baseline=False)
+        )
+        assert rec.sizing is not None and rec.sizing.vol_source == "baseline"
+        assert rec.sizing.vol_used == 0.03
+        assert rec.sizing.size_factor == pytest.approx(REFERENCE_VOL / 0.03)
+
+    def test_no_usable_vol_reading_is_neutral(self) -> None:
+        rec = self._long_with_sr(
+            volatility=make_volatility(predicted_vol=None, baseline_vol=None, beats_baseline=False)
+        )
+        assert rec.sizing is not None and rec.sizing.vol_source == "none"
+        assert rec.sizing.size_factor == 1.0
+        assert rec.sizing.stop_vol_distance is None
+
+    def test_degenerate_vol_cannot_blow_up_size_or_stop(self) -> None:
+        """Done-when (d): an absurd predicted vol produces bounded sizing and a
+        capped stop distance — never a dangerous number."""
+
+        rec = self._long_with_sr(
+            volatility=make_volatility(predicted_vol=99.0, beats_baseline=True)
+        )
+        assert rec.sizing is not None
+        assert rec.sizing.size_factor == pytest.approx(SIZE_FLOOR)  # clamped floor
+        assert rec.sizing.stop_vol_distance is not None
+        assert rec.sizing.stop_vol_distance <= STOP_VOL_CAP_FRACTION * LAST_CLOSE
+
+    def test_no_volatility_input_leaves_sizing_absent(self) -> None:
+        rec = self._long_with_sr()
+        assert rec.sizing is None
+
+
+class TestNonVotingRegime:
+    """Plan 0077 phase 5 (ADR-0071): regime feeds conviction only — an unstable,
+    trusted regime softens it; an untrusted regime is neutral; never a direction."""
+
+    def _long(self, **regime_kwargs: object) -> Recommendation:
+        return fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+            **regime_kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_unstable_trusted_regime_lowers_conviction(self) -> None:
+        stable = self._long(regime=make_regime(p_stay=0.95, beats_baseline=True))
+        unstable = self._long(regime=make_regime(p_stay=0.30, beats_baseline=True))
+        assert unstable.direction == stable.direction == "long"
+        assert unstable.conviction < stable.conviction
+        assert unstable.regime_context is not None and stable.regime_context is not None
+        assert unstable.regime_context.conviction_factor < stable.regime_context.conviction_factor
+
+    def test_untrusted_regime_is_neutral(self) -> None:
+        base = self._long()  # no regime
+        untrusted = self._long(regime=make_regime(p_stay=0.2, beats_baseline=False))
+        assert untrusted.regime_context is not None and untrusted.regime_context.trusted is False
+        assert untrusted.regime_context.conviction_factor == 1.0
+        assert untrusted.conviction == pytest.approx(base.conviction)
+
+    def test_regime_context_records_the_current_regime(self) -> None:
+        rec = self._long(regime=make_regime(current=RegimeState.DOWN_VOLATILE, beats_baseline=True))
+        assert rec.regime_context is not None
+        assert rec.regime_context.current_regime == "down_volatile"
+
+
+class TestNonVotingNeverFlipsDirection:
+    """Plan 0077 phase 5 done-when (a): vol/regime can never flip or manufacture a
+    direction — an adverse forecast makes a call smaller, wider-stopped, and
+    lower-conviction, never short; and they cannot conjure a call from a flat."""
+
+    def test_adverse_vol_and_regime_keep_a_long_long(self) -> None:
+        plain = fuse(
+            snapshot=make_snapshot(
+                nearest_support=make_level(95.0, "support"),
+                nearest_resistance=make_level(108.0, "resistance"),
+            ),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+        )
+        adverse = fuse(
+            snapshot=make_snapshot(
+                nearest_support=make_level(95.0, "support"),
+                nearest_resistance=make_level(108.0, "resistance"),
+            ),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+            volatility=make_volatility(predicted_vol=0.12, beats_baseline=True),
+            regime=make_regime(p_stay=0.2, beats_baseline=True),
+        )
+        assert plain.direction == adverse.direction == "long"  # never flips to short
+        assert adverse.sizing is not None and adverse.sizing.size_factor < 1.0  # smaller
+        assert plain.stop is not None and adverse.stop is not None
+        assert adverse.stop < plain.stop  # wider-stopped
+        assert adverse.conviction < plain.conviction  # lower conviction
+
+    def test_vol_regime_cannot_manufacture_a_call_from_flat(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal(position="flat")],  # no directional vote
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+            volatility=make_volatility(predicted_vol=0.005, beats_baseline=True),
+            regime=make_regime(p_stay=0.99, beats_baseline=True),
+        )
+        assert rec.direction == "flat"
+        assert rec.sizing is None and rec.regime_context is None
+
+    def test_non_voting_inputs_recorded_in_the_trace(self) -> None:
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(),
+            forecast=make_forecast(),
+            last_close=LAST_CLOSE,
+            volatility=make_volatility(),
+            regime=make_regime(),
+        )
+        vol_row = next(c for c in rec.basis.checks if c.check.startswith("volatility forecast"))
+        reg_row = next(c for c in rec.basis.checks if c.check.startswith("regime forecast"))
+        assert vol_row.gating is False and vol_row.passed is True
+        assert reg_row.gating is False and reg_row.passed is True
+
+    def test_inconsistent_volatility_symbol_raises(self) -> None:
+        alien = make_volatility().model_copy(update={"symbol": "ETH-USD"})
+        with pytest.raises(ValueError, match="inconsistent fusion inputs"):
+            fuse(
+                snapshot=make_snapshot(),
+                signals=[make_signal()],
+                walk_forward=make_walk_forward(),
+                forecast=make_forecast(),
+                last_close=LAST_CLOSE,
+                volatility=alien,
+            )
+
+    def test_determinism_with_non_voting_inputs(self) -> None:
+        def run() -> dict[str, object]:
+            return fuse(
+                snapshot=make_snapshot(nearest_support=make_level(95.0, "support")),
+                signals=[make_signal()],
+                walk_forward=make_walk_forward(),
+                forecast=make_forecast(),
+                last_close=LAST_CLOSE,
+                volatility=make_volatility(),
+                regime=make_regime(),
+            ).model_dump(mode="json")
+
+        assert run() == run()
 
 
 class TestForecastTierInBasis:
@@ -504,20 +886,19 @@ class TestInputValidation:
 
 def _replay_direction(rec: Recommendation) -> str:
     """Recompute the verdict from the trace ALONE (Plan 0063's replayability
-    claim): flat if any check failed; otherwise the direction is the agreement
-    gate's actual value."""
+    claim, refined for Plan 0077 phase 5): flat if any *gating* check failed;
+    otherwise the direction is the live directional-vote gate's actual value —
+    which equals the called direction whether the forecast leg gated (agreement
+    proved forecast_dir == signal_dir) or was demoted (the call rests on the
+    signal). Non-gating checks are recorded but never block."""
 
     checks = rec.basis.checks
     assert checks  # every verdict carries a non-empty trace
-    if not all(check.passed for check in checks):
+    if not all(check.passed for check in checks if check.gating):
         return "flat"
-    agreement = next(
-        check
-        for check in checks
-        if check.check == "live direction agrees with the forecast direction"
-    )
-    assert isinstance(agreement.actual, str)
-    return agreement.actual
+    vote = next(check for check in checks if check.check == "at least one directional live vote")
+    assert isinstance(vote.actual, str)
+    return vote.actual
 
 
 class TestFusionTrace:
@@ -767,8 +1148,10 @@ class TestReasonCodes:
         def assert_invariant(rec: Recommendation, *, expected_directional: bool) -> None:
             gate_codes = rec.reason_codes[len(rec.rationale) :]
             assert len(gate_codes) == len(rec.basis.checks)
-            all_passed = all(check.passed for check in rec.basis.checks)
-            assert all_passed == (rec.direction != "flat") == expected_directional
+            # Refined for Plan 0077 phase 5: directional iff every *gating* check
+            # passed (a demoted leg's failed checks are non-gating, not blockers).
+            all_gating_passed = all(check.passed for check in rec.basis.checks if check.gating)
+            assert all_gating_passed == (rec.direction != "flat") == expected_directional
 
         assert_invariant(
             fuse(

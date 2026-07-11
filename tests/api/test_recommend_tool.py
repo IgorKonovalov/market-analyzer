@@ -53,6 +53,7 @@ from market_analyser.contracts.strategy import discover
 from market_analyser.data.types import Bar
 from market_analyser.events import Envelope, EventBus
 from market_analyser.forecast.features import FEATURE_SET_ID
+from market_analyser.forecast.regime import RegimeForecast, RegimeState, RegimeValidation
 from market_analyser.forecast.result import (
     EdgeStrength,
     ForecastProvenance,
@@ -61,6 +62,7 @@ from market_analyser.forecast.result import (
     MultiHorizonForecastResult,
 )
 from market_analyser.forecast.validation import ForecastValidation
+from market_analyser.forecast.volatility import VolatilityForecast, VolatilityValidation
 from market_analyser.persistence.engine import (
     apply_migrations,
     make_engine,
@@ -177,6 +179,64 @@ def _forecast_result(
     )
 
 
+def _volatility_forecast(
+    *, predicted_vol: float | None = 0.05, beats_baseline: bool = True
+) -> VolatilityForecast:
+    return VolatilityForecast(
+        symbol="SYN",
+        timeframe="1d",
+        as_of_bar_ts=LAST_TS,
+        horizon_bars=1,
+        predicted_vol=predicted_vol,
+        band=(predicted_vol * 0.8, predicted_vol * 1.2) if predicted_vol is not None else None,
+        baseline_vol=0.03,
+        baseline_kind="ewma",
+        beats_baseline=beats_baseline,
+        score_margin=0.1 if beats_baseline else -0.1,
+        validation=VolatilityValidation(
+            horizon_bars=1,
+            n_splits=5,
+            n_scored=100,
+            model_qlike=1.0,
+            baseline_qlike=1.1,
+            baseline_kind="ewma",
+            persistence_qlike=1.2,
+            ewma_qlike=1.1,
+            score_margin=0.1,
+            beats_baseline=beats_baseline,
+            folds=[],
+        ),
+        provenance=None,
+    )
+
+
+def _regime_forecast(*, beats_baseline: bool = True) -> RegimeForecast:
+    probs = {s: 0.0 for s in RegimeState}
+    probs[RegimeState.UP_QUIET] = 0.7
+    probs[RegimeState.UP_VOLATILE] = 0.3
+    return RegimeForecast(
+        symbol="SYN",
+        timeframe="1d",
+        as_of_bar_ts=LAST_TS,
+        horizon_bars=1,
+        current_regime=RegimeState.UP_QUIET,
+        transition_probs=probs,
+        beats_baseline=beats_baseline,
+        score_margin=0.05 if beats_baseline else -0.05,
+        validation=RegimeValidation(
+            horizon_bars=1,
+            n_splits=5,
+            n_scored=100,
+            model_brier=0.5,
+            persistence_brier=0.6,
+            score_margin=0.1,
+            beats_baseline=beats_baseline,
+            folds=[],
+        ),
+        provenance=None,
+    )
+
+
 def _multi_forecast_result(**kwargs: Any) -> MultiHorizonForecastResult:
     """Wrap `_forecast_result` into the single-block `MultiHorizonForecastResult`
     the tiered core returns (Plan 0066) — so a stub at the
@@ -218,11 +278,15 @@ def _patch_legs(
     edge_strength: EdgeStrength = "clear",
     feature_set_id: str = "fs-v1",
     fallback_reason: str | None = None,
+    volatility: VolatilityForecast | None = None,
+    regime: RegimeForecast | None = None,
 ) -> None:
-    """Stub the two expensive backtest legs and the forecast core at the module
-    seams; the condition snapshot and the `_as_forecast_result` adapter stay
-    real (the adapter is on the advisor's forecast path — Plan 0066 — so every
-    fusion test exercises it)."""
+    """Stub the two expensive backtest legs, the forecast core, and the two
+    non-voting vol/regime legs at the module seams; the condition snapshot and the
+    `_as_forecast_result` adapter stay real (the adapter is on the advisor's
+    forecast path — Plan 0066 — so every fusion test exercises it). The vol/regime
+    stubs default to ``None`` (neutral: no sizing/regime context), so tests that do
+    not opt in behave exactly as pre-0077 (Plan 0077 phase 5)."""
 
     monkeypatch.setattr(
         recommend_tool,
@@ -247,6 +311,8 @@ def _patch_legs(
             fallback_reason=fallback_reason,
         ),
     )
+    monkeypatch.setattr(recommend_tool, "forecast_volatility", lambda *a, **kw: volatility)
+    monkeypatch.setattr(recommend_tool, "forecast_regime", lambda *a, **kw: regime)
 
 
 def _run(**overrides: Any) -> Any:
@@ -306,9 +372,12 @@ class TestAdvisoryOutput:
 
 
 class TestHonestFlat:
-    def test_no_edge_forecast_yields_flat_no_actionable_edge(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_edge_forecast_is_demoted_not_a_veto(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Plan 0077 phase 5 (ADR-0071): a no-edge direction forecast is demoted —
+        it no longer vetoes a call the live signal + backtested edge corroborate.
+        (Pre-0077 this exact set was flat.) The demotion is recorded on the
+        `direction_leg` status the viewer renders."""
+
         _patch_legs(
             monkeypatch,
             prob_up=None,
@@ -318,22 +387,85 @@ class TestHonestFlat:
             edge_strength="no_edge",
         )
         rec = _run()
-        assert rec.direction == "flat"
+        assert rec.direction == "long"  # corroborated, not vetoed
         assert rec.label == "advisory"
+        assert rec.direction_leg is not None
+        assert rec.direction_leg.present is True and rec.direction_leg.gating is False
+        assert rec.basis.forecast is not None
+        assert rec.basis.forecast["beats_baseline"] is False
+        assert any("non-gating" in line for line in rec.rationale)
+
+    def test_no_signal_still_yields_flat_no_actionable_edge(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With no directional live signal to carry it, a no-edge forecast still
+        yields the honest flat — the demotion removes the veto, it does not
+        manufacture a call from nothing."""
+
+        _patch_legs(
+            monkeypatch,
+            position="flat",
+            prob_up=None,
+            prob_down=None,
+            prob_flat=None,
+            beats_baseline=False,
+            edge_strength="no_edge",
+        )
+        rec = _run()
+        assert rec.direction == "flat"
         assert rec.conviction == 0.0
         assert rec.entry_zone is None and rec.stop is None and rec.targets == []
         assert rec.rationale[0] == "no actionable edge"
-        # The basis still travels — an honest flat is not a bare shrug.
-        assert rec.basis.forecast is not None
-        assert rec.basis.forecast["beats_baseline"] is False
+        assert rec.sizing is None and rec.regime_context is None
 
     def test_signal_conflicting_with_forecast_yields_flat(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _patch_legs(monkeypatch, position="short")  # forecast says long
+        _patch_legs(monkeypatch, position="short")  # forecast says long (gating)
         rec = _run()
         assert rec.direction == "flat"
         assert any("disagree" in line for line in rec.rationale)
+
+
+class TestNonVotingLegsWired:
+    """Plan 0077 phase 5: the `recommend` tool computes the vol/regime legs and
+    passes them to `fuse()`, so the recommendation carries the sizing/regime
+    context and the persisted explanation artifact captures both raw legs."""
+
+    def test_vol_regime_flow_into_the_recommendation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch_legs(
+            monkeypatch,
+            volatility=_volatility_forecast(predicted_vol=0.06, beats_baseline=True),
+            regime=_regime_forecast(beats_baseline=True),
+        )
+        rec = _run()
+        assert rec.direction == "long"
+        assert rec.sizing is not None and rec.sizing.vol_source == "model"
+        assert rec.sizing.size_factor < 1.0  # 0.06 > reference vol → smaller
+        assert rec.regime_context is not None
+        assert rec.regime_context.current_regime == "up_quiet"
+
+    def test_leg_inputs_capture_the_non_voting_legs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _patch_legs(
+            monkeypatch,
+            volatility=_volatility_forecast(),
+            regime=_regime_forecast(),
+        )
+        _rec, legs = _assemble_and_fuse(
+            strategy_module=discover()["rsi"],
+            closed_bars=list(BARS),
+            params_instance=discover()["rsi"].Params(),
+            timeframe="1d",
+            horizon_bars=1,
+            flat_band=0.001,
+            n_splits=5,
+            seed=1729,
+            models_dir=None,
+            metric_lookup=None,
+            now=NOW,
+        )
+        assert legs.volatility is not None and legs.volatility.symbol == "SYN"
+        assert legs.regime is not None and legs.regime.current_regime == RegimeState.UP_QUIET
 
 
 class TestForecastLegAdapter:
@@ -635,8 +767,12 @@ class TestEventEmission:
         assert payload_rec["targets"] == rec.targets
 
     def test_flat_recommendation_also_publishes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # No directional live signal → a genuine flat (Plan 0077: the demoted
+        # no-edge forecast alone no longer forces flat, so drive the flat via an
+        # abstaining signal instead).
         _patch_legs(
             monkeypatch,
+            position="flat",
             prob_up=None,
             prob_down=None,
             prob_flat=None,

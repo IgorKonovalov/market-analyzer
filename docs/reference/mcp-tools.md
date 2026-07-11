@@ -719,6 +719,9 @@ ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single lab
 | `label` | string |
 | `as_of_bar_ts` | string (date-time) |
 | `reason_codes` | array[ReasonCode] |
+| `sizing` | VolatilitySizing \| null |
+| `regime_context` | RegimeContext \| null |
+| `direction_leg` | DirectionLegStatus \| null |
 
 **Source:** [`src/market_analyser/api/mcp_tools/recommend.py`](../../src/market_analyser/api/mcp_tools/recommend.py)
 

@@ -13,7 +13,14 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from market_analyser.advisor.models import FusionCheck, Recommendation, RecommendationBasis
+from market_analyser.advisor.models import (
+    DirectionLegStatus,
+    FusionCheck,
+    Recommendation,
+    RecommendationBasis,
+    RegimeContext,
+    VolatilitySizing,
+)
 
 AS_OF = datetime(2026, 6, 1, tzinfo=UTC)
 
@@ -134,7 +141,9 @@ class TestFusionCheck:
 
     def test_wire_dump_strips_none_threshold_and_actual(self) -> None:
         """`exclude_none` semantics the renderer Zod relies on: a recorded
-        fact's None threshold/actual are absent keys, never nulls."""
+        fact's None threshold/actual are absent keys, never nulls. `gating`
+        (Plan 0077 phase 5) rides on the wire — it defaults True and is a bool,
+        so it is never stripped."""
 
         check = FusionCheck(
             leg="signal", check="live vote: rsi", threshold=None, actual="long", passed=True
@@ -145,7 +154,26 @@ class TestFusionCheck:
             "check": "live vote: rsi",
             "actual": "long",
             "passed": True,
+            "gating": True,
         }
+
+    def test_gating_defaults_true_and_records_a_non_blocking_check(self) -> None:
+        """Plan 0077 phase 5 (ADR-0071): `gating` defaults True (pre-0077 checks
+        all gated); a `gating=False` check is recorded but does not block."""
+
+        assert (
+            FusionCheck(leg="signal", check="x", threshold=None, actual=None, passed=True).gating
+            is True
+        )
+        demoted = FusionCheck(
+            leg="forecast",
+            check="argmax direction is directional",
+            threshold="long or short",
+            actual="none",
+            passed=False,
+            gating=False,
+        )
+        assert demoted.gating is False and demoted.passed is False
 
 
 class TestRecommendation:
@@ -235,3 +263,64 @@ class TestRecommendation:
             rec.direction = "short"
         with pytest.raises(ValidationError):
             Recommendation(**_directional_kwargs(order_id="x"))
+
+
+class TestNonVotingInputs:
+    """Plan 0077 phase 5 (ADR-0071): the non-voting vol/regime inputs and the
+    demoted direction leg's status ride as appended, defaulted fields; a flat
+    call carries no sizing/regime context (nothing to shape)."""
+
+    def test_appended_fields_default_absent(self) -> None:
+        """Defaulted so pre-0077 constructors stay valid — a call built without
+        them is a well-formed recommendation with the fields absent."""
+
+        rec = Recommendation(**_directional_kwargs())
+        assert rec.sizing is None
+        assert rec.regime_context is None
+        assert rec.direction_leg is None
+
+    def test_directional_carries_the_non_voting_blocks(self) -> None:
+        rec = Recommendation(
+            **_directional_kwargs(
+                sizing=VolatilitySizing(
+                    size_factor=0.75, vol_used=0.04, vol_source="model", stop_vol_distance=8.0
+                ),
+                regime_context=RegimeContext(
+                    current_regime="up_quiet", trusted=True, conviction_factor=0.8
+                ),
+                direction_leg=DirectionLegStatus(present=True, gating=True, skill_margin=0.05),
+            )
+        )
+        assert rec.sizing is not None and rec.sizing.size_factor == 0.75
+        assert rec.regime_context is not None and rec.regime_context.current_regime == "up_quiet"
+        assert rec.direction_leg is not None and rec.direction_leg.gating is True
+
+    def test_flat_may_carry_direction_leg_status(self) -> None:
+        """A flat verdict records the (possibly demoted) direction leg — the
+        gating decision is auditable even when nothing was called."""
+
+        rec = Recommendation(
+            **_flat_kwargs(
+                direction_leg=DirectionLegStatus(present=True, gating=False, skill_margin=None)
+            )
+        )
+        assert rec.direction_leg is not None and rec.direction_leg.gating is False
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {
+                "sizing": VolatilitySizing(
+                    size_factor=1.0, vol_used=None, vol_source="none", stop_vol_distance=None
+                )
+            },
+            {
+                "regime_context": RegimeContext(
+                    current_regime=None, trusted=False, conviction_factor=1.0
+                )
+            },
+        ],
+    )
+    def test_flat_with_sizing_or_regime_context_raises(self, overrides: dict[str, Any]) -> None:
+        with pytest.raises(ValidationError, match="no size or conviction"):
+            Recommendation(**_flat_kwargs(**overrides))

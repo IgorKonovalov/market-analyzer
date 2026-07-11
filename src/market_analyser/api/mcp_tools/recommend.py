@@ -65,7 +65,9 @@ from market_analyser.data.types import Bar
 from market_analyser.events import EventBus, RecommendationCompletedPayloadV1
 from market_analyser.forecast.exogenous import MetricAsOfLookup
 from market_analyser.forecast.model import DEFAULT_SEED
+from market_analyser.forecast.regime import RegimeForecast, forecast_regime
 from market_analyser.forecast.result import ForecastResult, MultiHorizonForecastResult
+from market_analyser.forecast.volatility import VolatilityForecast, forecast_volatility
 
 RECOMMEND_DESCRIPTION = (
     "ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single "
@@ -101,6 +103,11 @@ class RecommendationLegInputs(BaseModel):
     walk_forward: WalkForwardResult | None
     forecast: ForecastResult
     last_close: float
+    # Appended, defaulted so pre-0077 artifacts stay valid (Plan 0077 phase 5): the
+    # non-voting vol/regime legs the verdict's sizing/stop/conviction were shaped by,
+    # captured so the persisted explanation audits the verdict against every input.
+    volatility: VolatilityForecast | None = None
+    regime: RegimeForecast | None = None
 
 
 class RecommendationExplanationArtifact(BaseModel):
@@ -197,6 +204,28 @@ def _assemble_and_fuse(
         metric_lookup=metric_lookup,
     )
     forecast = _as_forecast_result(multi_forecast)
+
+    # The non-voting vol/regime legs (Plan 0077 phase 5, ADR-0071): computed from
+    # the SAME closed-bar series and horizon, so they share the call's as-of bar.
+    # Both run the OHLCV-only v1 set (the phase-4 finding: the exogenous tiers do
+    # not help vol/regime), so they need no metric store. They shape sizing/stop/
+    # conviction only — fuse() never lets them reach the direction.
+    symbol_id = closed_bars[0].symbol
+    volatility = forecast_volatility(
+        closed_bars,
+        symbol=symbol_id,
+        timeframe=timeframe,
+        horizon_bars=horizon_bars,
+        n_splits=n_splits,
+    )
+    regime = forecast_regime(
+        closed_bars,
+        symbol=symbol_id,
+        timeframe=timeframe,
+        horizon_bars=horizon_bars,
+        n_splits=n_splits,
+    )
+
     last_close = closed_bars[-1].close
     recommendation = fuse(
         snapshot=snapshot,
@@ -204,6 +233,8 @@ def _assemble_and_fuse(
         walk_forward=wf,
         forecast=forecast,
         last_close=last_close,
+        volatility=volatility,
+        regime=regime,
     )
     leg_inputs = RecommendationLegInputs(
         snapshot=snapshot,
@@ -211,6 +242,8 @@ def _assemble_and_fuse(
         walk_forward=wf,
         forecast=forecast,
         last_close=last_close,
+        volatility=volatility,
+        regime=regime,
     )
     return recommendation, leg_inputs
 
