@@ -51,6 +51,10 @@ from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.sse_ticket import SseTicketStore
 from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
+from market_analyser.attribution.scoring_job import (
+    DEFAULT_INTERVAL_SECONDS as SCORING_DEFAULT_INTERVAL_SECONDS,
+)
+from market_analyser.attribution.scoring_job import RecommendationScoringJob
 from market_analyser.config import default_app_data_dir
 from market_analyser.data.adapters.binance_account import BinanceAccountAdapter
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
@@ -124,6 +128,8 @@ def create_app(
     metric_accrual_enabled: bool = False,
     metric_accrual_interval_seconds: int = DEFAULT_INTERVAL_SECONDS,
     metric_accrual_sources: MetricAccrualSources | None = None,
+    recommendation_scoring_enabled: bool = False,
+    recommendation_scoring_interval_seconds: int = SCORING_DEFAULT_INTERVAL_SECONDS,
     on_shutdown: Sequence[Callable[[], None]] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
@@ -355,6 +361,25 @@ def create_app(
     else:
         metric_accrual_job = None
 
+    # The recommendation scorer (Plan 0080, ADR-0075): the track-record clock,
+    # started and stopped with the app lifespan below. Constructed only when the
+    # ledger exists (persistence wired) AND the caller opted in — like the accrual
+    # job, this factory's parameter defaults to False because the job ticks
+    # immediately at startup (tick-first, ADR-0056), and an engine-wired test app
+    # that never asked for scoring must never reach the network to fetch bars. The
+    # product-level on-by-default lives in `AppConfig.recommendation_scoring_enabled`
+    # (__main__ passes it through).
+    if recommendation_scoring_enabled and advice_ledger_repository is not None:
+        recommendation_scoring_job: RecommendationScoringJob | None = RecommendationScoringJob(
+            ledger_repository=advice_ledger_repository,
+            provider=effective_provider,
+            event_bus=effective_event_bus,
+            backfill_coordinator=backfill_coordinator,
+            interval_seconds=recommendation_scoring_interval_seconds,
+        )
+    else:
+        recommendation_scoring_job = None
+
     @asynccontextmanager
     async def _accrual_running() -> AsyncIterator[None]:
         # The metric-accrual job rides the lifespan exactly like the watch
@@ -388,6 +413,21 @@ def create_app(
                 await task
 
     @asynccontextmanager
+    async def _scoring_running() -> AsyncIterator[None]:
+        # The recommendation scorer rides the lifespan (ADR-0075 via the ADR-0056
+        # pattern): separate duty, separate clock, same start/cancel discipline.
+        if recommendation_scoring_job is None:
+            yield
+            return
+        task = asyncio.create_task(recommendation_scoring_job.run())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # `on_shutdown` callbacks run in a `finally` so process-level cleanup
         # (e.g. lockfile removal from __main__) fires during uvicorn's graceful
@@ -396,11 +436,16 @@ def create_app(
         # on SIGTERM; this seam is the fix (ADR-0022).
         try:
             if mcp_components is None:
-                async with _scheduler_running(), _accrual_running():
+                async with _scheduler_running(), _accrual_running(), _scoring_running():
                     yield
             else:
                 session_manager, _asgi_app = mcp_components
-                async with session_manager.run(), _scheduler_running(), _accrual_running():
+                async with (
+                    session_manager.run(),
+                    _scheduler_running(),
+                    _accrual_running(),
+                    _scoring_running(),
+                ):
                     yield
         finally:
             for shutdown_callback in on_shutdown or ():
@@ -466,6 +511,9 @@ def create_app(
     # The metric-accrual job (Plan 0061, ADR-0056) — None when disabled or
     # persistence-free. /healthz reads its heartbeat; tests drive tick_once.
     app.state.metric_accrual_job = metric_accrual_job
+    # The recommendation scorer (Plan 0080, ADR-0075) — None when disabled or
+    # persistence-free. /healthz reads its heartbeat; tests drive tick_once.
+    app.state.recommendation_scoring_job = recommendation_scoring_job
     # The alerting repositories (Plan 0060 phase 4): consumed by the renderer
     # routes below (watch list, enable/disable, alert history).
     app.state.watches_repository = watches_repository
@@ -548,6 +596,14 @@ def create_app(
             # freshness must be observable, not discoverable-by-forensics.
             # Liveness + per-series status only — no metric values, no secrets.
             body["metric_accrual"] = metric_accrual_job.heartbeat().model_dump(mode="json")
+        if recommendation_scoring_job is not None:
+            # The track-record scorer heartbeat (Plan 0080, ADR-0075): a wedged
+            # scorer must degrade loudly. Liveness + per-row error metadata only
+            # (error strings name exception types and row keys — symbol/timeframe/
+            # as-of, nothing credential-shaped); no outcomes, no advice.
+            body["recommendation_scoring"] = recommendation_scoring_job.heartbeat().model_dump(
+                mode="json"
+            )
         if authorization:
             scheme, _, token = authorization.partition(" ")
             if scheme.lower() == "bearer" and token and secrets.compare_digest(token, secret):

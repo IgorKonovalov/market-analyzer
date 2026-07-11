@@ -126,6 +126,38 @@ class RecommendationCompletedPayloadV1(BaseModel):
     recommendation: Recommendation
 
 
+class RecommendationScoredPayloadV1(BaseModel):
+    """`recommendation.scored v1` payload (Plan 0080, ADR-0075): the scheduled
+    scorer resolved one matured advisory recommendation against realized price.
+
+    A *fact*, not advice — it reports how a past call turned out (was the stop or
+    a target hit first, honoring the ticket), never what to do now. Only actually
+    scored calls emit this: `direction` is `long`/`short` (flat calls are never
+    scored) and `outcome_class` is `target_hit`/`stopped`/`timeout` (never
+    `pending`), so every measurement field is non-null. `directional_correct` is
+    the separate direction axis — a call can be directionally right yet score a
+    `stopped` loss (ADR-0075). Scalars only, so the wire stays small (ADR-0046)
+    and the renderer needs no follow-up fetch — the ledger is the source of
+    truth, this is the live nudge to refresh the track record."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    strategy_id: str
+    direction: Literal["long", "short"]
+    as_of_bar_ts: datetime
+    horizon_bars: int
+    conviction: float
+    forecast_prob: float | None
+    outcome_class: Literal["target_hit", "stopped", "timeout"]
+    realized_return: float
+    realized_r: float
+    directional_correct: bool
+    scored_at: datetime
+
+
 class ForecastCompletedPayloadV1(BaseModel):
     """`forecast.completed v1` payload (Plan 0037, ADR-0030/ADR-0054): the
     `forecast` tool produced a multi-horizon forecast.
@@ -359,6 +391,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "run.completed": RunCompletedPayloadV1,
     "signal.evaluated": SignalEvaluatedPayloadV1,
     "recommendation.completed": RecommendationCompletedPayloadV1,
+    "recommendation.scored": RecommendationScoredPayloadV1,
     "forecast.completed": ForecastCompletedPayloadV1,
     "volatility_forecast.completed": VolatilityForecastCompletedPayloadV1,
     "regime_forecast.completed": RegimeForecastCompletedPayloadV1,
@@ -398,6 +431,7 @@ __all__ = [
     "OhlcvBackfillStartedPayloadV1",
     "OhlcvBackfilledPayloadV1",
     "RecommendationCompletedPayloadV1",
+    "RecommendationScoredPayloadV1",
     "RunCompletedPayloadV1",
     "SignalEvaluatedPayloadV1",
 ]

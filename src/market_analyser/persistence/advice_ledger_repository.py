@@ -134,6 +134,46 @@ class AdviceLedgerRepository:
             session.commit()
             return True
 
+    def apply_outcome(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        strategy_id: str,
+        as_of_bar_ts: datetime,
+        horizon_bars: int,
+        outcome_class: str,
+        realized_return: float | None,
+        realized_r: float | None,
+        directional_correct: bool | None,
+        scored_at: datetime,
+    ) -> None:
+        """Persist a scored outcome onto an existing call row (Plan 0080 phase 3).
+
+        Fills the outcome columns the phase-1 write left null. Takes the outcome
+        as primitive fields rather than an `attribution.Outcome` so persistence
+        stays free of a dependency on the attribution layer (which itself depends
+        on this repository). Raises if the call is not present — the scorer only
+        applies outcomes to rows it just read. The call half is never touched, so
+        the record stays append-only in its ticket."""
+        call_id = _call_id(
+            symbol=symbol,
+            timeframe=timeframe,
+            strategy_id=strategy_id,
+            as_of_bar_ts=as_of_bar_ts,
+            horizon_bars=horizon_bars,
+        )
+        with self._session_factory() as session:
+            row = session.get(AdviceLedgerRow, call_id)
+            if row is None:
+                raise ValueError(f"cannot apply an outcome to an unknown call {call_id!r}")
+            row.outcome_class = outcome_class
+            row.realized_return = realized_return
+            row.realized_r = realized_r
+            row.directional_correct = directional_correct
+            row.scored_at = scored_at
+            session.commit()
+
     def get(
         self,
         *,

@@ -34,6 +34,14 @@ class AppConfig(BaseModel):
     # config module stays dependency-free.
     metric_accrual_enabled: bool = True
     metric_accrual_interval_seconds: int = Field(default=3600, ge=1)
+    # Advisor track-record scoring (Plan 0080, ADR-0075): on by default — a
+    # deployment that makes recommendations must score them unattended; the
+    # off-switch covers the offline/debug case. The interval mirrors the
+    # accrual clock's hourly default (kept literal so config stays
+    # dependency-free); recommendations mature over their horizon, so there is
+    # no value ticking faster.
+    recommendation_scoring_enabled: bool = True
+    recommendation_scoring_interval_seconds: int = Field(default=3600, ge=1)
 
 
 def default_app_data_dir() -> Path:

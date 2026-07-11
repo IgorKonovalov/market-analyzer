@@ -4,7 +4,7 @@
 
 # SSE events
 
-The 22 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
+The 23 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
 
 | Event | Summary |
 | --- | --- |
@@ -26,6 +26,7 @@ The 22 SSE envelope kinds published on `/events`, from the event type registry. 
 | [`ohlcv.backfill_started`](#ohlcvbackfillstarted) | `ohlcv.backfill_started v1`: a backfill fetch began for symbol+timeframe. Emitted before the upstream call so the renderer can show its spinner. |
 | [`ohlcv.backfilled`](#ohlcvbackfilled) | `ohlcv.backfilled v1`: a backfill completed; the cache is now hot for the `[range_start, range_end]` span. |
 | [`recommendation.completed`](#recommendationcompleted) | `recommendation.completed v1` payload (Plan 0039, ADR-0029): the advisor produced a labeled advisory `Recommendation` for one symbol/timeframe. |
+| [`recommendation.scored`](#recommendationscored) | `recommendation.scored v1` payload (Plan 0080, ADR-0075): the scheduled scorer resolved one matured advisory recommendation against realized price. |
 | [`regime_forecast.completed`](#regimeforecastcompleted) | `regime_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_regime` tool produced a regime-transition forecast. |
 | [`run.completed`](#runcompleted) | `run.completed v1` payload: a backtest/analysis/defi artifact is ready. |
 | [`signal.evaluated`](#signalevaluated) | `signal.evaluated v1` payload (Plan 0026): the live signal state of one strategy on one symbol. |
@@ -376,6 +377,43 @@ payload validates is safe to render as advice-and-only-advice.
 | Name | Type | Required | Default |
 | --- | --- | --- | --- |
 | `recommendation` | Recommendation | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
+## `recommendation.scored`
+
+**Version:** 1
+
+`recommendation.scored v1` payload (Plan 0080, ADR-0075): the scheduled
+scorer resolved one matured advisory recommendation against realized price.
+
+A *fact*, not advice — it reports how a past call turned out (was the stop or
+a target hit first, honoring the ticket), never what to do now. Only actually
+scored calls emit this: `direction` is `long`/`short` (flat calls are never
+scored) and `outcome_class` is `target_hit`/`stopped`/`timeout` (never
+`pending`), so every measurement field is non-null. `directional_correct` is
+the separate direction axis — a call can be directionally right yet score a
+`stopped` loss (ADR-0075). Scalars only, so the wire stays small (ADR-0046)
+and the renderer needs no follow-up fetch — the ledger is the source of
+truth, this is the live nudge to refresh the track record.
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `strategy_id` | string | yes | — |
+| `direction` | enum["long", "short"] | yes | — |
+| `as_of_bar_ts` | string (date-time) | yes | — |
+| `horizon_bars` | integer | yes | — |
+| `conviction` | number | yes | — |
+| `forecast_prob` | number \| null | yes | — |
+| `outcome_class` | enum["target_hit", "stopped", "timeout"] | yes | — |
+| `realized_return` | number | yes | — |
+| `realized_r` | number | yes | — |
+| `directional_correct` | boolean | yes | — |
+| `scored_at` | string (date-time) | yes | — |
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 

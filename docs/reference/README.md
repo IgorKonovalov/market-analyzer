@@ -10,4 +10,4 @@ Do not edit by hand. Regenerate with `uv run python -m market_analyser.apiref` (
 
 - [MCP tools](mcp-tools.md) — 44 agent-callable tools at `/mcp`
 - [REST API](rest-api.md) — 26 renderer routes
-- [SSE events](events.md) — 22 event kinds on `/events`
+- [SSE events](events.md) — 23 event kinds on `/events`
