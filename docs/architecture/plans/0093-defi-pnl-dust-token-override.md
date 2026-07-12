@@ -1,6 +1,6 @@
 # 0093 — DeFi P&L: user-attested dust-token override
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-07-12
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0085](../adrs/0085-defi-pnl-user-attested-dust-tokens.md) (paired — amends [ADR-0036](../adrs/0036-defi-pnl-reconstruction.md) narrowly; builds on [ADR-0082](../adrs/0082-defi-pnl-partial-totals-and-windowed-lp-profitability.md))
