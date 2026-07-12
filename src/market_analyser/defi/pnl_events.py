@@ -28,8 +28,19 @@ accounting.
 **Gauge-joined classification.** A transaction that joined *via* the gauge map
 is an emissions claim (`getReward` → `reward_claim`), a fee route, or a custody
 move (staking/unstaking the LP into/out of the gauge → `custody_move`, no basis
-change); method hints are reliable in that context. The non-gauge path is
-unchanged.
+change); method hints are reliable in that context.
+
+**Bare custody move (non-gauge).** A plain outbound transfer of a position's own
+token — `operation_type` `send`, a single leg, and no lifecycle hint (Plan 0087 /
+ADR-0081) — moves the position's units out to another of the owner's wallets with
+no market event, so it books as the same no-op `custody_move` (basis-neutral).
+Scoped to `send` (outbound), not `receive`: an inbound single-leg transfer already
+classifies below (pool tokens → `fee_claim`, outside tokens → `reward_claim`,
+Plan 0035), and the wallet's residual *unclassified* transfers are outbound sends —
+a single inbound receive is never unclassified — so this narrowing (the plan-Risks
+"the fixture narrows it" steer) matches the evidence without reversing Plan 0035.
+This is the ADR-0081 accepted-limitation seam: a genuine *external* send is assumed
+a custody move until a known-own-address registry can tell them apart (a followup).
 
 The `gauge_map` is a **pure input** (`{gauge_address: pool_address}`, lowercased)
 resolved and snapshotted in the job layer, so `map_events` stays a pure function
@@ -83,6 +94,12 @@ _REMOVE_HINTS = frozenset({"withdraw", "unstake", "removeliquidity", "burn"})
 # of these moves the LP token/NFT into or out of the gauge — a custody move with
 # no basis change, distinct from the emissions claim (`getReward`) handled above.
 _GAUGE_CUSTODY_METHODS = frozenset({"deposit", "stake", "withdraw", "unstake"})
+# Any lifecycle hint that BLOCKS the bare-transfer custody shortcut (Plan 0087 /
+# ADR-0081): a plain `send`/`receive` carrying one of these is a lifecycle event,
+# not a plain custody move, so it must not be swallowed as a no-op — precision-first.
+_CUSTODY_EXCLUDING_HINTS = (
+    _LIQUIDATION_TOKENS | _FEE_CLAIM_METHODS | _REWARD_CLAIM_METHODS | _ADD_HINTS | _REMOVE_HINTS
+)
 
 
 class PositionEvent(BaseModel):
@@ -216,6 +233,26 @@ def _classify(tx: DecodedTx, position: DefiPosition, via_gauge: bool = False) ->
         return "add_liquidity" if is_lp else "supply"
     if hints & _REMOVE_HINTS and directions == {"in"}:
         return "remove_liquidity" if is_lp else "withdraw_supply"
+
+    # Bare custody move (Plan 0087 / ADR-0081): a plain outbound transfer of the
+    # position's own token — `operation_type` `send`, a single leg, and no
+    # lifecycle hint — moves the position's units out to another of the owner's
+    # wallets with no market event, so it books as a no-op `custody_move`
+    # (basis-neutral), the same treatment gauge stake/unstake gets. Scoped to
+    # `send` (outbound), NOT `receive`: an inbound single-leg transfer already has
+    # an established interpretation below (a pool-token receipt is a `fee_claim`,
+    # an outside-token receipt a `reward_claim`, Plan 0035), and the wallet's two
+    # residual *unclassified* transfers are outbound sends — an inbound receive is
+    # never unclassified, so narrowing here matches the real evidence (the ADR-0081
+    # / plan-Risks "the fixture narrows it" steer) without reversing Plan 0035. The
+    # single-leg requirement keeps it distinct from a two-token withdrawal; any
+    # lifecycle hint blocks the shortcut (precision-first).
+    if (
+        tx.operation_type == "send"
+        and len(tx.transfers) == 1
+        and not (hints & _CUSTODY_EXCLUDING_HINTS)
+    ):
+        return "custody_move"
 
     # Directional claim heuristic: an all-inbound transfer set is a claim —
     # from the pool's own tokens it's trading fees, from outside it's an

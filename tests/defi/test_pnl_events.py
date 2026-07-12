@@ -233,6 +233,60 @@ def test_approval_moving_no_assets_is_skipped() -> None:
     assert map_events([approve], _POSITIONS) == []
 
 
+def test_bare_send_of_a_position_token_is_a_custody_move() -> None:
+    """Plan 0087 / ADR-0081: a plain outbound transfer of a single position token
+    (operation_type `send`, one leg, no lifecycle method) is a wallet-to-wallet
+    custody move — booked as a no-op `custody_move`, not a spurious `unclassified`
+    that nulls the position. Motivating live cases: the wallet's two residual
+    *unclassified* transfers `0x1cbbb89c…` (pos `87f522…`) and `0x303f8366…` (pos
+    `37023f…`) are outbound sends (an inbound receive is never unclassified — see
+    the inbound-claim tests above); raw payloads live in the wallet's tx cache,
+    not the repo, so this pins the shape."""
+    for tx_hash in ("0x303f8366", "0x1cbbb89c"):
+        send = _tx(tx_hash, "send", contract=None, transfers=[_leg("out", "WETH", _WETH, 0.25)])
+        events = map_events([send], _POSITIONS)
+        assert len(events) == 1
+        assert events[0].kind == "custody_move"
+        assert events[0].position_id == _LP_POSITION.position_id
+
+
+def test_bare_receive_keeps_its_plan_0035_claim_classification() -> None:
+    """The custody shortcut is scoped to outbound `send`: a bare inbound `receive`
+    of a single position token is unchanged — a pool-token receipt stays a
+    `fee_claim` (Plan 0035), never reclassified to a no-op custody move. This pins
+    the narrowing (send-only) that avoids reversing the inbound-claim heuristic."""
+    receive = _tx("0xrecv", "receive", transfers=[_leg("in", "USDC", _USDC, 12.0)])
+    assert map_events([receive], _POSITIONS)[0].kind == "fee_claim"
+
+
+def test_two_transfer_send_is_not_a_custody_move() -> None:
+    """The single-leg requirement keeps a two-token movement (e.g. a plain
+    withdrawal of both pool legs) out of the custody shortcut — it stays an honest
+    `unclassified`, never silently a no-op."""
+    send = _tx(
+        "0xsend2",
+        "send",
+        contract=None,
+        transfers=[_leg("out", "WETH", _WETH, 0.25), _leg("out", "USDC", _USDC, 750.0)],
+    )
+    events = map_events([send], _POSITIONS)
+    assert len(events) == 1
+    assert events[0].kind == "unclassified"
+
+
+def test_send_carrying_a_lifecycle_hint_is_not_a_custody_move() -> None:
+    """A lifecycle hint blocks the custody shortcut: a `send` bearing an `unstake`
+    method is not a plain custody move, so it stays an honest `unclassified` rather
+    than being silently booked as a no-op — precision over the default."""
+    send = _tx(
+        "0xsend-unstake",
+        "send",
+        method="unstake",
+        transfers=[_leg("out", "WETH", _WETH, 0.25)],
+    )
+    assert map_events([send], _POSITIONS)[0].kind != "custody_move"
+
+
 def test_failed_transaction_is_skipped() -> None:
     tx = _tx(
         "0xfail",
