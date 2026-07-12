@@ -146,6 +146,8 @@ def test_happy_path_returns_reconstruction_and_streams_events(
     assert structured["error"] is None
     assert structured["position_count"] == 1
     assert structured["incomplete"] is False
+    assert structured["partial"] is False  # Plan 0088: fully-complete wallet not partial
+    assert structured["incomplete_position_count"] == 0
     # Basis 1000 (1000 USDC @ 1), current value 1100 → unrealized 100.
     assert structured["realized_usd"] == 0.0
     assert structured["unrealized_usd"] == 100.0

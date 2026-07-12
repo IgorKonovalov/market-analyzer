@@ -212,10 +212,13 @@ def test_missing_price_marks_the_position_incomplete_with_the_leg_named() -> Non
     assert position.unrealized_usd is None
     assert position.cost_basis_usd is None
     assert any(f"base:{_GHST}" in note and str(_epoch(_TS3)) in note for note in position.notes)
-    # The wallet total is honest too: None, not a partial sum.
+    # Plan 0088 / ADR-0082: the incomplete position is EXCLUDED from the total (a
+    # sum over the complete positions — here none), flagged, never nulled.
     assert result.incomplete is True
-    assert result.realized_usd is None
-    assert result.unrealized_usd is None
+    assert result.partial is True
+    assert result.incomplete_position_count == 1
+    assert result.realized_usd == 0.0
+    assert result.unrealized_usd == 0.0
 
 
 def test_unclassified_event_marks_the_position_incomplete() -> None:
@@ -229,6 +232,73 @@ def test_unclassified_event_marks_the_position_incomplete() -> None:
     position = result.positions[0]
     assert position.incomplete is True
     assert any("unclassified" in note for note in position.notes)
+
+
+# -- Plan 0088 phase 1: partial wallet totals (never null-everything) -------------
+#
+# A second position whose fee-claim leg (GHST) has no block-time price in _PRICES
+# comes back incomplete; the wallet total is then the sum over the COMPLETE
+# positions (the priced _LP), flagged partial, with the incomplete one excluded —
+# not zeroed, not nulling the whole wallet (ADR-0082, amending ADR-0036).
+
+_INCOMPLETE_POSITION = DefiPosition(
+    position_id="base:aerodrome:lp-2",
+    chain="base",
+    protocol="aerodrome",
+    kind="lp",
+    tokens=[PositionToken(symbol="GHST", address=_GHST, amount=5.0)],
+    usd_value=100.0,
+    pool="GHST pool",
+    pool_address="0xpool0000000000000000000000000000000000002",
+)
+_UNPRICEABLE_EVENT = _event(
+    "fee_claim", _INCOMPLETE_POSITION, _TS3, 700, [_leg("in", "GHST", _GHST, 5.0)]
+)
+
+
+def test_partial_total_sums_over_complete_positions_only() -> None:
+    result = compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_LP, _INCOMPLETE_POSITION],
+        events=[*_LP_EVENTS, _UNPRICEABLE_EVENT],
+        price_source=_PRICES,
+        as_of=_AS_OF,
+    )
+    assert result.partial is True
+    assert result.incomplete is True
+    assert result.incomplete_position_count == 1
+    # The incomplete GHST position is excluded; the total is exactly the complete
+    # _LP's figures — no fabricated 0 for the position we couldn't price.
+    assert result.realized_usd == 70.0
+    assert result.unrealized_usd == 100.0
+    # The incomplete position is still reported per-position, honestly null.
+    excluded = next(
+        p for p in result.positions if p.position_id == _INCOMPLETE_POSITION.position_id
+    )
+    assert excluded.incomplete is True
+    assert excluded.realized_usd is None
+
+
+def test_incomplete_position_contributes_nothing_to_the_total() -> None:
+    """Removing the incomplete position from a complete wallet leaves the total
+    unchanged — it is excluded, not zeroed (ADR-0082 done-when)."""
+    with_incomplete = compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_LP, _INCOMPLETE_POSITION],
+        events=[*_LP_EVENTS, _UNPRICEABLE_EVENT],
+        price_source=_PRICES,
+        as_of=_AS_OF,
+    )
+    without = compute_wallet_pnl(
+        wallet=_WALLET, positions=[_LP], events=_LP_EVENTS, price_source=_PRICES, as_of=_AS_OF
+    )
+    assert with_incomplete.realized_usd == without.realized_usd
+    assert with_incomplete.unrealized_usd == without.unrealized_usd
+    # The all-complete wallet is not flagged partial and reports the same totals
+    # as before this change (no regression to the fully-complete path).
+    assert without.partial is False
+    assert without.incomplete is False
+    assert without.incomplete_position_count == 0
 
 
 # -- Plan 0084 phase 3: swap booking + custody-move no-op ------------------------

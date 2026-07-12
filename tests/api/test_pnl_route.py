@@ -187,6 +187,8 @@ def test_valid_address_returns_reconstruction(engine: Engine) -> None:
     assert body["wallet"] == "0x2222…2222"  # masked
     assert body["position_count"] == 1
     assert body["incomplete"] is False
+    assert body["partial"] is False  # Plan 0088: fully-complete wallet not flagged partial
+    assert body["incomplete_position_count"] == 0
     assert body["realized_usd"] == 0.0
     assert body["unrealized_usd"] == 100.0  # usd_value 1100 - basis 1000
     position = body["positions"][0]

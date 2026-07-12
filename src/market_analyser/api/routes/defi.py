@@ -118,15 +118,20 @@ class PnlRequest(BaseModel):
 class PnlResponse(BaseModel):
     """The reconstructed P&L. `wallet` is masked; `positions` are per-position
     breakdowns (JSON dumps of `PositionPnl` — `None` figures always travel
-    with `incomplete=true` and a naming note); wallet totals are `None`
-    whenever any position is incomplete. `crosscheck_zerion_total` is the
-    advisory FIFO figure; `crosscheck_warning` flags gross divergence only —
-    average-cost vs FIFO makes small differences expected (ADR-0036)."""
+    with `incomplete=true` and a naming note). Wallet totals sum over the
+    **complete** positions only (Plan 0088 / ADR-0082): an incomplete position
+    is excluded — never zeroed, never nulling the wallet — with `partial=true`
+    and `incomplete_position_count` flagging the exclusion.
+    `crosscheck_zerion_total` is the advisory FIFO figure; `crosscheck_warning`
+    flags gross divergence only — average-cost vs FIFO makes small differences
+    expected (ADR-0036)."""
 
     wallet: str
     positions: list[dict[str, Any]]
     position_count: int
     incomplete: bool
+    partial: bool
+    incomplete_position_count: int
     realized_usd: float | None
     unrealized_usd: float | None
     # Labeled current-state on-chain read of owed-but-unclaimed gauge rewards
@@ -186,6 +191,8 @@ async def post_defi_pnl(request: Request, body: PnlRequest) -> PnlResponse:
         positions=[position.model_dump(mode="json") for position in result.positions],
         position_count=len(result.positions),
         incomplete=result.incomplete,
+        partial=result.partial,
+        incomplete_position_count=result.incomplete_position_count,
         realized_usd=result.realized_usd,
         unrealized_usd=result.unrealized_usd,
         unclaimed_rewards=(

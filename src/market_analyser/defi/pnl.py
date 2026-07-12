@@ -49,8 +49,13 @@ phase-7 job's concern.
 event kind the pot cannot book (`liquidation` and `unclassified` — `swap` is
 now booked as of Plan 0084), fails *that position*: every numeric field is
 `None`, `incomplete=True`, and `notes` names the offending leg or event.
-Nothing is coerced to zero. A wallet with any incomplete position reports
-`None` totals — an incomplete total must not look like a real one.
+Nothing is coerced to zero. An incomplete position is **excluded** from the
+wallet total — not zeroed, and no longer nulling the whole wallet (Plan 0088 /
+ADR-0082, amending ADR-0036's "any incomplete ⇒ null total"): the totals are
+the sum over the *complete* positions, carried with `partial=True` and an
+`incomplete_position_count`. This keeps "never fabricate a value for a leg we
+cannot price" while letting one unpriceable exotic position stop hiding a
+fully-reconstructed portfolio.
 """
 
 from __future__ import annotations
@@ -98,8 +103,12 @@ class PositionPnl(BaseModel):
 
 
 class WalletPnl(BaseModel):
-    """The wallet's reconstructed P&L. Totals are `None` whenever any position
-    is incomplete — a partial total must not masquerade as a real one."""
+    """The wallet's reconstructed P&L. Totals sum over the **complete** positions
+    only (Plan 0088 / ADR-0082, amending ADR-0036): an incomplete position is
+    excluded — never zeroed, never nulling the whole wallet — and `partial` flags
+    the exclusion. `partial` is true iff any position is incomplete, so it
+    coincides with `incomplete`; it is carried explicitly because it labels the
+    *totals* as a partial sum, which the tool and UI surface prominently."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -108,6 +117,12 @@ class WalletPnl(BaseModel):
     realized_usd: float | None
     unrealized_usd: float | None
     incomplete: bool
+    # Plan 0088 / ADR-0082: the totals above are a sum over the complete positions;
+    # `partial` is true when at least one position was excluded, and
+    # `incomplete_position_count` says how many. A fully-complete wallet reports
+    # `partial=False`, `incomplete_position_count=0`, and the same totals as before.
+    partial: bool = False
+    incomplete_position_count: int = 0
     crosscheck_zerion_total: float | None = None  # advisory (phase 7 wires it)
     crosscheck_warning: bool = False
     # Wallet roll-up of the per-position `unclaimed_rewards`, summed by symbol
@@ -151,18 +166,22 @@ def compute_wallet_pnl(
         )
         for position in positions
     ]
-    incomplete = any(p.incomplete for p in results)
-    realized: float | None = None
-    unrealized: float | None = None
-    if not incomplete:
-        realized = sum(p.realized_usd for p in results if p.realized_usd is not None)
-        unrealized = sum(p.unrealized_usd for p in results if p.unrealized_usd is not None)
+    # Partial totals (Plan 0088 / ADR-0082): sum over the COMPLETE positions
+    # only. An incomplete position contributes nothing — it is excluded, not
+    # zeroed, and no longer nulls the whole wallet. A complete position always
+    # carries non-None figures (the `is not None` guard is for the type checker).
+    complete = [p for p in results if not p.incomplete]
+    incomplete_count = len(results) - len(complete)
+    realized = sum(p.realized_usd for p in complete if p.realized_usd is not None)
+    unrealized = sum(p.unrealized_usd for p in complete if p.unrealized_usd is not None)
     return WalletPnl(
         wallet=mask_wallet(wallet),
         positions=results,
         realized_usd=realized,
         unrealized_usd=unrealized,
-        incomplete=incomplete,
+        incomplete=incomplete_count > 0,
+        partial=incomplete_count > 0,
+        incomplete_position_count=incomplete_count,
     )
 
 

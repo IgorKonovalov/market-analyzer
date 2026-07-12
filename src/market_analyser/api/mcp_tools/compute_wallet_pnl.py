@@ -50,7 +50,8 @@ COMPUTE_WALLET_PNL_DESCRIPTION = (
     "its own block timestamp - never trusting an aggregator's number. Returns "
     "{wallet (masked), positions: [{position_id, realized_usd, unrealized_usd, "
     "cost_basis_usd, vs_hodl_usd (LP only), incomplete, notes, unclaimed_rewards}], "
-    "position_count, incomplete, realized_usd, unrealized_usd, unclaimed_rewards, "
+    "position_count, incomplete, partial, incomplete_position_count, realized_usd, "
+    "unrealized_usd, unclaimed_rewards, "
     "crosscheck_zerion_total, crosscheck_warning, error, message}. unclaimed_rewards "
     "is a labeled CURRENT-STATE on-chain read of gauge emissions owed-but-not-yet-"
     "claimed ([{symbol, amount, usd_value}], per position + a wallet roll-up); it is "
@@ -58,8 +59,10 @@ COMPUTE_WALLET_PNL_DESCRIPTION = (
     "guarantee (there is no claim tx to replay), null when a position owes nothing. "
     "A position with a missing historical "
     "price or an unbooked event kind reports null figures with incomplete=true "
-    "and a naming note - never a silently-zeroed number; wallet totals are null "
-    "whenever any position is incomplete. crosscheck_zerion_total is Zerion's "
+    "and a naming note - never a silently-zeroed number. Wallet totals sum over "
+    "the COMPLETE positions only (Plan 0088 / ADR-0082): an incomplete position "
+    "is excluded - never zeroed, never nulling the wallet - with partial=true and "
+    "incomplete_position_count flagging the exclusion. crosscheck_zerion_total is Zerion's "
     "own FIFO figure, advisory only; crosscheck_warning flags gross (order-of-"
     "magnitude or sign) divergence - small differences are expected because the "
     "methods differ (average-cost vs FIFO). refresh=true pulls new transactions "
@@ -132,6 +135,8 @@ def register_compute_wallet_pnl(
             "positions": [position.model_dump(mode="json") for position in result.positions],
             "position_count": len(result.positions),
             "incomplete": result.incomplete,
+            "partial": result.partial,
+            "incomplete_position_count": result.incomplete_position_count,
             "realized_usd": result.realized_usd,
             "unrealized_usd": result.unrealized_usd,
             "unclaimed_rewards": (
@@ -152,6 +157,8 @@ def _error(reason: str, err: Exception) -> dict[str, Any]:
         "positions": None,
         "position_count": None,
         "incomplete": None,
+        "partial": None,
+        "incomplete_position_count": None,
         "realized_usd": None,
         "unrealized_usd": None,
         "unclaimed_rewards": None,
