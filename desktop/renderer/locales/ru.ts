@@ -27,6 +27,7 @@ export const ru = {
   'app.nav.backtests': 'Бэктесты',
   'app.nav.signals': 'Сигналы',
   'app.nav.recommendations': 'Рекомендации',
+  'app.nav.technicalRead': 'Технический разбор',
   'app.nav.trackRecord': 'История точности',
   'app.nav.forecast': 'Прогноз',
   'app.nav.news': 'Новости',
@@ -348,6 +349,29 @@ export const ru = {
   'recommendations.convictionFactor': 'Коэффициент убеждённости',
   'recommendations.convictionFactorNote': 'множитель стабильности режима · 1.00 = нейтрально',
   'recommendations.regimeUndefined': 'не определён',
+
+  // ── Technical Read view (TechnicalReadView.tsx) — Plan 0074, ADR-0068 ──
+  'technicalRead.viewLabel': 'Технический разбор',
+  'technicalRead.empty':
+    'Технического разбора пока нет — запросите его у агента через инструмент `technical_read`.',
+  'technicalRead.notCorroboratedTitle': 'Один индикатор — без подтверждения.',
+  'technicalRead.notCorroboratedBody':
+    'Это механический разбор одного индикатора, а не сводный вызов `recommend`. За ним нет прогноза, нет проверенного на истории преимущества и нет уверенности — он может расходиться с подтверждённой рекомендацией. Вы читаете его и определяете размер позиции сами.',
+  'technicalRead.asOf': 'по состоянию на',
+  'technicalRead.lastClosedBar': '(последний закрытый бар, который видел разбор)',
+  'technicalRead.indicator': 'Индикатор',
+  'technicalRead.direction': 'Направление',
+  'technicalRead.directionLong': 'лонг',
+  'technicalRead.directionShort': 'шорт',
+  'technicalRead.directionFlat': 'нейтрально — нет чёткого направления',
+  'technicalRead.regimeState': 'Состояние режима',
+  'technicalRead.why': 'Механическое правило',
+  'technicalRead.indicatorSupertrend': 'Supertrend',
+  'technicalRead.indicatorEmaStack': 'Стек EMA',
+  'technicalRead.indicatorMacd': 'MACD',
+  'technicalRead.indicatorIchimoku': 'Ишимоку',
+  'technicalRead.disclaimer':
+    'Меньший консультативный уровень (ADR-0068): один названный индикатор, прочитанный по учебному правилу, без уверенности и без уровней входа/стопа/цели — так задумано. Для подтверждённого вызова с уровнями используйте сводный инструмент `recommend`.',
 
   // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
   'trackRecord.title': 'История точности',

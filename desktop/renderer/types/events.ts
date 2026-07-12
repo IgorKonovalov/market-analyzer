@@ -600,6 +600,35 @@ export interface RegimeForecastCompletedPayloadV1 {
   forecast: RegimeForecast
 }
 
+/** Closed set — mirror of the pydantic `Literal` on `TechnicalRead.indicator_id`. */
+export type TechnicalReadIndicator = 'supertrend' | 'ema_stack' | 'macd' | 'ichimoku'
+
+/** Closed set — mirror of the pydantic `Literal` on `TechnicalRead.direction`. */
+export type TechnicalReadDirection = 'long' | 'short' | 'flat'
+
+/** Mirror of the pydantic `TechnicalRead` (Plan 0074 / ADR-0068): the LESSER
+ * advisory tier — a directional call from ONE curated regime indicator by its
+ * textbook mechanical rule. Structurally distinct from `Recommendation`: it has
+ * NO conviction and NO entry/stop/target fields, so a thin single-indicator basis
+ * can never be dressed as a trade ticket (the honesty guarantee is the omission).
+ * `regime_state` is the indicator's read in words; `rationale` states the rule;
+ * `as_of_bar_ts` is the last closed bar the read saw (anti-lookahead). All fields
+ * are required (no pydantic defaults, nothing nullable). */
+export interface TechnicalRead {
+  symbol: string
+  timeframe: string
+  /** ISO 8601 UTC timestamp of the last closed bar (anti-lookahead). */
+  as_of_bar_ts: string
+  indicator_id: TechnicalReadIndicator
+  direction: TechnicalReadDirection
+  regime_state: string
+  rationale: string[]
+}
+
+export interface TechnicalReadCompletedPayloadV1 {
+  read: TechnicalRead
+}
+
 /** A single [start, end] coverage gap a backfill is/was filling (Plan 0013). */
 export interface GapWindow {
   start: string
@@ -663,6 +692,7 @@ export type EnvelopeType =
   | 'forecast.completed'
   | 'volatility_forecast.completed'
   | 'regime_forecast.completed'
+  | 'technical_read.completed'
   | 'chart.update_dropped'
   | 'ohlcv.backfill_started'
   | 'ohlcv.backfilled'
@@ -715,6 +745,10 @@ export type VolatilityForecastCompletedEnvelope = Envelope<VolatilityForecastCom
 }
 export type RegimeForecastCompletedEnvelope = Envelope<RegimeForecastCompletedPayloadV1> & {
   type: 'regime_forecast.completed'
+  version: 1
+}
+export type TechnicalReadCompletedEnvelope = Envelope<TechnicalReadCompletedPayloadV1> & {
+  type: 'technical_read.completed'
   version: 1
 }
 export type OhlcvBackfillStartedEnvelope = Envelope<OhlcvBackfillStartedPayloadV1> & {

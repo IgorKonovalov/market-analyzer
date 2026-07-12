@@ -36,6 +36,7 @@ import type {
   Recommendation,
   RegimeForecast,
   SignalEvaluation,
+  TechnicalRead,
   VolatilityForecast,
 } from './types/events'
 import { AlertsView } from './views/AlertsView'
@@ -47,6 +48,7 @@ import { OhlcvView } from './views/OhlcvView'
 import { RecentBacktestsView } from './views/RecentBacktestsView'
 import { RecommendationsView } from './views/RecommendationsView'
 import { SettingsView } from './views/SettingsView'
+import { TechnicalReadView } from './views/TechnicalReadView'
 import { TrackRecordView } from './views/TrackRecordView'
 
 type View =
@@ -54,6 +56,7 @@ type View =
   | 'news'
   | 'signals'
   | 'recommendations'
+  | 'technical-read'
   | 'track-record'
   | 'forecast'
   | 'settings'
@@ -127,6 +130,11 @@ export function App(): JSX.Element {
   // must not grab the screen either (ADR-0037); the user opens the Forecast tab.
   const [latestVolatility, setLatestVolatility] = useState<VolatilityForecast | null>(null)
   const [latestRegime, setLatestRegime] = useState<RegimeForecast | null>(null)
+  // Latest single-indicator technical read (Plan 0074 phase 3, ADR-0068). Same
+  // reactive-only, NO-auto-switch posture as the recommendation panel — the lesser
+  // advisory tier is a thin read and must not grab the screen; the user opens the
+  // Technical read tab when they want it.
+  const [latestTechnicalRead, setLatestTechnicalRead] = useState<TechnicalRead | null>(null)
 
   const backtestState = useBacktestResult({ runId: selectedRunId })
 
@@ -162,6 +170,8 @@ export function App(): JSX.Element {
     onForecastCompleted: (payload) => setLatestForecast(payload.forecast),
     onVolatilityForecastCompleted: (payload) => setLatestVolatility(payload.forecast),
     onRegimeForecastCompleted: (payload) => setLatestRegime(payload.forecast),
+    // Plan 0074 phase 3: the lesser advisory tier — reactive-only, no auto-switch.
+    onTechnicalReadCompleted: (payload) => setLatestTechnicalRead(payload.read),
     onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
     onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
     onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
@@ -258,6 +268,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'technical-read' ? 'page' : undefined}
+            onClick={() => setView('technical-read')}
+            data-testid="nav-technical-read"
+          >
+            {t('app.nav.technicalRead')}
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'track-record' ? 'page' : undefined}
             onClick={() => setView('track-record')}
             data-testid="nav-track-record"
@@ -319,6 +338,7 @@ export function App(): JSX.Element {
       )}
       {view === 'signals' && <LiveSignalView evaluation={latestEvaluation} />}
       {view === 'recommendations' && <RecommendationsView recommendation={latestRecommendation} />}
+      {view === 'technical-read' && <TechnicalReadView read={latestTechnicalRead} />}
       {view === 'track-record' && <TrackRecordView refreshKey={trackRecordRefresh} />}
       {view === 'forecast' && (
         <ForecastView

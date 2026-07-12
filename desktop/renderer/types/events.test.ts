@@ -74,6 +74,8 @@ interface DumpedSchemas {
   RegimeForecast: JsonSchema
   RegimeValidation: JsonSchema
   RegimeFoldScore: JsonSchema
+  TechnicalReadCompletedPayloadV1: JsonSchema
+  TechnicalRead: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -93,11 +95,12 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    RecommendationCompletedPayloadV1, RecommendationScoredPayloadV1,',
     '    ForecastCompletedPayloadV1,',
     '    VolatilityForecastCompletedPayloadV1, RegimeForecastCompletedPayloadV1,',
+    '    TechnicalReadCompletedPayloadV1,',
     ')',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'from market_analyser.advisor.models import (',
     '    FusionCheck, ReasonCode, Recommendation, RecommendationBasis,',
-    '    DirectionLegStatus, VolatilitySizing, RegimeContext,',
+    '    DirectionLegStatus, VolatilitySizing, RegimeContext, TechnicalRead,',
     ')',
     'from market_analyser.forecast.result import (',
     '    MultiHorizonForecastResult, HorizonForecast,',
@@ -155,6 +158,8 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "RegimeForecast": RegimeForecast.model_json_schema(),',
     '    "RegimeValidation": RegimeValidation.model_json_schema(),',
     '    "RegimeFoldScore": RegimeFoldScore.model_json_schema(),',
+    '    "TechnicalReadCompletedPayloadV1": TechnicalReadCompletedPayloadV1.model_json_schema(),',
+    '    "TechnicalRead": TechnicalRead.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -958,5 +963,41 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'n_test',
       'persistence_brier',
     ])
+  })
+
+  it('TechnicalReadCompletedPayloadV1 carries the read inline (Plan 0074)', () => {
+    expect(propertyNames(dumped.TechnicalReadCompletedPayloadV1)).toEqual(['read'])
+    expect(requiredNames(dumped.TechnicalReadCompletedPayloadV1)).toEqual(['read'])
+  })
+
+  it('TechnicalRead fields match (all required; indicator_id/direction closed sets; NO conviction/levels)', () => {
+    expect(propertyNames(dumped.TechnicalRead)).toEqual([
+      'as_of_bar_ts',
+      'direction',
+      'indicator_id',
+      'rationale',
+      'regime_state',
+      'symbol',
+      'timeframe',
+    ])
+    // No pydantic defaults, nothing nullable → every field is schema-required.
+    expect(requiredNames(dumped.TechnicalRead)).toEqual([
+      'as_of_bar_ts',
+      'direction',
+      'indicator_id',
+      'rationale',
+      'regime_state',
+      'symbol',
+      'timeframe',
+    ])
+    expect(literalValues(dumped.TechnicalRead, 'indicator_id')).toEqual(
+      ['ema_stack', 'ichimoku', 'macd', 'supertrend'].sort(),
+    )
+    expect(literalValues(dumped.TechnicalRead, 'direction')).toEqual(['flat', 'long', 'short'])
+    // The honesty guarantee (ADR-0068): the ticket-shaped fields are structurally
+    // ABSENT — this is not a Recommendation.
+    for (const field of ['conviction', 'entry_zone', 'stop', 'targets']) {
+      expect(dumped.TechnicalRead.properties?.[field]).toBeUndefined()
+    }
   })
 })

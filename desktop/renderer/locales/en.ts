@@ -21,6 +21,7 @@ export const en = {
   'app.nav.backtests': 'Backtests',
   'app.nav.signals': 'Signals',
   'app.nav.recommendations': 'Recommendations',
+  'app.nav.technicalRead': 'Technical read',
   'app.nav.trackRecord': 'Track record',
   'app.nav.forecast': 'Forecast',
   'app.nav.news': 'News',
@@ -333,6 +334,29 @@ export const en = {
   'recommendations.convictionFactor': 'Conviction factor',
   'recommendations.convictionFactorNote': 'regime-stability multiplier · 1.00 = neutral',
   'recommendations.regimeUndefined': 'undefined',
+
+  // ── Technical Read view (TechnicalReadView.tsx) — Plan 0074, ADR-0068 ──
+  'technicalRead.viewLabel': 'Technical read',
+  'technicalRead.empty':
+    'No technical read yet — ask the agent for one via the `technical_read` tool.',
+  'technicalRead.notCorroboratedTitle': 'Single indicator — not corroborated.',
+  'technicalRead.notCorroboratedBody':
+    'This is one indicator’s mechanical read, not the fused `recommend` call. There is no forecast, no backtested edge, and no conviction behind it — it may disagree with a corroborated recommendation. You read it and size it yourself.',
+  'technicalRead.asOf': 'as of',
+  'technicalRead.lastClosedBar': '(last closed bar the read saw)',
+  'technicalRead.indicator': 'Indicator',
+  'technicalRead.direction': 'Direction',
+  'technicalRead.directionLong': 'long',
+  'technicalRead.directionShort': 'short',
+  'technicalRead.directionFlat': 'flat — no clear direction',
+  'technicalRead.regimeState': 'Regime read',
+  'technicalRead.why': 'Mechanical rule',
+  'technicalRead.indicatorSupertrend': 'Supertrend',
+  'technicalRead.indicatorEmaStack': 'EMA stack',
+  'technicalRead.indicatorMacd': 'MACD',
+  'technicalRead.indicatorIchimoku': 'Ichimoku',
+  'technicalRead.disclaimer':
+    'The lesser advisory tier (ADR-0068): one named indicator, read by its textbook rule, with no conviction and no entry/stop/target levels by design. For a corroborated call with levels, use the fused `recommend` tool.',
 
   // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
   'trackRecord.title': 'Track record',

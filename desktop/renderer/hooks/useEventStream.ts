@@ -43,6 +43,7 @@ import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
 import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
 import { recommendationScoredPayloadSchema } from '../schemas/recommendationScored'
 import { regimeForecastCompletedPayloadSchema } from '../schemas/regimeForecastCompleted'
+import { technicalReadCompletedPayloadSchema } from '../schemas/technicalReadCompleted'
 import { volatilityForecastCompletedPayloadSchema } from '../schemas/volatilityForecastCompleted'
 import type {
   AlertTriggeredPayloadV1,
@@ -60,6 +61,7 @@ import type {
   RegimeForecastCompletedPayloadV1,
   RunCompletedPayloadV1,
   SignalEvaluatedPayloadV1,
+  TechnicalReadCompletedPayloadV1,
   VolatilityForecastCompletedPayloadV1,
 } from '../types/events'
 
@@ -77,6 +79,7 @@ export interface EventStreamHandlers {
   onForecastCompleted?: (payload: ForecastCompletedPayloadV1) => void
   onVolatilityForecastCompleted?: (payload: VolatilityForecastCompletedPayloadV1) => void
   onRegimeForecastCompleted?: (payload: RegimeForecastCompletedPayloadV1) => void
+  onTechnicalReadCompleted?: (payload: TechnicalReadCompletedPayloadV1) => void
   onOhlcvBackfillStarted?: (payload: OhlcvBackfillStartedPayloadV1) => void
   onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
@@ -103,6 +106,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'forecast.completed': 1,
   'volatility_forecast.completed': 1,
   'regime_forecast.completed': 1,
+  'technical_read.completed': 1,
   'chart.update_dropped': 1,
   'ohlcv.backfill_started': 1,
   'ohlcv.backfilled': 1,
@@ -388,6 +392,21 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
         return
       }
       handlers.onRegimeForecastCompleted?.(parsed.data)
+      return
+    }
+    case 'technical_read.completed': {
+      // Zod-validated before it reaches any state (Plan 0074 phase 3): the lesser
+      // advisory tier still emits a direction a user might act on, so a malformed
+      // payload is dropped loudly, never rendered half-parsed (ADR-0068).
+      const parsed = technicalReadCompletedPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed technical_read.completed payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onTechnicalReadCompleted?.(parsed.data)
       return
     }
     case 'ohlcv.backfill_started':
