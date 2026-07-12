@@ -125,6 +125,11 @@ class PositionPnl(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     position_id: str = Field(min_length=1)
+    # Headline (LP) vs muted (non-LP), derived from `position.kind == "lp"` (Plan
+    # 0088 / ADR-0082). LP positions are the report's headline and sort first; a
+    # non-LP position (lending, loose tokens, unpriceable exotics) is reported but
+    # de-emphasized and — with partial totals — never suppresses the LP figures.
+    is_lp: bool
     realized_usd: float | None
     unrealized_usd: float | None
     cost_basis_usd: float | None
@@ -215,6 +220,10 @@ def compute_wallet_pnl(
         )
         for position in positions
     ]
+    # LP-first reporting (Plan 0088 / ADR-0082): LP positions are the headline, so
+    # they lead. `sorted` is stable, so within each group the original discovery
+    # order is preserved — deterministic, no set iteration.
+    results = sorted(results, key=lambda p: 0 if p.is_lp else 1)
     # Partial totals (Plan 0088 / ADR-0082): sum over the COMPLETE positions
     # only. An incomplete position contributes nothing — it is excluded, not
     # zeroed, and no longer nulls the whole wallet. A complete position always
@@ -334,6 +343,7 @@ def _replay_position(
             window_start_state.setdefault(label, (basis, dict(contributed)))
         return PositionPnl(
             position_id=position.position_id,
+            is_lp=position.kind == "lp",
             realized_usd=realized,
             unrealized_usd=unrealized,
             cost_basis_usd=remaining,
@@ -424,6 +434,7 @@ def _mark_holdings(
 def _incomplete(position: DefiPosition, notes: list[str]) -> PositionPnl:
     return PositionPnl(
         position_id=position.position_id,
+        is_lp=position.kind == "lp",
         realized_usd=None,
         unrealized_usd=None,
         cost_basis_usd=None,

@@ -755,6 +755,52 @@ def test_unpriceable_window_start_reports_none_total_return_without_marking_inco
     assert by_window["all"].total_return_usd is not None
 
 
+# -- Plan 0088 phase 4: is_lp + LP-first ordering + non-LP never suppresses --------
+#
+# A non-LP "Wanderers"-shape position holding an unpriceable exotic token (GHST is
+# absent from _PRICES at the supply block) comes back incomplete, listed FIRST in
+# discovery order — yet the LP position leads the report and its figures + the
+# partial wallet total are untouched.
+
+_WANDERERS = DefiPosition(
+    position_id="base:wanderers:exotic",
+    chain="base",
+    protocol="wanderers",
+    kind="staking",
+    tokens=[PositionToken(symbol="WNDR", address=_GHST, amount=100.0)],
+    usd_value=500.0,
+    pool_address="0xpool0000000000000000000000000000000000006",
+)
+_WANDERERS_EVENT = _event("supply", _WANDERERS, _TS1, 10, [_leg("out", "WNDR", _GHST, 100.0)])
+
+
+def test_lp_positions_lead_and_a_non_lp_incomplete_does_not_suppress_them() -> None:
+    result = compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_WANDERERS, _LP],  # the non-LP exotic is first in discovery order
+        events=[_WANDERERS_EVENT, *_LP_EVENTS],
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
+    )
+    # LP-first: the LP position leads despite being second in discovery order.
+    assert [p.is_lp for p in result.positions] == [True, False]
+    lp = result.positions[0]
+    assert lp.position_id == _LP.position_id
+    assert lp.is_lp is True
+    assert lp.incomplete is False
+    assert lp.realized_usd == 70.0  # the LP figures are intact
+    assert lp.unrealized_usd == 100.0
+    wanderers = result.positions[1]
+    assert wanderers.is_lp is False
+    assert wanderers.incomplete is True
+    # The partial wallet total reflects only the complete LP position.
+    assert result.partial is True
+    assert result.incomplete_position_count == 1
+    assert result.realized_usd == 70.0
+    assert result.unrealized_usd == 100.0
+
+
 def test_rerun_on_the_same_inputs_is_byte_identical() -> None:
     first = _lp_pnl()
     second = _lp_pnl()

@@ -193,8 +193,11 @@ def test_valid_address_returns_reconstruction(engine: Engine) -> None:
     assert body["unrealized_usd"] == 100.0  # usd_value 1100 - basis 1000
     position = body["positions"][0]
     assert position["position_id"] == "base:aerodrome:lp-1"
+    assert position["is_lp"] is True  # Plan 0088: LP positions lead, flagged is_lp
     assert position["cost_basis_usd"] == 1000.0
     assert position["incomplete"] is False
+    # The rolling-window set is surfaced per position (7d/30d/90d/all).
+    assert {w["window"] for w in position["windows"]} == {"7d", "30d", "90d", "all"}
 
 
 def test_unclaimed_rewards_are_surfaced_when_a_source_is_wired(engine: Engine) -> None:

@@ -118,13 +118,17 @@ class PnlRequest(BaseModel):
 class PnlResponse(BaseModel):
     """The reconstructed P&L. `wallet` is masked; `positions` are per-position
     breakdowns (JSON dumps of `PositionPnl` — `None` figures always travel
-    with `incomplete=true` and a naming note). Wallet totals sum over the
-    **complete** positions only (Plan 0088 / ADR-0082): an incomplete position
-    is excluded — never zeroed, never nulling the wallet — with `partial=true`
-    and `incomplete_position_count` flagging the exclusion.
-    `crosscheck_zerion_total` is the advisory FIFO figure; `crosscheck_warning`
-    flags gross divergence only — average-cost vs FIFO makes small differences
-    expected (ADR-0036)."""
+    with `incomplete=true` and a naming note). LP positions (`is_lp=true`) are
+    the headline and are listed first; non-LP positions follow, de-emphasized,
+    and never suppress the LP figures. Each position carries `windows`
+    (7d/30d/90d/all): an **exact** `realized_usd` plus an **estimated**
+    `total_return_usd` (`estimated=true`, `None` when the window start can't be
+    priced — an honest per-window gap). Wallet totals sum over the **complete**
+    positions only (Plan 0088 / ADR-0082): an incomplete position is excluded —
+    never zeroed, never nulling the wallet — with `partial=true` and
+    `incomplete_position_count` flagging the exclusion. `crosscheck_zerion_total`
+    is the advisory FIFO figure; `crosscheck_warning` flags gross divergence
+    only — average-cost vs FIFO makes small differences expected (ADR-0036)."""
 
     wallet: str
     positions: list[dict[str, Any]]

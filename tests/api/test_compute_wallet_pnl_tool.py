@@ -152,8 +152,10 @@ def test_happy_path_returns_reconstruction_and_streams_events(
     assert structured["realized_usd"] == 0.0
     assert structured["unrealized_usd"] == 100.0
     position = structured["positions"][0]
+    assert position["is_lp"] is True  # Plan 0088: LP positions lead, flagged is_lp
     assert position["cost_basis_usd"] == 1000.0
     assert position["incomplete"] is False
+    assert {w["window"] for w in position["windows"]} == {"7d", "30d", "90d", "all"}
     assert structured["wallet"] == "0x2222…2222"  # masked
     assert _WALLET not in str(structured)
     assert _drain(sub.queue) == ["defi.pnl_started", "defi.pnl_completed"]
@@ -221,3 +223,6 @@ def test_description_advertises_reconstruction_and_advisory_crosscheck(
     assert "advisory" in description  # the cross-check is labeled, not trusted
     assert "auth" in description  # the set-your-key recovery path
     assert "unclaimed_rewards" in description  # the Plan 0084 current-state field
+    assert "is_lp" in description  # Plan 0088: LP-first headline signal
+    assert "windows" in description  # Plan 0088: the rolling-window set
+    assert "estimated" in description  # Plan 0088: the labeled total-return estimate
