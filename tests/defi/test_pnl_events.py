@@ -225,6 +225,14 @@ def test_token_fallback_joins_only_a_single_unambiguous_candidate() -> None:
     assert map_events([usdc_only], _POSITIONS) == []
 
 
+def test_approval_moving_no_assets_is_skipped() -> None:
+    """Plan 0084 phase-6 regression: an ERC-20 approve (no transfers) whose contract
+    is a position's pool/gauge must NOT join and surface as a spurious `unclassified`
+    that nulls the position — it moves no assets, so it is skipped like a failed tx."""
+    approve = _tx("0xapprove", "approve", method="Approve", transfers=[])
+    assert map_events([approve], _POSITIONS) == []
+
+
 def test_failed_transaction_is_skipped() -> None:
     tx = _tx(
         "0xfail",

@@ -126,6 +126,13 @@ def map_events(
     for tx in transactions:
         if tx.status != "confirmed":
             continue  # failed/pending transactions move no assets
+        if not tx.transfers:
+            # A transaction that moves no assets carries no economic event for
+            # per-position P&L — an ERC-20 `approve` is the dominant case (Plan
+            # 0084 phase-6 smoke: 261 approvals, all zero-transfer). Without this
+            # such a tx joins a position by its contract and surfaces as a spurious
+            # `unclassified`, nulling the whole position. Skip like a failed tx.
+            continue
         joined = _join(tx, by_pool, positions, resolved_gauges)
         if joined is None:
             continue  # not part of any discovered position's history
