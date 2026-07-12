@@ -24,6 +24,7 @@ export const en = {
   'app.nav.technicalRead': 'Technical read',
   'app.nav.trackRecord': 'Track record',
   'app.nav.forecast': 'Forecast',
+  'app.nav.convergence': 'Convergence',
   'app.nav.news': 'News',
   'app.nav.alerts': 'Alerts',
   'app.nav.settings': 'Settings',
@@ -357,6 +358,28 @@ export const en = {
   'technicalRead.indicatorIchimoku': 'Ichimoku',
   'technicalRead.disclaimer':
     'The lesser advisory tier (ADR-0068): one named indicator, read by its textbook rule, with no conviction and no entry/stop/target levels by design. For a corroborated call with levels, use the fused `recommend` tool.',
+
+  // ── Convergence view (ConvergenceView.tsx) — Plan 0078, ADR-0041/0029 ──
+  'convergence.viewLabel': 'Convergence opportunities',
+  'convergence.empty':
+    'No convergence screen yet — ask the agent to run the `find_convergence_opportunities` tool.',
+  'convergence.disclaimerTitle': 'Facts, not a call.',
+  'convergence.disclaimerBody':
+    'These are markets near resolution with their risks attached — a near-certain outcome’s implied upside is shown gross of the resolution tail, never as expected value. Read the resolution risk, liquidity, and lockup before you decide anything yourself.',
+  'convergence.forQuery': 'For query',
+  'convergence.opportunities': 'opportunities',
+  'convergence.asOf': 'as of',
+  'convergence.outcome': 'Near-certain outcome',
+  'convergence.returnIfRight': 'Return if right',
+  'convergence.returnGrossNote': 'gross of the resolution tail — not expected value',
+  'convergence.timeToResolution': 'Time to resolution',
+  'convergence.closesAt': 'closes',
+  'convergence.volume': 'Volume',
+  'convergence.resolutionRisk': 'Resolution risk',
+  'convergence.riskHeuristicNote': 'a labeled heuristic, not a guarantee',
+  'convergence.riskLevelLow': 'low',
+  'convergence.riskLevelMedium': 'medium',
+  'convergence.riskLevelHigh': 'high',
 
   // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
   'trackRecord.title': 'Track record',

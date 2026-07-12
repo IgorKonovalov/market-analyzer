@@ -33,6 +33,7 @@ import { t } from './lib/i18n'
 import type { Timeframe } from './lib/timeframes'
 import type {
   MultiHorizonForecastResult,
+  PredictionScreenCompletedPayloadV1,
   Recommendation,
   RegimeForecast,
   SignalEvaluation,
@@ -41,6 +42,7 @@ import type {
 } from './types/events'
 import { AlertsView } from './views/AlertsView'
 import { BacktestView } from './views/BacktestView'
+import { ConvergenceView } from './views/ConvergenceView'
 import { ForecastView } from './views/ForecastView'
 import { LiveSignalView } from './views/LiveSignalView'
 import { NewsView } from './views/NewsView'
@@ -59,6 +61,7 @@ type View =
   | 'technical-read'
   | 'track-record'
   | 'forecast'
+  | 'convergence'
   | 'settings'
   | 'backtest'
   | 'recent-backtests'
@@ -135,6 +138,11 @@ export function App(): JSX.Element {
   // advisory tier is a thin read and must not grab the screen; the user opens the
   // Technical read tab when they want it.
   const [latestTechnicalRead, setLatestTechnicalRead] = useState<TechnicalRead | null>(null)
+  // Latest convergence screen (Plan 0078 phase 3, ADR-0041/0029). Same
+  // reactive-only, NO-auto-switch posture as the recommendation/forecast panels —
+  // an opportunity must not grab the screen; the user opens the Convergence tab
+  // when they want to read it.
+  const [latestScreen, setLatestScreen] = useState<PredictionScreenCompletedPayloadV1 | null>(null)
 
   const backtestState = useBacktestResult({ runId: selectedRunId })
 
@@ -172,6 +180,9 @@ export function App(): JSX.Element {
     onRegimeForecastCompleted: (payload) => setLatestRegime(payload.forecast),
     // Plan 0074 phase 3: the lesser advisory tier — reactive-only, no auto-switch.
     onTechnicalReadCompleted: (payload) => setLatestTechnicalRead(payload.read),
+    // Plan 0078 phase 3: convergence opportunities — reactive-only, no auto-switch
+    // (an opportunity must not grab the screen, the ADR-0029/0041 posture).
+    onPredictionScreenCompleted: (payload) => setLatestScreen(payload),
     onOhlcvBackfillStarted: (payload) => notifyBackfill({ kind: 'started', payload }),
     onOhlcvBackfilled: (payload) => notifyBackfill({ kind: 'backfilled', payload }),
     onOhlcvBackfillFailed: (payload) => notifyBackfill({ kind: 'failed', payload }),
@@ -295,6 +306,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'convergence' ? 'page' : undefined}
+            onClick={() => setView('convergence')}
+            data-testid="nav-convergence"
+          >
+            {t('app.nav.convergence')}
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'news' ? 'page' : undefined}
             onClick={() => setView('news')}
             data-testid="nav-news"
@@ -347,6 +367,7 @@ export function App(): JSX.Element {
           regime={latestRegime}
         />
       )}
+      {view === 'convergence' && <ConvergenceView screen={latestScreen} />}
       {view === 'alerts' && <AlertsView />}
       {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}

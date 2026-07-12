@@ -40,6 +40,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, subscribeToConfigChanges } from '../api/client'
 import { parseAlertTriggered } from '../schemas/alertTriggered'
 import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
+import { predictionScreenCompletedPayloadSchema } from '../schemas/predictionScreenCompleted'
 import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
 import { recommendationScoredPayloadSchema } from '../schemas/recommendationScored'
 import { regimeForecastCompletedPayloadSchema } from '../schemas/regimeForecastCompleted'
@@ -56,6 +57,7 @@ import type {
   OhlcvBackfilledPayloadV1,
   OhlcvBackfillFailedPayloadV1,
   OhlcvBackfillStartedPayloadV1,
+  PredictionScreenCompletedPayloadV1,
   RecommendationCompletedPayloadV1,
   RecommendationScoredPayloadV1,
   RegimeForecastCompletedPayloadV1,
@@ -80,6 +82,7 @@ export interface EventStreamHandlers {
   onVolatilityForecastCompleted?: (payload: VolatilityForecastCompletedPayloadV1) => void
   onRegimeForecastCompleted?: (payload: RegimeForecastCompletedPayloadV1) => void
   onTechnicalReadCompleted?: (payload: TechnicalReadCompletedPayloadV1) => void
+  onPredictionScreenCompleted?: (payload: PredictionScreenCompletedPayloadV1) => void
   onOhlcvBackfillStarted?: (payload: OhlcvBackfillStartedPayloadV1) => void
   onOhlcvBackfilled?: (payload: OhlcvBackfilledPayloadV1) => void
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
@@ -107,6 +110,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'volatility_forecast.completed': 1,
   'regime_forecast.completed': 1,
   'technical_read.completed': 1,
+  'prediction.screen_completed': 1,
   'chart.update_dropped': 1,
   'ohlcv.backfill_started': 1,
   'ohlcv.backfilled': 1,
@@ -407,6 +411,22 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
         return
       }
       handlers.onTechnicalReadCompleted?.(parsed.data)
+      return
+    }
+    case 'prediction.screen_completed': {
+      // Zod-validated before it reaches any state (Plan 0078 phase 3): a
+      // convergence opportunity carries an implied return a user might act on
+      // outside the app, so a malformed payload is dropped loudly, never rendered
+      // half-parsed (ADR-0041/0029 — facts with risks, never a call).
+      const parsed = predictionScreenCompletedPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed prediction.screen_completed payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onPredictionScreenCompleted?.(parsed.data)
       return
     }
     case 'ohlcv.backfill_started':

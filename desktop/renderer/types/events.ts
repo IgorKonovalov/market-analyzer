@@ -630,6 +630,61 @@ export interface TechnicalReadCompletedPayloadV1 {
   read: TechnicalRead
 }
 
+/** Closed set — mirror of the pydantic `Literal` on `ResolutionRisk.level`. */
+export type ResolutionRiskLevel = 'low' | 'medium' | 'high'
+
+/** Mirror of the pydantic `ResolutionRisk` (Plan 0078 / ADR-0041): a LABELED
+ * HEURISTIC for a convergence opportunity's resolution tail — never a guarantee,
+ * never a probability. `level` is the coarse label; `reasons` spells out every
+ * factor that set it and is always non-empty (even `low` carries the standing
+ * "resolution risk is never zero" caveat). Both fields are required. */
+export interface ResolutionRisk {
+  level: ResolutionRiskLevel
+  reasons: string[]
+}
+
+/** Mirror of the pydantic `ConvergenceOpportunity` (Plan 0078 / ADR-0041/0029): a
+ * near-decided market outcome with its edge math AND its risk context. FACTS with
+ * risks attached, never a call — there is NO direction/size/action field (the
+ * ADR-0029 boundary; the buying is the deferred ADR-0072 pillar).
+ * `implied_return_if_right = (1-p)/p` is GROSS of the resolution tail, never
+ * expected value. `time_to_resolution` is an ISO-8601 DURATION string ("P2DT6H"),
+ * not a number. `liquidity_caution`/`volume_usd` are None-defaulted → absent on the
+ * wire (the SSE bus dumps with `exclude_none`) when the book is deep/unknown — hence
+ * optional here; every other field is required. */
+export interface ConvergenceOpportunity {
+  market_id: string
+  question: string
+  outcome_label: string
+  implied_probability: number
+  /** (1 - price) / price — GROSS of the tail, never expected value. */
+  implied_return_if_right: number
+  /** ISO-8601 duration, e.g. "P2DT6H" / "P3D" — NOT a number of seconds. */
+  time_to_resolution: string
+  capital_lockup_note: string
+  liquidity_caution?: string | null
+  resolution_risk: ResolutionRisk
+  volume_usd?: number | null
+  /** ISO 8601 UTC timestamp. */
+  closes_at: string
+  /** ISO 8601 UTC timestamp (the screen's seam-routed now). */
+  queried_at: string
+  source: string
+}
+
+/** Mirror of the pydantic `PredictionScreenCompletedPayloadV1` (Plan 0078): the
+ * `find_convergence_opportunities` tool screened a query and produced ranked
+ * opportunities. The bounded top-N page rides inline (ADR-0046), like
+ * `signal.evaluated`. Published only when a screen yields ≥1 opportunity, so
+ * `opportunities` is never empty on the wire. All four fields required. */
+export interface PredictionScreenCompletedPayloadV1 {
+  query: string
+  opportunities: ConvergenceOpportunity[]
+  /** ISO 8601 UTC timestamp. */
+  queried_at: string
+  source: string
+}
+
 /** A single [start, end] coverage gap a backfill is/was filling (Plan 0013). */
 export interface GapWindow {
   start: string
@@ -694,6 +749,7 @@ export type EnvelopeType =
   | 'volatility_forecast.completed'
   | 'regime_forecast.completed'
   | 'technical_read.completed'
+  | 'prediction.screen_completed'
   | 'chart.update_dropped'
   | 'ohlcv.backfill_started'
   | 'ohlcv.backfilled'
@@ -750,6 +806,10 @@ export type RegimeForecastCompletedEnvelope = Envelope<RegimeForecastCompletedPa
 }
 export type TechnicalReadCompletedEnvelope = Envelope<TechnicalReadCompletedPayloadV1> & {
   type: 'technical_read.completed'
+  version: 1
+}
+export type PredictionScreenCompletedEnvelope = Envelope<PredictionScreenCompletedPayloadV1> & {
+  type: 'prediction.screen_completed'
   version: 1
 }
 export type OhlcvBackfillStartedEnvelope = Envelope<OhlcvBackfillStartedPayloadV1> & {

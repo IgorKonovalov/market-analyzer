@@ -30,6 +30,7 @@ export const ru = {
   'app.nav.technicalRead': 'Технический разбор',
   'app.nav.trackRecord': 'История точности',
   'app.nav.forecast': 'Прогноз',
+  'app.nav.convergence': 'Сходимость',
   'app.nav.news': 'Новости',
   'app.nav.alerts': 'Оповещения',
   'app.nav.settings': 'Настройки',
@@ -372,6 +373,28 @@ export const ru = {
   'technicalRead.indicatorIchimoku': 'Ишимоку',
   'technicalRead.disclaimer':
     'Меньший консультативный уровень (ADR-0068): один названный индикатор, прочитанный по учебному правилу, без уверенности и без уровней входа/стопа/цели — так задумано. Для подтверждённого вызова с уровнями используйте сводный инструмент `recommend`.',
+
+  // ── Convergence view (ConvergenceView.tsx) — Plan 0078, ADR-0041/0029 ──
+  'convergence.viewLabel': 'Возможности сходимости',
+  'convergence.empty':
+    'Пока нет результатов скрининга — попросите агента запустить инструмент `find_convergence_opportunities`.',
+  'convergence.disclaimerTitle': 'Факты, а не совет.',
+  'convergence.disclaimerBody':
+    'Это рынки, близкие к разрешению, с приложенными рисками — подразумеваемая доходность почти определённого исхода показана до вычета «хвоста» разрешения, а не как ожидаемая доходность. Оцените риск разрешения, ликвидность и блокировку капитала, прежде чем принимать решение самостоятельно.',
+  'convergence.forQuery': 'По запросу',
+  'convergence.opportunities': 'возможностей',
+  'convergence.asOf': 'по состоянию на',
+  'convergence.outcome': 'Почти определённый исход',
+  'convergence.returnIfRight': 'Доходность при верном исходе',
+  'convergence.returnGrossNote': 'до вычета «хвоста» разрешения — не ожидаемая доходность',
+  'convergence.timeToResolution': 'Время до разрешения',
+  'convergence.closesAt': 'закрытие',
+  'convergence.volume': 'Объём',
+  'convergence.resolutionRisk': 'Риск разрешения',
+  'convergence.riskHeuristicNote': 'маркированная эвристика, не гарантия',
+  'convergence.riskLevelLow': 'низкий',
+  'convergence.riskLevelMedium': 'средний',
+  'convergence.riskLevelHigh': 'высокий',
 
   // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
   'trackRecord.title': 'История точности',

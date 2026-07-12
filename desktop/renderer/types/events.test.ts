@@ -76,6 +76,9 @@ interface DumpedSchemas {
   RegimeFoldScore: JsonSchema
   TechnicalReadCompletedPayloadV1: JsonSchema
   TechnicalRead: JsonSchema
+  PredictionScreenCompletedPayloadV1: JsonSchema
+  ConvergenceOpportunity: JsonSchema
+  ResolutionRisk: JsonSchema
 }
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
@@ -95,8 +98,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    RecommendationCompletedPayloadV1, RecommendationScoredPayloadV1,',
     '    ForecastCompletedPayloadV1,',
     '    VolatilityForecastCompletedPayloadV1, RegimeForecastCompletedPayloadV1,',
-    '    TechnicalReadCompletedPayloadV1,',
+    '    TechnicalReadCompletedPayloadV1, PredictionScreenCompletedPayloadV1,',
     ')',
+    'from market_analyser.prediction import ConvergenceOpportunity, ResolutionRisk',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'from market_analyser.advisor.models import (',
     '    FusionCheck, ReasonCode, Recommendation, RecommendationBasis,',
@@ -160,6 +164,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "RegimeFoldScore": RegimeFoldScore.model_json_schema(),',
     '    "TechnicalReadCompletedPayloadV1": TechnicalReadCompletedPayloadV1.model_json_schema(),',
     '    "TechnicalRead": TechnicalRead.model_json_schema(),',
+    '    "PredictionScreenCompletedPayloadV1": PredictionScreenCompletedPayloadV1.model_json_schema(),',
+    '    "ConvergenceOpportunity": ConvergenceOpportunity.model_json_schema(),',
+    '    "ResolutionRisk": ResolutionRisk.model_json_schema(),',
     '}))',
   ].join('\n')
 
@@ -999,5 +1006,65 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     for (const field of ['conviction', 'entry_zone', 'stop', 'targets']) {
       expect(dumped.TechnicalRead.properties?.[field]).toBeUndefined()
     }
+  })
+
+  it('PredictionScreenCompletedPayloadV1 carries the query + opportunities inline (Plan 0078)', () => {
+    expect(propertyNames(dumped.PredictionScreenCompletedPayloadV1)).toEqual([
+      'opportunities',
+      'queried_at',
+      'query',
+      'source',
+    ])
+    expect(requiredNames(dumped.PredictionScreenCompletedPayloadV1)).toEqual([
+      'opportunities',
+      'queried_at',
+      'query',
+      'source',
+    ])
+  })
+
+  it('ConvergenceOpportunity fields match (liquidity_caution/volume_usd nullable, absent when None; NO direction/size/action)', () => {
+    expect(propertyNames(dumped.ConvergenceOpportunity)).toEqual([
+      'capital_lockup_note',
+      'closes_at',
+      'implied_probability',
+      'implied_return_if_right',
+      'liquidity_caution',
+      'market_id',
+      'outcome_label',
+      'queried_at',
+      'question',
+      'resolution_risk',
+      'source',
+      'time_to_resolution',
+      'volume_usd',
+    ])
+    // `liquidity_caution`/`volume_usd` have None defaults → not in `required`, and
+    // the bus dumps with `exclude_none`, so they are absent on the wire when the
+    // book is deep/unknown — the TS marks them optional. Everything else required.
+    expect(requiredNames(dumped.ConvergenceOpportunity)).toEqual([
+      'capital_lockup_note',
+      'closes_at',
+      'implied_probability',
+      'implied_return_if_right',
+      'market_id',
+      'outcome_label',
+      'queried_at',
+      'question',
+      'resolution_risk',
+      'source',
+      'time_to_resolution',
+    ])
+    // The ADR-0029/0041 boundary: opportunities are facts with risks attached, so
+    // the trade-shaped fields are structurally ABSENT — this is not a call.
+    for (const field of ['direction', 'side', 'size', 'action', 'conviction', 'stop', 'targets']) {
+      expect(dumped.ConvergenceOpportunity.properties?.[field]).toBeUndefined()
+    }
+  })
+
+  it('ResolutionRisk fields match (level is a closed low/medium/high set; reasons required)', () => {
+    expect(propertyNames(dumped.ResolutionRisk)).toEqual(['level', 'reasons'])
+    expect(requiredNames(dumped.ResolutionRisk)).toEqual(['level', 'reasons'])
+    expect(literalValues(dumped.ResolutionRisk, 'level')).toEqual(['high', 'low', 'medium'])
   })
 })

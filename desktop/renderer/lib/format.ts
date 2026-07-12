@@ -84,3 +84,21 @@ export function formatDateTime(iso: string): string {
   // in the user's timezone.
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`
 }
+
+const ISO_DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/
+
+/** Format an ISO 8601 duration (e.g. "P2DT6H", "PT30M") as a compact human
+ * string ("2d 6h", "30m"). A `timedelta` never carries months or years, so only
+ * D/H/M/S components appear. Falls back to the raw string if unparseable. */
+export function formatDuration(iso: string): string {
+  const match = ISO_DURATION.exec(iso)
+  if (match === null) return iso
+  const [, days, hours, minutes, seconds] = match
+  const parts: string[] = []
+  if (days) parts.push(`${days}d`)
+  if (hours) parts.push(`${hours}h`)
+  if (minutes) parts.push(`${minutes}m`)
+  // Only surface seconds when nothing coarser is present (sub-minute windows).
+  if (seconds && !days && !hours && !minutes) parts.push(`${Math.round(Number(seconds))}s`)
+  return parts.length > 0 ? parts.join(' ') : '0m'
+}
