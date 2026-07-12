@@ -1,8 +1,8 @@
 # ADR-0079 — DeFi P&L completeness: gauge-event resolution, swap booking, and a bounded unclaimed-reward augmentation
 
-> **Status:** proposed (accepts at Plan 0084 close)
+> **Status:** accepted (Plan 0084 close 2026-07-12)
 > **Date:** 2026-07-11
-> **Related plan(s):** [Plan 0084](../plans/0084-defi-pnl-gauge-swap-completeness.md) (implements this end to end)
+> **Related plan(s):** [Plan 0084](../plans/done/0084-defi-pnl-gauge-swap-completeness.md) (implements this end to end)
 > **Refines:** [ADR-0036](0036-defi-pnl-transaction-replay.md) (DeFi P&L by transaction replay) — does not supersede it; the taxonomy, block-time pricing, average-cost lots, determinism, and loud-failure principles all stand. This ADR closes three v1 gaps ADR-0036 named or deferred.
 
 ## Context

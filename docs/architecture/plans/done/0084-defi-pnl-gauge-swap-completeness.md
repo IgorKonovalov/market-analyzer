@@ -1,9 +1,19 @@
 # 0084 — DeFi P&L completeness: Aerodrome gauge events, swap booking, unclaimed rewards
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-07-12 (architect Mode 4). All 5 code phases + 3 phase-6 fix-forwards on `main` (`700b641`→`7fd069d`), no branch, migration-free; 196 DeFi/route/tool tests green (re-run at close). Paired ADR-0079 accepted. Headline **capability** validated live (gauge reward attribution, swap booking, `unclaimed_rewards` `earned()` read all end-to-end: QuickSwap fully reconstructed $4,015.16 realized; 140.4 AERO ≈ $72.9 unclaimed, priced). **The 5/5-complete / non-null-wallet-total headline is NOT met** — two new-scope follow-ups keep the total `null` (see Close notes). Closed with those as explicit follow-ups per user direction.
 > **Created:** 2026-07-11
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0079](../adrs/0079-defi-pnl-gauge-swaps-unclaimed.md) (paired — refines [ADR-0036](../adrs/0036-defi-pnl-transaction-replay.md))
+
+## Close notes (2026-07-12)
+
+**Mode 4 verdict:** landed cleanly, no blockers. Specs defend the plan's *specific* claims (not stubs) — phase-2 asserts specific-pool attribution + a second gauge to a different pool + the unresolvable-without-map case; phase-3 pins swap basis-preservation, unfair-swap execution delta, byte-identical swap-inclusive replay, and liquidation-still-loud. The three fix-forwards each enforce the plan's own risk rule ("resolution failures must degrade to honest incomplete, never crash"): `71a38fc` (gauge resolution best-effort per chain), `f9397dc` (price fallback asymmetric — primary error propagates, fallback degrades to no-coverage), `7fd069d` (skip asset-less txs). Determinism, no-lookahead (block-time pricing), read-only stance intact; `unclaimed_rewards` correctly excluded from the byte-identical guarantee.
+
+**Root-cause correction (for the record):** the plan diagnosed the 35 unclassified events as gauge `getReward` join failures. The phase-6 live smoke found they were dominated by **261 zero-transfer ERC-20 approvals** whose contract is a position pool/gauge, joining a position and surfacing as spurious `unclassified`. `7fd069d` skips confirmed txs that move no assets — the real fix. Phase-2's gauge work is still correct and independently validated (the working `earned()` reads prove gauge resolution).
+
+**Residual — two new-scope follow-ups (wallet total stays `null` until both close):**
+1. **Keyed historical-price source.** CoinGecko's keyless `market_chart/range` returns HTTP 401, so the phase-4 fallback is inert. Closing the "1 missing price" leg needs a keyed source (CoinGecko demo key via `x-cg-demo-api-key`, or an Alchemy price fallback) — an ADR-0012/0013 dependency + secret decision, deliberately not made silently.
+2. **Transfer-bearing `send`/`receive` taxonomy.** 2 residual single-transfer position-token moves the taxonomy never modeled (custody move vs withdrawal vs external transfer). Needs a design call before booking.
 
 ## TL;DR
 
