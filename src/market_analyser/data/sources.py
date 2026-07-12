@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from market_analyser.defi.models import (
         Chain,
         DefiPosition,
+        ExecutableQuote,
         LpPositionDetail,
         PoolQuote,
         RewardAmount,
@@ -188,6 +189,42 @@ class PoolPriceSource(Protocol):
     """
 
     def fetch_pool_quotes(self, pair: str, *, trade_size: float) -> Sequence[PoolQuote]: ...
+
+
+@runtime_checkable
+class ExecutableQuoteSource(Protocol):
+    """A read-only source of **executable** per-pool DEX quotes for a canonical pair
+    across one or more venues at a specific trade size (Plan 0086 / ADR-0080) — the
+    cross-pool discrepancy scanner v2's input, unifying constant-product and
+    concentrated liquidity behind one contract. It supersedes `PoolPriceSource`: a
+    conforming source returns each pool's *net-of-cost* `buy_cost` (exact-output) and
+    `sell_proceeds` (exact-input) — fee + slippage already inside — instead of a
+    marginal price the screener must add an estimated cost to.
+
+    Read-only by charter (identical to `PoolPriceSource`): a conforming source holds
+    no private key, signs nothing, submits no state-changing RPC, and moves no funds;
+    its only credential is a read-only JSON-RPC endpoint URL (ADR-0038 — a read URL,
+    not a trade key). The concentrated-liquidity implementation prices via the DEX
+    **Quoter**, which is reached by `eth_call` (a staticcall simulation) and so stays
+    read-only exactly like `getReserves()` (ADR-0080). It reports quotes as facts,
+    never a trade instruction.
+
+    `fetch_executable_quotes` returns one `ExecutableQuote` per pool the source has
+    configured for `pair` that can executably fill `trade_size` — each carrying
+    `buy_cost`, `sell_proceeds`, and the `marginal_price` zero-size reference the
+    screener reconstructs the fee/slippage breakdown from. An unknown or unconfigured
+    pair returns `[]` (not an error); a pool that cannot source the size is omitted
+    rather than fabricating a number; a shape-broken on-chain read or Quoter revert
+    raises the source's typed error taxonomy, never a fabricated/zeroed quote.
+
+    Members of the executable-quote selector registry, keyed by source name
+    ("onchain" for constant-product, "concentrated" for CL), built in the
+    composition root (ADR-0031) — adding a venue is one registry entry.
+    """
+
+    def fetch_executable_quotes(
+        self, pair: str, *, trade_size: float
+    ) -> Sequence[ExecutableQuote]: ...
 
 
 @runtime_checkable

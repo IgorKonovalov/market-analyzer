@@ -32,6 +32,15 @@ slippage for the trade size from that depth. Keeping the two separate is what le
 the net-of-cost breakdown stay explicit and un-double-counted (Plan 0079 honesty
 pin).
 
+**Executable-quote method (Plan 0086 / ADR-0080).** `fetch_executable_quotes`
+implements the `ExecutableQuoteSource` contract on top of the same reserves: it
+folds the pool's fee + slippage into a real round-trip leg and returns an
+`ExecutableQuote` (`buy_cost` exact-output, `sell_proceeds` exact-input, both net)
+plus the marginal reference — so the scanner v2 ranks pre-costed quotes rather than
+estimating cost itself. The constant-product math lives in `_cp_executable_legs`; a
+pool that cannot source the size is omitted, never fabricated. `fetch_pool_quotes`
+(the v1 marginal path) stays until the scanner fully cuts over.
+
 Errors are typed (done-when): a missing RPC URL or an unsupported chain raises
 `PoolPriceConfigError`; a 429 / 5xx / transport exhaustion raises the shared
 `RateLimitedError` / `UpstreamUnavailableError`; a JSON-RPC error object (a revert)
@@ -54,7 +63,7 @@ from market_analyser.data.errors import (
     UpstreamDataError,
     UpstreamUnavailableError,
 )
-from market_analyser.defi.models import Chain, PoolQuote
+from market_analyser.defi.models import Chain, ExecutableQuote, PoolQuote
 from market_analyser.persistence.secrets import SecretKey, SecretsStore
 
 _SOURCE = "onchain-pool-price"
@@ -175,7 +184,42 @@ class OnchainPoolPriceAdapter:
             if pool.pair.strip().upper() == wanted
         ]
 
-    def _quote_pool(self, pool: PoolConfig, *, trade_size: float, as_of: datetime) -> PoolQuote:
+    def fetch_executable_quotes(self, pair: str, *, trade_size: float) -> Sequence[ExecutableQuote]:
+        """Return an `ExecutableQuote` for every configured pool matching `pair`
+        that can executably fill `trade_size` (Plan 0086 / ADR-0080).
+
+        Reads the same constant-product reserves as `fetch_pool_quotes`, then folds
+        the fee + slippage of a real round-trip leg into the quote: `buy_cost` (the
+        `x·y=k` exact-output cost to acquire `trade_size` base) and `sell_proceeds`
+        (the exact-input proceeds from selling it), both net. A pool whose base
+        depth cannot source an exact-output buy of `trade_size` (`trade_size >=`
+        base reserve) is **omitted** — the honest executable-model answer is "no
+        quote at this size", never a fabricated number.
+
+        Same error taxonomy as `fetch_pool_quotes`: `ValueError` on a non-positive
+        `trade_size`, `PoolPriceConfigError` on config, the shared rate-limit /
+        unavailable errors on transport, `PoolPriceError` / `ValidationError` on a
+        shape-broken read. An unconfigured pair returns `[]`.
+        """
+        if trade_size <= 0:
+            raise ValueError("trade_size must be positive")
+        wanted = pair.strip().upper()
+        as_of = self._now()
+        quotes: list[ExecutableQuote] = []
+        for pool in self._pools:
+            if pool.pair.strip().upper() != wanted:
+                continue
+            quote = self._executable_quote_pool(pool, trade_size=trade_size, as_of=as_of)
+            if quote is not None:
+                quotes.append(quote)
+        return quotes
+
+    def _read_pool_depth(self, pool: PoolConfig) -> tuple[float, float]:
+        """Read a constant-product pool's decimals-adjusted `(liquidity_base,
+        liquidity_quote)` over `eth_call`, oriented quote-per-base regardless of the
+        pool's on-chain token ordering. Raises `PoolPriceError` on a shape-broken
+        read, a `token0` matching neither configured token, or a non-positive
+        reserve — never a silently zeroed depth."""
         rpc_url = self._rpc_url_for(pool.chain)
         reserves = self._eth_call(rpc_url, pool.pool_id, _SEL_GET_RESERVES)
         reserve0 = _decode_uint(reserves, word=0)
@@ -205,6 +249,10 @@ class OnchainPoolPriceAdapter:
                 f"onchain-pool: pool {pool.pool_id} has a non-positive reserve "
                 f"(base={liquidity_base}, quote={liquidity_quote})",
             )
+        return liquidity_base, liquidity_quote
+
+    def _quote_pool(self, pool: PoolConfig, *, trade_size: float, as_of: datetime) -> PoolQuote:
+        liquidity_base, liquidity_quote = self._read_pool_depth(pool)
         price = liquidity_quote / liquidity_base
         return PoolQuote(
             pool_id=pool.pool_id,
@@ -218,6 +266,32 @@ class OnchainPoolPriceAdapter:
             fee_bps=pool.fee_bps,
             liquidity_base=liquidity_base,
             liquidity_quote=liquidity_quote,
+            as_of=as_of,
+        )
+
+    def _executable_quote_pool(
+        self, pool: PoolConfig, *, trade_size: float, as_of: datetime
+    ) -> ExecutableQuote | None:
+        liquidity_base, liquidity_quote = self._read_pool_depth(pool)
+        legs = _cp_executable_legs(
+            liquidity_base=liquidity_base,
+            liquidity_quote=liquidity_quote,
+            fee_bps=pool.fee_bps,
+            trade_size=trade_size,
+        )
+        if legs is None:
+            return None  # depth cannot source an exact-output buy of this size
+        buy_cost, sell_proceeds, marginal_price = legs
+        return ExecutableQuote(
+            pool_id=pool.pool_id,
+            dex=pool.dex,
+            chain=pool.chain,
+            pair=pool.pair,
+            fee_tier=int(pool.fee_bps),
+            trade_size=trade_size,
+            buy_cost=buy_cost,
+            sell_proceeds=sell_proceeds,
+            marginal_price=marginal_price,
             as_of=as_of,
         )
 
@@ -302,6 +376,38 @@ def _decode_uint(data: bytes, *, word: int) -> int:
 def _decode_address(data: bytes) -> str:
     """The low 20 bytes of the first word, as a lowercase `0x…` address."""
     return "0x" + _word(data, 0)[12:].hex()
+
+
+def _cp_executable_legs(
+    *,
+    liquidity_base: float,
+    liquidity_quote: float,
+    fee_bps: float,
+    trade_size: float,
+) -> tuple[float, float, float] | None:
+    """Executable `(buy_cost, sell_proceeds, marginal_price)` for a constant-product
+    pool with decimals-adjusted reserves, or `None` when the pool cannot source an
+    exact-output buy of `trade_size` base (`trade_size >= liquidity_base`, or a
+    degenerate `fee_bps >= 10_000`).
+
+    Uniswap-v2 fee-on-input model (ADR-0080), all in quote-token units:
+
+    - marginal reference: ``P = liquidity_quote / liquidity_base`` (zero size);
+    - buy leg (exact-output, acquire ``Δ`` base): fee on the quote input →
+      ``buy_cost = R_q·Δ / ((R_b - Δ)·(1 - f))``;
+    - sell leg (exact-input, sell ``Δ`` base): fee on the base input, so the base
+      that reaches the invariant is ``(1 - f)·Δ`` →
+      ``sell_proceeds = (1 - f)·Δ·R_q / (R_b + (1 - f)·Δ)``.
+
+    Both are strictly positive and finite for ``0 < Δ < R_b`` and ``0 ≤ f < 1``."""
+    marginal_price = liquidity_quote / liquidity_base
+    fee_frac = fee_bps / 1e4
+    if trade_size >= liquidity_base or fee_frac >= 1.0:
+        return None
+    buy_cost = liquidity_quote * trade_size / ((liquidity_base - trade_size) * (1.0 - fee_frac))
+    effective_in = (1.0 - fee_frac) * trade_size
+    sell_proceeds = effective_in * liquidity_quote / (liquidity_base + effective_in)
+    return buy_cost, sell_proceeds, marginal_price
 
 
 __all__ = [

@@ -235,9 +235,66 @@ class PoolQuote(BaseModel):
         return v
 
 
+class ExecutableQuote(BaseModel):
+    """One DEX pool's **executable** price for a canonical pair at a specific size,
+    produced by an `ExecutableQuoteSource` (Plan 0086 / ADR-0080) — the input the
+    cross-pool discrepancy screener v2 compares across venues.
+
+    Unlike `PoolQuote` (a pool's marginal/spot price plus separate depth, from which
+    the screener *estimated* slippage), this carries the **already-net** cost of a
+    real round-trip leg at `trade_size`:
+
+    - **`buy_cost`** — quote-token **in** to ACQUIRE `trade_size` base at this pool
+      (an exact-output swap), net of the pool's fee and its slippage for the size;
+    - **`sell_proceeds`** — quote-token **out** from SELLING `trade_size` base at
+      this pool (an exact-input swap), net of the pool's fee and slippage.
+
+    Constant-product pools compute these from `x·y=k`; concentrated-liquidity pools
+    from the DEX Quoter (ADR-0080). The screener needs no cost model of its own — it
+    ranks pre-costed quotes: `net = max(sell_proceeds) - min(buy_cost) - gas`.
+
+    **`marginal_price`** is the pool's zero-size reference (quote-per-base, from
+    `getReserves`/`slot0`), carried **only** so the screener can reconstruct a
+    slippage/fee breakdown for auditability (Plan 0079 honesty pin). That breakdown
+    is *derived* from the marginal reference, **not a second source of truth** — the
+    executable `buy_cost`/`sell_proceeds` are authoritative (ADR-0080).
+
+    **`fee_tier`** is the pool's fee in basis points — the CL tier (500/3000/10000)
+    or the CP pool fee — used only to split the reconstructed breakdown into a fee
+    vs slippage share; `None` when a source cannot attribute a tier.
+
+    Boundary-validated in the house style (`PoolQuote`): every measurement is
+    finite, `buy_cost` / `sell_proceeds` / `marginal_price` / `trade_size` strictly
+    positive — a NaN / Inf / non-positive quote is rejected at construction, never
+    silently zeroed (ADR-0035, best-practices "no garbage past the boundary").
+    Downstream code may trust the fields."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pool_id: str = Field(min_length=1)  # pool contract address (0x…)
+    dex: str = Field(min_length=1)  # "aerodrome" | "uniswap-v3" | "aerodrome-slipstream" | …
+    chain: Chain
+    pair: str = Field(min_length=1)  # canonical "BASE/QUOTE", e.g. "WETH/USDC"
+    fee_tier: int | None = Field(default=None, ge=0)  # fee in bps; None if unattributed
+    trade_size: float = Field(gt=0)  # base-token size the quote is priced for
+    buy_cost: float = Field(gt=0)  # quote-in to ACQUIRE trade_size base (exact-output), net
+    sell_proceeds: float = Field(gt=0)  # quote-out from SELLING trade_size base (exact-in), net
+    marginal_price: float = Field(gt=0)  # zero-size reference (quote-per-base) — for the breakdown
+    as_of: datetime  # read time (provenance)
+
+    @field_validator("trade_size", "buy_cost", "sell_proceeds", "marginal_price")
+    @classmethod
+    def _must_be_finite(cls, v: float) -> float:
+        # `gt=0` already rejects NaN and negatives; this also rejects +Inf.
+        if not math.isfinite(v):
+            raise ValueError("executable-quote measurement must be finite (no NaN/Inf)")
+        return v
+
+
 __all__ = [
     "Chain",
     "DefiPosition",
+    "ExecutableQuote",
     "LpPositionDetail",
     "PoolQuote",
     "PositionKind",

@@ -1,6 +1,6 @@
 # 0086 — Concentrated-liquidity pricing via executable quotes (cross-pool scanner v2)
 
-> **Status:** approved (2026-07-11)
+> **Status:** in-progress (2026-07-11)
 > **Created:** 2026-07-11
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0080](../adrs/0080-executable-quote-pricing-concentrated-liquidity.md) (the executable-quote / Quoter decision — **paired; accepts at close**), [ADR-0072](../adrs/0072-bounded-autonomy-and-prediction-market-execution.md) (this makes the BA-7 evidence real), [ADR-0074](../adrs/0074-edge-selection-criteria-for-execution.md) (completeness then neglected niches — never major-pair arb), [ADR-0031](../adrs/0031-data-source-adapter-contract.md), [ADR-0038](../adrs/0038-third-party-api-key-storage.md), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md), [ADR-0046](../adrs/0046-mcp-large-result-delivery.md), [ADR-0035](../adrs/0035-defi-domain-placement.md), [ADR-0073](../adrs/0073-execution-engine-topology-control-plane-data-plane.md) (capture, if any, is the colocated engine — not this scanner)
