@@ -42,10 +42,12 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote as urlquote
+from urllib.parse import urlsplit
 
 from market_analyser.data._http import ResilientHttpClient, ResilientHttpError
 from market_analyser.data.errors import (
@@ -59,6 +61,18 @@ _GAMMA_BASE = "https://gamma-api.polymarket.com"
 _MARKETS_URL = f"{_GAMMA_BASE}/markets"
 _SEARCH_URL = f"{_GAMMA_BASE}/public-search"
 _SOURCE = "polymarket"
+
+# Canonical public market page: `polymarket.com/event/<event-slug>` (Plan 0089).
+# The numeric market id does NOT resolve to a page; the **event** slug does —
+# live-confirmed 2026-07-12 against the real Gamma `public-search` (each event
+# carries a `slug`; `polymarket.com/event/<slug>` returns 200, a bogus slug 404s).
+# The slug is external data, so the built URL is host-validated before it is
+# trusted (ADR-0041 no-fabrication, ADR-0008 external-nav): exact `https` scheme,
+# exact `polymarket.com` host, and a single URL-safe path segment (no slash /
+# percent / query / fragment that could alter the path or host).
+_POLYMARKET_HOST = "polymarket.com"
+_POLYMARKET_EVENT_BASE = f"https://{_POLYMARKET_HOST}/event/"
+_SLUG_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # Odds move continuously, but a short TTL absorbs the "agent asks twice in a few
 # seconds" pattern without ever serving a stale reading in practice (ADR-0019).
@@ -196,19 +210,29 @@ def _parse_search(payload: Any, *, queried_at: datetime) -> list[PredictionMarke
             continue
         if not isinstance(raw_markets, list):
             raise PolymarketError("polymarket: event 'markets' is not a list")
+        # The public market page is keyed by the *event* slug, which lives on the
+        # event wrapper the flatten would otherwise drop (Plan 0089). Capture it
+        # here and hand it to each of the event's markets.
+        event_slug = event.get("slug")
         for raw in raw_markets:
             if not isinstance(raw, dict):
                 raise PolymarketError("polymarket: 'markets' entry is not an object")
             if not raw.get("outcomes") or not raw.get("outcomePrices"):
                 # Not yet trading — no odds to report. Skip, don't fabricate.
                 continue
-            markets.append(_parse_market(raw, queried_at=queried_at))
+            markets.append(_parse_market(raw, queried_at=queried_at, event_slug=event_slug))
     return markets
 
 
-def _parse_market(raw: dict[str, Any], *, queried_at: datetime) -> PredictionMarket:
+def _parse_market(
+    raw: dict[str, Any], *, queried_at: datetime, event_slug: Any = None
+) -> PredictionMarket:
     """Parse one Gamma market object into a boundary-validated `PredictionMarket`.
-    Every shape problem raises `PolymarketError` before model construction."""
+    Every shape problem raises `PolymarketError` before model construction.
+
+    `event_slug` is the market's parent-event slug (from search flattening) used to
+    build the canonical public URL; `None`/absent (e.g. the by-id `fetch_market`
+    path, which has no event wrapper) yields `market_url is None`."""
     market_id = raw.get("id")
     if not isinstance(market_id, str) or not market_id:
         raise PolymarketError("polymarket: market missing string 'id'")
@@ -242,7 +266,28 @@ def _parse_market(raw: dict[str, Any], *, queried_at: datetime) -> PredictionMar
         liquidity_usd=_optional_nonneg_number(raw.get("liquidityNum")),
         queried_at=queried_at,
         source=_SOURCE,
+        market_url=_build_event_url(event_slug),
     )
+
+
+def _build_event_url(event_slug: Any) -> str | None:
+    """Build the canonical public Polymarket URL from an event slug, or `None` when
+    the slug is absent or unusable. The slug is external data, so the constructed
+    URL is host-validated (exact `https` scheme + `polymarket.com` host, single
+    URL-safe path segment) before it is trusted — a fabricated, path-manipulating,
+    or off-host link is never emitted (ADR-0041, ADR-0008). Only the **event** slug
+    builds the page: `polymarket.com/event/<event-slug>` (the numeric market id
+    does not resolve). Live-confirmed 2026-07-12."""
+    if not isinstance(event_slug, str):
+        return None
+    slug = event_slug.strip()
+    if not _SLUG_RE.match(slug):
+        return None
+    url = f"{_POLYMARKET_EVENT_BASE}{slug}"
+    parts = urlsplit(url)
+    if parts.scheme != "https" or parts.netloc != _POLYMARKET_HOST:
+        return None
+    return url
 
 
 def _decode_json_str_array(value: Any, *, field: str, market_id: str) -> list[str]:

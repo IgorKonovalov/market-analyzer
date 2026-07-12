@@ -14,6 +14,15 @@ Phase-1 done-when claims pinned here:
     reachable through one registry entry (`Mapping[str, PredictionMarketSource]`);
 (f) no auth header, no key, no signing anywhere in the adapter (source grep).
 
+Plan 0089 additions: (g) each market flattened out of an event carries a
+`market_url` built + host-validated from the **event** `slug`
+(`https://polymarket.com/event/<slug>`), `None` when the slug is absent / unusable
+(never fabricated, never the numeric id, never a raise); the by-id `fetch_market`
+path has no event wrapper so its `market_url is None`. Live-confirmed 2026-07-12
+against the real Gamma `public-search`: `events[].slug` is present and
+`polymarket.com/event/<slug>` resolves (200; a bogus slug 404s), so the event slug
+is the URL basis. Still offline here — the fake transport serves the shape.
+
 Fixture provenance: the market objects mirror the real, verified Gamma wire shape
 — `outcomes` and `outcomePrices` are parallel JSON-**encoded string arrays**
 (`'["Yes", "No"]'` / `'["0.0585", "0.9415"]'`), `endDate` an ISO-8601 string,
@@ -409,6 +418,90 @@ def test_search_malformed_event_shape_raises(monkeypatch: pytest.MonkeyPatch) ->
     adapter, _ = _adapter(monkeypatch, transport=_FakeTransport(search={"events": "not-a-list"}))
     with pytest.raises(PolymarketError):
         adapter.search_markets("x")
+
+
+# --- (g) market_url from the event slug (Plan 0089) -----------------------------
+
+
+def test_search_builds_market_url_from_event_slug(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every market flattened out of an event with a `slug` carries the canonical
+    public URL `https://polymarket.com/event/<event-slug>` — the live-confirmed
+    basis (2026-07-12: `events[].slug` resolves 200, a bogus slug 404s)."""
+    search = {
+        "events": [
+            {
+                "id": "e1",
+                "slug": "bitcoin-above-on-july-13-2026",
+                "markets": [_market(market_id="2818067"), _market(market_id="2818099")],
+            },
+        ]
+    }
+    adapter, _ = _adapter(monkeypatch, transport=_FakeTransport(search=search))
+
+    results = adapter.search_markets("bitcoin")
+
+    assert [m.market_id for m in results] == ["2818067", "2818099"]
+    assert all(
+        m.market_url == "https://polymarket.com/event/bitcoin-above-on-july-13-2026"
+        for m in results
+    )
+    # The link is https-scheme + exact polymarket.com host, and never the numeric id.
+    for m in results:
+        assert m.market_url is not None
+        split = urllib.parse.urlsplit(m.market_url)
+        assert split.scheme == "https"
+        assert split.netloc == "polymarket.com"
+        assert m.market_id not in m.market_url
+
+
+def test_search_market_url_none_when_event_slug_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An event with no `slug` yields `market_url is None` — no fabricated link,
+    never the numeric-id URL, never a raise (ADR-0041)."""
+    search = {"events": [{"id": "e1", "markets": [_market(market_id="a")]}]}
+    adapter, _ = _adapter(monkeypatch, transport=_FakeTransport(search=search))
+
+    (result,) = adapter.search_markets("x")
+
+    assert result.market_url is None
+
+
+@pytest.mark.parametrize(
+    "bad_slug",
+    [
+        "",  # empty
+        "   ",  # whitespace-only
+        123,  # non-string
+        None,  # explicit null
+        "has/slash",  # would alter the path
+        "has space",  # not URL-safe
+        "has%2Fencoded",  # percent-encoding
+        "q?x=1",  # query char
+        "frag#ment",  # fragment char
+    ],
+)
+def test_search_market_url_none_for_unusable_slug(
+    monkeypatch: pytest.MonkeyPatch, bad_slug: Any
+) -> None:
+    """A malformed / non-string / path-manipulating slug degrades to `market_url
+    is None` — the URL is host + single-segment validated, so an off-host or
+    path-altering link is never emitted, and a bad slug never raises."""
+    search = {"events": [{"slug": bad_slug, "markets": [_market(market_id="a")]}]}
+    adapter, _ = _adapter(monkeypatch, transport=_FakeTransport(search=search))
+
+    (result,) = adapter.search_markets("x")
+
+    assert result.market_url is None
+
+
+def test_fetch_market_by_id_has_no_market_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The by-id `fetch_market` path has no parent-event wrapper, so there is no
+    event slug and `market_url is None` (the event slug is the only sanctioned
+    basis; the market's own slug does not build the public page)."""
+    adapter, _ = _adapter(monkeypatch, transport=_FakeTransport(markets={"558951": _market()}))
+
+    market = adapter.fetch_market("558951")
+
+    assert market.market_url is None
 
 
 # --- (f) no auth / key / signing anywhere in the adapter ------------------------
