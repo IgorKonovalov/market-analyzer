@@ -1,6 +1,6 @@
 # ADR-0081 — Closing the DeFi P&L wallet-total gap: Alchemy historical-price fallback + bare-transfer custody-move classification
 
-> **Status:** proposed (accepts at Plan 0087 close)
+> **Status:** accepted (Plan 0087 close 2026-07-12)
 > **Date:** 2026-07-12
 > **Related plan(s):** [Plan 0087](../plans/0087-defi-pnl-wallet-total-gap.md) (implements this end to end)
 > **Refines:** [ADR-0079](0079-defi-pnl-gauge-swaps-unclaimed.md) (DeFi P&L completeness) and, through it, [ADR-0036](0036-defi-pnl-transaction-replay.md). Does not supersede either — taxonomy, block-time pricing, average-cost lots, determinism-by-snapshot, and loud-failure all stand. This ADR closes the two residuals Plan 0084's phase-6 live smoke surfaced and left as follow-ups.
