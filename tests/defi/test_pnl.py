@@ -34,8 +34,8 @@ from typing import Any
 from market_analyser.data.adapters.defillama import token_key
 from market_analyser.defi.models import Chain, DefiPosition, PositionToken
 from market_analyser.defi.pnl import compute_wallet_pnl
-from market_analyser.defi.pnl_events import PositionEvent
-from market_analyser.defi.tx_models import TxTransfer
+from market_analyser.defi.pnl_events import PositionEvent, map_events
+from market_analyser.defi.tx_models import DecodedTx, TxTransfer
 
 _WALLET = "0x2222222222222222222222222222222222222222"
 _WETH = "0x4200000000000000000000000000000000000006"
@@ -110,6 +110,40 @@ def _event(
 
 def _leg(direction: str, symbol: str, address: str | None, amount: float) -> dict[str, Any]:
     return {"direction": direction, "symbol": symbol, "address": address, "amount": amount}
+
+
+def _decoded_tx(
+    tx_hash: str,
+    operation_type: str,
+    block: int,
+    mined_at: datetime,
+    legs: list[dict[str, Any]],
+    *,
+    act_type: str = "execute",
+    method: str | None = None,
+) -> DecodedTx:
+    """A DecodedTx joined to `_LP` via its pool contract — for the end-to-end
+    map_events → engine pipeline golden."""
+    return DecodedTx.model_validate(
+        {
+            "chain": "base",
+            "hash": tx_hash,
+            "operation_type": operation_type,
+            "mined_at": mined_at,
+            "mined_at_block": block,
+            "in_block_index": 0,
+            "status": "confirmed",
+            "transfers": legs,
+            "acts": [
+                {
+                    "act_id": f"{tx_hash}-a",
+                    "type": act_type,
+                    "contract_address": _LP.pool_address,
+                    "method_name": method,
+                }
+            ],
+        }
+    )
 
 
 _LP_EVENTS = [
@@ -285,6 +319,44 @@ def test_custody_move_is_a_noop() -> None:
         b.cost_basis_usd,
         b.unrealized_usd,
     )
+
+
+def test_aggregator_swap_reconstructs_end_to_end_and_is_byte_identical() -> None:
+    """Plan 0087 smoke follow-up: an aggregator swap (operation_type "execute" + a
+    "trade" act) flows the full pipeline — map_events classifies it `swap`, the
+    engine books it as an average-cost conversion — and the position reconstructs
+    cleanly (non-None realized, incomplete=False), byte-identical on re-run. This is
+    the path that leaves position 87f522… complete once its aggregator swap is
+    recognized."""
+    deposit = _decoded_tx(
+        "0xdep",
+        "deposit",
+        100,
+        _TS1,
+        [_leg("out", "WETH", _WETH, 0.2), _leg("out", "USDC", _USDC, 700.0)],
+    )
+    # Sell 0.1 WETH (@4000 = 400) for 450 USDC → realizes +50, routed as an "execute".
+    agg_swap = _decoded_tx(
+        "0x1cbbb89c",
+        "execute",
+        200,
+        _TS2,
+        [_leg("out", "WETH", _WETH, 0.1), _leg("in", "USDC", _USDC, 450.0)],
+        act_type="trade",
+        method="Execute",
+    )
+    events = map_events([deposit, agg_swap], [_LP])
+    assert [e.kind for e in events] == ["add_liquidity", "swap"]
+
+    def _run() -> Any:
+        return compute_wallet_pnl(
+            wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
+        )
+
+    position = _run().positions[0]
+    assert position.incomplete is False
+    assert position.realized_usd == 50.0
+    assert _run().model_dump_json() == _run().model_dump_json()
 
 
 def test_liquidation_still_fails_loud() -> None:

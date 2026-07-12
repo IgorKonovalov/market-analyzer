@@ -94,10 +94,16 @@ _REMOVE_HINTS = frozenset({"withdraw", "unstake", "removeliquidity", "burn"})
 # of these moves the LP token/NFT into or out of the gauge — a custody move with
 # no basis change, distinct from the emissions claim (`getReward`) handled above.
 _GAUGE_CUSTODY_METHODS = frozenset({"deposit", "stake", "withdraw", "unstake"})
-# Any lifecycle hint that BLOCKS the bare-transfer custody shortcut (Plan 0087 /
-# ADR-0081): a plain `send`/`receive` carrying one of these is a lifecycle event,
-# not a plain custody move, so it must not be swallowed as a no-op — precision-first.
-_CUSTODY_EXCLUDING_HINTS = (
+# Act hints that signal a swap even when Zerion's `operation_type` is not "trade" —
+# an aggregator/router routes the swap as an "execute", but the decode still carries
+# a "trade" act (Plan 0087 smoke follow-up; refines ADR-0079's swap booking).
+_SWAP_ACT_HINTS = frozenset({"trade", "swap"})
+# Any add/remove/fee/reward/liquidation lifecycle hint. It BLOCKS two shortcuts that
+# must never swallow a compound operation: the bare-transfer custody move (Plan 0087
+# / ADR-0081) and the aggregator-swap recognition below — a `send`/`receive` or an
+# aggregator "execute" carrying one of these is a lifecycle event, not a plain
+# custody move or a pure swap, so it stays honest (precision-first).
+_LIFECYCLE_HINTS = (
     _LIQUIDATION_TOKENS | _FEE_CLAIM_METHODS | _REWARD_CLAIM_METHODS | _ADD_HINTS | _REMOVE_HINTS
 )
 
@@ -234,6 +240,27 @@ def _classify(tx: DecodedTx, position: DefiPosition, via_gauge: bool = False) ->
     if hints & _REMOVE_HINTS and directions == {"in"}:
         return "remove_liquidity" if is_lp else "withdraw_supply"
 
+    # Aggregator/router swap (Plan 0087 smoke follow-up; refines ADR-0079's swap
+    # booking). An aggregator-routed swap arrives with operation_type "execute"
+    # (not "trade"), so the op_type swap branch above misses it, yet Zerion still
+    # decodes a "trade" act and the transfer set is a clean two-sided conversion.
+    # Recognize a `swap` ONLY under tight guards so a zap (a swap that also adds or
+    # removes liquidity) is never mis-booked as a pure swap and corrupt basis
+    # (ADR-0079 names this risk): a trade/swap act present, exactly one out-leg and
+    # one in-leg of DIFFERENT tokens, and no lifecycle hint — else it is a compound
+    # op and stays honest `unclassified`. (Placed after the add/remove-hint checks
+    # so a real zap-in still books as add_liquidity, not swap.)
+    out_legs = [t for t in tx.transfers if t.direction == "out"]
+    in_legs = [t for t in tx.transfers if t.direction == "in"]
+    if (
+        hints & _SWAP_ACT_HINTS
+        and len(out_legs) == 1
+        and len(in_legs) == 1
+        and _leg_token(out_legs[0]) != _leg_token(in_legs[0])
+        and not (hints & _LIFECYCLE_HINTS)
+    ):
+        return "swap"
+
     # Bare custody move (Plan 0087 / ADR-0081): a plain outbound transfer of the
     # position's own token — `operation_type` `send`, a single leg, and no
     # lifecycle hint — moves the position's units out to another of the owner's
@@ -247,11 +274,7 @@ def _classify(tx: DecodedTx, position: DefiPosition, via_gauge: bool = False) ->
     # / plan-Risks "the fixture narrows it" steer) without reversing Plan 0035. The
     # single-leg requirement keeps it distinct from a two-token withdrawal; any
     # lifecycle hint blocks the shortcut (precision-first).
-    if (
-        tx.operation_type == "send"
-        and len(tx.transfers) == 1
-        and not (hints & _CUSTODY_EXCLUDING_HINTS)
-    ):
+    if tx.operation_type == "send" and len(tx.transfers) == 1 and not (hints & _LIFECYCLE_HINTS):
         return "custody_move"
 
     # Directional claim heuristic: an all-inbound transfer set is a claim —
@@ -292,6 +315,13 @@ def _classify_gauge(tx: DecodedTx) -> EventKind:
         # a custody move, no basis change (the plan's "pure custody" assumption).
         return "custody_move"
     return "unclassified"
+
+
+def _leg_token(leg: TxTransfer) -> str | None:
+    """A transfer's token identity for equality checks: the lowercased contract
+    address, or `None` for the native coin (which has no contract). A swap converts
+    between two *different* tokens, so its out-leg and in-leg tokens must differ."""
+    return leg.address.lower() if leg.address is not None else None
 
 
 def _act_hints(tx: DecodedTx) -> frozenset[str]:

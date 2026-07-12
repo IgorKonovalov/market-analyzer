@@ -22,6 +22,7 @@ _AAVE = "0xAavePool00000000000000000000000000000002"
 _WETH = "0x4200000000000000000000000000000000000006"
 _USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
 _AERO = "0x940181a94a35a4569e4529a3cdfb74e38fd98631"
+_AAVE_TOKEN = "0x63706e401c06ac8513145b7687a14804d17f814b"  # the AAVE ERC-20 on Base
 
 _LP_POSITION = DefiPosition(
     position_id="base:aerodrome:lp-1",
@@ -285,6 +286,72 @@ def test_send_carrying_a_lifecycle_hint_is_not_a_custody_move() -> None:
         transfers=[_leg("out", "WETH", _WETH, 0.25)],
     )
     assert map_events([send], _POSITIONS)[0].kind != "custody_move"
+
+
+def test_aggregator_execute_swap_with_a_trade_act_is_a_swap() -> None:
+    """Plan 0087 smoke follow-up: an aggregator/router-routed swap arrives as
+    operation_type "execute" (NOT "trade") but carries a "trade" act and a clean
+    two-sided transfer — recognized as `swap` despite the op_type. Motivating live
+    case: 0x1cbbb89c… on position 87f522… (WETH out 1.9 → AAVE in 37.6)."""
+    swap = _tx(
+        "0x1cbbb89c",
+        "execute",
+        act_type="trade",
+        method="Execute",
+        transfers=[_leg("out", "WETH", _WETH, 1.9), _leg("in", "AAVE", _AAVE_TOKEN, 37.6)],
+    )
+    events = map_events([swap], _POSITIONS)
+    assert len(events) == 1
+    assert events[0].kind == "swap"
+    assert events[0].position_id == _LP_POSITION.position_id
+
+
+def test_zap_execute_with_a_trade_act_plus_an_add_hint_stays_unclassified() -> None:
+    """The load-bearing precision guard: an aggregator `execute` that swaps AND adds
+    liquidity (a zap-in) carries a "trade" act but ALSO an add-liquidity hint — it
+    must NOT book as a pure swap (that would corrupt basis, ADR-0079), so it stays
+    honest `unclassified`."""
+    zap = _tx(
+        "0xzap",
+        "execute",
+        act_type="trade",
+        method="addLiquidity",
+        transfers=[_leg("out", "WETH", _WETH, 1.0), _leg("in", "AERO", _AERO, 50.0)],
+    )
+    assert map_events([zap], _POSITIONS)[0].kind == "unclassified"
+
+
+def test_execute_with_a_trade_act_but_three_transfers_stays_unclassified() -> None:
+    """A clean swap is exactly one out-leg and one in-leg; a "trade" act with THREE
+    transfers (two swap legs + an extra LP leg) is a compound op, not a pure swap —
+    stays `unclassified` rather than mis-booking a basis."""
+    compound = _tx(
+        "0xcompound",
+        "execute",
+        act_type="trade",
+        transfers=[
+            _leg("out", "WETH", _WETH, 1.0),
+            _leg("in", "AERO", _AERO, 50.0),
+            _leg("in", "USDC", _USDC, 100.0),
+        ],
+    )
+    assert map_events([compound], _POSITIONS)[0].kind == "unclassified"
+
+
+def test_trade_act_one_sided_or_same_token_is_not_a_swap() -> None:
+    """The 1-in / 1-out-of-DIFFERENT-tokens guard: a "trade" act with only outbound
+    legs, or with the same token in and out, is not a clean conversion — not a swap."""
+    one_sided = _tx(
+        "0x1side", "execute", act_type="trade", transfers=[_leg("out", "WETH", _WETH, 1.0)]
+    )
+    assert map_events([one_sided], _POSITIONS)[0].kind != "swap"
+    same_token = _tx(
+        "0xsame",
+        "execute",
+        act_type="trade",
+        transfers=[_leg("out", "WETH", _WETH, 1.0), _leg("in", "WETH", _WETH, 0.9)],
+    )
+    assert map_events([same_token], _POSITIONS)[0].kind != "swap"
 
 
 def test_failed_transaction_is_skipped() -> None:
