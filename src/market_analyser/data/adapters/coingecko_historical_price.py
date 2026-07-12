@@ -7,17 +7,23 @@ test wallet has no DefiLlama coverage, and under ADR-0036 a single unpriced leg
 nulls the whole wallet total. This module adds a **secondary** source behind
 DefiLlama so a primary miss falls through instead of failing the wallet.
 
-**Why CoinGecko, no new dependency.** The plan prefers reusing the API we already
-depend on over adding a pinned package (ADR-0012/0013). CoinGecko's *keyless*
-`/coins/{platform}/contract/{address}/market_chart/range` (and `/coins/{id}/
-market_chart/range` for the native coin) returns historical USD prices; we take
-the point **nearest** the requested block timestamp. That is the same
-nearest-indexed approximation DefiLlama's `historical/{ts}` already makes — not an
-exact-block oracle either — so it is a like-for-like fallback, not a weaker one.
-(Live free-tier coverage/granularity for very old timestamps is confirmed by the
-Plan 0084 phase-6 human smoke; if a specific token still cannot be served, an
-Alchemy price fallback is the documented next-step dependency decision — the plan's
-explicit followup — not a silent addition here.)
+**Why CoinGecko was chosen — and the keyless limitation the phase-6 smoke found.**
+The plan preferred reusing an API we already depend on over adding a pinned package
+(ADR-0012/0013). CoinGecko's `/coins/{platform}/contract/{address}/market_chart/
+range` (and `/coins/{id}/market_chart/range` for the native coin) returns
+historical USD prices at the point **nearest** the block timestamp — the same
+nearest-indexed approximation DefiLlama's `historical/{ts}` makes.
+
+**However, the Plan 0084 phase-6 smoke established that this endpoint is NOT
+keyless: an unauthenticated call returns HTTP 401** (unlike `/simple/price`, still
+keyless-200, which the macro adapter uses). So as wired keyless this fallback is
+effectively inert — every call 401s and, by the chain's best-effort posture below,
+degrades to "no coverage" (the token stays unpriced, its position incomplete). It
+therefore does no harm but adds no coverage either. Closing the real "1 missing
+price" gap needs a **keyed** historical price source — a CoinGecko demo/pro key
+(`x-cg-demo-api-key`) or an Alchemy price fallback — which is a dependency/secret
+decision for the architect (the plan's documented followup), deliberately not made
+silently here.
 
 **Determinism = the same snapshot mechanism (ADR-0036).** The fallback snapshots
 into the **same** `PriceSnapshotRepository`, keyed by the **same** `token_key`, as
@@ -133,9 +139,16 @@ class CoinGeckoHistoricalPriceAdapter:
 class ChainedHistoricalPriceSource:
     """A `HistoricalPriceSource` that tries `primary`, then `fallback` only on a
     primary miss (Plan 0084 phase 4). Both should share one snapshot store so the
-    merged result is deterministic across re-runs (ADR-0036). Errors propagate
-    from whichever source is consulted; a primary *error* is not swallowed into a
-    fallback attempt — only a clean `None` (no coverage) falls through."""
+    merged result is deterministic across re-runs (ADR-0036).
+
+    Error posture is deliberately asymmetric. A **primary** error propagates — a
+    DefiLlama outage means no prices at all, a real signal. A **fallback** error is
+    swallowed to `None` (no coverage): the fallback is a best-effort *supplement*,
+    so its failure must degrade to an honest incomplete position, never crash a
+    reconstruction the primary alone would have completed. (This matters concretely:
+    CoinGecko's keyless historical endpoint returns HTTP 401 — see the module note —
+    so without this the fallback would 502 every wallet holding a DefiLlama-unpriced
+    token.) A clean primary `None` still falls through to the fallback attempt."""
 
     def __init__(
         self,
@@ -150,7 +163,13 @@ class ChainedHistoricalPriceSource:
         price = self._primary.fetch_price(chain=chain, address=address, ts=ts)
         if price is not None:
             return price
-        return self._fallback.fetch_price(chain=chain, address=address, ts=ts)
+        try:
+            return self._fallback.fetch_price(chain=chain, address=address, ts=ts)
+        except UpstreamDataError:
+            # Best-effort supplement: a fallback transport failure (401 / throttle /
+            # outage) is "no coverage", not a crash — the token stays unpriced and
+            # its position honestly incomplete (ADR-0036), exactly as pre-phase-4.
+            return None
 
 
 def _endpoint(chain: Chain, address: str | None, ts: int) -> tuple[str | None, dict[str, str]]:

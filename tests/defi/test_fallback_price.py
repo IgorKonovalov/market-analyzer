@@ -212,6 +212,14 @@ def test_primary_error_is_not_swallowed_into_a_fallback_attempt() -> None:
     assert fallback.calls == 0
 
 
+def test_fallback_error_degrades_to_no_coverage_never_crashes() -> None:
+    """Regression (Plan 0084 ph6 smoke): a fallback transport failure — e.g.
+    CoinGecko's keyless historical endpoint 401 — must return None (no coverage),
+    not propagate and crash a reconstruction the primary alone would complete."""
+    chain = ChainedHistoricalPriceSource(primary=_SpySource(None), fallback=_ErrorSource())
+    assert chain.fetch_price(chain="base", address=_GHST, ts=_TS) is None
+
+
 def test_long_tail_token_resolves_via_the_fallback_and_is_deterministic(
     session_factory: sessionmaker[Session],
 ) -> None:
