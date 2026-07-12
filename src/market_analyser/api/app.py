@@ -62,6 +62,10 @@ from market_analyser.data.adapters.binance_derivatives import BinanceDerivatives
 from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
 from market_analyser.data.adapters.coinbase import CoinbaseAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
+from market_analyser.data.adapters.coingecko_historical_price import (
+    ChainedHistoricalPriceSource,
+    CoinGeckoHistoricalPriceAdapter,
+)
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.defillama import DefiLlamaAdapter
@@ -185,12 +189,17 @@ def create_app(
         alerts_repository = AlertsRepository(session_factory)
         # The P&L caches (Plan 0035, ADR-0036): the immutable decoded-tx store
         # behind the gap-fetch ingestion, and the first-write-wins price
-        # snapshots that make a replay revision-proof. The DefiLlama adapter is
+        # snapshots that make a replay revision-proof. Both price adapters are
         # keyless and network-free to construct; only a fetch touches the wire.
         defi_tx_repository = DefiTxRepository(session_factory)
         if historical_price_source is None:
-            historical_price_source = DefiLlamaAdapter(
-                snapshot_store=PriceSnapshotRepository(session_factory),
+            # DefiLlama primary → keyless CoinGecko fallback (Plan 0084 ph4), both
+            # snapshotting into the SAME store with identical keys so a re-run is
+            # byte-identical regardless of which source first resolved a price.
+            price_snapshots = PriceSnapshotRepository(session_factory)
+            historical_price_source = ChainedHistoricalPriceSource(
+                primary=DefiLlamaAdapter(snapshot_store=price_snapshots),
+                fallback=CoinGeckoHistoricalPriceAdapter(snapshot_store=price_snapshots),
             )
         if provider is None:
             provider = DefaultMarketDataProvider(
