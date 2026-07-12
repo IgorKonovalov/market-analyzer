@@ -134,7 +134,7 @@ from market_analyser.data.adapters.onchain_pools import OnchainPoolPriceAdapter,
 # ...
 app = create_app(
     ...,
-    pool_price_sources={"onchain": OnchainPoolPriceAdapter(
+    executable_quote_sources={"onchain": OnchainPoolPriceAdapter(
         secrets_store=secrets_store, pools=[PoolConfig(...), PoolConfig(...)])},
 )
 ```

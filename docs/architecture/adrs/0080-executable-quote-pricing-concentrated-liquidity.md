@@ -1,6 +1,6 @@
 # ADR-0080 — Executable-quote pricing via on-chain Quoters; unify constant-product + concentrated liquidity behind one read-only source
 
-> **Status:** proposed (2026-07-11)
+> **Status:** accepted (Plan 0086 close 2026-07-12)
 > **Date:** 2026-07-11
 > **Related plan(s):** 0086-concentrated-liquidity-executable-quotes (accepts at close)
 > **Related ADRs:** refines the [Plan 0079](../plans/done/0079-cross-pool-discrepancy-scanner.md) cost model (the v1 `PoolPriceSource` marginal-price-plus-estimated-slippage shape); [ADR-0072](0072-bounded-autonomy-and-prediction-market-execution.md) (this makes the BA-7 arb-viability evidence *real* — the deep venues, not the dust tail); [ADR-0074](0074-edge-selection-criteria-for-execution.md) (edge-selection: after completeness, the target is neglected niches, never major-pair arb); [ADR-0031](0031-data-source-adapter-contract.md) (per-capability source contract + selector registry); [ADR-0038](0038-third-party-api-key-storage.md) (RPC read URL, not a trade key); [ADR-0019](0019-external-http-adapter-resilience.md) (resilient client); [ADR-0046](0046-mcp-large-result-delivery.md) (bounded results); [ADR-0035](0035-defi-domain-placement.md) (DeFi placement); [ADR-0052](0052-binance-exchange-data-source.md)/[ADR-0053](0053-onchain-valuation-source.md) (the read-source-ADR precedent Plan 0079's open-question named)
