@@ -16,7 +16,7 @@
  */
 import '@testing-library/jest-dom'
 
-import { createEvent, fireEvent, render, screen } from '@testing-library/react'
+import { act, createEvent, fireEvent, render, screen } from '@testing-library/react'
 
 import { CandlestickChart } from './CandlestickChart'
 import { postBarClicked, postRangeSelected } from '../api/uiEvents'
@@ -137,19 +137,26 @@ function dragChart(fromX: number, toX: number): void {
 }
 
 function clickBar(timeSeconds: number, ohlc: { o: number; h: number; l: number; c: number }): void {
-  // Simulate lightweight-charts delivering a click on a candle.
-  clickHandler!({
-    time: timeSeconds,
-    point: { x: 10, y: 10 },
-    seriesData: new Map([
-      [candleSeries, { open: ohlc.o, high: ohlc.h, low: ohlc.l, close: ohlc.c }],
-    ]),
+  // Simulate lightweight-charts delivering a click on a candle. The handler marks
+  // the clicked bar (a React state update), so wrap it in act() — the chart's
+  // subscribeClick callback is invoked directly here, bypassing testing-library's
+  // implicit act.
+  act(() => {
+    clickHandler!({
+      time: timeSeconds,
+      point: { x: 10, y: 10 },
+      seriesData: new Map([
+        [candleSeries, { open: ohlc.o, high: ohlc.h, low: ohlc.l, close: ohlc.c }],
+      ]),
+    })
   })
 }
 
 /** A click whose seriesData is empty — exercises the bars-prop OHLC fallback. */
 function clickEmptyAt(timeSeconds: number): void {
-  clickHandler!({ time: timeSeconds, point: { x: 10, y: 10 }, seriesData: new Map() })
+  act(() => {
+    clickHandler!({ time: timeSeconds, point: { x: 10, y: 10 }, seriesData: new Map() })
+  })
 }
 
 function barTime(bar: Bar): number {
