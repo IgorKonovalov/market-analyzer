@@ -57,6 +57,9 @@ from market_analyser.attribution.scoring_job import (
 )
 from market_analyser.attribution.scoring_job import RecommendationScoringJob
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.alchemy_historical_price import (
+    AlchemyHistoricalPriceAdapter,
+)
 from market_analyser.data.adapters.binance_account import BinanceAccountAdapter
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
 from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
@@ -64,7 +67,6 @@ from market_analyser.data.adapters.coinbase import CoinbaseAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.coingecko_historical_price import (
     ChainedHistoricalPriceSource,
-    CoinGeckoHistoricalPriceAdapter,
 )
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
@@ -199,13 +201,20 @@ def create_app(
         # keyless and network-free to construct; only a fetch touches the wire.
         defi_tx_repository = DefiTxRepository(session_factory)
         if historical_price_source is None:
-            # DefiLlama primary → keyless CoinGecko fallback (Plan 0084 ph4), both
-            # snapshotting into the SAME store with identical keys so a re-run is
-            # byte-identical regardless of which source first resolved a price.
+            # DefiLlama primary → keyed Alchemy fallback (Plan 0087 / ADR-0081,
+            # replacing Plan 0084's inert keyless CoinGecko fallback — its
+            # historical endpoint 401s without a key). Both snapshot into the SAME
+            # store with identical keys so a re-run is byte-identical regardless of
+            # which source first resolved a price. The Alchemy fallback reads its
+            # key lazily from the secrets store: absent the key (or an unwired
+            # store) it is inert and the chain degrades to no-coverage, the
+            # pre-0084 behavior.
             price_snapshots = PriceSnapshotRepository(session_factory)
             historical_price_source = ChainedHistoricalPriceSource(
                 primary=DefiLlamaAdapter(snapshot_store=price_snapshots),
-                fallback=CoinGeckoHistoricalPriceAdapter(snapshot_store=price_snapshots),
+                fallback=AlchemyHistoricalPriceAdapter(
+                    secrets_store=secrets_store, snapshot_store=price_snapshots
+                ),
             )
         if provider is None:
             provider = DefaultMarketDataProvider(

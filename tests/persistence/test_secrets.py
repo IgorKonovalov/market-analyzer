@@ -115,6 +115,19 @@ def test_status_reflects_env_override(secrets_path: Path) -> None:
     assert store.status()["graph_api_key"] == "set"
 
 
+def test_alchemy_prices_key_is_a_known_secret(secrets_path: Path) -> None:
+    """Plan 0087 / ADR-0081: the keyed historical-price fallback's credential is a
+    registered key — settable, retrievable, env-overridable, and default-unset —
+    so a `secrets.json` carrying it loads (the store is `extra="forbid"`)."""
+    assert SecretsStore(secrets_path, environ={}).get("alchemy_prices_key") is None
+    assert SecretsStore(secrets_path, environ={}).status()["alchemy_prices_key"] == "unset"
+    store = SecretsStore(secrets_path, environ={"MARKET_ANALYSER_ALCHEMY_PRICES_KEY": "env_alch"})
+    assert store.get("alchemy_prices_key") == "env_alch"
+    file_store = SecretsStore(secrets_path, environ={})
+    file_store.set("alchemy_prices_key", "sk-file-value")
+    assert SecretsStore(secrets_path, environ={}).get("alchemy_prices_key") == "sk-file-value"
+
+
 def test_repr_redacts_the_value(secrets_path: Path) -> None:
     store = SecretsStore(secrets_path, environ={})
     store.set("zerion_api_key", ZERION_KEY)

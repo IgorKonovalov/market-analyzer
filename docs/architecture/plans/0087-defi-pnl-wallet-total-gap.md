@@ -1,6 +1,6 @@
 # 0087 — DeFi P&L: close the wallet-total gap (Alchemy historical-price fallback + bare-transfer custody classification)
 
-> **Status:** draft
+> **Status:** in-progress
 > **Created:** 2026-07-12
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0081](../adrs/0081-defi-pnl-wallet-total-gap.md) (paired — refines [ADR-0079](../adrs/0079-defi-pnl-gauge-swaps-unclaimed.md) / [ADR-0036](../adrs/0036-defi-pnl-transaction-replay.md))

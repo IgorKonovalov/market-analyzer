@@ -47,7 +47,10 @@ ENV_VAR_PREFIX = "MARKET_ANALYSER_"
 # unchanged (ADR-0034 notes, ADR-0035 §Authenticated-source prerequisite). The
 # `binance_read_*` pair is the Plan 0041 portfolio leg's **read-only** credential
 # (ADR-0042) — a lower-value secret than a trade key, which is why it lives here
-# and not in the Pillar-5 trade keychain (ADR-0044).
+# and not in the Pillar-5 trade keychain (ADR-0044). `alchemy_prices_key` is the
+# Plan 0087 / ADR-0081 keyed historical-price fallback's credential (the DeFi P&L
+# leg DefiLlama cannot price); read-only, injected server-side via the Alchemy
+# Prices `Authorization` header, never the URL path (secret-hygiene note there).
 SecretKey = Literal[
     "zerion_api_key",
     "graph_api_key",
@@ -55,6 +58,7 @@ SecretKey = Literal[
     "base_rpc_url",
     "binance_read_api_key",
     "binance_read_api_secret",
+    "alchemy_prices_key",
 ]
 KNOWN_SECRET_KEYS: tuple[SecretKey, ...] = get_args(SecretKey)
 SecretStatus = Literal["set", "unset"]
@@ -75,6 +79,7 @@ class SecretsFile(BaseModel):
     base_rpc_url: str | None = None
     binance_read_api_key: str | None = None
     binance_read_api_secret: str | None = None
+    alchemy_prices_key: str | None = None
 
 
 class SecretsStore:
