@@ -41,6 +41,24 @@ function formatProbability(p: number): string {
   return `${(p * 100).toFixed(1)}%`
 }
 
+/**
+ * The market URL is provenance (a citation of where the public fact lives), not a
+ * trade control (ADR-0029/0041). Render it as a link only when it host-validates to
+ * `polymarket.com` over https — a renderer-side allowlist and defense in depth: the
+ * sidecar already host-validates when it builds the URL (Plan 0089 phase 1) and the
+ * IPC boundary rejects non-`http(s)`, but the renderer never even offers an
+ * off-allowlist link and never navigates itself (ADR-0008). Anything else → `null`.
+ */
+function safePolymarketUrl(url: string | null | undefined): string | null {
+  if (url === null || url === undefined || url === '') return null
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' && parsed.host === 'polymarket.com' ? parsed.href : null
+  } catch {
+    return null
+  }
+}
+
 export function ConvergenceView({ screen }: Props): JSX.Element {
   if (screen === null) {
     return (
@@ -77,16 +95,22 @@ export function ConvergenceView({ screen }: Props): JSX.Element {
       </header>
 
       <ul className={styles.list}>
-        {screen.opportunities.map((opportunity) => (
-          <li
-            key={opportunity.market_id}
-            className={styles.card}
-            data-testid="convergence-opportunity"
-            data-market-id={opportunity.market_id}
-          >
-            <OpportunityCard opportunity={opportunity} />
-          </li>
-        ))}
+        {/* Pin edge-descending in the view (Plan 0089): the screener already ranks by
+         * -implied_return_if_right, and this defensive stable sort guarantees the
+         * largest-upside opportunity leads even if a future producer reorders the
+         * payload — the ranking key is unchanged, only re-asserted at render. */}
+        {[...screen.opportunities]
+          .sort((a, b) => b.implied_return_if_right - a.implied_return_if_right)
+          .map((opportunity) => (
+            <li
+              key={opportunity.market_id}
+              className={styles.card}
+              data-testid="convergence-opportunity"
+              data-market-id={opportunity.market_id}
+            >
+              <OpportunityCard opportunity={opportunity} />
+            </li>
+          ))}
       </ul>
     </section>
   )
@@ -98,6 +122,7 @@ function OpportunityCard({ opportunity }: { opportunity: ConvergenceOpportunity 
     opportunity.liquidity_caution !== null &&
     opportunity.liquidity_caution !== undefined &&
     opportunity.liquidity_caution !== ''
+  const marketUrl = safePolymarketUrl(opportunity.market_url)
 
   return (
     <>
@@ -175,6 +200,27 @@ function OpportunityCard({ opportunity }: { opportunity: ConvergenceOpportunity 
       <p className={styles.lockup} data-testid="capital-lockup">
         {opportunity.capital_lockup_note}
       </p>
+
+      {/* Provenance/citation link — where the public fact lives (Plan 0089). Read-only:
+       * it opens the market page in the OS browser, never navigates the renderer and
+       * is never a trade control (ADR-0008 / ADR-0029). Rendered only when the URL
+       * host-validates to polymarket.com. */}
+      {marketUrl !== null && (
+        <p className={styles.provenance}>
+          <a
+            className={styles.marketLink}
+            href={marketUrl}
+            rel="noreferrer"
+            data-testid="market-link"
+            onClick={(e) => {
+              e.preventDefault()
+              void window.api?.shell?.openExternal({ url: marketUrl })
+            }}
+          >
+            {t('convergence.viewOnPolymarket')}
+          </a>
+        </p>
+      )}
     </>
   )
 }

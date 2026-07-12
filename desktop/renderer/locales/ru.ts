@@ -395,6 +395,7 @@ export const ru = {
   'convergence.riskLevelLow': 'низкий',
   'convergence.riskLevelMedium': 'средний',
   'convergence.riskLevelHigh': 'высокий',
+  'convergence.viewOnPolymarket': 'Открыть на Polymarket ↗',
 
   // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
   'trackRecord.title': 'История точности',

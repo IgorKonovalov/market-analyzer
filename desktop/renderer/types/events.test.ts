@@ -1023,7 +1023,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     ])
   })
 
-  it('ConvergenceOpportunity fields match (liquidity_caution/volume_usd nullable, absent when None; NO direction/size/action)', () => {
+  it('ConvergenceOpportunity fields match (liquidity_caution/volume_usd/market_url nullable, absent when None; NO direction/size/action)', () => {
     expect(propertyNames(dumped.ConvergenceOpportunity)).toEqual([
       'capital_lockup_note',
       'closes_at',
@@ -1031,6 +1031,7 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'implied_return_if_right',
       'liquidity_caution',
       'market_id',
+      'market_url',
       'outcome_label',
       'queried_at',
       'question',
