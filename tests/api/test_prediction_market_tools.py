@@ -262,6 +262,7 @@ def test_outputs_and_descriptions_carry_no_advice_language() -> None:
         "liquidity_usd",
         "queried_at",
         "source",
+        "market_url",  # provenance link now lives on PredictionMarket (Plan 0089)
     }
 
 

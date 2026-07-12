@@ -16,7 +16,11 @@ control, plus a below-confidence and a closed market to exercise both filters):
 (f) the filters are configurable (loosening them admits the controls);
 (g) a re-run with the same `now` is byte-identical (determinism);
 (h) a word-boundary grep asserts NO output string carries buy/sell/act advice
-    (the ADR-0029 pattern used by Plan 0041).
+    (the ADR-0029 pattern used by Plan 0041) — and a real polymarket.com URL is in
+    the screened output, proving the provenance link carries no advice tokens;
+(i) each opportunity copies the market's `market_url` provenance link through, present
+    (as the URL, or null) in the JSON dump so the renderer mirror sees the key
+    (Plan 0089).
 
 All pure — no network, no wall-clock (the only time input is the injected `now`).
 """
@@ -56,6 +60,7 @@ def _market(
     closed: bool = False,
     closes_in: timedelta | None = timedelta(days=3),
     volume_usd: float | None = 5_000_000.0,
+    market_url: str | None = None,
 ) -> PredictionMarket:
     return PredictionMarket(
         market_id=market_id,
@@ -67,12 +72,18 @@ def _market(
         liquidity_usd=None,
         queried_at=_NOW,
         source="polymarket",
+        market_url=market_url,
     )
 
 
 # --- the plan's named fixture set ------------------------------------------------
 
-NEAR_CERTAIN = _market(market_id="near", closes_in=timedelta(days=3), volume_usd=5_000_000.0)
+NEAR_CERTAIN = _market(
+    market_id="near",
+    closes_in=timedelta(days=3),
+    volume_usd=5_000_000.0,
+    market_url="https://polymarket.com/event/will-it-rain-tomorrow",
+)
 THIN_BOOK = _market(
     market_id="thin",
     outcomes=_binary(0.96),
@@ -251,3 +262,26 @@ def test_output_carries_no_advice_language() -> None:
     fields = set(opportunities[0].model_dump().keys())
     for forbidden in ("direction", "side", "size", "action", "signal"):
         assert forbidden not in fields
+    # The screened output actually contains a real polymarket.com provenance URL, so
+    # the grep above proved a market_url carries none of the advice tokens.
+    assert "polymarket.com/event/" in blob
+
+
+# --- (i) market_url provenance (Plan 0089) --------------------------------------
+
+
+def test_opportunity_carries_market_url_from_the_market() -> None:
+    (opportunity,) = _screen([NEAR_CERTAIN])
+    assert opportunity.market_url == "https://polymarket.com/event/will-it-rain-tomorrow"
+    # Serialized present (matching the other optional provenance fields' posture).
+    dumped = opportunity.model_dump(mode="json")
+    assert dumped["market_url"] == "https://polymarket.com/event/will-it-rain-tomorrow"
+
+
+def test_opportunity_market_url_is_null_when_market_has_none() -> None:
+    no_url = _market(market_id="nourl", closes_in=timedelta(days=1), market_url=None)
+    (opportunity,) = _screen([no_url])
+    assert opportunity.market_url is None
+    # Present-as-null in the JSON dump (no exclude_none), so the renderer mirror sees
+    # the key rather than a silent omission.
+    assert opportunity.model_dump(mode="json")["market_url"] is None

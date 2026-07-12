@@ -181,6 +181,7 @@ def _screen_market(
         closes_at=market.closes_at,
         queried_at=now,
         source=market.source,
+        market_url=market.market_url,  # provenance link, copied through (Plan 0089)
     )
 
 

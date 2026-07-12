@@ -3,8 +3,10 @@
 Done-when claims pinned here (the event-publishing tool pattern):
 
 (a) the tool returns ranked opportunities for a query through the registry-selected
-    source, each carrying provenance (`queried_at`, `source`) + full risk context
-    (resolution_risk, liquidity_caution, capital_lockup_note) and no advice;
+    source, each carrying provenance (`queried_at`, `source`, `market_url`) + full risk
+    context (resolution_risk, liquidity_caution, capital_lockup_note) and no advice —
+    the market_url provenance link flows through (the URL, or null when no slug), and
+    the tool description advertises it in the returned-shape list (Plan 0089);
 (b) oversized result sets return the typed `too_large` page (total_available /
     offset / returned), not an unbounded dump (ADR-0046);
 (c) the `prediction.screen_completed v1` envelope publishes EXACTLY ONCE on a
@@ -53,6 +55,7 @@ def _market(
     closes_in: timedelta = timedelta(days=3),
     volume_usd: float | None = 5_000_000.0,
     outcomes: list[MarketOutcome] | None = None,
+    market_url: str | None = None,
 ) -> PredictionMarket:
     return PredictionMarket(
         market_id=market_id,
@@ -69,6 +72,7 @@ def _market(
         liquidity_usd=None,
         queried_at=_NOW,
         source="polymarket",
+        market_url=market_url,
     )
 
 
@@ -144,7 +148,12 @@ def _drain(run: Callable[[EventBus], Awaitable[object]]) -> tuple[list[Envelope]
 def test_returns_ranked_opportunities_with_provenance_and_risk() -> None:
     source = _FakeSource(
         search=[
-            _market(market_id="deep", prob=0.95, volume_usd=5_000_000.0),
+            _market(
+                market_id="deep",
+                prob=0.95,
+                volume_usd=5_000_000.0,
+                market_url="https://polymarket.com/event/deep-market",
+            ),
             _market(market_id="thin", prob=0.96, volume_usd=8_000.0),
         ]
     )
@@ -156,7 +165,7 @@ def test_returns_ranked_opportunities_with_provenance_and_risk() -> None:
     # Ranked by gross return descending: deep (0.0526) > thin (0.0417).
     assert [o["market_id"] for o in result["opportunities"]] == ["deep", "thin"]
     first = result["opportunities"][0]
-    # Full risk context travels with every opportunity.
+    # Full risk context + the provenance link travel with every opportunity.
     assert set(first) == {
         "market_id",
         "question",
@@ -171,9 +180,14 @@ def test_returns_ranked_opportunities_with_provenance_and_risk() -> None:
         "closes_at",
         "queried_at",
         "source",
+        "market_url",
     }
     assert set(first["resolution_risk"]) == {"level", "reasons"}
     assert result["opportunities"][1]["liquidity_caution"] is not None  # thin book flagged
+    # The market_url provenance link flows through (the URL when present, null when the
+    # source gave no slug — present either way so the renderer mirror sees the key).
+    assert first["market_url"] == "https://polymarket.com/event/deep-market"
+    assert result["opportunities"][1]["market_url"] is None
 
 
 # --- (b) bounded pages ----------------------------------------------------------
@@ -347,3 +361,9 @@ def test_output_and_description_carry_no_advice_language() -> None:
         "should",
     ):
         assert not re.search(rf"\b{token}\b", blob), f"advice token {token!r} leaked"
+
+
+def test_description_lists_market_url_in_returned_shape() -> None:
+    """The tool description advertises `market_url` in the returned-shape field list so
+    the agent knows the clickable provenance link is available (Plan 0089)."""
+    assert "market_url" in FIND_CONVERGENCE_OPPORTUNITIES_DESCRIPTION
