@@ -181,6 +181,7 @@ async def post_defi_pnl(request: Request, body: PnlRequest) -> PnlResponse:
             crosscheck_source=crosscheck,
             gauge_source=gauge_sources.get(_DEFAULT_RPC_SOURCE),
             unclaimed_source=unclaimed_sources.get(_DEFAULT_RPC_SOURCE),
+            dust_tokens=getattr(request.app.state, "defi_dust_tokens", frozenset()),
         )
     except ZerionAuthError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

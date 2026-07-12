@@ -109,6 +109,7 @@ def register_compute_wallet_pnl(
     event_bus: EventBus,
     gauge_source: GaugeResolutionSource | None = None,
     unclaimed_rewards_source: UnclaimedRewardsSource | None = None,
+    dust_tokens: frozenset[str] = frozenset(),
 ) -> None:
     """Bind the `compute_wallet_pnl` tool to `server`. Dependencies are
     captured by closure so the tool body keeps its single declared parameter
@@ -134,6 +135,7 @@ def register_compute_wallet_pnl(
                 crosscheck_source=crosscheck,
                 gauge_source=gauge_source,
                 unclaimed_source=unclaimed_rewards_source,
+                dust_tokens=dust_tokens,
             )
         except ZerionAuthError as err:
             return _error("auth", err)

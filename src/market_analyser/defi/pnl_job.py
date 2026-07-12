@@ -80,6 +80,7 @@ async def run_wallet_pnl(
     crosscheck_source: PnlCrosscheckSource | None = None,
     gauge_source: GaugeResolutionSource | None = None,
     unclaimed_source: UnclaimedRewardsSource | None = None,
+    dust_tokens: frozenset[str] = frozenset(),
 ) -> WalletPnl:
     """Reconstruct the wallet's P&L, streaming `defi.pnl_*`; return the result.
 
@@ -106,6 +107,7 @@ async def run_wallet_pnl(
             crosscheck_source,
             gauge_source,
             unclaimed_source,
+            dust_tokens,
         )
     except Exception as err:
         event_bus.publish(
@@ -140,6 +142,7 @@ def _reconstruct(
     crosscheck_source: PnlCrosscheckSource | None,
     gauge_source: GaugeResolutionSource | None,
     unclaimed_source: UnclaimedRewardsSource | None,
+    dust_tokens: frozenset[str],
 ) -> WalletPnl:
     history = TxHistoryService(source=tx_source, repository=tx_repository).load_history(
         address, refresh=refresh
@@ -161,6 +164,7 @@ def _reconstruct(
         price_source=price_source,
         as_of=as_of,
         now=now,
+        dust_tokens=dust_tokens,
     )
     # Current-state augmentation (Plan 0084), after the pure replay so the
     # deterministic figures are untouched; best-effort, never fails the P&L.

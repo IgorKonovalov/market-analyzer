@@ -228,6 +228,70 @@ def test_missing_price_marks_the_position_incomplete_with_the_leg_named() -> Non
     assert result.unrealized_usd == 0.0
 
 
+# -- Plan 0093 / ADR-0085: user-attested dust-token override ----------------------
+#
+# The GHST fee_claim leg is unpriceable (absent from _PRICES), so by default it
+# marks the position incomplete (the loud-failure test above). Attesting GHST as
+# dust values it at $0 in the price path: the position completes with a disclosing
+# note, its figures equal the dust-free _LP (a $0 fee claim books nothing), and the
+# ADR-0036 default is untouched for the same token when it is NOT listed.
+
+_GHST_KEY = f"base:{_GHST}"
+_DUST_EVENTS = [
+    *_LP_EVENTS,
+    _event("fee_claim", _LP, _TS3, 400, [_leg("in", "GHST", _GHST, 5.0)]),
+]
+
+
+def _dust_pnl(dust_tokens: frozenset[str]) -> Any:
+    return compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_LP],
+        events=_DUST_EVENTS,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
+        dust_tokens=dust_tokens,
+    )
+
+
+def test_attested_dust_token_completes_at_zero_with_a_disclosing_note() -> None:
+    result = _dust_pnl(frozenset({_GHST_KEY}))
+    position = result.positions[0]
+    assert position.incomplete is False
+    # GHST valued at $0, so the figures equal the dust-free _LP (realized 70, basis
+    # 700, unrealized 100) — the $0 leg is booked, never a fabricated non-zero.
+    assert position.realized_usd == 70.0
+    assert position.cost_basis_usd == 700.0
+    assert position.unrealized_usd == 100.0
+    # The zero is disclosed, never silent.
+    assert any(_GHST_KEY in note and "$0" in note for note in position.notes)
+    # The now-complete position counts toward the wallet total — not partial.
+    assert result.partial is False
+    assert result.incomplete_position_count == 0
+    assert result.realized_usd == 70.0
+
+
+def test_dust_override_leaves_loud_failure_the_default_for_unlisted_tokens() -> None:
+    # Same position, GHST NOT attested: ADR-0036 default holds — figures null, the
+    # offending leg named, never a fabricated $0.
+    position = _dust_pnl(frozenset()).positions[0]
+    assert position.incomplete is True
+    assert position.realized_usd is None
+    assert any(_GHST_KEY in note and str(_epoch(_TS3)) in note for note in position.notes)
+
+
+def test_dust_override_is_case_insensitive_and_deterministic() -> None:
+    # A mixed-case config entry still matches (the engine lowercases to token_key
+    # form), and a re-run with the same dust set is byte-identical.
+    mixed = frozenset({f"base:{_GHST.upper()}"})
+    assert _dust_pnl(mixed).positions[0].incomplete is False
+    assert (
+        _dust_pnl(frozenset({_GHST_KEY})).model_dump_json()
+        == _dust_pnl(frozenset({_GHST_KEY})).model_dump_json()
+    )
+
+
 def test_unclassified_event_marks_the_position_incomplete() -> None:
     events = [
         *_LP_EVENTS,

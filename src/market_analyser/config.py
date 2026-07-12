@@ -42,6 +42,13 @@ class AppConfig(BaseModel):
     # no value ticking faster.
     recommendation_scoring_enabled: bool = True
     recommendation_scoring_interval_seconds: int = Field(default=3600, ge=1)
+    # DeFi P&L user-attested dust tokens (Plan 0093 / ADR-0085): `token_key`-form
+    # `chain:address` keys the wallet-P&L replay values at $0 instead of failing on
+    # a missing price, so a token the user attests is negligible stops blocking an
+    # otherwise-complete position. Opt-in, disclosed in the position notes;
+    # case-insensitive (lowercased at use); empty ⇒ ADR-0036 loud-failure for every
+    # token (the default).
+    defi_dust_tokens: list[str] = Field(default_factory=list)
 
 
 def default_app_data_dir() -> Path:

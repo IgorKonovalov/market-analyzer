@@ -56,6 +56,15 @@ the sum over the *complete* positions, carried with `partial=True` and an
 `incomplete_position_count`. This keeps "never fabricate a value for a leg we
 cannot price" while letting one unpriceable exotic position stop hiding a
 fully-reconstructed portfolio.
+
+**User-attested dust (Plan 0093 / ADR-0085):** a narrow, opt-in carve-out of the
+never-zero rule. Tokens the *user* lists in `dust_tokens` (case-insensitive
+`token_key`-form `chain:address`) are valued at `$0` in the price path instead
+of failing on a missing price, so an unpriceable dust position no longer blocks
+an otherwise-complete reconstruction. This does not weaken loud-failure: the
+machine still never guesses a value (the user declares it negligible), the zero
+is disclosed in the position `notes`, and every token *not* listed keeps the
+exact ADR-0036 behavior. Default empty ⇒ no change.
 """
 
 from __future__ import annotations
@@ -69,7 +78,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from market_analyser.data.adapters.defillama import token_key
 from market_analyser.data.sources import HistoricalPriceSource
 from market_analyser.defi.discovery import mask_wallet
-from market_analyser.defi.models import DefiPosition, RewardAmount
+from market_analyser.defi.models import Chain, DefiPosition, RewardAmount
 from market_analyser.defi.pnl_events import PositionEvent
 
 # Event kinds the pot books. `swap` (average-cost conversion) and `custody_move`
@@ -186,6 +195,26 @@ class _MissingPrice(Exception):
         self.ts = ts
 
 
+class _DustAwarePriceSource:
+    """Wraps a `HistoricalPriceSource` so **user-attested dust tokens** (Plan 0093
+    / ADR-0085) resolve to `$0` instead of a missing price — their legs then
+    contribute $0 to basis/realized/unrealized and never raise `_MissingPrice`,
+    so one unpriceable dust position no longer blocks an otherwise-complete
+    reconstruction. Attested, not inferred: a token is $0 only because the user
+    listed it (the machine still never guesses a value); every other token keeps
+    the real source and ADR-0036's loud-failure. The zero is disclosed in the
+    position's notes (never silent). `dust_tokens` is already lowercased."""
+
+    def __init__(self, inner: HistoricalPriceSource, dust_tokens: frozenset[str]) -> None:
+        self._inner = inner
+        self._dust = dust_tokens
+
+    def fetch_price(self, *, chain: Chain, address: str | None, ts: int) -> float | None:
+        if token_key(chain, address) in self._dust:
+            return 0.0
+        return self._inner.fetch_price(chain=chain, address=address, ts=ts)
+
+
 def compute_wallet_pnl(
     *,
     wallet: str,
@@ -194,6 +223,7 @@ def compute_wallet_pnl(
     price_source: HistoricalPriceSource,
     as_of: datetime,
     now: datetime,
+    dust_tokens: frozenset[str] = frozenset(),
 ) -> WalletPnl:
     """Replay every position's events into per-position and wallet P&L.
 
@@ -206,7 +236,17 @@ def compute_wallet_pnl(
     `now` is the analysis-time anchor for the rolling windows (Plan 0088 /
     ADR-0082) — a wall-clock read the *job* captures once and passes in, so "last
     30 days" means 30 calendar days. Windowed figures are deterministic given a
-    fixed `now`; they are not part of the cross-calendar-time guarantee."""
+    fixed `now`; they are not part of the cross-calendar-time guarantee.
+
+    `dust_tokens` (Plan 0093 / ADR-0085) is the user-attested dust set of
+    `token_key`-form `chain:address` keys valued at `$0`; it is lowercased here
+    and wrapped around the price source, so it is a run input like the price
+    snapshots (a re-run with the same set is byte-identical). Default empty
+    preserves ADR-0036's loud-failure for every token."""
+    dust = frozenset(token.lower() for token in dust_tokens)
+    priced: HistoricalPriceSource = (
+        _DustAwarePriceSource(price_source, dust) if dust else price_source
+    )
     per_position: dict[str, list[PositionEvent]] = {}
     for event in events:
         per_position.setdefault(event.position_id, []).append(event)
@@ -214,9 +254,10 @@ def compute_wallet_pnl(
         _replay_position(
             position,
             per_position.get(position.position_id, []),
-            price_source,
+            priced,
             as_of,
             now,
+            dust,
         )
         for position in positions
     ]
@@ -249,6 +290,7 @@ def _replay_position(
     price_source: HistoricalPriceSource,
     as_of: datetime,
     now: datetime,
+    dust_tokens: frozenset[str],
 ) -> PositionPnl:
     notes: list[str] = []
     basis = 0.0  # supply-side average-cost pot (USD)
@@ -341,6 +383,16 @@ def _replay_position(
         # state is the final state (unrealized_at_start marks the whole holding).
         for label, _cutoff in finite_cutoffs:
             window_start_state.setdefault(label, (basis, dict(contributed)))
+        # User-attested dust tokens (Plan 0093 / ADR-0085) were valued at $0 by the
+        # dust-aware price source; disclose them on the (still complete) position.
+        # Sorted for determinism — never raw set iteration in the financial path.
+        dust_notes = [
+            f"dust token {key} valued at $0 (defi_dust_tokens)"
+            for key in sorted(
+                {token_key(event.chain, leg.address) for event in events for leg in event.legs}
+                & dust_tokens
+            )
+        ]
         return PositionPnl(
             position_id=position.position_id,
             is_lp=position.kind == "lp",
@@ -349,7 +401,7 @@ def _replay_position(
             cost_basis_usd=remaining,
             vs_hodl_usd=vs_hodl,
             incomplete=False,
-            notes=notes,
+            notes=dust_notes,
             windows=_windows(
                 realized_deltas, window_start_state, unrealized, position, price_source, now
             ),

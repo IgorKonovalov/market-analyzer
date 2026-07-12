@@ -331,3 +331,52 @@ def test_second_run_replays_the_cache_with_zero_source_fetches(
     assert source.calls == 1, "the warm cache must serve the second run untouched"
     assert first is not None and second is not None
     assert first.model_dump_json() == second.model_dump_json()
+
+
+_GHST = "0xcd2f22236dd9dfe2356d7c543161d4d260fd9bcb"
+_DUST_DEPOSIT_TX = DecodedTx.model_validate(
+    {
+        "chain": "base",
+        "hash": "0xadd-dust",
+        "operation_type": "deposit",
+        "mined_at": _TS1,
+        "mined_at_block": 100,
+        "status": "confirmed",
+        # The GHST out-leg is absent from _PRICES — unpriceable at the deposit block.
+        "transfers": [
+            {"direction": "out", "symbol": "WETH", "address": _WETH, "amount": 0.2},
+            {"direction": "out", "symbol": "GHST", "address": _GHST, "amount": 5.0},
+        ],
+        "acts": [{"act_id": "a1", "type": "deposit", "contract_address": _POOL}],
+    }
+)
+
+
+def test_dust_tokens_thread_through_the_job_to_the_engine(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Plan 0093 / ADR-0085: the job passes `dust_tokens` into the engine. The
+    unpriceable GHST deposit leg marks the position incomplete by default
+    (ADR-0036), but attesting GHST as dust values it at $0 so the position
+    completes with a disclosing note — proving the parameter is threaded end to
+    end (route/tool → run_wallet_pnl → engine)."""
+    ghst_key = f"base:{_GHST}"
+
+    async def run(dust_tokens: frozenset[str]) -> WalletPnl:
+        return await run_wallet_pnl(
+            tx_source=_FakeTxSource([_DUST_DEPOSIT_TX]),
+            positions_source=_FakePositionsSource([_LP]),
+            price_source=_PRICES,
+            tx_repository=DefiTxRepository(session_factory),
+            event_bus=EventBus(),
+            address=_WALLET,
+            dust_tokens=dust_tokens,
+        )
+
+    without = asyncio.run(run(frozenset()))
+    assert without.positions[0].incomplete is True
+    listed = asyncio.run(run(frozenset({ghst_key})))
+    assert listed.positions[0].incomplete is False
+    # GHST valued at $0 → basis is the WETH leg only (0.2 * 3500).
+    assert listed.positions[0].cost_basis_usd == 700.0
+    assert any(ghst_key in note and "$0" in note for note in listed.positions[0].notes)

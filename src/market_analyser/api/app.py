@@ -148,6 +148,7 @@ def create_app(
     metric_accrual_sources: MetricAccrualSources | None = None,
     recommendation_scoring_enabled: bool = False,
     recommendation_scoring_interval_seconds: int = SCORING_DEFAULT_INTERVAL_SECONDS,
+    defi_dust_tokens: Sequence[str] = (),
     on_shutdown: Sequence[Callable[[], None]] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the bearer-auth middleware bound to `secret`.
@@ -401,6 +402,7 @@ def create_app(
             alerts_repository=alerts_repository,
             account_holdings_sources=effective_account_sources,
             manual_positions_path=manual_positions_path,
+            defi_dust_tokens=frozenset(defi_dust_tokens),
         )
         if mcp_secret is not None and annotations_repository is not None
         else None
@@ -588,6 +590,9 @@ def create_app(
     # an engine — the /defi/pnl route answers 503 rather than crashing.
     app.state.defi_tx_repository = defi_tx_repository
     app.state.historical_price_source = historical_price_source
+    # User-attested dust tokens (Plan 0093 / ADR-0085) for the /defi/pnl route;
+    # the engine lowercases, so the raw frozenset is stored. Empty ⇒ no override.
+    app.state.defi_dust_tokens = frozenset(defi_dust_tokens)
     # The event bus is the seam between MCP `show_*` tools (phase 3 publishers)
     # and the renderer's `useEventStream` (phase 4 consumer). One per app
     # instance — fresh per test, persistent in production.

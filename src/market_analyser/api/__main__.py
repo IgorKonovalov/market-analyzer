@@ -222,6 +222,9 @@ async def _serve(
         # off-switch and interval reach the lifespan scorer here.
         recommendation_scoring_enabled=config.recommendation_scoring_enabled,
         recommendation_scoring_interval_seconds=config.recommendation_scoring_interval_seconds,
+        # DeFi P&L user-attested dust tokens (Plan 0093, ADR-0085): the config.json
+        # list reaches the engine (route + MCP tool) here.
+        defi_dust_tokens=config.defi_dust_tokens,
         # Remove the lockfile during the app's lifespan shutdown so cleanup runs
         # before uvicorn re-raises a captured SIGTERM (ADR-0022). The `_run_serve`
         # `finally` below is an idempotent backstop for non-serve exit paths.

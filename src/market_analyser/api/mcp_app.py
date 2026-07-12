@@ -142,6 +142,7 @@ def create_mcp_components(
     executable_quote_sources: Mapping[str, ExecutableQuoteSource] | None = None,
     gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
+    defi_dust_tokens: frozenset[str] = frozenset(),
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -452,6 +453,7 @@ def create_mcp_components(
             event_bus=event_bus,
             gauge_source=(gauge_resolution_sources or {}).get("rpc"),
             unclaimed_rewards_source=(unclaimed_rewards_sources or {}).get("rpc"),
+            dust_tokens=defi_dust_tokens,
         )
 
     # `portfolio_summary` (Plan 0041, ADR-0042): the cross-venue read-only
