@@ -1,6 +1,6 @@
 # ADR-0082 — DeFi P&L: partial wallet totals + per-LP time-windowed profitability
 
-> **Status:** proposed (accepts at Plan 0088 close)
+> **Status:** accepted (2026-07-12, at Plan 0088's close — partial wallet totals, per-position exact windowed realized + labeled estimated total-return, and LP-first ordering all shipped and asserted; 886 Python + 18 renderer green, apiref zero-drift; the estimated total-return survived review as a cuttable-but-kept, clearly-labeled layer)
 > **Date:** 2026-07-12
 > **Related plan(s):** [Plan 0088](../plans/0088-defi-pnl-windowed-lp-profitability.md) (implements this end to end)
 > **Amends:** [ADR-0036](0036-defi-pnl-transaction-replay.md) (DeFi P&L by transaction replay) — on two points: the "any incomplete position ⇒ null wallet total" rule, and the "all-time, exact-or-honest-gap" figure set. Does not supersede it — block-time pricing, average-cost lots, determinism-by-snapshot, and loud-failure-never-zero all stand. Relates to [ADR-0079](0079-defi-pnl-gauge-swaps-unclaimed.md)/[ADR-0081](0081-defi-pnl-wallet-total-gap.md) (the completeness work this builds on).
