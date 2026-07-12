@@ -46,6 +46,11 @@ const convergenceOpportunitySchema = z
     closes_at: z.string(),
     queried_at: z.string(),
     source: z.string(),
+    // Provenance link (Plan 0089): present as the URL, or absent/null when the
+    // source gave no usable slug — `.nullish()` accepts both, same posture as
+    // `liquidity_caution`/`volume_usd`. Required in the `.strict()` shape because it
+    // is now always emitted when present, and an unknown key would be rejected.
+    market_url: z.string().nullish(),
   })
   .strict()
 

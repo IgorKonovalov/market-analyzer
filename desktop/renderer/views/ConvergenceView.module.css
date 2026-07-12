@@ -213,3 +213,20 @@
   color: var(--color-fg-muted);
   font-size: var(--font-size-xs);
 }
+
+/* Read-only provenance link — where the public fact lives (Plan 0089). A citation,
+ * styled as a plain link, never a call-to-action button. */
+.provenance {
+  margin: var(--space-1) 0 0;
+}
+
+.marketLink {
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+}
+
+.marketLink:hover,
+.marketLink:focus-visible {
+  text-decoration: underline;
+}

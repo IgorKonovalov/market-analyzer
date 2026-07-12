@@ -360,6 +360,10 @@ class PredictionMarket(BaseModel):
     liquidity_usd: float | None = Field(default=None, ge=0.0)
     queried_at: datetime
     source: str = Field(min_length=1)  # "polymarket" — the selected source identity
+    # Canonical public market page (Plan 0089), host-validated in the adapter that
+    # builds it; `None` when the source gives no usable slug — never a fabricated or
+    # numeric-id link (ADR-0041). Provenance/citation, not an action control.
+    market_url: str | None = None
 
     @field_validator("closes_at", "queried_at")
     @classmethod

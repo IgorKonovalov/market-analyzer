@@ -65,6 +65,11 @@ class ConvergenceOpportunity(BaseModel):
     closes_at: datetime  # the market's published close (the ttr basis)
     queried_at: datetime  # provenance (the seam-routed now the screen ran at)
     source: str = Field(min_length=1)  # "polymarket" — the selected source identity
+    # Canonical public market page copied from the underlying market (Plan 0089):
+    # provenance/citation (where the public fact lives), never a trade control — it
+    # sits inside the ADR-0029/0041 read-only boundary. `None` when the source gives
+    # no usable slug.
+    market_url: str | None = None
 
     @field_validator("implied_return_if_right")
     @classmethod

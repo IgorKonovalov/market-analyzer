@@ -1,6 +1,6 @@
 # 0089 — Polymarket market links (open in browser) + explicit sort
 
-> **Status:** approved (2026-07-12) — user signed off; implementation not started by user instruction.
+> **Status:** in-progress (2026-07-12) — implementing phases 1–2 in parallel worktree `plan-0089-polymarket-market-links`.
 > **Created:** 2026-07-12
 > **Owner skill(s):** dev, ui-builder, human
 > **Follows:** [Plan 0078](done/0078-polymarket-convergence-screener.md) (convergence screener — closed 2026-07-12) and [Plan 0040](0040-polymarket-odds-adapter.md) (the read-only Polymarket odds adapter this extends).

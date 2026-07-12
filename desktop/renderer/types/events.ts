@@ -670,6 +670,10 @@ export interface ConvergenceOpportunity {
   /** ISO 8601 UTC timestamp (the screen's seam-routed now). */
   queried_at: string
   source: string
+  /** Canonical `polymarket.com/event/<slug>` — provenance/citation, host-validated
+   * server-side; absent/null when the source gave no usable slug. Never a trade
+   * control (Plan 0089); the viewer opens it read-only in the OS browser. */
+  market_url?: string | null
 }
 
 /** Mirror of the pydantic `PredictionScreenCompletedPayloadV1` (Plan 0078): the

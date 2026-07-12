@@ -407,6 +407,7 @@ export const en = {
   'convergence.riskLevelLow': 'low',
   'convergence.riskLevelMedium': 'medium',
   'convergence.riskLevelHigh': 'high',
+  'convergence.viewOnPolymarket': 'View on Polymarket ↗',
 
   // ── Track-record view (TrackRecordView.tsx) — Plan 0080, ADR-0075 ──
   'trackRecord.title': 'Track record',
