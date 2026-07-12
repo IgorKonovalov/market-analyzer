@@ -38,6 +38,7 @@ import { useCandleMarkerGroups } from '../hooks/useCandleMarkerGroups'
 import { useFormingBar } from '../hooks/useFormingBar'
 import { useLayersLegend } from '../hooks/useLayersLegend'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
+import { useBbandsSeries } from '../hooks/useBbandsSeries'
 import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
 import { useOverlaySeries } from '../hooks/useOverlaySeries'
 import { usePriceLines } from '../hooks/usePriceLines'
@@ -174,6 +175,15 @@ export function CandlestickChart({
   // so the trailing-stop line flips colour at trend changes. Keyed by overlayKey.
   const supertrendSeriesRef = useRef<
     Map<string, { up: ISeriesApi<'Line'>; down: ISeriesApi<'Line'> }>
+  >(new Map())
+  // Bollinger Bands overlays (Plan 0082 phase 2) draw as THREE line series
+  // (upper/middle/lower) on the price pane, keyed by overlayKey; a legend toggle
+  // removes all three. Fed by `useBbandsSeries` below.
+  const bbandsSeriesRef = useRef<
+    Map<
+      string,
+      { upper: ISeriesApi<'Line'>; middle: ISeriesApi<'Line'>; lower: ISeriesApi<'Line'> }
+    >
   >(new Map())
   // Drawn price lines (Plan 0047 phase 9), keyed by `priceLineId`. price_line
   // overlays are horizontal lines on the candlestick series, not line series.
@@ -429,6 +439,7 @@ export function CandlestickChart({
     const overlayMap = overlaySeriesRef.current
     const priceLineMap = priceLinesRef.current
     const supertrendMap = supertrendSeriesRef.current
+    const bbandsMap = bbandsSeriesRef.current
     syncTestRenderHook()
 
     return () => {
@@ -446,6 +457,7 @@ export function CandlestickChart({
       // The chart owns its price lines (disposed by chart.remove); drop our refs.
       priceLineMap.clear()
       supertrendMap.clear()
+      bbandsMap.clear()
       syncTestRenderHook()
     }
     // `candleType` rebuilds the chart (series type is fixed at creation); the data
@@ -529,6 +541,14 @@ export function CandlestickChart({
     overlays,
     hidden,
     effectiveThemeRef,
+    rebuildToken: candleType,
+  })
+  // Bollinger Bands three-line reconcile (Plan 0082 phase 2). Static colour, so no
+  // theme read — draws upper/middle/lower on the price pane.
+  useBbandsSeries(chartRef, bbandsSeriesRef, {
+    bars,
+    overlays,
+    hidden,
     rebuildToken: candleType,
   })
   // Ichimoku five-line + displaced filled cloud primitive (Plan 0073 phase 4).

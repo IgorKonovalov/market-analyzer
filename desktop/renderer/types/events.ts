@@ -41,7 +41,8 @@ export type PriceLineRole = 'support' | 'resistance'
 export interface OverlaySpec {
   kind: OverlayKind
   period?: number | null
-  /** Supertrend's ATR multiplier (Plan 0049); absent on the other kinds. */
+  /** Supertrend's ATR multiplier (Plan 0049); reused as Bollinger's std-dev
+   * multiplier `k` (Plan 0082); absent on the other kinds. */
   multiplier?: number | null
   /** Ichimoku period fields (Plan 0073); absent on the other kinds. */
   conversion?: number | null

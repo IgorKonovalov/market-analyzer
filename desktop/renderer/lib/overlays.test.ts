@@ -89,11 +89,21 @@ describe('isSupportedOverlay', () => {
     { kind: 'ema' as const, supported: true },
     { kind: 'sma' as const, supported: true },
     { kind: 'supertrend' as const, supported: true },
+    { kind: 'bbands' as const, supported: true },
     { kind: 'rsi' as const, supported: false },
     { kind: 'macd' as const, supported: false },
-    { kind: 'bbands' as const, supported: false },
   ])('$kind → $supported', ({ kind, supported }) => {
     expect(isSupportedOverlay(kind)).toBe(supported)
+  })
+})
+
+describe('bbands overlay registry entry (Plan 0082 phase 2)', () => {
+  it('is supported and coloured, but its generic compute returns [] (drawn by the dedicated hook)', () => {
+    expect(isSupportedOverlay('bbands')).toBe(true)
+    expect(overlayColorFor({ kind: 'bbands', period: 20 })).toBe('#8b5cf6')
+    // Like ichimoku/supertrend, the three-band draw lives in `useBbandsSeries`;
+    // the generic single-line path must not draw bbands.
+    expect(computeOverlayData(BARS, { kind: 'bbands', period: 3 })).toEqual([])
   })
 })
 

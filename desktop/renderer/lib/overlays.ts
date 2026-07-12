@@ -9,9 +9,10 @@
  * (`computeOverlayData`) all read from here. The chart's reconcile loop stays in
  * the component but consults these helpers.
  *
- * MVP scope is `ema` and `sma`. `rsi`/`macd`/`bbands` are reserved `OverlayKind`
- * values in the typed envelope schema but have no registry entry yet, so the
- * chart logs-and-skips them (see `isSupportedOverlay`).
+ * MVP scope is `ema` and `sma`; `supertrend`/`ichimoku`/`bbands` are additive
+ * indicator kinds with their own dedicated draw paths. `rsi`/`macd` remain
+ * reserved `OverlayKind` values with no registry entry yet, so the chart
+ * logs-and-skips them (see `isSupportedOverlay`).
  */
 import type { LineData, UTCTimestamp, WhitespaceData } from 'lightweight-charts'
 
@@ -38,6 +39,12 @@ export interface OverlayDefinition {
  * `analysis/indicators.py::supertrend`. */
 const SUPERTREND_DEFAULT_PERIOD = 10
 const SUPERTREND_DEFAULT_MULTIPLIER = 3
+
+/** Bollinger Bands line colour (Plan 0082 phase 2). A static violet used for all
+ * three bands and the single legend swatch; `bbands` is not a user-styleable
+ * element (ADR-0062), so it keeps this registry colour on both themes rather than
+ * a per-theme token. Shared by the registry entry and `useBbandsSeries`. */
+export const BBANDS_LINE_COLOR = '#8b5cf6'
 
 /** The single source of truth for supported overlays. `Partial` because the
  * `OverlayKind` union also carries MVP-unsupported kinds (rsi/macd/bbands) that
@@ -80,6 +87,16 @@ export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> =
   ichimoku: {
     color: '#16a34a',
     colorToken: '--ichimoku-span-a',
+    compute: () => [],
+  },
+  // Bollinger Bands (Plan 0082 phase 2, ADR-0077): the registry entry makes it a
+  // supported overlay (one toggleable legend row, no "unsupported" warning) and
+  // colours its legend swatch. The chart draws its three bands (upper/middle/lower)
+  // via a dedicated `useBbandsSeries` hook — this generic `compute` returns `[]`
+  // and is never the actual draw path (the generic overlay hook skips `bbands`),
+  // exactly like `supertrend`/`ichimoku`.
+  bbands: {
+    color: BBANDS_LINE_COLOR,
     compute: () => [],
   },
 }

@@ -931,6 +931,21 @@
       "ru": "Трендследящий ориентир стопа и направления. Сторона линии относительно цены отмечает текущий тренд; переворот отмечает возможную смену тренда."
     }
   },
+  "bbands": {
+    "term": {
+      "en": "Bollinger Bands",
+      "ru": "Полосы Боллинджера"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "A middle band of the SMA over the period (default 20) plus an upper and lower band offset by k population standard deviations (default k=2) of the same closes.",
+      "ru": "Средняя полоса — SMA за период (по умолчанию 20), а верхняя и нижняя полосы отстоят на k генеральных стандартных отклонений (по умолчанию k=2) тех же цен закрытия."
+    },
+    "whatItMeans": {
+      "en": "A volatility envelope. The bands widen when volatility rises and narrow when it falls; price near a band shows how stretched the move is relative to its recent range.",
+      "ru": "Оболочка волатильности. Полосы расширяются при росте волатильности и сужаются при её падении; цена у полосы показывает, насколько движение растянуто относительно недавнего диапазона."
+    }
+  },
   "doji": {
     "term": {
       "en": "Doji"

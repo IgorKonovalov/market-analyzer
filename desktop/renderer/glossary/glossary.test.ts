@@ -198,14 +198,15 @@ it('the indicator-category keys equal exactly the frozen feature-name union', ()
   expect(indicatorKeys).toEqual([...EXPECTED_INDICATOR_KEYS].sort())
 })
 
-// The chart overlay-legend vocabulary (Plan 0065 phase 2) — the overlay kinds
-// that actually render a legend row today (the OVERLAY_REGISTRY-supported kinds:
-// ema / sma / supertrend). rsi/macd/bbands are reserved-but-unsupported
-// OverlayKinds the chart logs-and-skips, so they draw no label to explain; a
-// later "OHLCV chart controls" followup adds them when they render. A DISTINCT
-// category from `indicator` on purpose: chart-legend copy, not a forecast
-// feature, so it is deliberately excluded from the phase-3 FEATURE_NAMES pin.
-const EXPECTED_OVERLAY_KEYS = ['ema', 'sma', 'supertrend']
+// The chart overlay-legend vocabulary (Plan 0065 phase 2 / Plan 0082 phase 2) —
+// the overlay kinds that actually render a legend row today (the
+// OVERLAY_REGISTRY-supported kinds: ema / sma / supertrend / bbands). rsi/macd
+// remain reserved-but-unsupported OverlayKinds the chart logs-and-skips, so they
+// draw no label to explain; a later "OHLCV chart controls" followup adds them
+// when they render. A DISTINCT category from `indicator` on purpose: chart-legend
+// copy, not a forecast feature, so it is deliberately excluded from the phase-3
+// FEATURE_NAMES pin.
+const EXPECTED_OVERLAY_KEYS = ['bbands', 'ema', 'sma', 'supertrend']
 
 it('the overlay-category keys equal exactly the chart overlay-kind vocabulary', () => {
   const overlayKeys = glossaryKeys()
