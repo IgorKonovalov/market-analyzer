@@ -123,7 +123,7 @@ def _no_network_client() -> ResilientHttpClient:
     def _fake_perform(*args: Any, **kwargs: Any) -> HttpResponse:
         raise AssertionError("no network call expected")
 
-    client._perform_request = _fake_perform  # type: ignore[method-assign, assignment]
+    client._perform_request = _fake_perform  # type: ignore[method-assign]
     return client
 
 

@@ -119,8 +119,8 @@ ALL_MARKETS = [
 def _screen(markets: list[PredictionMarket], **overrides: object) -> list[ConvergenceOpportunity]:
     return screen_convergence(
         markets,
-        params=ConvergenceParams(**overrides),
-        now=_NOW,  # type: ignore[arg-type]
+        params=ConvergenceParams(**overrides),  # type: ignore[arg-type]
+        now=_NOW,
     )
 
 
