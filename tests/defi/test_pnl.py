@@ -28,7 +28,8 @@ Hand-worked case (a):
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from market_analyser.data.adapters.defillama import token_key
@@ -172,6 +173,7 @@ def _lp_pnl() -> Any:
         events=_LP_EVENTS,
         price_source=_PRICES,
         as_of=_AS_OF,
+        now=_AS_OF,
     )
 
 
@@ -204,7 +206,12 @@ def test_missing_price_marks_the_position_incomplete_with_the_leg_named() -> Non
         _event("fee_claim", _LP, _TS3, 400, [_leg("in", "GHST", _GHST, 5.0)]),
     ]
     result = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=events,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     )
     position = result.positions[0]
     assert position.incomplete is True
@@ -227,7 +234,12 @@ def test_unclassified_event_marks_the_position_incomplete() -> None:
         _event("unclassified", _LP, _TS3, 500, [_leg("in", "USDC", _USDC, 1.0)]),
     ]
     result = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=events,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     )
     position = result.positions[0]
     assert position.incomplete is True
@@ -263,6 +275,7 @@ def test_partial_total_sums_over_complete_positions_only() -> None:
         events=[*_LP_EVENTS, _UNPRICEABLE_EVENT],
         price_source=_PRICES,
         as_of=_AS_OF,
+        now=_AS_OF,
     )
     assert result.partial is True
     assert result.incomplete is True
@@ -288,9 +301,15 @@ def test_incomplete_position_contributes_nothing_to_the_total() -> None:
         events=[*_LP_EVENTS, _UNPRICEABLE_EVENT],
         price_source=_PRICES,
         as_of=_AS_OF,
+        now=_AS_OF,
     )
     without = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=_LP_EVENTS, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=_LP_EVENTS,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     )
     assert with_incomplete.realized_usd == without.realized_usd
     assert with_incomplete.unrealized_usd == without.unrealized_usd
@@ -331,7 +350,12 @@ def test_swap_books_as_a_basis_preserving_conversion() -> None:
     """A fair swap completes the position (not incomplete), realizes ~0, and does
     not touch cost basis — the invariant that keeps a swap from corrupting basis."""
     result = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=_SWAP_EVENTS, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=_SWAP_EVENTS,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     )
     position = result.positions[0]
     assert position.incomplete is False
@@ -354,7 +378,12 @@ def test_unfair_swap_realizes_its_block_time_execution_delta() -> None:
         ),
     ]
     position = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=events,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     ).positions[0]
     assert position.incomplete is False
     assert position.realized_usd == -30.0
@@ -363,7 +392,12 @@ def test_unfair_swap_realizes_its_block_time_execution_delta() -> None:
 def test_swap_inclusive_replay_is_byte_identical() -> None:
     def _run() -> Any:
         return compute_wallet_pnl(
-            wallet=_WALLET, positions=[_LP], events=_SWAP_EVENTS, price_source=_PRICES, as_of=_AS_OF
+            wallet=_WALLET,
+            positions=[_LP],
+            events=_SWAP_EVENTS,
+            price_source=_PRICES,
+            as_of=_AS_OF,
+            now=_AS_OF,
         )
 
     assert _run().model_dump_json() == _run().model_dump_json()
@@ -378,10 +412,20 @@ def test_custody_move_is_a_noop() -> None:
     ]
     without = [_SWAP_EVENTS[0]]
     a = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=with_custody, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=with_custody,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     ).positions[0]
     b = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=without, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=without,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     ).positions[0]
     assert a.incomplete is False
     assert (a.realized_usd, a.cost_basis_usd, a.unrealized_usd) == (
@@ -420,7 +464,12 @@ def test_aggregator_swap_reconstructs_end_to_end_and_is_byte_identical() -> None
 
     def _run() -> Any:
         return compute_wallet_pnl(
-            wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
+            wallet=_WALLET,
+            positions=[_LP],
+            events=events,
+            price_source=_PRICES,
+            as_of=_AS_OF,
+            now=_AS_OF,
         )
 
     position = _run().positions[0]
@@ -435,7 +484,12 @@ def test_liquidation_still_fails_loud() -> None:
         _event("liquidation", _LP, _TS3, 600, [_leg("out", "USDC", _USDC, 10.0)]),
     ]
     result = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET,
+        positions=[_LP],
+        events=events,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
     )
     assert result.positions[0].incomplete is True
     assert any("unbooked liquidation" in note for note in result.positions[0].notes)
@@ -461,6 +515,7 @@ def test_borrow_and_repay_realize_interest_as_the_debt_closes() -> None:
         events=events,
         price_source=_PRICES,
         as_of=_AS_OF,
+        now=_AS_OF,
     )
     position = result.positions[0]
     assert position.incomplete is False
@@ -468,6 +523,106 @@ def test_borrow_and_repay_realize_interest_as_the_debt_closes() -> None:
     assert position.cost_basis_usd == 0.0
     assert position.unrealized_usd == 0.0
     assert position.vs_hodl_usd is None, "vs-HODL is an LP-only fact"
+
+
+# -- Plan 0088 phase 2: per-position rolling-window realized P&L (exact) ----------
+#
+# Four income events dated 3 / 20 / 60 / 120 days before a FIXED `now`, so each
+# window's realized figure is the hand-summed subset of deltas. Worked on paper:
+#   7d  = 10            (only the 3-day-old claim)
+#   30d = 10 + 20 = 30  (adds the 20-day-old claim)
+#   90d = 10 + 20 + 40 = 70
+#   all = 10 + 20 + 40 + 80 = 150   (== the position's all-time realized)
+
+_WIN_NOW = datetime(2025, 6, 1, tzinfo=UTC)
+
+
+def _days_before(days: int) -> datetime:
+    return _WIN_NOW - timedelta(days=days)
+
+
+_WINDOW_POSITION = DefiPosition(
+    position_id="base:aerodrome:windowed",
+    chain="base",
+    protocol="aerodrome",
+    kind="lp",
+    tokens=[PositionToken(symbol="USDC", address=_USDC, amount=100.0)],
+    usd_value=100.0,
+    pool="USDC pool",
+    pool_address="0xpool0000000000000000000000000000000000003",
+)
+_WINDOW_EVENTS = [
+    _event(
+        "add_liquidity", _WINDOW_POSITION, _days_before(200), 1, [_leg("out", "USDC", _USDC, 100.0)]
+    ),
+    _event("fee_claim", _WINDOW_POSITION, _days_before(3), 2, [_leg("in", "USDC", _USDC, 10.0)]),
+    _event("fee_claim", _WINDOW_POSITION, _days_before(20), 3, [_leg("in", "USDC", _USDC, 20.0)]),
+    _event("fee_claim", _WINDOW_POSITION, _days_before(60), 4, [_leg("in", "USDC", _USDC, 40.0)]),
+    _event("fee_claim", _WINDOW_POSITION, _days_before(120), 5, [_leg("in", "USDC", _USDC, 80.0)]),
+]
+_WINDOW_PRICES = _TablePriceSource(
+    {
+        (f"base:{_USDC}", _epoch(ts)): 1.0
+        for ts in (
+            _days_before(200),
+            _days_before(3),
+            _days_before(20),
+            _days_before(60),
+            _days_before(120),
+            _WIN_NOW,
+        )
+    }
+)
+
+
+def _windowed_result() -> Any:
+    return compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_WINDOW_POSITION],
+        events=_WINDOW_EVENTS,
+        price_source=_WINDOW_PRICES,
+        as_of=_WIN_NOW,
+        now=_WIN_NOW,
+    )
+
+
+def test_windowed_realized_buckets_deltas_by_mined_at() -> None:
+    position = _windowed_result().positions[0]
+    windows = {w.window: w.realized_usd for w in position.windows}
+    assert windows == {"7d": 10.0, "30d": 30.0, "90d": 70.0, "all": 150.0}
+    # The `all` window reproduces the position's all-time realized figure exactly.
+    assert windows["all"] == position.realized_usd
+
+
+def test_windowed_realized_is_byte_identical_with_a_fixed_now() -> None:
+    assert _windowed_result().model_dump_json() == _windowed_result().model_dump_json()
+
+
+def test_engine_never_reads_the_wall_clock() -> None:
+    """The rolling windows anchor to the injected `now`; the engine must never read
+    the clock itself (Plan 0088 done-when — `now` flows only as an argument)."""
+    import market_analyser.defi.pnl as pnl_module
+
+    source = Path(pnl_module.__file__).read_text(encoding="utf-8")
+    assert "datetime.now" not in source
+    assert "utcnow" not in source
+    assert "time.time" not in source
+
+
+def test_incomplete_position_has_no_windows() -> None:
+    """An incomplete position carries no reconstructable figures, so its window
+    list is empty (never a fabricated zero-filled set)."""
+    result = compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_INCOMPLETE_POSITION],
+        events=[_UNPRICEABLE_EVENT],
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
+    )
+    position = result.positions[0]
+    assert position.incomplete is True
+    assert position.windows == []
 
 
 def test_rerun_on_the_same_inputs_is_byte_identical() -> None:
@@ -480,7 +635,7 @@ def test_position_without_events_has_full_value_as_unrealized() -> None:
     """No history reconstructable (but nothing contradictory either): zero
     basis, so the whole current value is unrealized gain over nothing."""
     result = compute_wallet_pnl(
-        wallet=_WALLET, positions=[_LP], events=[], price_source=_PRICES, as_of=_AS_OF
+        wallet=_WALLET, positions=[_LP], events=[], price_source=_PRICES, as_of=_AS_OF, now=_AS_OF
     )
     position = result.positions[0]
     assert position.incomplete is False

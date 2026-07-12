@@ -15,7 +15,11 @@ silently zero"). Wallet addresses are masked before any event payload.
 
 **Determinism.** The vs-HODL `as_of` anchor is the newest *cached*
 transaction's timestamp — an input-derived value, not the wall clock — so the
-same cached history replays byte-identically (ADR-0036 / ADR-0018).
+same cached history replays byte-identically (ADR-0036 / ADR-0018). The
+rolling-window `now` anchor (Plan 0088 / ADR-0082) *is* a wall-clock read,
+captured here once and passed into the engine so "last 30 days" tracks calendar
+time; the windowed figures are deterministic given a fixed `now` but, like
+`usd_value`, deliberately outside the cross-calendar-time byte-identical set.
 
 **Cross-check.** Zerion's FIFO `total_gain` is fetched best-effort through the
 `PnlCrosscheckSource` seam: any failure leaves it `None` without failing the
@@ -145,12 +149,18 @@ def _reconstruct(
     events = map_events(history, positions, gauge_map)
     # Input-derived benchmark anchor, never the wall clock (see docstring).
     as_of = history[-1].mined_at if history else datetime.fromtimestamp(0, tz=UTC)
+    # Analysis-time anchor for the rolling windows (Plan 0088 / ADR-0082): the one
+    # wall-clock read, captured here in the job and passed in, so "last 30 days"
+    # is 30 calendar days. The engine never reads the clock; windowed figures are
+    # deterministic given this `now`, not across calendar time (like `usd_value`).
+    now = datetime.now(tz=UTC)
     pnl = compute_wallet_pnl(
         wallet=address,
         positions=positions,
         events=events,
         price_source=price_source,
         as_of=as_of,
+        now=now,
     )
     # Current-state augmentation (Plan 0084), after the pure replay so the
     # deterministic figures are untouched; best-effort, never fails the P&L.

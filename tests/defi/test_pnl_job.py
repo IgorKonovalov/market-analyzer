@@ -182,6 +182,22 @@ def test_success_emits_started_then_completed_with_honest_totals(
     assert result.positions[0].vs_hodl_usd == 100.0
 
 
+def test_result_carries_windowed_realized_anchored_to_now(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Plan 0088 phase 2: the job captures a `now` anchor and passes it to the
+    engine, so each position reports the fixed rolling-window realized set. (The
+    deposit-only fixture realizes nothing, so every window is 0.0 and `all` equals
+    the position's all-time realized — what matters is the anchor was threaded.)"""
+    result, raised, _events = _run_job(session_factory)
+    assert raised is None
+    assert result is not None
+    position = result.positions[0]
+    windows = {w.window: w.realized_usd for w in position.windows}
+    assert set(windows) == {"7d", "30d", "90d", "all"}
+    assert windows["all"] == position.realized_usd
+
+
 def test_events_carry_masked_wallet_never_full_address(
     session_factory: sessionmaker[Session],
 ) -> None:

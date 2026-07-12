@@ -291,12 +291,17 @@ def _replay_basis(
     )
     events = map_events(history, positions)
     as_of = history[-1].mined_at if history else datetime.fromtimestamp(0, tz=UTC)
+    # This tool consumes only `cost_basis_usd`; the rolling windows (Plan 0088) are
+    # unused here, so we anchor `now` to the same input-derived `as_of` rather than
+    # the wall clock — keeping this basis replay fully deterministic as its docstring
+    # promises (the window figures it produces are simply discarded).
     pnl = compute_wallet_pnl(
         wallet=wallet,
         positions=positions,
         events=events,
         price_source=price_source,
         as_of=as_of,
+        now=as_of,
     )
     basis = {p.position_id: p.cost_basis_usd for p in pnl.positions if p.cost_basis_usd is not None}
     return basis, sum(1 for p in pnl.positions if p.incomplete)

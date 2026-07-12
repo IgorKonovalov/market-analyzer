@@ -61,7 +61,8 @@ fully-reconstructed portfolio.
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -80,6 +81,29 @@ _EXTRACTION_KINDS = frozenset({"remove_liquidity", "withdraw_supply"})
 _INCOME_KINDS = frozenset({"fee_claim", "reward_claim"})
 _DEBT_KINDS = frozenset({"borrow", "repay"})
 
+# Fixed rolling-window set (Plan 0088 / ADR-0082): realized P&L attributable to
+# the events dated inside each window, anchored to the run's `now`. `all` has no
+# lower bound (every delta). Ordered shortest → longest for a natural report.
+Window = Literal["7d", "30d", "90d", "all"]
+_WINDOW_SPANS: tuple[tuple[Window, timedelta | None], ...] = (
+    ("7d", timedelta(days=7)),
+    ("30d", timedelta(days=30)),
+    ("90d", timedelta(days=90)),
+    ("all", None),
+)
+
+
+class WindowPnl(BaseModel):
+    """Realized P&L over one rolling window (Plan 0088 / ADR-0082). Exact: the
+    sum of the per-event realized deltas whose `mined_at` falls inside the window
+    (`all` = every delta), so `all` always equals the position's all-time
+    `realized_usd`. Deterministic given the run's `now`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    window: Window
+    realized_usd: float
+
 
 class PositionPnl(BaseModel):
     """One position's reconstructed P&L. `None` numerics always travel with
@@ -94,6 +118,10 @@ class PositionPnl(BaseModel):
     vs_hodl_usd: float | None  # LP only; None for other kinds
     incomplete: bool
     notes: list[str] = Field(default_factory=list)
+    # Per-window realized P&L (Plan 0088 / ADR-0082): exact, anchored to the run's
+    # `now`. Empty for an incomplete position (no reconstructable figures). The
+    # `all` window equals `realized_usd`.
+    windows: list[WindowPnl] = Field(default_factory=list)
     # Current-state, on-chain `earned()` read (Plan 0084 / ADR-0079): rewards owed
     # right now but not yet claimed, which tx-replay cannot see. `None` when the
     # position is not gauge-staked or owes nothing. Deliberately OUTSIDE the
@@ -147,13 +175,20 @@ def compute_wallet_pnl(
     events: list[PositionEvent],
     price_source: HistoricalPriceSource,
     as_of: datetime,
+    now: datetime,
 ) -> WalletPnl:
     """Replay every position's events into per-position and wallet P&L.
 
     `events` must already be in replay order (the phase-5 mapper preserves the
     adapter/cache order); they are grouped per position without re-sorting.
-    `as_of` anchors the LP HODL benchmark — pass a timestamp derived from the
-    cached inputs (not the wall clock) to keep re-runs byte-identical."""
+
+    Two distinct time anchors, both injected (the engine never reads the wall
+    clock — see the module note): `as_of` anchors the LP HODL benchmark to the
+    last-tx time (input-derived, keeping the vs-HODL mark byte-identical), while
+    `now` is the analysis-time anchor for the rolling windows (Plan 0088 /
+    ADR-0082) — a wall-clock read the *job* captures once and passes in, so "last
+    30 days" means 30 calendar days. Windowed figures are deterministic given a
+    fixed `now`; they are not part of the cross-calendar-time guarantee."""
     per_position: dict[str, list[PositionEvent]] = {}
     for event in events:
         per_position.setdefault(event.position_id, []).append(event)
@@ -163,6 +198,7 @@ def compute_wallet_pnl(
             per_position.get(position.position_id, []),
             price_source,
             as_of,
+            now,
         )
         for position in positions
     ]
@@ -190,11 +226,17 @@ def _replay_position(
     events: list[PositionEvent],
     price_source: HistoricalPriceSource,
     as_of: datetime,
+    now: datetime,
 ) -> PositionPnl:
     notes: list[str] = []
     basis = 0.0  # supply-side average-cost pot (USD)
     debt = 0.0  # drawn-debt pot (USD), lending_borrow only
     realized = 0.0
+    # Per-event realized deltas tagged with the event's block time, for the
+    # rolling-window bucketer (Plan 0088 / ADR-0082). Every place `realized`
+    # grows records one `(mined_at, delta)`, so the deltas sum (in event order)
+    # to `realized` exactly — the `all` window equals the all-time figure.
+    realized_deltas: list[tuple[datetime, float]] = []
     contributed: dict[str, float] = {}  # net contributed amount per token key
     try:
         for event in events:
@@ -208,18 +250,24 @@ def _replay_position(
                 holdings_value = _holdings_value(contributed, event, price_source)
                 fraction = 1.0 if holdings_value <= 0 else min(1.0, extracted / holdings_value)
                 released = fraction * basis
-                realized += extracted - released
+                delta = extracted - released
+                realized += delta
+                realized_deltas.append((event.mined_at, delta))
                 basis -= released
                 _drain(contributed, event, "in")
             elif kind in _INCOME_KINDS:
-                realized += _legs_value(event, "in", price_source)
+                delta = _legs_value(event, "in", price_source)
+                realized += delta
+                realized_deltas.append((event.mined_at, delta))
             elif kind in _DEBT_KINDS:
                 if kind == "borrow":
                     debt += _legs_value(event, "in", price_source)
                 else:
                     repaid = _legs_value(event, "out", price_source)
                     released = min(repaid, debt)
-                    realized += released - repaid
+                    delta = released - repaid
+                    realized += delta
+                    realized_deltas.append((event.mined_at, delta))
                     debt -= released
             elif kind == "swap":
                 # Average-cost conversion (Plan 0084): reshuffle value within the
@@ -228,7 +276,9 @@ def _replay_position(
                 # capital entered or left), so a swap can't corrupt cost basis.
                 value_out = _legs_value(event, "out", price_source)
                 value_in = _legs_value(event, "in", price_source)
-                realized += value_in - value_out
+                delta = value_in - value_out
+                realized += delta
+                realized_deltas.append((event.mined_at, delta))
                 _drain(contributed, event, "out")
                 _accrue(contributed, event, "in")
             elif kind == "custody_move":
@@ -263,12 +313,29 @@ def _replay_position(
             vs_hodl_usd=vs_hodl,
             incomplete=False,
             notes=notes,
+            windows=_windowed_realized(realized_deltas, now),
         )
     except _MissingPrice as gap:
         return _incomplete(
             position,
             [f"no block-time price for {gap.token} at ts={gap.ts}"],
         )
+
+
+def _windowed_realized(deltas: list[tuple[datetime, float]], now: datetime) -> list[WindowPnl]:
+    """Bucket the per-event realized deltas into the fixed windows relative to
+    `now`. A window sums the deltas whose `mined_at` is on or after `now - span`
+    (`all` = every delta), in event order — so `all` reproduces the running
+    `realized` total exactly. Pure given `(deltas, now)`."""
+    windows: list[WindowPnl] = []
+    for label, span in _WINDOW_SPANS:
+        if span is None:
+            total = sum((delta for _, delta in deltas), 0.0)
+        else:
+            cutoff = now - span
+            total = sum((delta for ts, delta in deltas if ts >= cutoff), 0.0)
+        windows.append(WindowPnl(window=label, realized_usd=total))
+    return windows
 
 
 def _incomplete(position: DefiPosition, notes: list[str]) -> PositionPnl:
@@ -371,4 +438,4 @@ def _amounts_value(
     return total
 
 
-__all__ = ["PositionPnl", "WalletPnl", "compute_wallet_pnl"]
+__all__ = ["PositionPnl", "WalletPnl", "Window", "WindowPnl", "compute_wallet_pnl"]
