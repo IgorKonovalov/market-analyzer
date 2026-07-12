@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from market_analyser.data.adapters.defillama import token_key
-from market_analyser.data.errors import RateLimitedError
+from market_analyser.data.errors import RateLimitedError, UpstreamUnavailableError
 from market_analyser.defi.models import Chain, DefiPosition, PositionToken
 from market_analyser.defi.pnl import WalletPnl
 from market_analyser.defi.pnl_job import run_wallet_pnl
@@ -238,6 +238,58 @@ def test_crosscheck_failure_is_best_effort_never_fails_the_reconstruction(
     assert result.crosscheck_zerion_total is None
     assert result.crosscheck_warning is False
     assert [e.type for e in events] == ["defi.pnl_started", "defi.pnl_completed"]
+
+
+class _RaisingGauge:
+    """A gauge resolver whose RPC is unavailable (e.g. no URL configured)."""
+
+    def resolve_pool(self, *, chain: Chain, gauge_address: str) -> str | None:
+        raise UpstreamUnavailableError("gauge: no RPC URL configured")
+
+
+def test_gauge_resolution_failure_degrades_gracefully_never_crashes_the_pnl(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Regression (Plan 0084): an unconfigured/unavailable gauge RPC must degrade to
+    the pre-0084 behavior (gauge txs unattributed), not fail the whole P&L call."""
+    gauge = "0x9564" + "0" * 32 + "88f1"  # a gauge contract, not the position's pool
+    aero = "0x940181a94a35a4569e4529a3cdfb74e38fd98631"
+    reward_tx = DecodedTx.model_validate(
+        {
+            "chain": "base",
+            "hash": "0xrew",
+            "operation_type": "execute",
+            "mined_at": _TS1,
+            "mined_at_block": 101,
+            "status": "confirmed",
+            "transfers": [{"direction": "in", "symbol": "AERO", "address": aero, "amount": 5.0}],
+            "acts": [
+                {
+                    "act_id": "g1",
+                    "type": "execute",
+                    "contract_address": gauge,
+                    "method_name": "getReward",
+                }
+            ],
+        }
+    )
+
+    async def run() -> WalletPnl:
+        return await run_wallet_pnl(
+            tx_source=_FakeTxSource([_DEPOSIT_TX, reward_tx]),
+            positions_source=_FakePositionsSource([_LP]),
+            price_source=_PRICES,
+            tx_repository=DefiTxRepository(session_factory),
+            event_bus=EventBus(),
+            address=_WALLET,
+            gauge_source=_RaisingGauge(),
+        )
+
+    result = asyncio.run(run())
+    # The call succeeded (no crash) and the position reconstructed from the deposit;
+    # the unresolved gauge reward simply went unattributed.
+    assert result.positions[0].incomplete is False
+    assert result.positions[0].cost_basis_usd == 1400.0
 
 
 def test_second_run_replays_the_cache_with_zero_source_fetches(

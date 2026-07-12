@@ -31,6 +31,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from market_analyser.data.errors import UpstreamDataError
 from market_analyser.data.sources import (
     GaugeResolutionSource,
     HistoricalPriceSource,
@@ -178,7 +179,12 @@ def _resolve_gauge_map(
     the resolver returns an on-chain immutable, so a re-run reproduces the map.
 
     Absent a resolver, or with no candidates, the map is empty and replay behaves
-    exactly as pre-0084."""
+    exactly as pre-0084. Resolution is **best-effort** (Plan 0084 risk mitigation):
+    a resolver failure — an unconfigured RPC URL for a chain, a throttle, an outage
+    — is swallowed so those gauges simply go unresolved (the position stays honestly
+    incomplete), never crashing the whole reconstruction. A chain whose RPC is
+    unconfigured is recorded after the first failure so the rest of its gauges are
+    skipped without re-probing."""
     if gauge_source is None:
         return {}
     known_pools = {p.pool_address.lower() for p in positions if p.pool_address is not None}
@@ -191,8 +197,18 @@ def _resolve_gauge_map(
             if addr not in known_pools:
                 candidates.setdefault(addr, tx.chain)
     gauge_map: dict[str, str] = {}
+    unavailable: set[Chain] = set()  # chains whose resolver has already failed
     for addr in sorted(candidates):
-        pool = gauge_source.resolve_pool(chain=candidates[addr], gauge_address=addr)
+        chain = candidates[addr]
+        if chain in unavailable:
+            continue
+        try:
+            pool = gauge_source.resolve_pool(chain=chain, gauge_address=addr)
+        except UpstreamDataError:
+            # RPC unconfigured / throttled / down for this chain: degrade to the
+            # pre-0084 behavior (gauge txs unattributed) rather than failing the P&L.
+            unavailable.add(chain)
+            continue
         if pool is not None and pool.lower() in known_pools:
             gauge_map[addr] = pool.lower()
     return gauge_map
