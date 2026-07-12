@@ -1,6 +1,6 @@
 # ADR-0085 — DeFi P&L: user-attested dust-token zero-value override
 
-> **Status:** proposed (accepts at Plan 0093 close)
+> **Status:** accepted (2026-07-12, at Plan 0093's close — the override shipped in `cb64203`: `_DustAwarePriceSource` zeros attested-dust legs, disclosed in a sorted position note, loud-failure the default for every unlisted token; the phase-2 live smoke reconstructed the test wallet 5/5 with the Wanderers position complete at $0)
 > **Date:** 2026-07-12
 > **Related plan(s):** [Plan 0093](../plans/0093-defi-pnl-dust-token-override.md) (implements this)
 > **Amends:** [ADR-0036](0036-defi-pnl-reconstruction.md) — narrowly, on the "an unpriceable leg marks the position incomplete, never zeroed" rule, for **user-attested** dust tokens only. Every other ADR-0036 invariant (block-time pricing, average-cost lots, determinism-by-snapshot, machine-never-fabricates-a-value) stands. Builds on [ADR-0082](0082-defi-pnl-partial-totals-and-windowed-lp-profitability.md) (partial totals).

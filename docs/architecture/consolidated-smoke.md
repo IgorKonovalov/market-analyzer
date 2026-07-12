@@ -122,6 +122,14 @@ Part A driven live against the running sidecar (every agent-callable check passe
 | 0087 | DeFi P&L wallet-total gap | C1 | ✅ **pass (documented finding)** | Alchemy fallback priced **4/5** to completion (the $4,015.16 QuickSwap matches Plan 0084's live figure + all 3 Aerodrome LPs); wallet totals **non-null**. The `0xef0fd52e…` Wanderers token stays unpriceable even via Alchemy → the pre-authorized documented finding (re-open the price-source decision for that exotic); it no longer nulls the wallet (0088 partial total). `crosscheck_zerion_total=$29,546` (advisory; `crosscheck_warning=true` on avg-cost-vs-FIFO net — expected). |
 | 0079 | cross-pool arb BA-7 evidence | C2 | ✅ **pass** (documented null) | `scan_pool_discrepancies WETH/USDC` ran clean (no error), empty observations + the RPC-upper-bound `capturability_note`. Null / no-capturable-edge is the documented BA-7 success. |
 
-**Nothing open after Run 1 — every surface (A, B, C) verified.** One standing *followup* (not a smoke gap) surfaced by C1: a keyed price source for the `0xef0fd52e…` Wanderers token (carried from Plans 0087/0088) — Alchemy has no coverage for it, so that one non-LP position stays incomplete but no longer nulls the wallet.
+**Nothing open after Run 1 — every surface (A, B, C) verified.** One standing *followup* (not a smoke gap) surfaced by C1: a keyed price source for the `0xef0fd52e…` Wanderers token (carried from Plans 0087/0088) — Alchemy has no coverage for it, so that one non-LP position stays incomplete but no longer nulls the wallet. **This followup was resolved not by sourcing a price but by the user-attested dust-token override — see Run 2.**
+
+### Run 2 — 2026-07-12 — **Plan 0093 phase-2 (DeFi P&L user-attested dust-token override), pass**
+
+The C1 Wanderers followup, closed by attestation rather than a new price source. `base:0xef0fd52e65ddcdc201e2055a94d2abff6ff10a7a` added to `config.json`'s `defi_dust_tokens`, sidecar restarted, `compute_wallet_pnl` re-run on `0xae5b…9790`.
+
+| Plan | Surface | Part | Verdict | Evidence / note |
+|------|---------|------|---------|-----------------|
+| 0093 | DeFi P&L dust-token override | C3 | ✅ **pass** | With the Wanderers token attested as dust, the wallet reconstructs **5/5 complete** (up from C1's 4/5): the previously-incomplete Wanderers position is now `incomplete=False`, valued at ~$0, carrying the disclosing note (`dust token base:0xef0fd52e… valued at $0 (defi_dust_tokens)`); the wallet total is **no longer flagged `partial`** (`incomplete_position_count=0`). Attested-not-inferred (the engine still never guesses a value), disclosed, and every unlisted token keeps ADR-0036 loud-failure. Closes the C1 documented finding. |
 
 **Write-back:** once B/C are ticked, a follow-up architect touch folds each verdict into the corresponding `done/NNNN-*.md` close notes and the [`plans/README.md`](plans/README.md) recently-closed rows (replacing "the user's outstanding step" with the recorded result); this ledger is the source for that pass.
