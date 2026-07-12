@@ -10,7 +10,7 @@
  * colour the layer is drawn with. Pure — the hook resolves the DOM tokens and
  * calls this.
  */
-import { OBV_LAYER_ID, overlayStyleColor, type ChartColors } from './chartSeries'
+import { OBV_LAYER_ID, overlayKey, overlayStyleColor, type ChartColors } from './chartSeries'
 import type { ResolvedChartStyle } from './chartStyle'
 import {
   CANDLE_MASTER_ID,
@@ -43,10 +43,16 @@ export interface BuildChartLayersParams {
    * the chart has bars. Emits a single toggleable OBV legend row; unlike the
    * agent overlays there is no per-instance identity, so the row always lists. */
   hasObv: boolean
+  /** The `overlayKey`s present in the user-overlay layer (Plan 0082 phase 4,
+   * ADR-0077). Their legend rows are marked `removable` (the user owns them);
+   * agent overlays stay hide-only. Optional — absent ⇒ no removable rows. */
+  userOverlayKeys?: ReadonlySet<string>
   style: ResolvedChartStyle
   colors: ChartColors
   trendlineColors: ReturnType<typeof readTrendlineColors>
 }
+
+const NO_USER_KEYS: ReadonlySet<string> = new Set()
 
 export function buildChartLayers({
   overlays,
@@ -55,6 +61,7 @@ export function buildChartLayers({
   visibleTrendlines,
   hidden,
   hasObv,
+  userOverlayKeys = NO_USER_KEYS,
   style,
   colors,
   trendlineColors,
@@ -72,6 +79,9 @@ export function buildChartLayers({
       // The overlay kind keys the glossary tooltip (Plan 0065) — ema/sma/
       // supertrend resolve; a future unsupported kind degrades to plain text.
       glossaryKey: spec.kind,
+      // A user-added overlay (Plan 0082 phase 4) gets a remove control; an
+      // agent-pushed one with the same key stays hide-only (ADR-0077).
+      removable: userOverlayKeys.has(overlayKey(spec)),
     })
   }
   // Always-on OBV strip toggle (Plan 0076 phase 2): OBV is drawn unconditionally

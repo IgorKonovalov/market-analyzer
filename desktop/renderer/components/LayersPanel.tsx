@@ -9,8 +9,10 @@
 import { useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
 
+import { AddOverlayForm } from './AddOverlayForm'
 import { GlossaryTerm } from './GlossaryTerm'
 import { t } from '../lib/i18n'
+import type { OverlaySpec } from '../types/events'
 import styles from './LayersPanel.module.css'
 
 // Draggable panel width (Plan 0071 follow-up). Persisted per the ADR-0039
@@ -67,6 +69,9 @@ export interface ChartLayer {
   /** Highlight key for a trendline group (Plan 0067 phase 3): hovering the row
    * emphasises this group's lines on the chart. Absent on non-highlightable rows. */
   highlightKey?: string
+  /** User-originated overlay (Plan 0082 phase 4, ADR-0077): the row gains a remove
+   * control (the user owns it). Agent overlays are hide-only (removable falsy). */
+  removable?: boolean
 }
 
 export interface LayersPanelProps {
@@ -76,13 +81,24 @@ export interface LayersPanelProps {
    * group's `highlightKey` on row enter and `null` on leave. Optional — rows
    * without a `highlightKey` never call it. */
   onHighlight?: (key: string | null) => void
+  /** Add a user overlay (Plan 0082 phase 4, ADR-0077). When provided, the panel
+   * shows a `+ Indicator` form (and renders even with no layers yet, so the user
+   * can add the first one). Absent when the chart has no (symbol, timeframe). */
+  onAddOverlay?: (spec: OverlaySpec) => void
+  /** Remove a user overlay by its layer id (Plan 0082 phase 4). Wired to the
+   * remove control on `removable` rows; agent rows never call it. */
+  onRemove?: (id: string) => void
 }
 
 export function LayersPanel({
   layers,
   onToggle,
   onHighlight,
+  onAddOverlay,
+  onRemove,
 }: LayersPanelProps): JSX.Element | null {
+  // Whether the add-indicator form is expanded (Plan 0082 phase 4).
+  const [showForm, setShowForm] = useState(false)
   // The panel's user-set width (draggable via the left-edge handle). Held in
   // state so a drag re-renders live; mirrored in a ref so the drag-end persist
   // reads the final value without a stale closure.
@@ -134,7 +150,9 @@ export function LayersPanel({
     persistWidth(next)
   }
 
-  if (layers.length === 0) return null
+  // Render when there is something to list OR the user can add an overlay (so the
+  // form is reachable to add the first one). Hidden only when both are absent.
+  if (layers.length === 0 && onAddOverlay === undefined) return null
   return (
     <aside
       className={styles.panel}
@@ -158,6 +176,20 @@ export function LayersPanel({
         onKeyDown={onResizeKeyDown}
       />
       <h2 className={styles.heading}>{t('layers.heading')}</h2>
+      {onAddOverlay !== undefined && (
+        <div className={styles.addSection}>
+          <button
+            type="button"
+            className={styles.addToggle}
+            onClick={() => setShowForm((v) => !v)}
+            aria-expanded={showForm}
+            data-testid="add-overlay-toggle"
+          >
+            {t('layers.addIndicator')}
+          </button>
+          {showForm && <AddOverlayForm onAdd={onAddOverlay} />}
+        </div>
+      )}
       <ul className={styles.list}>
         {layers.map((layer) => (
           <li
@@ -198,6 +230,17 @@ export function LayersPanel({
                 </span>
               )}
             </label>
+            {layer.removable === true && onRemove !== undefined && (
+              <button
+                type="button"
+                className={styles.removeButton}
+                onClick={() => onRemove(layer.id)}
+                aria-label={t('layers.removeAria', { layerName: layer.label })}
+                data-testid={`layer-remove:${layer.id}`}
+              >
+                ×
+              </button>
+            )}
           </li>
         ))}
       </ul>

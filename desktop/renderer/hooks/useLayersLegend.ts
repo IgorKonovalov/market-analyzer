@@ -28,6 +28,9 @@ export interface UseLayersLegendParams {
   /** Whether the always-on OBV strip is drawn (Plan 0076 phase 2) — the chart
    * passes `bars.length > 0`. Adds a single toggleable OBV legend row. */
   hasObv: boolean
+  /** The `overlayKey`s in the user-overlay layer (Plan 0082 phase 4) — their rows
+   * become removable. */
+  userOverlayKeys: ReadonlySet<string>
   effectiveTheme: EffectiveTheme
   styleVersion: number
 }
@@ -41,6 +44,7 @@ export function useLayersLegend(
     visibleTrendlines,
     hidden,
     hasObv,
+    userOverlayKeys,
     effectiveTheme,
     styleVersion,
   }: UseLayersLegendParams,
@@ -60,6 +64,7 @@ export function useLayersLegend(
         visibleTrendlines,
         hidden,
         hasObv,
+        userOverlayKeys,
         style,
         colors,
         trendlineColors,
@@ -73,6 +78,7 @@ export function useLayersLegend(
     visibleTrendlines,
     hidden,
     hasObv,
+    userOverlayKeys,
     effectiveTheme,
     styleVersion,
   ])

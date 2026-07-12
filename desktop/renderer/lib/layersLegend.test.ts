@@ -64,6 +64,20 @@ describe('buildChartLayers', () => {
     expect(rows.find((r) => r.id === 'overlay:ema:20')?.visible).toBe(false)
   })
 
+  // Plan 0082 phase 4 (ADR-0077): an overlay whose overlayKey is in the user
+  // layer is removable; an agent overlay (absent from that set) is hide-only.
+  it('marks a user-originated overlay row removable, an agent one not', () => {
+    const SMA: OverlaySpec = { kind: 'sma', period: 50 } as OverlaySpec
+    const rows = build({ overlays: [EMA, SMA], userOverlayKeys: new Set(['ema:20']) })
+    expect(rows.find((r) => r.id === 'overlay:ema:20')?.removable).toBe(true)
+    expect(rows.find((r) => r.id === 'overlay:sma:50')?.removable).toBe(false)
+  })
+
+  it('defaults every overlay to non-removable when no user keys are supplied', () => {
+    const rows = build({ overlays: [EMA] })
+    expect(rows.find((r) => r.id === 'overlay:ema:20')?.removable).toBe(false)
+  })
+
   // Plan 0076 phase 2: the always-on OBV strip gets a single toggleable row.
   it('emits an OBV row (label, obv colour, visible) when hasObv, after the overlays', () => {
     const rows = build({ overlays: [EMA], hasObv: true })

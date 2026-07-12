@@ -54,12 +54,111 @@
   gap: var(--space-1);
 }
 
+/* One legend row: the label takes the space, an optional remove button pins to
+   the right (Plan 0082 phase 4). */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .label {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--font-size-sm);
   cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Add-indicator affordance (Plan 0082 phase 4). */
+.addSection {
+  margin-bottom: var(--space-2);
+}
+
+.addToggle {
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.addToggle:hover,
+.addToggle:focus-visible {
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+}
+
+.formField select,
+.formField input {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg);
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-1);
+}
+
+.formError {
+  margin: 0;
+  color: var(--color-danger, #dc2626);
+  font-size: var(--font-size-xs);
+}
+
+.addSubmit {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-bg);
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* Remove control on a user-overlay row (Plan 0082 phase 4). */
+.removeButton {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  line-height: 1;
+  font-size: var(--font-size-md);
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.removeButton:hover,
+.removeButton:focus-visible {
+  color: var(--color-danger, #dc2626);
+  background: var(--color-bg);
+  outline: none;
 }
 
 .checkbox {

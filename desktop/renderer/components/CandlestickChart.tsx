@@ -83,11 +83,14 @@ import {
 } from '../lib/theme'
 import { getCandleType, resolveChartStyle, subscribeChartStyle } from '../lib/chartStyle'
 import {
+  addUserOverlay,
   getUserOverlaysSnapshot,
   mergeOverlays,
+  removeUserOverlay,
   subscribeUserOverlays,
   userOverlayStoreKey,
 } from '../lib/userOverlays'
+import { overlayLayerId } from '../lib/overlays'
 import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
@@ -267,6 +270,24 @@ export function CandlestickChart({
   // in phase 4 to branch remove-vs-hide; phase 3 draws the union.
   const merged = useMemo(() => mergeOverlays(overlays, userOverlays), [overlays, userOverlays])
   const effectiveOverlays = merged.overlays
+  // Add / remove a user overlay (Plan 0082 phase 4). Only available when the chart
+  // carries a (symbol, timeframe) to key the store by. Remove maps the legend row
+  // id back to the stored spec via its overlayLayerId.
+  const canAddOverlay = Boolean(symbol && timeframe)
+  const handleAddOverlay = useCallback(
+    (spec: OverlaySpec): void => {
+      if (symbol && timeframe) addUserOverlay(symbol, timeframe, spec)
+    },
+    [symbol, timeframe],
+  )
+  const handleRemoveOverlay = useCallback(
+    (id: string): void => {
+      if (!symbol || !timeframe) return
+      const spec = userOverlays.find((s) => overlayLayerId(s) === id)
+      if (spec) removeUserOverlay(symbol, timeframe, spec)
+    },
+    [symbol, timeframe, userOverlays],
+  )
   // Layers-legend state (Plan 0047 phase 9), all ephemeral: `hidden` is the set
   // of layer ids the user toggled off; `layers` is the resolved descriptor list
   // the panel renders. Reset on remount (no persistence) by construction.
@@ -694,6 +715,7 @@ export function CandlestickChart({
     visibleTrendlines,
     hidden,
     hasObv: bars.length > 0,
+    userOverlayKeys: merged.userKeys,
     effectiveTheme,
     styleVersion,
   })
@@ -786,7 +808,13 @@ export function CandlestickChart({
             containerHeight={containerRef.current?.clientHeight ?? 0}
           />
         )}
-        <LayersPanel layers={layers} onToggle={onLayerToggle} onHighlight={onLayerHighlight} />
+        <LayersPanel
+          layers={layers}
+          onToggle={onLayerToggle}
+          onHighlight={onLayerHighlight}
+          onAddOverlay={canAddOverlay ? handleAddOverlay : undefined}
+          onRemove={handleRemoveOverlay}
+        />
       </div>
     </div>
   )

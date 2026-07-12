@@ -161,3 +161,82 @@ it('restores a persisted width on mount, clamped to the allowed range', () => {
   // Clamped to the 600px ceiling, not the raw stored value.
   expect(screen.getByTestId('layers-panel')).toHaveStyle({ width: '600px' })
 })
+
+// Plan 0082 phase 4 (ADR-0077): the add-indicator form + provenance-scoped
+// remove control. The form is only present when `onAddOverlay` is given.
+
+it('renders (not null) with no layers when an add handler is provided, so the first add is reachable', () => {
+  render(<LayersPanel layers={[]} onToggle={() => {}} onAddOverlay={() => {}} />)
+  expect(screen.getByTestId('layers-panel')).toBeInTheDocument()
+  expect(screen.getByTestId('add-overlay-toggle')).toBeInTheDocument()
+})
+
+it('has no add affordance when onAddOverlay is absent', () => {
+  render(<LayersPanel layers={LAYERS} onToggle={() => {}} />)
+  expect(screen.queryByTestId('add-overlay-toggle')).toBeNull()
+})
+
+it('adds an EMA with its period when the form is submitted', () => {
+  const onAddOverlay = jest.fn()
+  render(<LayersPanel layers={[]} onToggle={() => {}} onAddOverlay={onAddOverlay} />)
+  fireEvent.click(screen.getByTestId('add-overlay-toggle'))
+  // Default kind is EMA, default period 20.
+  fireEvent.click(screen.getByTestId('add-overlay-submit'))
+  expect(onAddOverlay).toHaveBeenCalledWith({ kind: 'ema', period: 20 })
+})
+
+it('shows a std-dev input for Bollinger and adds {bbands, period, multiplier}', () => {
+  const onAddOverlay = jest.fn()
+  render(<LayersPanel layers={[]} onToggle={() => {}} onAddOverlay={onAddOverlay} />)
+  fireEvent.click(screen.getByTestId('add-overlay-toggle'))
+  // EMA has no std-dev input; switching to Bollinger reveals it.
+  expect(screen.queryByTestId('add-overlay-stddev')).toBeNull()
+  fireEvent.change(screen.getByTestId('add-overlay-kind'), { target: { value: 'bbands' } })
+  fireEvent.change(screen.getByTestId('add-overlay-period'), { target: { value: '20' } })
+  fireEvent.change(screen.getByTestId('add-overlay-stddev'), { target: { value: '2.5' } })
+  fireEvent.click(screen.getByTestId('add-overlay-submit'))
+  expect(onAddOverlay).toHaveBeenCalledWith({ kind: 'bbands', period: 20, multiplier: 2.5 })
+})
+
+it('rejects an invalid period with an accessible message and does not add', () => {
+  const onAddOverlay = jest.fn()
+  render(<LayersPanel layers={[]} onToggle={() => {}} onAddOverlay={onAddOverlay} />)
+  fireEvent.click(screen.getByTestId('add-overlay-toggle'))
+  fireEvent.change(screen.getByTestId('add-overlay-period'), { target: { value: '0' } })
+  fireEvent.click(screen.getByTestId('add-overlay-submit'))
+  const error = screen.getByTestId('add-overlay-error')
+  expect(error).toHaveAttribute('role', 'alert')
+  expect(error).toHaveTextContent(/greater than 0/i)
+  expect(onAddOverlay).not.toHaveBeenCalled()
+})
+
+const PROVENANCE_LAYERS: ChartLayer[] = [
+  {
+    id: 'overlay:ema:20',
+    label: 'EMA(20)',
+    color: '#2563eb',
+    kind: 'overlay',
+    visible: true,
+    removable: true, // user-added
+  },
+  {
+    id: 'overlay:sma:50',
+    label: 'SMA(50)',
+    color: '#f97316',
+    kind: 'overlay',
+    visible: true, // agent — hide-only, no remove
+  },
+]
+
+it('shows a remove control only on user (removable) rows, and fires onRemove with the row id', () => {
+  const onRemove = jest.fn()
+  render(<LayersPanel layers={PROVENANCE_LAYERS} onToggle={() => {}} onRemove={onRemove} />)
+  // Agent overlay: hide-only (a checkbox, no remove button).
+  expect(
+    within(screen.getByTestId('layer-row:overlay:sma:50')).getByRole('checkbox'),
+  ).toBeInTheDocument()
+  expect(screen.queryByTestId('layer-remove:overlay:sma:50')).toBeNull()
+  // User overlay: removable.
+  fireEvent.click(screen.getByTestId('layer-remove:overlay:ema:20'))
+  expect(onRemove).toHaveBeenCalledWith('overlay:ema:20')
+})
