@@ -47,7 +47,15 @@ class OverlaySpec(BaseModel):
     cumulative and unparameterized, so the kind carries no fields at all — a bare
     `obv` overlay serialises to exactly `{kind}`. Like the other indicator kinds it
     accepts no `price`/`label`/`role`. The renderer computes OBV from the bars it
-    holds and draws it in a separate auto-scaled pane (phase 2, ui-builder)."""
+    holds and draws it in a separate auto-scaled pane (phase 2, ui-builder).
+
+    `bbands` (Plan 0082) needs no new field either: Bollinger Bands carry `period`
+    (default 20, applied by the renderer when absent) and reuse the existing
+    `multiplier` field as the standard-deviation multiplier `k` (default 2.0) — the
+    same field `supertrend` reuses for its ATR multiplier. The three bands (SMA
+    middle band, plus/minus `k` population standard deviations) are computed
+    client-side and drawn on the price pane (phase 2, ui-builder). Like the other
+    indicator kinds it accepts no `price`/`label`/`role`."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

@@ -873,6 +873,41 @@ def test_obv_overlay_rejects_price_line_fields() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Plan 0082 ph1: the bbands OverlaySpec kind reuses `multiplier` as the        #
+# std-dev multiplier `k`. Pure-pydantic round-trips — no live server needed.   #
+# --------------------------------------------------------------------------- #
+
+
+def test_bbands_overlay_round_trips_with_period_and_multiplier() -> None:
+    """A `bbands` overlay carries `period` + reuses `multiplier` as the std-dev
+    multiplier `k`, serialising to exactly those fields under `exclude_none`."""
+    overlay = OverlaySpec(kind="bbands", period=20, multiplier=2)
+    assert OverlaySpec.model_validate(overlay.model_dump()) == overlay
+    assert overlay.model_dump(mode="json", exclude_none=True) == {
+        "kind": "bbands",
+        "period": 20,
+        "multiplier": 2.0,
+    }
+
+
+def test_ema_overlay_wire_unchanged_by_bbands_kind() -> None:
+    """Documenting `bbands`' reuse of `multiplier` leaves an existing `ema` overlay
+    byte-unchanged on the wire — no new field, `exclude_none` drops the unset one."""
+    assert OverlaySpec(kind="ema", period=20).model_dump(mode="json", exclude_none=True) == {
+        "kind": "ema",
+        "period": 20,
+    }
+
+
+def test_bbands_overlay_rejects_price_line_fields() -> None:
+    """`bbands` is an indicator kind: the validator rejects the `price_line`-only
+    fields on it (the families stay disjoint)."""
+    for bad in ({"price": 100.0}, {"label": "x"}, {"role": "support"}):
+        with pytest.raises(ValidationError, match="does not accept price/label/role"):
+            OverlaySpec(kind="bbands", period=20, **bad)
+
+
+# --------------------------------------------------------------------------- #
 # Plan 0064 ph2: TrendlineSpec moves to the dedicated `chart.trendlines v1`     #
 # event; the `trendlines` field is REMOVED from chart.show/chart.update         #
 # (ADR-0059). Pure-pydantic round-trips — no live server needed.                #

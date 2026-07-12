@@ -1,6 +1,6 @@
 # 0082 — Bollinger Bands + user-originated chart overlay controls
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-11
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0077](../adrs/0077-user-originated-display-overlays.md) (user-originated display overlays — **paired, accepts at close**), [0015](../adrs/0015-claude-code-primary-control-surface.md) (agent-primary control surface — refined by 0077), [0039](../adrs/0039-renderer-theming-localstorage.md) (`ma.*` renderer-owned prefs), [0062](../adrs/0062-user-chart-style-overrides.md) (user chart-style overrides — the closest precedent), [0023](../adrs/0023-technical-analysis-surface.md) (client-side indicator duplication accepted for display), [0017](../adrs/0017-live-ui-updates-via-sse.md) (agent overlay events, unchanged)
