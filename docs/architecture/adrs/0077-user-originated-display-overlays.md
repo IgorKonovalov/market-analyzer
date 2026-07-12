@@ -1,6 +1,6 @@
 # ADR-0077 — User-originated display overlays (renderer-owned indicator layer)
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0082 close 2026-07-12 — user-overlay layer + `bbands` render + add-indicator form shipped; the classification test *client-computed + no-sidecar-call + no-domain-change ⇒ renderer-owned* is now load-bearing in `lib/userOverlays.ts`; user overlays never cross the wire)
 > **Date:** 2026-07-11
 > **Related plan(s):** [0082-bollinger-bands-and-overlay-controls](../plans/0082-bollinger-bands-and-overlay-controls.md) (accepts this ADR at close)
 > **Related ADRs:** [ADR-0015](0015-claude-code-primary-control-surface.md) (agent is the primary control surface — **refined here**), [ADR-0017](0017-live-ui-updates-via-sse.md) (agent→renderer overlay events), [ADR-0039](0039-renderer-theming-localstorage.md) (renderer-owned display prefs in `ma.*` localStorage — the pattern reused here), [ADR-0062](0062-user-chart-style-overrides.md) (user chart-style overrides — the closest precedent), [ADR-0023](0023-technical-analysis-surface.md) (client-side indicator duplication is accepted for display)
