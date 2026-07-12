@@ -1,6 +1,6 @@
 # ADR-0068 — Technical-read tier: a second, lesser sanctioned conditions→decision crossing
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0074 close 2026-07-12 — the lesser tier shipped exactly as decided: distinct `TechnicalRead` type with no conviction/level fields, a separate `technical_read` tool + SSE event, and the read-only source scan; `fuse()` untouched, all three structural honesty facts test-enforced)
 > **Date:** 2026-07-09
 > **Related plan(s):** 0074-technical-read-advisory-tier
 > **Extends:** [ADR-0029](0029-advisory-recommendation-boundary.md) (advisory recommendation boundary)
