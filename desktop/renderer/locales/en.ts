@@ -25,6 +25,7 @@ export const en = {
   'app.nav.trackRecord': 'Track record',
   'app.nav.forecast': 'Forecast',
   'app.nav.convergence': 'Convergence',
+  'app.nav.defi': 'DeFi',
   'app.nav.news': 'News',
   'app.nav.alerts': 'Alerts',
   'app.nav.settings': 'Settings',
@@ -147,6 +148,32 @@ export const en = {
   'news.headlinesLabel': 'Headlines',
   'news.toneScore': 'tone {score}',
   'news.toneCounts': '{pos} pos / {neg} neg / {neu} neu',
+
+  // ── DeFi wallet-P&L view (DefiPnlView.tsx) ──
+  'defi.title': 'Wallet P&L',
+  'defi.lede':
+    'Paste a wallet address to reconstruct its DeFi P&L — LP positions first, with 7/30/90-day and all-time realized figures.',
+  'defi.addressLabel': 'Wallet address',
+  'defi.addressPlaceholder': '0x…',
+  'defi.refreshLabel': 'Re-pull from source (slower)',
+  'defi.analyze': 'Analyze',
+  'defi.invalidAddress': 'Enter a valid 0x… address (40 hex characters).',
+  'defi.recentLabel': 'Recent',
+  'defi.idle': 'Paste a wallet address and choose Analyze.',
+  'defi.loading': 'Reconstructing wallet P&L…',
+  'defi.empty': 'No positions found for this wallet.',
+  'defi.partialBanner': "Partial — {excluded} of {total} positions excluded (couldn't be priced).",
+  'defi.totals': 'Realized {realized} · Unrealized {unrealized} · {complete} complete',
+  'defi.tableLabel': 'LP positions',
+  'defi.col.position': 'Position',
+  'defi.col.unclaimed': 'Unclaimed',
+  'defi.estReturnLabel': 'est. return',
+  'defi.otherLabel': 'Other positions',
+  'defi.otherFigures': 'realized {realized} · unrealized {unrealized}',
+  'defi.incompleteGeneric': 'incomplete — could not be priced',
+  'defi.error.setKeyHint':
+    'No data source configured — set your Zerion API key in Settings to analyze wallets.',
+  'defi.error.agentModeOff': 'Agent mode is off — enable it in Settings.',
 
   // ── Live-signal view (LiveSignalView.tsx) ──
   'signals.liveSignalEvaluation': 'Live signal evaluation',

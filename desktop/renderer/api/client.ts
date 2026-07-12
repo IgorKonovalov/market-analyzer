@@ -40,6 +40,7 @@ import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import type { AgentModeState } from '../types/ui-events'
 import type { AlertsPage } from '../types/sidecar/alerts-page'
 import type { WatchOut } from '../types/sidecar/watch-out'
+import type { WalletPnlResponse } from '../types/defiPnl'
 
 let cached: SidecarPort | null = null
 const configChangeSubscribers = new Set<() => void>()
@@ -241,6 +242,14 @@ export interface GetTrackRecordParams {
   maxCalls?: number
 }
 
+export interface GetWalletPnlParams {
+  /** A raw `0x…` EVM address (validated client-side before this is called). */
+  address: string
+  /** `true` re-pulls from Zerion before replaying (slower); the default replays
+   * the immutable cache (fast, zero upstream calls). */
+  refresh?: boolean
+}
+
 export const api = {
   getOhlcv({ symbol, timeframe, start, end }: GetOhlcvParams): Promise<Bar[]> {
     const params = new URLSearchParams({
@@ -327,6 +336,23 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
+    })
+  },
+  /**
+   * Reconstruct a wallet's DeFi P&L (Plan 0088, ADR-0082). Renderer-bearer-gated
+   * `POST /defi/pnl` — the read-only human twin of the `compute_wallet_pnl` MCP
+   * tool (ADR-0015). Returns per-position realized/unrealized plus rolling-window
+   * (7d/30d/90d/all) figures, LP positions first, with a partial wallet total that
+   * never nulls on one unpriceable position. `refresh=true` re-pulls from Zerion
+   * (slow); the default replays the immutable cache. A `503` `no wallet-positions
+   * source configured` / `no historical price source configured` surfaces as an
+   * `ApiError` the view maps to an actionable Settings hint.
+   */
+  getWalletPnl({ address, refresh = false }: GetWalletPnlParams): Promise<WalletPnlResponse> {
+    return callJson<WalletPnlResponse>('/defi/pnl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address, refresh }),
     })
   },
   /** Read the persisted agent-mode toggle (Plan 0014). Renderer-bearer-gated. */

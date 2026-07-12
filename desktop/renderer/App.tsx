@@ -43,6 +43,7 @@ import type {
 import { AlertsView } from './views/AlertsView'
 import { BacktestView } from './views/BacktestView'
 import { ConvergenceView } from './views/ConvergenceView'
+import { DefiPnlView } from './views/DefiPnlView'
 import { ForecastView } from './views/ForecastView'
 import { LiveSignalView } from './views/LiveSignalView'
 import { NewsView } from './views/NewsView'
@@ -62,6 +63,7 @@ type View =
   | 'track-record'
   | 'forecast'
   | 'convergence'
+  | 'defi'
   | 'settings'
   | 'backtest'
   | 'recent-backtests'
@@ -315,6 +317,15 @@ export function App(): JSX.Element {
           <button
             type="button"
             className={styles.tab}
+            aria-current={view === 'defi' ? 'page' : undefined}
+            onClick={() => setView('defi')}
+            data-testid="nav-defi"
+          >
+            {t('app.nav.defi')}
+          </button>
+          <button
+            type="button"
+            className={styles.tab}
             aria-current={view === 'news' ? 'page' : undefined}
             onClick={() => setView('news')}
             data-testid="nav-news"
@@ -368,6 +379,7 @@ export function App(): JSX.Element {
         />
       )}
       {view === 'convergence' && <ConvergenceView screen={latestScreen} />}
+      {view === 'defi' && <DefiPnlView />}
       {view === 'alerts' && <AlertsView />}
       {view === 'news' && <NewsView />}
       {view === 'settings' && <SettingsView />}

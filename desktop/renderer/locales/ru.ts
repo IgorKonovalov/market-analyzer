@@ -31,6 +31,7 @@ export const ru = {
   'app.nav.trackRecord': 'История точности',
   'app.nav.forecast': 'Прогноз',
   'app.nav.convergence': 'Сходимость',
+  'app.nav.defi': 'DeFi',
   'app.nav.news': 'Новости',
   'app.nav.alerts': 'Оповещения',
   'app.nav.settings': 'Настройки',
@@ -158,6 +159,32 @@ export const ru = {
   'news.headlinesLabel': 'Заголовки',
   'news.toneScore': 'тон {score}',
   'news.toneCounts': '{pos} полож. / {neg} отриц. / {neu} нейтр.',
+
+  // ── DeFi wallet-P&L view (DefiPnlView.tsx) ──
+  'defi.title': 'P&L кошелька',
+  'defi.lede':
+    'Вставьте адрес кошелька, чтобы реконструировать его DeFi P&L — сначала LP-позиции, с реализованными значениями за 7/30/90 дней и за всё время.',
+  'defi.addressLabel': 'Адрес кошелька',
+  'defi.addressPlaceholder': '0x…',
+  'defi.refreshLabel': 'Обновить из источника (медленнее)',
+  'defi.analyze': 'Анализ',
+  'defi.invalidAddress': 'Введите корректный адрес 0x… (40 hex-символов).',
+  'defi.recentLabel': 'Недавние',
+  'defi.idle': 'Вставьте адрес кошелька и нажмите «Анализ».',
+  'defi.loading': 'Реконструкция P&L кошелька…',
+  'defi.empty': 'Позиции для этого кошелька не найдены.',
+  'defi.partialBanner': 'Частично — {excluded} из {total} позиций исключено (не удалось оценить).',
+  'defi.totals': 'Реализовано {realized} · Нереализовано {unrealized} · {complete} завершено',
+  'defi.tableLabel': 'LP-позиции',
+  'defi.col.position': 'Позиция',
+  'defi.col.unclaimed': 'Не получено',
+  'defi.estReturnLabel': 'оцен. доходность',
+  'defi.otherLabel': 'Прочие позиции',
+  'defi.otherFigures': 'реализовано {realized} · нереализовано {unrealized}',
+  'defi.incompleteGeneric': 'неполные данные — не удалось оценить',
+  'defi.error.setKeyHint':
+    'Источник данных не настроен — укажите ключ Zerion API в Настройках, чтобы анализировать кошельки.',
+  'defi.error.agentModeOff': 'Режим агента выключен — включите его в Настройках.',
 
   // ── Live-signal view (LiveSignalView.tsx) ──
   'signals.liveSignalEvaluation': 'Оценка сигнала в реальном времени',

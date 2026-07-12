@@ -1,0 +1,233 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  overflow: auto;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-fg);
+}
+
+.lede {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  flex: 1 1 24rem;
+  min-width: 18rem;
+}
+
+.address {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+}
+
+.address:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.refresh {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  padding-bottom: var(--space-2);
+}
+
+.invalid,
+.error {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+}
+
+.recent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.recentLabel {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-strong);
+}
+
+.statusBlock {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.partialBanner {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-bear);
+  background: var(--color-bear-bg);
+  color: var(--color-fg);
+  font-size: var(--font-size-sm);
+}
+
+.totals {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.table th {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border-strong);
+  color: var(--color-fg-muted);
+  font-weight: 600;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.lpRow td {
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-fg);
+}
+
+.positionCell {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The estimated-total-return sub-row is clearly secondary to the exact figures. */
+.estRow td {
+  padding: 0 var(--space-2) var(--space-2);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+.estLabel {
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.other {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border);
+}
+
+.otherTitle {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+}
+
+.otherList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.otherRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-fg-muted);
+}
+
+.otherId {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22rem;
+}
+
+.otherReason {
+  text-align: right;
+  flex-shrink: 0;
+}
