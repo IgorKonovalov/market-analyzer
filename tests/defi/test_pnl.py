@@ -11,8 +11,9 @@ Pinned claims:
 (d) re-running the engine on the same cached inputs is byte-identical
     (`model_dump_json` equality — no provenance inside the engine, nothing
     to exclude);
-(e) unbooked kinds (swap / liquidation / unclassified) and any incomplete
-    position force honest `None` wallet totals, never a partial sum.
+(e) unbooked kinds (liquidation / unclassified) and any incomplete position
+    force honest `None` wallet totals, never a partial sum (`swap` is booked as
+    of Plan 0084; `custody_move` is a no-op).
 
 Hand-worked case (a):
   ts1: add 0.2 WETH @ 3500 + 700 USDC @ 1        → basis 1400
@@ -196,22 +197,106 @@ def test_unclassified_event_marks_the_position_incomplete() -> None:
     assert any("unclassified" in note for note in position.notes)
 
 
-def test_swap_and_liquidation_are_unbooked_in_v1_not_invented() -> None:
+# -- Plan 0084 phase 3: swap booking + custody-move no-op ------------------------
+#
+# A fair swap (V_in == V_out at block time) realizes ~0 and leaves `basis`
+# untouched — value is reshuffled within the position, not added or removed. An
+# unfair swap realizes its execution delta. `liquidation` / `unclassified` still
+# fail loud; `custody_move` is a no-op.
+
+_SWAP_EVENTS = [
+    _event(
+        "add_liquidity",
+        _LP,
+        _TS1,
+        100,
+        [_leg("out", "WETH", _WETH, 0.2), _leg("out", "USDC", _USDC, 700.0)],
+    ),
+    # 350 USDC @1 (V_out 350) -> 0.0875 WETH @4000 (V_in 350): a fair swap.
+    _event(
+        "swap",
+        _LP,
+        _TS2,
+        200,
+        [_leg("out", "USDC", _USDC, 350.0), _leg("in", "WETH", _WETH, 0.0875)],
+    ),
+]
+
+
+def test_swap_books_as_a_basis_preserving_conversion() -> None:
+    """A fair swap completes the position (not incomplete), realizes ~0, and does
+    not touch cost basis — the invariant that keeps a swap from corrupting basis."""
+    result = compute_wallet_pnl(
+        wallet=_WALLET, positions=[_LP], events=_SWAP_EVENTS, price_source=_PRICES, as_of=_AS_OF
+    )
+    position = result.positions[0]
+    assert position.incomplete is False
+    assert position.realized_usd == 0.0, "a fair atomic swap realizes ~0"
+    assert position.cost_basis_usd == 1400.0, "basis is unchanged by a swap"
+    assert result.realized_usd == 0.0
+
+
+def test_unfair_swap_realizes_its_block_time_execution_delta() -> None:
+    """Poor execution (V_in < V_out) surfaces as a realized loss of exactly the
+    delta — 350 USDC out, only 0.08 WETH (=$320) in -> realized -30."""
     events = [
-        *_LP_EVENTS,
+        _SWAP_EVENTS[0],
         _event(
             "swap",
             _LP,
-            _TS3,
-            600,
-            [_leg("out", "USDC", _USDC, 10.0), _leg("in", "WETH", _WETH, 0.002)],
+            _TS2,
+            200,
+            [_leg("out", "USDC", _USDC, 350.0), _leg("in", "WETH", _WETH, 0.08)],
         ),
+    ]
+    position = compute_wallet_pnl(
+        wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
+    ).positions[0]
+    assert position.incomplete is False
+    assert position.realized_usd == -30.0
+
+
+def test_swap_inclusive_replay_is_byte_identical() -> None:
+    def _run() -> Any:
+        return compute_wallet_pnl(
+            wallet=_WALLET, positions=[_LP], events=_SWAP_EVENTS, price_source=_PRICES, as_of=_AS_OF
+        )
+
+    assert _run().model_dump_json() == _run().model_dump_json()
+
+
+def test_custody_move_is_a_noop() -> None:
+    """Staking the LP receipt into the gauge changes nothing: the result matches
+    the same history without the custody move."""
+    with_custody = [
+        _SWAP_EVENTS[0],
+        _event("custody_move", _LP, _TS2, 200, [_leg("out", "vAMM", _WETH, 1.0)]),
+    ]
+    without = [_SWAP_EVENTS[0]]
+    a = compute_wallet_pnl(
+        wallet=_WALLET, positions=[_LP], events=with_custody, price_source=_PRICES, as_of=_AS_OF
+    ).positions[0]
+    b = compute_wallet_pnl(
+        wallet=_WALLET, positions=[_LP], events=without, price_source=_PRICES, as_of=_AS_OF
+    ).positions[0]
+    assert a.incomplete is False
+    assert (a.realized_usd, a.cost_basis_usd, a.unrealized_usd) == (
+        b.realized_usd,
+        b.cost_basis_usd,
+        b.unrealized_usd,
+    )
+
+
+def test_liquidation_still_fails_loud() -> None:
+    events = [
+        *_LP_EVENTS,
+        _event("liquidation", _LP, _TS3, 600, [_leg("out", "USDC", _USDC, 10.0)]),
     ]
     result = compute_wallet_pnl(
         wallet=_WALLET, positions=[_LP], events=events, price_source=_PRICES, as_of=_AS_OF
     )
     assert result.positions[0].incomplete is True
-    assert any("unbooked swap" in note for note in result.positions[0].notes)
+    assert any("unbooked liquidation" in note for note in result.positions[0].notes)
 
 
 def test_borrow_and_repay_realize_interest_as_the_debt_closes() -> None:

@@ -23,6 +23,17 @@ phase-7 job's concern.
   realizes against the whole remaining basis).
 - *Income* (`fee_claim` / `reward_claim`; in-legs): realized income at
   claim-time price, exactly as ADR-0036 books it.
+- *Swap* (`swap`; average-cost lot conversion — Plan 0084 / ADR-0079): a swap
+  reshuffles value **within** the position rather than adding or removing
+  capital, so it leaves the aggregate `basis` untouched (the invariant that
+  keeps a mis-booked swap from corrupting cost basis). It drains the sold
+  (out-leg) token amounts and accrues the bought (in-leg) token amounts, and
+  realizes the swap's own execution delta `V_in - V_out` at block-time prices —
+  for a fair atomic swap that is ≈ 0 (the fee/slippage cost), so a swap-inclusive
+  lifecycle reconciles instead of failing loud.
+- *Custody move* (`custody_move`; Plan 0084): staking / unstaking the LP token or
+  NFT into or out of the gauge moves the position's *receipt*, not its underlying
+  tokens, so it is a no-op — no basis, realized, or contributed change.
 - *Debt* (`borrow` / `repay`, lending_borrow positions): a borrow draws
   `V_in` onto a debt pot; a repay releases `min(V_out, debt)` and realizes
   `released - V_out` (<= 0 — the interest cost surfaces as the debt closes).
@@ -35,12 +46,11 @@ phase-7 job's concern.
   cached transaction's timestamp), keeping the benchmark deterministic.
 
 **Loud failure (ADR-0036):** a missing price for any required leg, or an
-event kind the pot cannot book (`swap` / `liquidation` — classified but not
-yet accounted in v1 — and `unclassified`), fails *that position*: every
-numeric field is `None`, `incomplete=True`, and `notes` names the offending
-leg or event. Nothing is coerced to zero. A wallet with any incomplete
-position reports `None` totals — an incomplete total must not look like a
-real one.
+event kind the pot cannot book (`liquidation` and `unclassified` — `swap` is
+now booked as of Plan 0084), fails *that position*: every numeric field is
+`None`, `incomplete=True`, and `notes` names the offending leg or event.
+Nothing is coerced to zero. A wallet with any incomplete position reports
+`None` totals — an incomplete total must not look like a real one.
 """
 
 from __future__ import annotations
@@ -56,10 +66,10 @@ from market_analyser.defi.discovery import mask_wallet
 from market_analyser.defi.models import DefiPosition
 from market_analyser.defi.pnl_events import PositionEvent
 
-# Event kinds the v1 pot can book. `swap` and `liquidation` are classified by
-# phase 5 but deliberately not accounted yet: inventing arithmetic for them
-# would produce plausible wrong numbers, so they mark the position incomplete
-# instead (the honest gap, per ADR-0036's fallback posture).
+# Event kinds the pot books. `swap` (average-cost conversion) and `custody_move`
+# (a no-op) join the booked set as of Plan 0084; `liquidation` and `unclassified`
+# remain unbooked and mark the position incomplete — inventing arithmetic for them
+# would produce plausible wrong numbers (the honest gap, ADR-0036 fallback posture).
 _CONTRIBUTION_KINDS = frozenset({"add_liquidity", "supply"})
 _EXTRACTION_KINDS = frozenset({"remove_liquidity", "withdraw_supply"})
 _INCOME_KINDS = frozenset({"fee_claim", "reward_claim"})
@@ -182,9 +192,23 @@ def _replay_position(
                     released = min(repaid, debt)
                     realized += released - repaid
                     debt -= released
+            elif kind == "swap":
+                # Average-cost conversion (Plan 0084): reshuffle value within the
+                # position — realize the block-time execution delta, drain the sold
+                # token, accrue the bought token — but leave `basis` untouched (no
+                # capital entered or left), so a swap can't corrupt cost basis.
+                value_out = _legs_value(event, "out", price_source)
+                value_in = _legs_value(event, "in", price_source)
+                realized += value_in - value_out
+                _drain(contributed, event, "out")
+                _accrue(contributed, event, "in")
+            elif kind == "custody_move":
+                # Staking/unstaking the LP receipt in/out of the gauge moves no
+                # underlying value — a no-op (Plan 0084 / ADR-0079).
+                pass
             else:
-                # swap / liquidation / unclassified: classified, not booked —
-                # an honest incomplete beats invented arithmetic (ADR-0036).
+                # liquidation / unclassified: classified, not booked — an honest
+                # incomplete beats invented arithmetic (ADR-0036).
                 notes.append(f"unbooked {kind} event {event.tx_hash}")
         if notes:
             return _incomplete(position, notes)
