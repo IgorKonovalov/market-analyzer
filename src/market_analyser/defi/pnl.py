@@ -63,7 +63,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from market_analyser.data.adapters.defillama import token_key
 from market_analyser.data.sources import HistoricalPriceSource
 from market_analyser.defi.discovery import mask_wallet
-from market_analyser.defi.models import DefiPosition
+from market_analyser.defi.models import DefiPosition, RewardAmount
 from market_analyser.defi.pnl_events import PositionEvent
 
 # Event kinds the pot books. `swap` (average-cost conversion) and `custody_move`
@@ -89,6 +89,12 @@ class PositionPnl(BaseModel):
     vs_hodl_usd: float | None  # LP only; None for other kinds
     incomplete: bool
     notes: list[str] = Field(default_factory=list)
+    # Current-state, on-chain `earned()` read (Plan 0084 / ADR-0079): rewards owed
+    # right now but not yet claimed, which tx-replay cannot see. `None` when the
+    # position is not gauge-staked or owes nothing. Deliberately OUTSIDE the
+    # replay figures and the determinism guarantee (a live read, like `usd_value`);
+    # the engine never sets it — the job attaches it after replay.
+    unclaimed_rewards: list[RewardAmount] | None = None
 
 
 class WalletPnl(BaseModel):
@@ -104,6 +110,10 @@ class WalletPnl(BaseModel):
     incomplete: bool
     crosscheck_zerion_total: float | None = None  # advisory (phase 7 wires it)
     crosscheck_warning: bool = False
+    # Wallet roll-up of the per-position `unclaimed_rewards`, summed by symbol
+    # (Plan 0084). Same current-state / outside-determinism status as the
+    # per-position field; `None` when no position owes anything.
+    unclaimed_rewards: list[RewardAmount] | None = None
 
 
 class _MissingPrice(Exception):

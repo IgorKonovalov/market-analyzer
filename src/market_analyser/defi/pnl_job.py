@@ -36,6 +36,7 @@ from market_analyser.data.sources import (
     HistoricalPriceSource,
     PnlCrosscheckSource,
     TxHistorySource,
+    UnclaimedRewardsSource,
     WalletPositionsSource,
 )
 from market_analyser.defi.discovery import DiscoveryService, mask_wallet
@@ -45,6 +46,7 @@ from market_analyser.defi.pnl_events import map_events
 from market_analyser.defi.scan_job import _classify_failure
 from market_analyser.defi.tx_ingestion import TxHistoryService
 from market_analyser.defi.tx_models import DecodedTx
+from market_analyser.defi.unclaimed import augment_with_unclaimed
 from market_analyser.events import (
     DefiPnlCompletedPayloadV1,
     DefiPnlFailedPayloadV1,
@@ -72,6 +74,7 @@ async def run_wallet_pnl(
     refresh: bool = False,
     crosscheck_source: PnlCrosscheckSource | None = None,
     gauge_source: GaugeResolutionSource | None = None,
+    unclaimed_source: UnclaimedRewardsSource | None = None,
 ) -> WalletPnl:
     """Reconstruct the wallet's P&L, streaming `defi.pnl_*`; return the result.
 
@@ -79,9 +82,11 @@ async def run_wallet_pnl(
     replays the cached history untouched (zero source calls — the
     deterministic re-run path). `gauge_source`, when supplied, resolves the
     gauge→pool map so Aerodrome emissions attribute to the right position
-    (Plan 0084); absent, gauge txs fall back to the pre-0084 behavior. Raises the
-    pipeline's typed error (after publishing `defi.pnl_failed`) — never returns a
-    zeroed result."""
+    (Plan 0084); `unclaimed_source`, when supplied, folds each open position's
+    owed-but-unclaimed gauge rewards onto the result as a labeled current-state
+    field (best-effort, outside the determinism guarantee). Both absent, the
+    pre-0084 behavior is reproduced. Raises the pipeline's typed error (after
+    publishing `defi.pnl_failed`) — never returns a zeroed result."""
     masked = mask_wallet(address)
     event_bus.publish("defi.pnl_started", DefiPnlStartedPayloadV1(wallet=masked))
     try:
@@ -95,6 +100,7 @@ async def run_wallet_pnl(
             refresh,
             crosscheck_source,
             gauge_source,
+            unclaimed_source,
         )
     except Exception as err:
         event_bus.publish(
@@ -128,6 +134,7 @@ def _reconstruct(
     refresh: bool,
     crosscheck_source: PnlCrosscheckSource | None,
     gauge_source: GaugeResolutionSource | None,
+    unclaimed_source: UnclaimedRewardsSource | None,
 ) -> WalletPnl:
     history = TxHistoryService(source=tx_source, repository=tx_repository).load_history(
         address, refresh=refresh
@@ -144,6 +151,10 @@ def _reconstruct(
         price_source=price_source,
         as_of=as_of,
     )
+    # Current-state augmentation (Plan 0084), after the pure replay so the
+    # deterministic figures are untouched; best-effort, never fails the P&L.
+    if unclaimed_source is not None:
+        pnl = augment_with_unclaimed(pnl, positions, unclaimed_source, owner=address)
     crosscheck = _fetch_crosscheck(crosscheck_source, address)
     return pnl.model_copy(
         update={

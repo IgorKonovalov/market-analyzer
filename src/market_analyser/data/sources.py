@@ -46,7 +46,13 @@ if TYPE_CHECKING:
     # domain (the adapter that *produces* DefiPosition imports it at runtime;
     # this Protocol only names the return type). `defi/models` imports nothing
     # from `data/`, so there is no import cycle.
-    from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail, PoolQuote
+    from market_analyser.defi.models import (
+        Chain,
+        DefiPosition,
+        LpPositionDetail,
+        PoolQuote,
+        RewardAmount,
+    )
     from market_analyser.defi.tx_models import DecodedTx
 
 
@@ -232,6 +238,26 @@ class LpPositionDetailSource(Protocol):
         A one-hop-only source returns `None`; the enrichment step calls this only
         for Uni-v3-class positions, then passes the id to `fetch_lp_detail`."""
         ...
+
+
+@runtime_checkable
+class UnclaimedRewardsSource(Protocol):
+    """A read-only source of a position's **currently owed-but-unclaimed** gauge
+    rewards (Plan 0084 / ADR-0079), read on-chain via the gauge's `earned()`.
+    Transaction replay is structurally blind to unclaimed emissions — there is no
+    claim tx yet — so this is a separate, labeled *current-state* read that
+    augments the P&L output without entering the deterministic replay figures.
+
+    Read-only by charter: a conforming source holds no key, signs nothing, and
+    issues only `eth_call`. Best-effort by contract: it returns the reward amounts
+    it can read (empty when the position is not gauge-staked or owes nothing), and
+    a read failure is the caller's to swallow — an unclaimed read must never fail
+    the P&L reconstruction. `owner` is the wallet address (the `earned()` account).
+
+    Members of an unclaimed-rewards selector registry keyed by source name ("rpc"),
+    built in the composition root (ADR-0031)."""
+
+    def fetch_unclaimed(self, *, position: DefiPosition, owner: str) -> Sequence[RewardAmount]: ...
 
 
 @runtime_checkable

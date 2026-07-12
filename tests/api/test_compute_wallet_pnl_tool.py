@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from market_analyser.api.mcp_tools.compute_wallet_pnl import register_compute_wallet_pnl
 from market_analyser.data.adapters.defillama import token_key
 from market_analyser.data.adapters.zerion import ZerionAuthError
-from market_analyser.defi.models import Chain, DefiPosition, PositionToken
+from market_analyser.defi.models import Chain, DefiPosition, PositionToken, RewardAmount
 from market_analyser.defi.tx_models import DecodedTx
 from market_analyser.events import Envelope, EventBus
 from market_analyser.persistence.defi_tx_repository import DefiTxRepository
@@ -96,11 +96,17 @@ class _TablePriceSource:
         return {(f"base:{_USDC}", int(_TS1.timestamp())): 1.0}.get((token_key(chain, address), ts))
 
 
+class _FakeUnclaimedSource:
+    def fetch_unclaimed(self, *, position: DefiPosition, owner: str) -> list[RewardAmount]:
+        return [RewardAmount(symbol="AERO", amount=34.2, usd_value=18.0)]
+
+
 def _server(
     session_factory: sessionmaker[Session],
     bus: EventBus,
     *,
     tx_source: _FakeTxSource | None = None,
+    unclaimed_source: _FakeUnclaimedSource | None = None,
 ) -> FastMCP:
     server = FastMCP(name="test", stateless_http=True, json_response=True)
     register_compute_wallet_pnl(
@@ -112,6 +118,7 @@ def _server(
         historical_price_source=_TablePriceSource(),
         defi_tx_repository=DefiTxRepository(session_factory),
         event_bus=bus,
+        unclaimed_rewards_source=unclaimed_source,
     )
     return server
 
@@ -148,6 +155,24 @@ def test_happy_path_returns_reconstruction_and_streams_events(
     assert structured["wallet"] == "0x2222…2222"  # masked
     assert _WALLET not in str(structured)
     assert _drain(sub.queue) == ["defi.pnl_started", "defi.pnl_completed"]
+
+
+def test_unclaimed_rewards_surface_when_a_source_is_wired(
+    session_factory: sessionmaker[Session],
+) -> None:
+    bus = EventBus()
+    server = _server(session_factory, bus, unclaimed_source=_FakeUnclaimedSource())
+    _content, structured = _call(server, {"params": {"address": _WALLET}})
+    expected = [{"symbol": "AERO", "amount": 34.2, "usd_value": 18.0}]
+    assert structured["error"] is None
+    assert structured["unclaimed_rewards"] == expected
+    assert structured["positions"][0]["unclaimed_rewards"] == expected
+
+
+def test_unclaimed_rewards_null_without_a_source(session_factory: sessionmaker[Session]) -> None:
+    server = _server(session_factory, EventBus())
+    _content, structured = _call(server, {"params": {"address": _WALLET}})
+    assert structured["unclaimed_rewards"] is None
 
 
 def test_invalid_address_rejected_at_input_boundary(
@@ -193,3 +218,4 @@ def test_description_advertises_reconstruction_and_advisory_crosscheck(
     assert "reconstruct" in description
     assert "advisory" in description  # the cross-check is labeled, not trusted
     assert "auth" in description  # the set-your-key recovery path
+    assert "unclaimed_rewards" in description  # the Plan 0084 current-state field

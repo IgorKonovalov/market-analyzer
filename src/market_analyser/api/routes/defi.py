@@ -25,10 +25,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from market_analyser.data.adapters.zerion import ZerionAuthError, ZerionError
 from market_analyser.data.errors import RateLimitedError, UpstreamDataError
 from market_analyser.data.sources import (
+    GaugeResolutionSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
     PnlCrosscheckSource,
     TxHistorySource,
+    UnclaimedRewardsSource,
     WalletPositionsSource,
 )
 from market_analyser.defi.pnl_job import run_wallet_pnl
@@ -43,6 +45,9 @@ router = APIRouter(prefix="/defi", tags=["defi"])
 _DEFAULT_SOURCE = "zerion"
 # The default LP-detail source (Plan 0034); enriches LP positions when present.
 _DEFAULT_LP_DETAIL_SOURCE = "rpc"
+# The default gauge-resolution / unclaimed-rewards source (Plan 0084); both read
+# over the same RPC path as LP-detail.
+_DEFAULT_RPC_SOURCE = "rpc"
 
 
 class ScanRequest(BaseModel):
@@ -124,6 +129,10 @@ class PnlResponse(BaseModel):
     incomplete: bool
     realized_usd: float | None
     unrealized_usd: float | None
+    # Labeled current-state on-chain read of owed-but-unclaimed gauge rewards
+    # (Plan 0084), wallet roll-up summed by symbol; kept out of realized/unrealized
+    # and the determinism guarantee; `None` when nothing is owed.
+    unclaimed_rewards: list[dict[str, Any]] | None
     crosscheck_zerion_total: float | None
     crosscheck_warning: bool
 
@@ -146,6 +155,10 @@ async def post_defi_pnl(request: Request, body: PnlRequest) -> PnlResponse:
     if price_source is None:
         raise HTTPException(status_code=503, detail="no historical price source configured")
     crosscheck = tx_source if isinstance(tx_source, PnlCrosscheckSource) else None
+    gauge_sources: Mapping[str, GaugeResolutionSource] = request.app.state.gauge_resolution_sources
+    unclaimed_sources: Mapping[str, UnclaimedRewardsSource] = (
+        request.app.state.unclaimed_rewards_sources
+    )
     event_bus: EventBus = request.app.state.event_bus
     try:
         result = await run_wallet_pnl(
@@ -157,6 +170,8 @@ async def post_defi_pnl(request: Request, body: PnlRequest) -> PnlResponse:
             address=body.address,
             refresh=body.refresh,
             crosscheck_source=crosscheck,
+            gauge_source=gauge_sources.get(_DEFAULT_RPC_SOURCE),
+            unclaimed_source=unclaimed_sources.get(_DEFAULT_RPC_SOURCE),
         )
     except ZerionAuthError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
@@ -173,6 +188,11 @@ async def post_defi_pnl(request: Request, body: PnlRequest) -> PnlResponse:
         incomplete=result.incomplete,
         realized_usd=result.realized_usd,
         unrealized_usd=result.unrealized_usd,
+        unclaimed_rewards=(
+            [reward.model_dump(mode="json") for reward in result.unclaimed_rewards]
+            if result.unclaimed_rewards is not None
+            else None
+        ),
         crosscheck_zerion_total=result.crosscheck_zerion_total,
         crosscheck_warning=result.crosscheck_warning,
     )

@@ -89,12 +89,14 @@ from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
     AccountHoldingsSource,
+    GaugeResolutionSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
     MetricSeriesSource,
     PoolPriceSource,
     PredictionMarketSource,
     TxHistorySource,
+    UnclaimedRewardsSource,
     WalletPositionsSource,
 )
 from market_analyser.events import EventBus
@@ -137,6 +139,8 @@ def create_mcp_components(
     manual_positions_path: Path | None = None,
     prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
     pool_price_sources: Mapping[str, PoolPriceSource] | None = None,
+    gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
+    unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -431,6 +435,8 @@ def create_mcp_components(
             historical_price_source=historical_price_source,
             defi_tx_repository=defi_tx_repository,
             event_bus=event_bus,
+            gauge_source=(gauge_resolution_sources or {}).get("rpc"),
+            unclaimed_rewards_source=(unclaimed_rewards_sources or {}).get("rpc"),
         )
 
     # `portfolio_summary` (Plan 0041, ADR-0042): the cross-venue read-only

@@ -29,9 +29,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from market_analyser.data.adapters.zerion import ZerionAuthError, ZerionError
 from market_analyser.data.errors import UpstreamDataError, failure_reason
 from market_analyser.data.sources import (
+    GaugeResolutionSource,
     HistoricalPriceSource,
     PnlCrosscheckSource,
     TxHistorySource,
+    UnclaimedRewardsSource,
     WalletPositionsSource,
 )
 from market_analyser.defi.pnl_job import run_wallet_pnl
@@ -47,9 +49,14 @@ COMPUTE_WALLET_PNL_DESCRIPTION = (
     "total realized/unrealized P&L under average-cost lots, every leg valued at "
     "its own block timestamp - never trusting an aggregator's number. Returns "
     "{wallet (masked), positions: [{position_id, realized_usd, unrealized_usd, "
-    "cost_basis_usd, vs_hodl_usd (LP only), incomplete, notes}], position_count, "
-    "incomplete, realized_usd, unrealized_usd, crosscheck_zerion_total, "
-    "crosscheck_warning, error, message}. A position with a missing historical "
+    "cost_basis_usd, vs_hodl_usd (LP only), incomplete, notes, unclaimed_rewards}], "
+    "position_count, incomplete, realized_usd, unrealized_usd, unclaimed_rewards, "
+    "crosscheck_zerion_total, crosscheck_warning, error, message}. unclaimed_rewards "
+    "is a labeled CURRENT-STATE on-chain read of gauge emissions owed-but-not-yet-"
+    "claimed ([{symbol, amount, usd_value}], per position + a wallet roll-up); it is "
+    "deliberately kept OUT of realized/unrealized and out of the deterministic re-run "
+    "guarantee (there is no claim tx to replay), null when a position owes nothing. "
+    "A position with a missing historical "
     "price or an unbooked event kind reports null figures with incomplete=true "
     "and a naming note - never a silently-zeroed number; wallet totals are null "
     "whenever any position is incomplete. crosscheck_zerion_total is Zerion's "
@@ -86,10 +93,15 @@ def register_compute_wallet_pnl(
     historical_price_source: HistoricalPriceSource,
     defi_tx_repository: DefiTxRepository,
     event_bus: EventBus,
+    gauge_source: GaugeResolutionSource | None = None,
+    unclaimed_rewards_source: UnclaimedRewardsSource | None = None,
 ) -> None:
     """Bind the `compute_wallet_pnl` tool to `server`. Dependencies are
     captured by closure so the tool body keeps its single declared parameter
-    (FastMCP introspects it for the input schema)."""
+    (FastMCP introspects it for the input schema). `gauge_source` /
+    `unclaimed_rewards_source` are optional (Plan 0084): supplied, they resolve
+    Aerodrome gauge emissions to the right position and read owed-but-unclaimed
+    rewards; absent, the pre-0084 behavior holds."""
     tx_source = tx_history_sources[_DEFAULT_SOURCE]
     positions_source = wallet_positions_sources[_DEFAULT_SOURCE]
     crosscheck = tx_source if isinstance(tx_source, PnlCrosscheckSource) else None
@@ -106,6 +118,8 @@ def register_compute_wallet_pnl(
                 address=params.address,
                 refresh=params.refresh,
                 crosscheck_source=crosscheck,
+                gauge_source=gauge_source,
+                unclaimed_source=unclaimed_rewards_source,
             )
         except ZerionAuthError as err:
             return _error("auth", err)
@@ -120,6 +134,11 @@ def register_compute_wallet_pnl(
             "incomplete": result.incomplete,
             "realized_usd": result.realized_usd,
             "unrealized_usd": result.unrealized_usd,
+            "unclaimed_rewards": (
+                [reward.model_dump(mode="json") for reward in result.unclaimed_rewards]
+                if result.unclaimed_rewards is not None
+                else None
+            ),
             "crosscheck_zerion_total": result.crosscheck_zerion_total,
             "crosscheck_warning": result.crosscheck_warning,
             "error": None,
@@ -135,6 +154,7 @@ def _error(reason: str, err: Exception) -> dict[str, Any]:
         "incomplete": None,
         "realized_usd": None,
         "unrealized_usd": None,
+        "unclaimed_rewards": None,
         "crosscheck_zerion_total": None,
         "crosscheck_warning": None,
         "error": reason,

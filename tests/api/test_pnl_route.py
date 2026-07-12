@@ -31,7 +31,7 @@ from market_analyser.data.types import (
     SentimentSample,
     SymbolInfo,
 )
-from market_analyser.defi.models import Chain, DefiPosition, PositionToken
+from market_analyser.defi.models import Chain, DefiPosition, PositionToken, RewardAmount
 from market_analyser.defi.tx_models import DecodedTx
 from market_analyser.persistence.engine import make_engine
 
@@ -74,6 +74,13 @@ class _FakePositionsSource:
 class _TablePriceSource:
     def fetch_price(self, *, chain: Chain, address: str | None, ts: int) -> float | None:
         return {(f"base:{_USDC}", int(_TS1.timestamp())): 1.0}.get((token_key(chain, address), ts))
+
+
+class _FakeUnclaimedSource:
+    """Returns a fixed owed-reward for the wallet's single open LP position."""
+
+    def fetch_unclaimed(self, *, position: DefiPosition, owner: str) -> list[RewardAmount]:
+        return [RewardAmount(symbol="AERO", amount=34.2, usd_value=18.0)]
 
 
 class _FakeProvider:
@@ -186,6 +193,38 @@ def test_valid_address_returns_reconstruction(engine: Engine) -> None:
     assert position["position_id"] == "base:aerodrome:lp-1"
     assert position["cost_basis_usd"] == 1000.0
     assert position["incomplete"] is False
+
+
+def test_unclaimed_rewards_are_surfaced_when_a_source_is_wired(engine: Engine) -> None:
+    """Plan 0084 phase 5 done-when: the open position reports its owed-but-unclaimed
+    gauge rewards, and the wallet roll-up carries the same figure."""
+    app = create_app(
+        secret=RENDERER_SECRET,
+        engine=engine,
+        provider=_FakeProvider(),
+        wallet_positions_sources={"zerion": _FakePositionsSource()},
+        tx_history_sources={"zerion": _FakeTxSource([_DEPOSIT_TX])},
+        historical_price_source=_TablePriceSource(),
+        unclaimed_rewards_sources={"rpc": _FakeUnclaimedSource()},
+    )
+    with TestClient(app) as client:
+        response = client.post("/defi/pnl", json={"address": _WALLET}, headers=_headers())
+    assert response.status_code == 200, response.text
+    body = response.json()
+    position = body["positions"][0]
+    assert position["unclaimed_rewards"] == [{"symbol": "AERO", "amount": 34.2, "usd_value": 18.0}]
+    assert body["unclaimed_rewards"] == [{"symbol": "AERO", "amount": 34.2, "usd_value": 18.0}]
+    # The replay figures are untouched by the current-state augmentation.
+    assert body["realized_usd"] == 0.0
+    assert body["unrealized_usd"] == 100.0
+
+
+def test_unclaimed_rewards_is_null_when_no_source_is_wired(engine: Engine) -> None:
+    with _client(engine, _FakeTxSource([_DEPOSIT_TX])) as client:
+        response = client.post("/defi/pnl", json={"address": _WALLET}, headers=_headers())
+    body = response.json()
+    assert body["unclaimed_rewards"] is None
+    assert body["positions"][0]["unclaimed_rewards"] is None
 
 
 def test_non_address_is_422(engine: Engine) -> None:

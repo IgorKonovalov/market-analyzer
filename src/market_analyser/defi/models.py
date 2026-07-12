@@ -143,6 +143,47 @@ class LpPositionDetail(BaseModel):
         return self
 
 
+class RewardAmount(BaseModel):
+    """One reward token currently owed-but-unclaimed to a position (Plan 0084 /
+    ADR-0079), read on-chain via the gauge's `earned()`.
+
+    This is a labeled **current-state** reading, not a replay-derived figure: it
+    has no claim transaction to replay (tx-replay is structurally blind to it), so
+    it is kept out of realized/unrealized P&L and out of the deterministic
+    byte-identical guarantee — the same category as discovery's live `usd_value`
+    (ADR-0036). `usd_value` is the reward's value at the **current** price
+    (provenance: not block-time), `None` when it cannot be priced — honest, never
+    a zeroed stand-in.
+
+    Boundary-validated in the house style: `amount` is finite and strictly
+    positive (a zero/NaN owed amount is not a reward worth carrying), and
+    `usd_value`, when present, is finite and non-negative."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str = Field(min_length=1)
+    amount: float = Field(gt=0)
+    usd_value: float | None = None
+
+    @field_validator("amount")
+    @classmethod
+    def _amount_must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("reward amount must be finite (no NaN/Inf)")
+        return v
+
+    @field_validator("usd_value")
+    @classmethod
+    def _usd_value_must_be_finite_and_non_negative(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if not math.isfinite(v):
+            raise ValueError("reward usd_value must be finite (no NaN/Inf)")
+        if v < 0:
+            raise ValueError("reward usd_value must be non-negative")
+        return v
+
+
 class PoolQuote(BaseModel):
     """One DEX pool's current price for a canonical pair, read on-chain by a
     `PoolPriceSource` (Plan 0079 / ADR-0031) — the input the cross-pool
@@ -201,4 +242,5 @@ __all__ = [
     "PoolQuote",
     "PositionKind",
     "PositionToken",
+    "RewardAmount",
 ]

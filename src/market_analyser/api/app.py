@@ -69,8 +69,10 @@ from market_analyser.data.adapters.coingecko_historical_price import (
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.defillama import DefiLlamaAdapter
+from market_analyser.data.adapters.gauge_resolution import GaugeResolutionAdapter
 from market_analyser.data.adapters.lp_detail import RpcLpDetailAdapter
 from market_analyser.data.adapters.onchain_pools import OnchainPoolPriceAdapter
+from market_analyser.data.adapters.unclaimed_rewards import RpcUnclaimedRewardsAdapter
 from market_analyser.data.adapters.zerion import ZerionAdapter
 from market_analyser.data.adapters.zerion_tx import ZerionTxAdapter
 from market_analyser.data.backfill import BackfillCoordinator, SupportsBackfill
@@ -83,10 +85,12 @@ from market_analyser.data.metric_accrual import (
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
     AccountHoldingsSource,
+    GaugeResolutionSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
     PoolPriceSource,
     TxHistorySource,
+    UnclaimedRewardsSource,
     WalletPositionsSource,
 )
 from market_analyser.events import EventBus
@@ -121,6 +125,8 @@ def create_app(
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
     pool_price_sources: Mapping[str, PoolPriceSource] | None = None,
+    gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
+    unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
     tx_history_sources: Mapping[str, TxHistorySource] | None = None,
     historical_price_source: HistoricalPriceSource | None = None,
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
@@ -329,6 +335,34 @@ def create_app(
         effective_account_sources = {"binance": BinanceAccountAdapter(secrets_store=secrets_store)}
     else:
         effective_account_sources = {}
+    # DeFi gauge-resolution + unclaimed-rewards sources (Plan 0084, ADR-0079): the
+    # gauge→pool map that attributes Aerodrome emissions to the right position, and
+    # the on-chain `earned()` reader for owed-but-unclaimed rewards. Both read over
+    # the same RPC path as LP-detail (ADR-0038). Explicit maps win (tests inject
+    # fakes); otherwise built from the secrets store, the unclaimed reader reusing
+    # the LP-detail resolver + the historical price source for best-effort current
+    # pricing. Empty when no store is wired — the P&L surface treats them as absent
+    # (the pre-0084 behavior: gauge txs unattributed, no unclaimed field).
+    if gauge_resolution_sources is not None:
+        effective_gauge_sources: dict[str, GaugeResolutionSource] = dict(gauge_resolution_sources)
+    elif secrets_store is not None:
+        effective_gauge_sources = {"rpc": GaugeResolutionAdapter(secrets_store=secrets_store)}
+    else:
+        effective_gauge_sources = {}
+    if unclaimed_rewards_sources is not None:
+        effective_unclaimed_sources: dict[str, UnclaimedRewardsSource] = dict(
+            unclaimed_rewards_sources
+        )
+    elif secrets_store is not None and "rpc" in effective_lp_detail_sources:
+        effective_unclaimed_sources = {
+            "rpc": RpcUnclaimedRewardsAdapter(
+                secrets_store=secrets_store,
+                lp_detail=effective_lp_detail_sources["rpc"],
+                price_source=historical_price_source,
+            )
+        }
+    else:
+        effective_unclaimed_sources = {}
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
@@ -342,6 +376,8 @@ def create_app(
             wallet_positions_sources=effective_wallet_sources,
             lp_detail_sources=effective_lp_detail_sources,
             pool_price_sources=effective_pool_price_sources,
+            gauge_resolution_sources=effective_gauge_sources,
+            unclaimed_rewards_sources=effective_unclaimed_sources,
             tx_history_sources=effective_tx_history_sources,
             defi_tx_repository=defi_tx_repository,
             historical_price_source=historical_price_source,
@@ -527,6 +563,11 @@ def create_app(
     # The DeFi tx-history registry (Plan 0035) — consumed by the P&L ingestion
     # path (`POST /defi/pnl` + the `compute_wallet_pnl` tool, phase 7).
     app.state.tx_history_sources = effective_tx_history_sources
+    # The DeFi gauge-resolution + unclaimed-rewards registries (Plan 0084) —
+    # consumed by the P&L path to attribute Aerodrome emissions and read owed-but-
+    # unclaimed rewards; absent registries mean the pre-0084 behavior.
+    app.state.gauge_resolution_sources = effective_gauge_sources
+    app.state.unclaimed_rewards_sources = effective_unclaimed_sources
     # The P&L pipeline's persistence + pricing halves (Plan 0035): None without
     # an engine — the /defi/pnl route answers 503 rather than crashing.
     app.state.defi_tx_repository = defi_tx_repository
