@@ -63,7 +63,7 @@ flowchart LR
 
 ### Phase 3 — Human live smoke (wallet total goes non-null)
 - **Owner skill:** human
-- **What:** Provision an Alchemy API key, add it as `alchemy_prices_key` to the secrets store, **restart the standalone sidecar** (to load phases 1–2), and run `POST /defi/pnl` with `refresh=true` on `0xae5b…9790`. Confirm the total closes.
+- **What:** Provision an Alchemy API key, add it as `alchemy_prices_key` to the secrets store, **restart the standalone sidecar** (to load phases 1–2), and run `POST /defi/pnl` with `refresh=true` on `0xae5b…9790`. Confirm the total closes. **Also point RPC at Alchemy** (user's choice, no code): set `base_rpc_url` / `eth_rpc_url` to `https://base-mainnet.g.alchemy.com/v2/<KEY>` / `…eth-mainnet…` — the same underlying Alchemy key, full-URL shape (a separate secret from `alchemy_prices_key`). This also resolves the public-RPC rate-limit that degraded `unclaimed_rewards` to `null` in the Plan 0084 phase-6 smoke, so the unclaimed reads should come back real in the same run.
 - **Files touched:** none (verification + secret provisioning).
 - **Done when:** all 5 positions report `incomplete=false`; wallet `realized_usd`/`unrealized_usd` are **non-null**; the `0xef0fd52e…` leg (position `16945c…`) prices via the Alchemy fallback (Alchemy actually returns coverage for that token — verify, don't assume); the two events `0x1cbbb89c…`/`0x303f8366…` book as `custody_move` (positions `87f522…`/`37023f…` complete with unchanged basis); the Zerion FIFO cross-check shows no gross-divergence warning. Record the verdict in the plan close notes. (If Alchemy has no coverage for that specific token, that is a documented finding, not a phase failure — the fallback still degrades honestly; re-open the price-source decision.)
 
