@@ -32,16 +32,19 @@ import logging
 from datetime import UTC, datetime
 
 from market_analyser.data.sources import (
+    GaugeResolutionSource,
     HistoricalPriceSource,
     PnlCrosscheckSource,
     TxHistorySource,
     WalletPositionsSource,
 )
 from market_analyser.defi.discovery import DiscoveryService, mask_wallet
+from market_analyser.defi.models import Chain, DefiPosition
 from market_analyser.defi.pnl import WalletPnl, compute_wallet_pnl
 from market_analyser.defi.pnl_events import map_events
 from market_analyser.defi.scan_job import _classify_failure
 from market_analyser.defi.tx_ingestion import TxHistoryService
+from market_analyser.defi.tx_models import DecodedTx
 from market_analyser.events import (
     DefiPnlCompletedPayloadV1,
     DefiPnlFailedPayloadV1,
@@ -68,13 +71,17 @@ async def run_wallet_pnl(
     address: str,
     refresh: bool = False,
     crosscheck_source: PnlCrosscheckSource | None = None,
+    gauge_source: GaugeResolutionSource | None = None,
 ) -> WalletPnl:
     """Reconstruct the wallet's P&L, streaming `defi.pnl_*`; return the result.
 
     `refresh=True` gap-fetches new transactions before replaying; the default
     replays the cached history untouched (zero source calls — the
-    deterministic re-run path). Raises the pipeline's typed error (after
-    publishing `defi.pnl_failed`) — never returns a zeroed result."""
+    deterministic re-run path). `gauge_source`, when supplied, resolves the
+    gauge→pool map so Aerodrome emissions attribute to the right position
+    (Plan 0084); absent, gauge txs fall back to the pre-0084 behavior. Raises the
+    pipeline's typed error (after publishing `defi.pnl_failed`) — never returns a
+    zeroed result."""
     masked = mask_wallet(address)
     event_bus.publish("defi.pnl_started", DefiPnlStartedPayloadV1(wallet=masked))
     try:
@@ -87,6 +94,7 @@ async def run_wallet_pnl(
             address,
             refresh,
             crosscheck_source,
+            gauge_source,
         )
     except Exception as err:
         event_bus.publish(
@@ -119,12 +127,14 @@ def _reconstruct(
     address: str,
     refresh: bool,
     crosscheck_source: PnlCrosscheckSource | None,
+    gauge_source: GaugeResolutionSource | None,
 ) -> WalletPnl:
     history = TxHistoryService(source=tx_source, repository=tx_repository).load_history(
         address, refresh=refresh
     )
     positions = DiscoveryService(positions_source).discover(address).positions
-    events = map_events(history, positions)
+    gauge_map = _resolve_gauge_map(gauge_source, history, positions)
+    events = map_events(history, positions, gauge_map)
     # Input-derived benchmark anchor, never the wall clock (see docstring).
     as_of = history[-1].mined_at if history else datetime.fromtimestamp(0, tz=UTC)
     pnl = compute_wallet_pnl(
@@ -141,6 +151,40 @@ def _reconstruct(
             "crosscheck_warning": _grossly_diverges(pnl, crosscheck),
         }
     )
+
+
+def _resolve_gauge_map(
+    gauge_source: GaugeResolutionSource | None,
+    history: list[DecodedTx],
+    positions: list[DefiPosition],
+) -> dict[str, str]:
+    """Build the pure `{gauge_address: pool_address}` map `map_events` consumes,
+    doing the on-chain I/O here so the classifier stays pure (Plan 0084 risk
+    mitigation). Only contracts that appear in the history but are **not** already
+    a known pool are probed as gauge candidates, and only those resolving to one
+    of the wallet's own pools are kept — so an unrelated gauge or a random router
+    never enters the map. Deterministic: candidates are probed in sorted order and
+    the resolver returns an on-chain immutable, so a re-run reproduces the map.
+
+    Absent a resolver, or with no candidates, the map is empty and replay behaves
+    exactly as pre-0084."""
+    if gauge_source is None:
+        return {}
+    known_pools = {p.pool_address.lower() for p in positions if p.pool_address is not None}
+    candidates: dict[str, Chain] = {}  # gauge address -> the chain it was seen on
+    for tx in history:
+        for act in tx.acts:
+            if act.contract_address is None:
+                continue
+            addr = act.contract_address.lower()
+            if addr not in known_pools:
+                candidates.setdefault(addr, tx.chain)
+    gauge_map: dict[str, str] = {}
+    for addr in sorted(candidates):
+        pool = gauge_source.resolve_pool(chain=candidates[addr], gauge_address=addr)
+        if pool is not None and pool.lower() in known_pools:
+            gauge_map[addr] = pool.lower()
+    return gauge_map
 
 
 def _fetch_crosscheck(source: PnlCrosscheckSource | None, address: str) -> float | None:

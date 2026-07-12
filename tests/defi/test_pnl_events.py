@@ -267,3 +267,215 @@ def test_event_carries_the_pricing_coordinates() -> None:
     event = map_events([tx], _POSITIONS)[0]
     assert event.mined_at == datetime(2025, 9, 1, tzinfo=UTC)
     assert (event.block, event.in_block_index, event.chain) == (123, 2, "base")
+
+
+# -- Plan 0084 phase 2: gauge-aware classification -------------------------------
+#
+# The wallet holds three positions, and AERO is contained by TWO of them
+# (AERO/WETH and USDC/AERO), so a gauge `getReward` paying AERO cannot be
+# attributed by the token fallback — it is ambiguous by construction (ADR-0079).
+# Each pool's emissions come through a distinct per-pool gauge; the gauge→pool map
+# is what disambiguates.
+
+_AAVE_TOKEN = "0xba100000625a3754423978a60c9317c58a424e3d"
+_POOL_AERO_WETH = "0xAER0WETHpool00000000000000000000000000a1"
+_POOL_USDC_AERO = "0xUSDCAER0pool00000000000000000000000000b2"
+_POOL_AAVE_WETH = "0xAAVEWETHpool00000000000000000000000000c3"
+_GAUGE_AERO_WETH = "0x9564" + "0" * 32 + "88f1"
+_GAUGE_AAVE_WETH = "0x33ab" + "0" * 32 + "cd12"
+
+_AERO_WETH = DefiPosition(
+    position_id="base:aerodrome:aero-weth",
+    chain="base",
+    protocol="aerodrome",
+    kind="lp",
+    tokens=[
+        PositionToken(symbol="AERO", address=_AERO, amount=1000.0),
+        PositionToken(symbol="WETH", address=_WETH, amount=0.5),
+    ],
+    usd_value=3200.0,
+    pool="AERO / WETH",
+    pool_address=_POOL_AERO_WETH,
+)
+_USDC_AERO = DefiPosition(
+    position_id="base:aerodrome:usdc-aero",
+    chain="base",
+    protocol="aerodrome",
+    kind="lp",
+    tokens=[
+        PositionToken(symbol="USDC", address=_USDC, amount=1500.0),
+        PositionToken(symbol="AERO", address=_AERO, amount=800.0),
+    ],
+    usd_value=3000.0,
+    pool="USDC / AERO",
+    pool_address=_POOL_USDC_AERO,
+)
+_AAVE_WETH = DefiPosition(
+    position_id="base:aerodrome:aave-weth",
+    chain="base",
+    protocol="aerodrome",
+    kind="lp",
+    tokens=[
+        PositionToken(symbol="AAVE", address=_AAVE_TOKEN, amount=10.0),
+        PositionToken(symbol="WETH", address=_WETH, amount=0.5),
+    ],
+    usd_value=2000.0,
+    pool="AAVE / WETH",
+    pool_address=_POOL_AAVE_WETH,
+)
+_GAUGE_POSITIONS = [_AERO_WETH, _USDC_AERO, _AAVE_WETH]
+_GAUGE_MAP = {
+    _GAUGE_AERO_WETH.lower(): _POOL_AERO_WETH.lower(),
+    _GAUGE_AAVE_WETH.lower(): _POOL_AAVE_WETH.lower(),
+}
+
+
+def test_gauge_getreward_attributes_to_the_specific_pool_not_an_ambiguous_one() -> None:
+    """The core ADR-0079 fix: a getReward on the AERO/WETH gauge must book a
+    `reward_claim` on the AERO/WETH position specifically — not the USDC/AERO one
+    that also holds AERO, and not the AAVE/WETH one."""
+    tx = _tx(
+        "0xrewAW",
+        "execute",
+        contract=_GAUGE_AERO_WETH,
+        method="getReward",
+        transfers=[_leg("in", "AERO", _AERO, 2830.0)],
+    )
+    events = map_events([tx], _GAUGE_POSITIONS, _GAUGE_MAP)
+    assert len(events) == 1
+    assert events[0].kind == "reward_claim"
+    assert events[0].position_id == _AERO_WETH.position_id
+
+
+def test_a_second_gauge_attributes_the_same_token_to_a_different_pool() -> None:
+    """Attribution is by gauge, not token: an AERO getReward on the AAVE/WETH
+    gauge books against AAVE/WETH, proving the map (not the token) decides."""
+    tx = _tx(
+        "0xrewVW",
+        "execute",
+        contract=_GAUGE_AAVE_WETH,
+        method="getReward",
+        transfers=[_leg("in", "AERO", _AERO, 34.2)],
+    )
+    event = map_events([tx], _GAUGE_POSITIONS, _GAUGE_MAP)[0]
+    assert event.kind == "reward_claim"
+    assert event.position_id == _AAVE_WETH.position_id
+
+
+def test_without_the_gauge_map_the_reward_is_unattributable() -> None:
+    """Establishes the map is *what fixes it*: the identical getReward tx, with no
+    gauge map, joins nothing — the gauge is not a pool and AERO is ambiguous — so
+    the reward is lost (the pre-0084 failure this plan closes)."""
+    tx = _tx(
+        "0xrewAW",
+        "execute",
+        contract=_GAUGE_AERO_WETH,
+        method="getReward",
+        transfers=[_leg("in", "AERO", _AERO, 2830.0)],
+    )
+    assert map_events([tx], _GAUGE_POSITIONS) == []
+    assert map_events([tx], _GAUGE_POSITIONS, {}) == []
+
+
+def test_gauge_stake_is_a_custody_move_not_a_contribution() -> None:
+    """Staking the LP token out to the gauge is custody, not added capital:
+    `custody_move`, joined to the pool, so the engine changes no basis."""
+    tx = _tx(
+        "0xstake",
+        "deposit",
+        contract=_GAUGE_AERO_WETH,
+        method="stake",
+        transfers=[_leg("out", "vAMM-AERO/WETH", _POOL_AERO_WETH, 12.0)],
+    )
+    event = map_events([tx], _GAUGE_POSITIONS, _GAUGE_MAP)[0]
+    assert event.kind == "custody_move"
+    assert event.position_id == _AERO_WETH.position_id
+
+
+def test_gauge_unstake_is_a_custody_move_not_a_reward() -> None:
+    """The regression the custody-method check prevents: an unstake brings the LP
+    token *in*, which the bare inbound heuristic would miscount as reward income —
+    the `unstake` method keeps it a `custody_move`."""
+    tx = _tx(
+        "0xunstake",
+        "withdraw",
+        contract=_GAUGE_AERO_WETH,
+        method="unstake",
+        transfers=[_leg("in", "vAMM-AERO/WETH", _POOL_AERO_WETH, 12.0)],
+    )
+    assert map_events([tx], _GAUGE_POSITIONS, _GAUGE_MAP)[0].kind == "custody_move"
+
+
+def test_no_gauge_interaction_is_left_unclassified_on_the_fixture() -> None:
+    """The done-when count check: across a realistic gauge-interaction fixture
+    (stake → claim → claim → unstake), zero events are `unclassified`."""
+    txs = [
+        _tx(
+            "0xg1",
+            "deposit",
+            block=1,
+            contract=_GAUGE_AERO_WETH,
+            method="stake",
+            transfers=[_leg("out", "vAMM", _POOL_AERO_WETH, 12.0)],
+        ),
+        _tx(
+            "0xg2",
+            "execute",
+            block=2,
+            contract=_GAUGE_AERO_WETH,
+            method="getReward",
+            transfers=[_leg("in", "AERO", _AERO, 100.0)],
+        ),
+        _tx(
+            "0xg3",
+            "execute",
+            block=3,
+            contract=_GAUGE_AAVE_WETH,
+            method="getReward",
+            transfers=[_leg("in", "AERO", _AERO, 5.0)],
+        ),
+        _tx(
+            "0xg4",
+            "withdraw",
+            block=4,
+            contract=_GAUGE_AERO_WETH,
+            method="unstake",
+            transfers=[_leg("in", "vAMM", _POOL_AERO_WETH, 12.0)],
+        ),
+    ]
+    events = map_events(txs, _GAUGE_POSITIONS, _GAUGE_MAP)
+    assert len(events) == 4
+    assert not any(e.kind == "unclassified" for e in events)
+    assert [e.kind for e in events] == [
+        "custody_move",
+        "reward_claim",
+        "reward_claim",
+        "custody_move",
+    ]
+
+
+def test_gauge_mapping_is_pure_and_deterministic() -> None:
+    tx = _tx(
+        "0xrewAW",
+        "execute",
+        contract=_GAUGE_AERO_WETH,
+        method="getReward",
+        transfers=[_leg("in", "AERO", _AERO, 2830.0)],
+    )
+    first = map_events([tx], _GAUGE_POSITIONS, _GAUGE_MAP)
+    second = map_events([tx], _GAUGE_POSITIONS, _GAUGE_MAP)
+    assert first == second
+
+
+def test_a_direct_pool_match_still_wins_when_gauge_map_is_present() -> None:
+    """The gauge path is additive: a tx whose act contract is the pool itself
+    still joins directly (via_gauge False), classified by the normal taxonomy."""
+    tx = _tx(
+        "0xdirect",
+        "deposit",
+        contract=_POOL_AERO_WETH,
+        transfers=[_leg("out", "AERO", _AERO, 100.0), _leg("out", "WETH", _WETH, 0.05)],
+    )
+    event = map_events([tx], _GAUGE_POSITIONS, _GAUGE_MAP)[0]
+    assert event.kind == "add_liquidity"
+    assert event.position_id == _AERO_WETH.position_id
