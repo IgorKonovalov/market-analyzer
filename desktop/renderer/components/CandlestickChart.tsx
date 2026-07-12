@@ -83,6 +83,12 @@ import {
 } from '../lib/theme'
 import { getCandleType, resolveChartStyle, subscribeChartStyle } from '../lib/chartStyle'
 import {
+  getUserOverlaysSnapshot,
+  mergeOverlays,
+  subscribeUserOverlays,
+  userOverlayStoreKey,
+} from '../lib/userOverlays'
+import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
   computeObv,
@@ -114,6 +120,10 @@ declare global {
 // Stable empty list for the trendlines default — a fresh `[]` per render would
 // re-run the useTrendlines effect every time.
 const NO_TRENDLINES: ReadonlyArray<TrendlineSpec> = []
+
+// Stable empty user-overlay list for charts with no (symbol, timeframe) — a fresh
+// `[]` per render would re-run the merge memo every time.
+const NO_USER_OVERLAYS: OverlaySpec[] = []
 
 interface Props {
   bars: Bar[]
@@ -235,6 +245,28 @@ export function CandlestickChart({
   // when the type actually changes (getCandleType is a stable primitive snapshot),
   // so a colour/width mutation doesn't trigger a rebuild.
   const candleType = useSyncExternalStore(subscribeChartStyle, getCandleType, getCandleType)
+  // User-originated overlays (Plan 0082 phase 3, ADR-0077): a renderer-owned layer
+  // keyed by (symbol, timeframe), merged with the agent's `overlays` prop for
+  // drawing + the legend. STICKY — an agent chart.show/update replaces only the
+  // prop, never this store, so the user's indicators survive an agent redraw. The
+  // snapshot is a stable ref (replaced on mutation), so the memos below recompute
+  // only when the store, symbol, timeframe, or agent overlays actually change.
+  const userOverlaysSnapshot = useSyncExternalStore(
+    subscribeUserOverlays,
+    getUserOverlaysSnapshot,
+    getUserOverlaysSnapshot,
+  )
+  const userOverlays = useMemo(
+    () =>
+      symbol && timeframe
+        ? (userOverlaysSnapshot[userOverlayStoreKey(symbol, timeframe)] ?? NO_USER_OVERLAYS)
+        : NO_USER_OVERLAYS,
+    [userOverlaysSnapshot, symbol, timeframe],
+  )
+  // `merged.userKeys` (the user-originated overlayKeys) is consumed by the legend
+  // in phase 4 to branch remove-vs-hide; phase 3 draws the union.
+  const merged = useMemo(() => mergeOverlays(overlays, userOverlays), [overlays, userOverlays])
+  const effectiveOverlays = merged.overlays
   // Layers-legend state (Plan 0047 phase 9), all ephemeral: `hidden` is the set
   // of layer ids the user toggled off; `layers` is the resolved descriptor list
   // the panel renders. Reset on remount (no persistence) by construction.
@@ -530,7 +562,7 @@ export function CandlestickChart({
   // rather than re-creating series.
   useOverlaySeries(chartRef, containerRef, overlaySeriesRef, {
     bars,
-    overlays,
+    overlays: effectiveOverlays,
     hidden,
     effectiveThemeRef,
     rebuildToken: candleType,
@@ -538,7 +570,7 @@ export function CandlestickChart({
   })
   useSupertrendSeries(chartRef, containerRef, supertrendSeriesRef, {
     bars,
-    overlays,
+    overlays: effectiveOverlays,
     hidden,
     effectiveThemeRef,
     rebuildToken: candleType,
@@ -547,7 +579,7 @@ export function CandlestickChart({
   // theme read — draws upper/middle/lower on the price pane.
   useBbandsSeries(chartRef, bbandsSeriesRef, {
     bars,
-    overlays,
+    overlays: effectiveOverlays,
     hidden,
     rebuildToken: candleType,
   })
@@ -556,7 +588,7 @@ export function CandlestickChart({
   // so the projected cloud shows past the last candle.
   useIchimokuSeries(chartRef, containerRef, ichimokuPrimitiveRef, {
     bars,
-    overlays,
+    overlays: effectiveOverlays,
     hidden,
     effectiveTheme,
     rebuildToken: candleType,
@@ -644,7 +676,7 @@ export function CandlestickChart({
   // (S/R levels the agent pushes) on the main series (Plan 0072 phase 8:
   // `usePriceLines`).
   usePriceLines(seriesRef, containerRef, priceLinesRef, {
-    overlays,
+    overlays: effectiveOverlays,
     hidden,
     effectiveTheme,
     styleVersion,
@@ -656,7 +688,7 @@ export function CandlestickChart({
   // per price line, and per trendline group (Plan 0072 phase 8: `useLayersLegend`
   // owns the state via the pure `buildChartLayers`).
   const layers = useLayersLegend(containerRef, {
-    overlays,
+    overlays: effectiveOverlays,
     candleGroups,
     enabledCandleGroups,
     visibleTrendlines,
