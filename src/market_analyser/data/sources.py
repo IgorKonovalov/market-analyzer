@@ -235,6 +235,30 @@ class LpPositionDetailSource(Protocol):
 
 
 @runtime_checkable
+class GaugeResolutionSource(Protocol):
+    """Resolves an Aerodrome/Velodrome **gauge** contract address to the DEX
+    **pool** address it distributes emissions for (Plan 0084 / ADR-0079) — the
+    seam the P&L classifier consults so a gauge `getReward` transaction joins the
+    pool position it belongs to. Aerodrome routes emissions through a per-pool
+    gauge distinct from the pool, so without this mapping a reward cannot be
+    attributed to the position that earned it (ADR-0079: the gauge indirection
+    breaks the *join*, not the vocabulary).
+
+    Read-only by charter: a conforming source holds no private key, signs
+    nothing, submits no state-changing RPC, and issues only a read `eth_call`
+    (`gauge.pool()`); its sole credential is a read-only JSON-RPC URL (ADR-0038).
+    Resolution is precision-first — an address that is not a gauge, or an
+    unreachable read, returns `None` (never a raise, never a guess), so the
+    classifier degrades to an honest `unclassified` rather than a wrong
+    attribution (ADR-0036 "an ambiguous join is worse than an honest gap").
+
+    Members of a gauge-resolution selector registry keyed by source name ("rpc"),
+    built in the composition root (ADR-0031)."""
+
+    def resolve_pool(self, *, chain: Chain, gauge_address: str) -> str | None: ...
+
+
+@runtime_checkable
 class TxHistorySource(Protocol):
     """A source of a wallet's decoded transaction history across the target EVM
     chains (ADR-0035 / ADR-0036) — the P&L replay engine's input. `address` is a

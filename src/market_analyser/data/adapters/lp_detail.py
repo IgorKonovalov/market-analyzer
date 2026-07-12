@@ -481,36 +481,66 @@ class RpcLpDetailAdapter:
         return npm
 
     def _rpc_url_for(self, chain: Chain) -> str:
-        key = _RPC_URL_KEYS.get(chain)
-        if key is None:
-            raise LpDetailConfigError(
-                f"lp-detail: chain {chain!r} has no reserved RPC-URL secret — "
-                "deep reads cover base / ethereum only",
-            )
-        url = self._secrets.get(key)
-        if not url:
-            raise LpDetailConfigError(
-                f"lp-detail: no RPC URL configured — set `{key}` before enriching",
-            )
-        return url
+        return rpc_url_for(self._secrets, chain)
 
     def _eth_call(self, rpc_url: str, to: str, data: str) -> bytes:
-        """Perform one `eth_call` and return the decoded result bytes.
+        """Perform one paced `eth_call` and return the decoded result bytes.
 
         Raises `LpDetailError` on a JSON-RPC error object / non-hex result and the
         shared rate-limit / unavailable errors on transport failure."""
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "eth_call",
-            "params": [{"to": to, "data": data}, "latest"],
-        }
         self._sleep(self._inter_request_seconds)
-        try:
-            response = self._http.post(rpc_url, json=payload, expect_json=True)
-        except ResilientHttpError as err:
-            raise _classify_error(err) from err
-        return _result_bytes(response.json())
+        return rpc_eth_call(self._http, rpc_url, to, data)
+
+
+def rpc_url_for(secrets: SecretsStore, chain: Chain) -> str:
+    """The read-only JSON-RPC URL configured for `chain` (ADR-0038), or a typed
+    `LpDetailConfigError` when the chain has no reserved secret or none is set.
+    Shared by the LP-detail adapter and the Plan 0084 gauge resolver so both read
+    the same per-chain URL from the same secret key."""
+    key = _RPC_URL_KEYS.get(chain)
+    if key is None:
+        raise LpDetailConfigError(
+            f"lp-detail: chain {chain!r} has no reserved RPC-URL secret — "
+            "deep reads cover base / ethereum only",
+        )
+    url = secrets.get(key)
+    if not url:
+        raise LpDetailConfigError(
+            f"lp-detail: no RPC URL configured — set `{key}` before enriching",
+        )
+    return url
+
+
+def rpc_eth_call(http: ResilientHttpClient, rpc_url: str, to: str, data: str) -> bytes:
+    """Perform one `eth_call` over JSON-RPC and return the decoded result bytes
+    (pacing is the caller's concern). Read-only by construction — the only method
+    is `eth_call`, a staticcall. Raises `LpDetailError` on a JSON-RPC error object
+    / non-hex result and the shared rate-limit / unavailable errors on transport
+    failure. Extracted so the Plan 0084 gauge resolver reuses the exact transport
+    the LP-detail adapter already proves read-only."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_call",
+        "params": [{"to": to, "data": data}, "latest"],
+    }
+    try:
+        response = http.post(rpc_url, json=payload, expect_json=True)
+    except ResilientHttpError as err:
+        raise _classify_error(err) from err
+    return _result_bytes(response.json())
+
+
+def gauge_pool_via_rpc(http: ResilientHttpClient, rpc_url: str, gauge_address: str) -> str | None:
+    """The pool address a gauge distributes for, via `gauge.pool()` (Plan 0084) —
+    or `None` when `gauge_address` is not a gauge (the getter reverts) or returns
+    the zero address. A revert is routing signal, not an error (mirrors the
+    LP-detail shape probe's `_gauge_clpool_or_none`). Never raises on a revert."""
+    try:
+        pool = _decode_address(rpc_eth_call(http, rpc_url, gauge_address, _SEL_POOL))
+    except LpDetailError:
+        return None
+    return pool if int(pool, 16) != 0 else None
 
 
 def _classify_error(err: ResilientHttpError) -> UpstreamDataError:
@@ -620,4 +650,11 @@ def _decode_string(data: bytes) -> str:
     return text
 
 
-__all__ = ["LpDetailConfigError", "LpDetailError", "RpcLpDetailAdapter"]
+__all__ = [
+    "LpDetailConfigError",
+    "LpDetailError",
+    "RpcLpDetailAdapter",
+    "gauge_pool_via_rpc",
+    "rpc_eth_call",
+    "rpc_url_for",
+]

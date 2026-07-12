@@ -1,6 +1,6 @@
 # 0084 — DeFi P&L completeness: Aerodrome gauge events, swap booking, unclaimed rewards
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-11
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0079](../adrs/0079-defi-pnl-gauge-swaps-unclaimed.md) (paired — refines [ADR-0036](../adrs/0036-defi-pnl-transaction-replay.md))
