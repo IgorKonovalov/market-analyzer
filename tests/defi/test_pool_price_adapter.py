@@ -1,19 +1,20 @@
-"""Plan 0079 phase 1 — on-chain DEX pool-price adapter.
+"""Plan 0079/0086 — on-chain constant-product DEX executable-quote adapter.
 
-Phase-1 done-when claims pinned here:
-(a) against a recorded JSON-RPC fixture, `fetch_pool_quotes` returns a `PoolQuote`
-    per configured pool for a pair + size, each price validated positive and
-    finite, correctly oriented (quote-per-base) regardless of the pool's on-chain
-    token0/token1 ordering, carrying dex/chain/pair/depth/fee/trade_size/as_of;
+Done-when claims pinned here (executable-quote model, ADR-0080):
+(a) against a recorded JSON-RPC fixture, `fetch_executable_quotes` returns an
+    `ExecutableQuote` per fillable pool whose buy_cost / sell_proceeds match a
+    hand-computed x.y=k round trip, each validated positive/finite, carrying the
+    marginal reference and fee tier, correctly oriented regardless of the pool's
+    on-chain token0/token1 ordering;
 (b) a malformed / shape-broken RPC response raises the typed `PoolPriceError`
     (JSON-RPC error object, too-short result, non-hex result, token0 matching
-    neither configured token, a zero reserve) — never a silently zeroed price;
+    neither configured token, a zero reserve) — never a silently zeroed quote;
 (c) a 429 raises `RateLimitedError`, a 5xx `UpstreamUnavailableError`; a missing
     RPC URL or an unsupported chain raises `PoolPriceConfigError`;
-(d) the adapter satisfies `isinstance(adapter, PoolPriceSource)` and is reachable
-    through one registry entry (`Mapping[str, PoolPriceSource]`);
+(d) the adapter satisfies `isinstance(adapter, ExecutableQuoteSource)` and is
+    reachable through one registry entry;
 (e) an unconfigured pair returns `[]`; a non-positive trade_size is a caller bug
-    (`ValueError`), not an upstream error;
+    (`ValueError`); a pool that cannot source the size is omitted, not fabricated;
 (f) the adapter carries no private key, no signing path, and no state-changing RPC
     method anywhere in its source — only `eth_call` (source scan).
 
@@ -44,8 +45,8 @@ from market_analyser.data.adapters.onchain_pools import (
     _cp_executable_legs,
 )
 from market_analyser.data.errors import RateLimitedError, UpstreamUnavailableError
-from market_analyser.data.sources import ExecutableQuoteSource, PoolPriceSource
-from market_analyser.defi.models import ExecutableQuote, PoolQuote
+from market_analyser.data.sources import ExecutableQuoteSource
+from market_analyser.defi.models import ExecutableQuote
 from market_analyser.persistence.secrets import SecretsStore
 
 # A fixed provenance clock so as_of is deterministic.
@@ -178,8 +179,8 @@ def _adapter(
 
 
 def _both_pools_transport() -> _FakeRpc:
-    """Pool A (token0=WETH): 100 WETH / 300_000 USDC -> price 3000.
-    Pool B (token0=USDC): 50 WETH / 150_500 USDC -> price 3010."""
+    """Pool A (token0=WETH): 100 WETH / 300_000 USDC -> marginal 3000.
+    Pool B (token0=USDC): 50 WETH / 150_500 USDC -> marginal 3010."""
     weth = 10**18
     usdc = 10**6
     return _FakeRpc(
@@ -197,80 +198,82 @@ def _both_pools_transport() -> _FakeRpc:
 # --- (d) contract ---------------------------------------------------------------
 
 
-def test_adapter_satisfies_source_protocol() -> None:
-    assert isinstance(OnchainPoolPriceAdapter(secrets_store=_secrets()), PoolPriceSource)
+def test_adapter_satisfies_executable_quote_source_protocol() -> None:
+    assert isinstance(OnchainPoolPriceAdapter(secrets_store=_secrets()), ExecutableQuoteSource)
 
 
 def test_non_conforming_object_does_not_satisfy_protocol() -> None:
     class _Missing:
         pass
 
-    assert not isinstance(_Missing(), PoolPriceSource)
+    assert not isinstance(_Missing(), ExecutableQuoteSource)
 
 
 def test_reachable_through_one_registry_entry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The selector-registry shape (ADR-0031): the adapter is the sole value of a
-    `Mapping[str, PoolPriceSource]`, selected by source name."""
+    """The selector-registry shape (ADR-0031): the adapter is a value of a
+    `Mapping[str, ExecutableQuoteSource]`, selected by source name."""
     adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
-    registry: Mapping[str, PoolPriceSource] = {"onchain": adapter}
+    registry: Mapping[str, ExecutableQuoteSource] = {"onchain": adapter}
     selected = registry["onchain"]
-    assert isinstance(selected, PoolPriceSource)
-    quotes = selected.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+    assert isinstance(selected, ExecutableQuoteSource)
+    quotes = selected.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
     assert [q.pool_id for q in quotes] == [_POOL_A, _POOL_B]
 
 
-# --- (a) happy path -------------------------------------------------------------
+# --- (a) happy path: executable quote from x.y=k --------------------------------
 
 
-def test_fetch_quotes_returns_a_quote_per_pool_with_oriented_prices(
+def test_fetch_executable_quotes_match_hand_computed_round_trip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
 
-    quotes = adapter.fetch_pool_quotes("WETH/USDC", trade_size=2.5)
+    quotes = adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
     assert len(quotes) == 2
-    assert all(isinstance(q, PoolQuote) for q in quotes)
+    assert all(isinstance(q, ExecutableQuote) for q in quotes)
     a, b = quotes
-    # Pool A: token0 = base (WETH) — reserves used as-is.
+    # Pool A: 100 WETH / 300_000 USDC, fee 5 bps, marginal 3000 (token0=WETH as-is).
     assert a.pool_id == _POOL_A
     assert a.dex == "aerodrome"
     assert a.chain == "base"
     assert a.pair == "WETH/USDC"
-    assert a.base_token == _WETH
-    assert a.quote_token == _USDC
-    assert a.price == pytest.approx(3000.0)
-    assert a.fee_bps == 5.0
-    assert a.liquidity_base == pytest.approx(100.0)
-    assert a.liquidity_quote == pytest.approx(300_000.0)
-    assert a.trade_size == 2.5
+    assert a.fee_tier == 5
+    assert a.trade_size == 1.0
+    assert a.marginal_price == pytest.approx(3000.0)
     assert a.as_of == _NOW
-    # Pool B: token0 = quote (USDC) — reserves swapped to orient. Price still
-    # quote-per-base despite the reversed on-chain ordering.
+    # Independent x.y=k arithmetic (fee on input), size 1:
+    assert a.buy_cost == pytest.approx(300_000 / ((100 - 1) * (1 - 0.0005)))
+    assert a.sell_proceeds == pytest.approx(0.9995 * 300_000 / (100 + 0.9995))
+    assert a.buy_cost > 0 and a.sell_proceeds > 0
+    # Pool B: token0=USDC — reserves oriented anyway, marginal 3010, fee 30 bps.
     assert b.pool_id == _POOL_B
-    assert b.price == pytest.approx(3010.0)
-    assert b.liquidity_base == pytest.approx(50.0)
-    assert b.liquidity_quote == pytest.approx(150_500.0)
-    assert b.fee_bps == 30.0
-
-
-def test_price_is_positive_and_finite(monkeypatch: pytest.MonkeyPatch) -> None:
-    adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
-    quotes = adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
-    assert all(q.price > 0 for q in quotes)
+    assert b.fee_tier == 30
+    assert b.marginal_price == pytest.approx(3010.0)
+    assert b.buy_cost == pytest.approx(150_500 / ((50 - 1) * (1 - 0.003)))
+    assert b.sell_proceeds == pytest.approx(0.997 * 150_500 / (50 + 0.997))
 
 
 def test_pair_match_is_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
-    assert len(adapter.fetch_pool_quotes("weth/usdc", trade_size=1.0)) == 2
+    assert len(adapter.fetch_executable_quotes("weth/usdc", trade_size=1.0)) == 2
 
 
-# --- (e) empty / caller-bug paths -----------------------------------------------
+# --- (e) empty / caller-bug / depth paths ---------------------------------------
+
+
+def test_omits_depth_exceeded_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A trade larger than a pool's whole base reserve cannot be sourced as an
+    exact-output buy, so that pool is omitted (not fabricated). Pool B holds 50
+    WETH, pool A 100 WETH; a 60-WETH trade drops B and keeps A."""
+    adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
+    quotes = adapter.fetch_executable_quotes("WETH/USDC", trade_size=60.0)
+    assert [q.pool_id for q in quotes] == [_POOL_A]
 
 
 def test_unconfigured_pair_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter, fake = _adapter(monkeypatch, transport=_both_pools_transport())
-    assert adapter.fetch_pool_quotes("WBTC/USDC", trade_size=1.0) == []
+    assert adapter.fetch_executable_quotes("WBTC/USDC", trade_size=1.0) == []
     # No pool matched -> no RPC call was issued.
     assert fake.calls == []
 
@@ -278,7 +281,22 @@ def test_unconfigured_pair_returns_empty(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_non_positive_trade_size_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
     with pytest.raises(ValueError, match="trade_size"):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=0.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=0.0)
+
+
+def test_cp_executable_legs_returns_none_when_size_exceeds_depth() -> None:
+    assert (
+        _cp_executable_legs(
+            liquidity_base=100.0, liquidity_quote=300_000.0, fee_bps=5, trade_size=100.0
+        )
+        is None
+    )
+    assert (
+        _cp_executable_legs(
+            liquidity_base=100.0, liquidity_quote=300_000.0, fee_bps=5, trade_size=1.0
+        )
+        is not None
+    )
 
 
 # --- (b) malformed reads raise the typed error ----------------------------------
@@ -289,21 +307,21 @@ def test_json_rpc_error_object_raises_pool_price_error(monkeypatch: pytest.Monke
     transport = _FakeRpc({})  # every call reverts
     adapter, _ = _adapter(monkeypatch, transport=transport)
     with pytest.raises(PoolPriceError):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
 def test_too_short_result_raises_pool_price_error(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = _FakeRpc({(_POOL_A, _SEL_GET_RESERVES): "0x1234"})  # < 2 words
     adapter, _ = _adapter(monkeypatch, transport=transport, pools=(_POOLS[0],))
     with pytest.raises(PoolPriceError):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
 def test_non_hex_result_raises_pool_price_error(monkeypatch: pytest.MonkeyPatch) -> None:
     transport = _FakeRpc({(_POOL_A, _SEL_GET_RESERVES): "0xzzzz"})
     adapter, _ = _adapter(monkeypatch, transport=transport, pools=(_POOLS[0],))
     with pytest.raises(PoolPriceError):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
 def test_token0_matching_neither_token_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -316,11 +334,11 @@ def test_token0_matching_neither_token_raises(monkeypatch: pytest.MonkeyPatch) -
     )
     adapter, _ = _adapter(monkeypatch, transport=transport, pools=(_POOLS[0],))
     with pytest.raises(PoolPriceError, match="token0"):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
-def test_zero_reserve_raises_rather_than_zeroing_price(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A zero base reserve must raise, not silently produce a 0 / inf price."""
+def test_zero_reserve_raises_rather_than_zeroing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A zero base reserve must raise, not silently produce a 0 / inf quote."""
     transport = _FakeRpc(
         {
             (_POOL_A, _SEL_GET_RESERVES): _reserves_result(0, 300_000 * 10**6),
@@ -331,7 +349,7 @@ def test_zero_reserve_raises_rather_than_zeroing_price(monkeypatch: pytest.Monke
     )
     adapter, _ = _adapter(monkeypatch, transport=transport, pools=(_POOLS[0],))
     with pytest.raises(PoolPriceError, match="reserve"):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
 # --- (c) transport + config error taxonomy --------------------------------------
@@ -342,7 +360,7 @@ def test_429_raises_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch, transport=_static_response(429, b"{}"), pools=(_POOLS[0],), max_retries=0
     )
     with pytest.raises(RateLimitedError):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
     assert fake.attempts == 1
 
 
@@ -351,13 +369,13 @@ def test_500_raises_upstream_unavailable(monkeypatch: pytest.MonkeyPatch) -> Non
         monkeypatch, transport=_static_response(500, b"{}"), pools=(_POOLS[0],), max_retries=0
     )
     with pytest.raises(UpstreamUnavailableError):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
 def test_missing_rpc_url_raises_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport(), base_rpc_url=None)
     with pytest.raises(PoolPriceConfigError, match="RPC URL"):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
 def test_unsupported_chain_raises_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -372,7 +390,7 @@ def test_unsupported_chain_raises_config_error(monkeypatch: pytest.MonkeyPatch) 
     )
     adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport(), pools=(pool,))
     with pytest.raises(PoolPriceConfigError, match="chain"):
-        adapter.fetch_pool_quotes("WETH/USDC", trade_size=1.0)
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
 
 
 # --- (f) read-only proof: no key / signing / state-changing RPC -----------------
@@ -404,112 +422,6 @@ def test_adapter_source_is_read_only() -> None:
     tree = ast.parse(source)
     method_values = _rpc_method_values(tree)
     assert method_values == {"eth_call"}, f"unexpected JSON-RPC methods: {method_values}"
-
-
-# ======================================================================================
-# Executable-quote method (Plan 0086 / ADR-0080)
-#
-# Phase-1 done-when for the CP-on-the-new-model half:
-# - `fetch_executable_quotes` returns an `ExecutableQuote` per fillable pool whose
-#   buy_cost / sell_proceeds match a hand-computed x·y=k round trip, each validated
-#   positive/finite, carrying the marginal reference + fee tier;
-# - a pool that cannot source the size (trade_size >= base depth) is omitted, never
-#   fabricated;
-# - the adapter satisfies `ExecutableQuoteSource` and is registry-reachable;
-# - an unconfigured pair returns []; a non-positive trade_size is a caller bug.
-# ======================================================================================
-
-
-def test_adapter_satisfies_executable_quote_source_protocol() -> None:
-    assert isinstance(OnchainPoolPriceAdapter(secrets_store=_secrets()), ExecutableQuoteSource)
-
-
-def test_fetch_executable_quotes_match_hand_computed_round_trip(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
-
-    quotes = adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
-
-    assert len(quotes) == 2
-    assert all(isinstance(q, ExecutableQuote) for q in quotes)
-    a, b = quotes
-    # Pool A: 100 WETH / 300_000 USDC, fee 5 bps, marginal 3000.
-    assert a.pool_id == _POOL_A
-    assert a.chain == "base"
-    assert a.pair == "WETH/USDC"
-    assert a.fee_tier == 5
-    assert a.trade_size == 1.0
-    assert a.marginal_price == pytest.approx(3000.0)
-    assert a.as_of == _NOW
-    # Independent x·y=k arithmetic (fee on input), size 1:
-    assert a.buy_cost == pytest.approx(300_000 / ((100 - 1) * (1 - 0.0005)))
-    assert a.sell_proceeds == pytest.approx(0.9995 * 300_000 / (100 + 0.9995))
-    assert a.buy_cost > 0 and a.sell_proceeds > 0
-    # Pool B: 50 WETH / 150_500 USDC, fee 30 bps, marginal 3010.
-    assert b.pool_id == _POOL_B
-    assert b.fee_tier == 30
-    assert b.marginal_price == pytest.approx(3010.0)
-    assert b.buy_cost == pytest.approx(150_500 / ((50 - 1) * (1 - 0.003)))
-    assert b.sell_proceeds == pytest.approx(0.997 * 150_500 / (50 + 0.997))
-
-
-def test_fetch_executable_quotes_omits_depth_exceeded_pool(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A trade larger than a pool's whole base reserve cannot be sourced as an
-    exact-output buy, so that pool is omitted (not fabricated). Pool B holds 50
-    WETH, pool A 100 WETH; a 60-WETH trade drops B and keeps A."""
-    adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
-    quotes = adapter.fetch_executable_quotes("WETH/USDC", trade_size=60.0)
-    assert [q.pool_id for q in quotes] == [_POOL_A]
-
-
-def test_fetch_executable_quotes_unconfigured_pair_returns_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    adapter, fake = _adapter(monkeypatch, transport=_both_pools_transport())
-    assert adapter.fetch_executable_quotes("WBTC/USDC", trade_size=1.0) == []
-    assert fake.calls == []
-
-
-def test_fetch_executable_quotes_non_positive_trade_size_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
-    with pytest.raises(ValueError, match="trade_size"):
-        adapter.fetch_executable_quotes("WETH/USDC", trade_size=0.0)
-
-
-def test_fetch_executable_quotes_malformed_read_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    transport = _FakeRpc({})  # every call reverts
-    adapter, _ = _adapter(monkeypatch, transport=transport)
-    with pytest.raises(PoolPriceError):
-        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
-
-
-def test_executable_reachable_through_one_registry_entry(monkeypatch: pytest.MonkeyPatch) -> None:
-    adapter, _ = _adapter(monkeypatch, transport=_both_pools_transport())
-    registry: Mapping[str, ExecutableQuoteSource] = {"onchain": adapter}
-    selected = registry["onchain"]
-    assert isinstance(selected, ExecutableQuoteSource)
-    quotes = selected.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
-    assert [q.pool_id for q in quotes] == [_POOL_A, _POOL_B]
-
-
-def test_cp_executable_legs_returns_none_when_size_exceeds_depth() -> None:
-    assert (
-        _cp_executable_legs(
-            liquidity_base=100.0, liquidity_quote=300_000.0, fee_bps=5, trade_size=100.0
-        )
-        is None
-    )
-    assert (
-        _cp_executable_legs(
-            liquidity_base=100.0, liquidity_quote=300_000.0, fee_bps=5, trade_size=1.0
-        )
-        is not None
-    )
 
 
 def _rpc_method_values(tree: ast.AST) -> set[str]:

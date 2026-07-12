@@ -69,6 +69,7 @@ from market_analyser.data.adapters.coingecko_historical_price import (
     ChainedHistoricalPriceSource,
 )
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
+from market_analyser.data.adapters.concentrated_pools import ConcentratedPoolPriceAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
 from market_analyser.data.adapters.defillama import DefiLlamaAdapter
 from market_analyser.data.adapters.gauge_resolution import GaugeResolutionAdapter
@@ -87,10 +88,10 @@ from market_analyser.data.metric_accrual import (
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
     AccountHoldingsSource,
+    ExecutableQuoteSource,
     GaugeResolutionSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
-    PoolPriceSource,
     TxHistorySource,
     UnclaimedRewardsSource,
     WalletPositionsSource,
@@ -126,7 +127,7 @@ def create_app(
     secrets_store: SecretsStore | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
-    pool_price_sources: Mapping[str, PoolPriceSource] | None = None,
+    executable_quote_sources: Mapping[str, ExecutableQuoteSource] | None = None,
     gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
     tx_history_sources: Mapping[str, TxHistorySource] | None = None,
@@ -303,23 +304,28 @@ def create_app(
         effective_lp_detail_sources = {"rpc": RpcLpDetailAdapter(secrets_store=secrets_store)}
     else:
         effective_lp_detail_sources = {}
-    # DeFi pool-price sources (Plan 0079, ADR-0031/0072): the read-only selector
-    # registry behind the cross-pool discrepancy scanner (the arb-viability
-    # evidence layer). An explicit map wins (tests inject a fake); otherwise the
-    # on-chain adapter is built from the secrets store (lazy RPC-URL read, so it
-    # constructs before a URL is set — a scan without one fails typed at call
-    # time). Its default pool set is empty until a live evidence run (phase 4)
-    # supplies verified pool addresses, so an out-of-the-box scan reports zero
+    # DeFi executable-quote sources (Plan 0079/0086, ADR-0031/0072/0080): the
+    # read-only selector registry behind the cross-pool discrepancy scanner v2 (the
+    # arb-viability evidence layer). Both families are wired behind one Protocol —
+    # the constant-product adapter ("onchain") and the concentrated-liquidity Quoter
+    # adapter ("concentrated"). An explicit map wins (tests inject a fake); otherwise
+    # both are built from the secrets store (lazy RPC-URL read, so they construct
+    # before a URL is set — a scan without one fails typed at call time). Their
+    # default pool/venue sets are empty until a live evidence run (Plan 0086 phase
+    # 4/5) supplies verified addresses, so an out-of-the-box scan reports zero
     # configured pools rather than pricing fabricated ones. Empty when no store is
     # wired.
-    if pool_price_sources is not None:
-        effective_pool_price_sources: dict[str, PoolPriceSource] = dict(pool_price_sources)
+    if executable_quote_sources is not None:
+        effective_executable_quote_sources: dict[str, ExecutableQuoteSource] = dict(
+            executable_quote_sources
+        )
     elif secrets_store is not None:
-        effective_pool_price_sources = {
+        effective_executable_quote_sources = {
             "onchain": OnchainPoolPriceAdapter(secrets_store=secrets_store),
+            "concentrated": ConcentratedPoolPriceAdapter(secrets_store=secrets_store),
         }
     else:
-        effective_pool_price_sources = {}
+        effective_executable_quote_sources = {}
     # DeFi tx-history sources (Plan 0035, ADR-0031/0035/0036): the selector
     # registry behind the P&L ingestion path. An explicit map wins (tests inject
     # a fake); otherwise the Zerion tx adapter is built from the secrets store
@@ -384,7 +390,7 @@ def create_app(
             runs_dir=runs_dir,
             wallet_positions_sources=effective_wallet_sources,
             lp_detail_sources=effective_lp_detail_sources,
-            pool_price_sources=effective_pool_price_sources,
+            executable_quote_sources=effective_executable_quote_sources,
             gauge_resolution_sources=effective_gauge_sources,
             unclaimed_rewards_sources=effective_unclaimed_sources,
             tx_history_sources=effective_tx_history_sources,
@@ -565,10 +571,11 @@ def create_app(
     # The DeFi LP-detail registry (Plan 0034) — consumed by the enrichment step
     # (phase 5) to deepen discovered LP positions with on-chain tick/fee state.
     app.state.lp_detail_sources = effective_lp_detail_sources
-    # The DeFi pool-price registry (Plan 0079) — consumed by the read-only
-    # `scan_pool_discrepancies` tool (phase 3) that screens cross-pool spreads
-    # net-of-cost as the arb-viability evidence layer.
-    app.state.pool_price_sources = effective_pool_price_sources
+    # The DeFi executable-quote registry (Plan 0079/0086) — consumed by the
+    # read-only `scan_pool_discrepancies` tool that screens cross-pool spreads
+    # net-of-cost across constant-product + concentrated-liquidity venues as the
+    # arb-viability evidence layer.
+    app.state.executable_quote_sources = effective_executable_quote_sources
     # The DeFi tx-history registry (Plan 0035) — consumed by the P&L ingestion
     # path (`POST /defi/pnl` + the `compute_wallet_pnl` tool, phase 7).
     app.state.tx_history_sources = effective_tx_history_sources

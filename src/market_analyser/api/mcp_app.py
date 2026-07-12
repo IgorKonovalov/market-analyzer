@@ -90,11 +90,11 @@ from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
     AccountHoldingsSource,
+    ExecutableQuoteSource,
     GaugeResolutionSource,
     HistoricalPriceSource,
     LpPositionDetailSource,
     MetricSeriesSource,
-    PoolPriceSource,
     PredictionMarketSource,
     TxHistorySource,
     UnclaimedRewardsSource,
@@ -139,7 +139,7 @@ def create_mcp_components(
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
     manual_positions_path: Path | None = None,
     prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
-    pool_price_sources: Mapping[str, PoolPriceSource] | None = None,
+    executable_quote_sources: Mapping[str, ExecutableQuoteSource] | None = None,
     gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
@@ -253,13 +253,14 @@ def create_mcp_components(
         event_bus=event_bus,
     )
 
-    # Cross-pool discrepancy scanner (Plan 0079, ADR-0072 BA-7): the read-only
-    # arb-viability evidence tool over the ADR-0031 pool-price selector registry.
-    # Always registered — it selects its source by name at call time, so it
-    # registers even with an empty registry (returning `unconfigured` until a
-    # secrets-store-backed on-chain source is wired by create_app). Reports
-    # net-of-cost discrepancies as facts; signs nothing, moves no funds.
-    register_pool_discrepancies(server, pool_price_sources=pool_price_sources or {})
+    # Cross-pool discrepancy scanner (Plan 0079/0086, ADR-0072 BA-7 / ADR-0080): the
+    # read-only arb-viability evidence tool over the ADR-0031 executable-quote
+    # selector registry (constant-product + concentrated-liquidity venues). Always
+    # registered — it queries every wired source at call time, so it registers even
+    # with an empty registry (returning `unconfigured` until secrets-store-backed
+    # sources are wired by create_app). Reports net-of-cost discrepancies as facts;
+    # signs nothing, moves no funds.
+    register_pool_discrepancies(server, executable_quote_sources=executable_quote_sources or {})
 
     # `forecast` (Plan 0036, multi-horizon per Plan 0059): direction-as-probability
     # over cached bars, per-horizon gated on beating a naive baseline

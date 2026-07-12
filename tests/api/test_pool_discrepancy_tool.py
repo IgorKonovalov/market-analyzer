@@ -1,14 +1,15 @@
-"""Plan 0079 phase 3 — `scan_pool_discrepancies` MCP tool.
+"""Plan 0079/0086 — `scan_pool_discrepancies` MCP tool (executable-quote schema).
 
-Phase-3 done-when claims pinned here:
+Done-when claims pinned here:
 - the tool returns ranked net-of-cost observations through the swappable
-  `PoolPriceSource` registry, with full provenance (queried_at, per-observation
-  data, source identity) and each observation's capturability note;
+  `ExecutableQuoteSource` registry, combining constant-product and
+  concentrated-liquidity venues for the same pair, with full provenance
+  (queried_at, per-observation data, source identities) and the capturability note;
 - no advice / execution language in the agent-facing payload (charter-safe);
 - oversized sets return the typed `too_large` page (total_available / offset /
   returned);
 - typed error reasons for an unconfigured registry, a config error, throttle,
-  outage, and an on-chain shape drift.
+  outage, and an on-chain shape drift (from either adapter family).
 
 (The tool's presence in the canonical toolset is pinned by
 `test_mcp_tools.test_full_toolset_registration_is_exhaustive`.)
@@ -29,55 +30,66 @@ from market_analyser.api.mcp_tools.pool_discrepancies import (
     ScanPoolDiscrepanciesInput,
     _scan_response,
 )
-from market_analyser.data.adapters.onchain_pools import PoolPriceConfigError, PoolPriceError
+from market_analyser.data.adapters.concentrated_pools import ConcentratedPoolError
+from market_analyser.data.adapters.onchain_pools import (
+    PoolPriceConfigError,
+    PoolPriceError,
+    _cp_executable_legs,
+)
 from market_analyser.data.errors import RateLimitedError, UpstreamUnavailableError
-from market_analyser.data.sources import PoolPriceSource
-from market_analyser.defi.models import PoolQuote
+from market_analyser.data.sources import ExecutableQuoteSource
+from market_analyser.defi.models import ExecutableQuote
 
 _AS_OF = datetime(2026, 7, 11, 12, 0, tzinfo=UTC)
 
 
-def _quote(
+def _exec_quote(
     *, pool_id: str, dex: str, base_reserve: float, quote_reserve: float, fee_bps: float, pair: str
-) -> PoolQuote:
-    return PoolQuote(
+) -> ExecutableQuote:
+    legs = _cp_executable_legs(
+        liquidity_base=base_reserve,
+        liquidity_quote=quote_reserve,
+        fee_bps=fee_bps,
+        trade_size=1.0,
+    )
+    assert legs is not None
+    buy_cost, sell_proceeds, marginal_price = legs
+    return ExecutableQuote(
         pool_id=pool_id,
         dex=dex,
         chain="base",
         pair=pair,
-        base_token="0xbase000000000000000000000000000000000001",
-        quote_token="0xquote00000000000000000000000000000000002",
+        fee_tier=int(fee_bps),
         trade_size=1.0,
-        price=quote_reserve / base_reserve,
-        fee_bps=fee_bps,
-        liquidity_base=base_reserve,
-        liquidity_quote=quote_reserve,
+        buy_cost=buy_cost,
+        sell_proceeds=sell_proceeds,
+        marginal_price=marginal_price,
         as_of=_AS_OF,
     )
 
 
 class _FakeSource:
-    """Structurally conforms to `PoolPriceSource`; returns configured quotes per
-    pair, or raises a configured error to exercise the taxonomy."""
+    """Structurally conforms to `ExecutableQuoteSource`; returns configured quotes
+    per pair, or raises a configured error to exercise the taxonomy."""
 
     def __init__(
         self,
-        quotes_by_pair: dict[str, list[PoolQuote]] | None = None,
+        quotes_by_pair: dict[str, list[ExecutableQuote]] | None = None,
         *,
         raises: Exception | None = None,
     ) -> None:
         self._quotes_by_pair = quotes_by_pair or {}
         self._raises = raises
 
-    def fetch_pool_quotes(self, pair: str, *, trade_size: float) -> list[PoolQuote]:
+    def fetch_executable_quotes(self, pair: str, *, trade_size: float) -> list[ExecutableQuote]:
         if self._raises is not None:
             raise self._raises
         return list(self._quotes_by_pair.get(pair, []))
 
 
-def _weth_usdc_pools(pair: str = "WETH/USDC") -> list[PoolQuote]:
+def _weth_usdc_pools(pair: str = "WETH/USDC") -> list[ExecutableQuote]:
     return [
-        _quote(
+        _exec_quote(
             pool_id="0xA",
             dex="aerodrome",
             base_reserve=1000,
@@ -85,7 +97,7 @@ def _weth_usdc_pools(pair: str = "WETH/USDC") -> list[PoolQuote]:
             fee_bps=5,
             pair=pair,
         ),
-        _quote(
+        _exec_quote(
             pool_id="0xB",
             dex="uniswap-v2",
             base_reserve=1000,
@@ -96,9 +108,9 @@ def _weth_usdc_pools(pair: str = "WETH/USDC") -> list[PoolQuote]:
     ]
 
 
-def _run(sources: dict[str, PoolPriceSource], **kwargs: Any) -> dict[str, Any]:
+def _run(sources: dict[str, ExecutableQuoteSource], **kwargs: Any) -> dict[str, Any]:
     params = ScanPoolDiscrepanciesInput(**kwargs)
-    return asyncio.run(_scan_response(pool_price_sources=sources, params=params))
+    return asyncio.run(_scan_response(executable_quote_sources=sources, params=params))
 
 
 # --- happy path + provenance ----------------------------------------------------
@@ -109,7 +121,7 @@ def test_returns_ranked_net_of_cost_observations_with_provenance() -> None:
     result = _run({"onchain": source}, pairs=["WETH/USDC"], trade_size=1.0)
 
     assert result["error"] is None
-    assert result["source"] == "onchain"
+    assert result["sources"] == ["onchain"]
     assert result["pairs"] == ["WETH/USDC"]
     assert result["total_available"] == 1
     assert result["returned"] == 1
@@ -119,21 +131,54 @@ def test_returns_ranked_net_of_cost_observations_with_provenance() -> None:
     (obs,) = result["observations"]
     assert obs["buy_pool"] == "0xA"
     assert obs["sell_pool"] == "0xB"
-    assert obs["net_spread"] < obs["gross_spread"]  # costs subtracted
-    assert obs["net_spread"] == pytest.approx(12.380023976)
+    assert obs["net_spread"] == pytest.approx(12.395897, abs=1e-5)
+    assert obs["buy_cost"] > 0 and obs["sell_proceeds"] > 0
+    assert "reconstructed_slippage" in obs and "reconstructed_fees" in obs
     assert obs["capturable_at_threshold"] is True
     assert "UPPER BOUND" in obs["capturability_note"]
     # Provenance is the quote's as_of (pydantic serializes UTC with a trailing Z).
     assert obs["queried_at"].startswith("2026-07-11T12:00:00")
 
 
-def test_swappable_source_selected_by_name() -> None:
-    """A registry with a differently-named source and no 'onchain' entry is
-    unconfigured — the tool selects by name, staying source-agnostic."""
-    result = _run(
-        {"other": _FakeSource({"WETH/USDC": _weth_usdc_pools()})}, pairs=["X/Y"], trade_size=1.0
+def test_combines_constant_product_and_concentrated_sources() -> None:
+    """Both source families are queried and their quotes pooled per pair — the
+    Plan 0086 unification. A CP-only 'onchain' source and a CL-only 'concentrated'
+    source each contribute one venue; the tool compares them in one observation."""
+    cp = _FakeSource(
+        {
+            "WETH/USDC": [
+                _exec_quote(
+                    pool_id="0xCP",
+                    dex="aerodrome",
+                    base_reserve=1000,
+                    quote_reserve=3_000_000,
+                    fee_bps=5,
+                    pair="WETH/USDC",
+                )
+            ]
+        }
     )
-    assert result["error"] == "unconfigured"
+    cl = _FakeSource(
+        {
+            "WETH/USDC": [
+                _exec_quote(
+                    pool_id="0xCL",
+                    dex="uniswap-v3",
+                    base_reserve=1000,
+                    quote_reserve=3_030_000,
+                    fee_bps=30,
+                    pair="WETH/USDC",
+                )
+            ]
+        }
+    )
+    result = _run({"onchain": cp, "concentrated": cl}, pairs=["WETH/USDC"], trade_size=1.0)
+
+    assert result["error"] is None
+    assert result["sources"] == ["concentrated", "onchain"]
+    (obs,) = result["observations"]
+    assert obs["buy_pool"] == "0xCP"
+    assert obs["sell_pool"] == "0xCL"
 
 
 def test_no_advice_or_execution_language_in_payload() -> None:
@@ -209,6 +254,12 @@ def test_upstream_unavailable_maps_to_upstream_unavailable() -> None:
 def test_malformed_response_maps_to_malformed_response() -> None:
     source = _FakeSource(raises=PoolPriceError("shape drift"))
     result = _run({"onchain": source}, pairs=["WETH/USDC"], trade_size=1.0)
+    assert result["error"] == "malformed_response"
+
+
+def test_concentrated_quoter_revert_maps_to_malformed_response() -> None:
+    source = _FakeSource(raises=ConcentratedPoolError("quoter revert"))
+    result = _run({"concentrated": source}, pairs=["WETH/USDC"], trade_size=1.0)
     assert result["error"] == "malformed_response"
 
 

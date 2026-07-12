@@ -1,12 +1,13 @@
 #!/usr/bin/env python
-"""Plan 0079 Phase 4 — the BA-7 live evidence run (human-owned).
+"""Plan 0079/0086 — the BA-7 live evidence run (human-owned), executable-quote model.
 
-Drives the PRODUCTION code paths directly — the same OnchainPoolPriceAdapter
-and scan_discrepancies the MCP tool uses — against a set of VALIDATED pools on
-a live chain, and records the net-of-cost finding to runs/defi/. It does NOT
-touch the running sidecar (no restart, no entrypoint edit); it just imports and
-calls the shipped code. What it skips vs the MCP tool is only the pagination /
-error-taxonomy wrapper — not the evidence, which is the ArbObservation list.
+Drives the PRODUCTION code paths directly — the same OnchainPoolPriceAdapter (CP),
+ConcentratedPoolPriceAdapter (CL Quoter) and scan_discrepancies the MCP tool uses
+(Plan 0086 / ADR-0080) — against a set of VALIDATED pools/venues on a live chain,
+and records the net-of-cost finding to runs/defi/. It does NOT touch the running
+sidecar (no restart, no entrypoint edit); it just imports and calls the shipped
+code. What it skips vs the MCP tool is only the pagination / error-taxonomy
+wrapper — not the evidence, which is the ArbObservation list.
 
 Answers the BA-7 question: do cross-pool discrepancies ever survive net-of-cost
 at RPC observability, and (with --samples) for how long? A null result — nets go
@@ -41,11 +42,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
+from market_analyser.data.adapters.concentrated_pools import (
+    ConcentratedPoolPriceAdapter,
+    ConcentratedVenueConfig,
+)
 from market_analyser.data.adapters.onchain_pools import (
     OnchainPoolPriceAdapter,
     PoolConfig,
 )
 from market_analyser.data.errors import UpstreamDataError
+from market_analyser.data.sources import ExecutableQuoteSource
 from market_analyser.defi.discrepancy import DiscrepancyParams, scan_discrepancies
 
 # === EDIT THIS BLOCK ========================================================
@@ -68,7 +74,22 @@ VALIDATED_POOLS: tuple[PoolConfig, ...] = (
     #            base_token="0x4200...0006", quote_token="0x8335...2913", fee_bps=30),
 )
 
-PAIRS: tuple[str, ...] = ("WETH/USDC",)  # must match the pairs above
+# The concentrated-liquidity venues (Plan 0086) — Uniswap-v3 / Aerodrome Slipstream.
+# `tiers` are the raw protocol tier integers enumerated over `factory.getPool`:
+# Uni-v3 fee tiers in PPM (500/3000/10000) or Slipstream tick spacings. factory /
+# quoter must be the venue's VALIDATED addresses (official docs / BaseScan, then
+# on-chain checked). Deep CL liquidity is the point of this run vs Plan 0079.
+VALIDATED_VENUES: tuple[ConcentratedVenueConfig, ...] = (
+    # ConcentratedVenueConfig(
+    #     dex="uniswap-v3", chain="base", pair="WETH/USDC",
+    #     base_token="0x4200000000000000000000000000000000000006",   # WETH
+    #     quote_token="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # USDC
+    #     factory="0x...", quoter="0x...",                            # VALIDATED
+    #     quoter_kind="uniswap-v3", tiers=(500, 3000, 10000),
+    # ),
+)
+
+PAIRS: tuple[str, ...] = ("WETH/USDC",)  # must match the pairs/venues above
 TRADE_SIZE = 0.5  # base-token size to price the spread for
 EST_GAS_COST = 3.0  # round-trip gas in QUOTE units — be conservative
 MIN_NET_SPREAD = 0.0  # threshold a net spread must clear to be "capturable"
@@ -93,10 +114,11 @@ class _EnvRpcSecrets:
         return os.environ.get(self._ENV.get(key, ""), None)
 
 
-def _one_sample(adapter: OnchainPoolPriceAdapter, params: DiscrepancyParams) -> dict:
+def _one_sample(sources: list[ExecutableQuoteSource], params: DiscrepancyParams) -> dict:
     quotes = []
     for pair in PAIRS:
-        quotes.extend(adapter.fetch_pool_quotes(pair, trade_size=TRADE_SIZE))
+        for source in sources:
+            quotes.extend(source.fetch_executable_quotes(pair, trade_size=TRADE_SIZE))
     observations = scan_discrepancies(quotes, params=params)
     return {
         "sampled_at": datetime.now(tz=UTC).isoformat(),
@@ -107,17 +129,22 @@ def _one_sample(adapter: OnchainPoolPriceAdapter, params: DiscrepancyParams) -> 
 
 
 def main() -> int:
-    if not VALIDATED_POOLS:
-        print("VALIDATED_POOLS is empty — paste your validated set first.", file=sys.stderr)
+    if not VALIDATED_POOLS and not VALIDATED_VENUES:
+        print(
+            "VALIDATED_POOLS and VALIDATED_VENUES are both empty — paste your validated set first.",
+            file=sys.stderr,
+        )
         return 2
     if not any(_EnvRpcSecrets().get(k) for k in ("base_rpc_url", "eth_rpc_url")):
         print("Set BASE_RPC_URL (or ETH_RPC_URL) in the environment first.", file=sys.stderr)
         return 2
 
-    adapter = OnchainPoolPriceAdapter(
-        secrets_store=_EnvRpcSecrets(),  # duck-typed; adapter only calls .get()
-        pools=VALIDATED_POOLS,
-    )
+    secrets = _EnvRpcSecrets()  # duck-typed; adapters only call .get()
+    sources: list[ExecutableQuoteSource] = []
+    if VALIDATED_POOLS:
+        sources.append(OnchainPoolPriceAdapter(secrets_store=secrets, pools=VALIDATED_POOLS))
+    if VALIDATED_VENUES:
+        sources.append(ConcentratedPoolPriceAdapter(secrets_store=secrets, venues=VALIDATED_VENUES))
     params = DiscrepancyParams(est_gas_cost=EST_GAS_COST, min_net_spread=MIN_NET_SPREAD)
 
     samples: list[dict] = []
@@ -125,7 +152,7 @@ def main() -> int:
         if i:
             time.sleep(SAMPLE_INTERVAL_SECONDS)
         try:
-            s = _one_sample(adapter, params)
+            s = _one_sample(sources, params)
         except UpstreamDataError as err:  # typed RPC failure (config/rate/outage)
             print(f"sample {i}: RPC failure — {type(err).__name__}: {err}", file=sys.stderr)
             continue
@@ -141,18 +168,20 @@ def main() -> int:
     stamp = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H%M%SZ")
     out_dir = Path("runs/defi")
     out_dir.mkdir(parents=True, exist_ok=True)
-    artifact = out_dir / f"{stamp}-plan-0079-cross-pool-evidence.json"
+    artifact = out_dir / f"{stamp}-plan-0086-cross-pool-evidence.json"
+    chain = VALIDATED_POOLS[0].chain if VALIDATED_POOLS else VALIDATED_VENUES[0].chain
     artifact.write_text(
         json.dumps(
             {
-                "plan": "0079",
-                "purpose": "ADR-0072 BA-7 cross-pool arb-viability evidence",
-                "chain": VALIDATED_POOLS[0].chain,
+                "plan": "0086",
+                "purpose": "ADR-0072 BA-7 cross-pool arb-viability evidence (executable model)",
+                "chain": chain,
                 "pairs": list(PAIRS),
                 "trade_size": TRADE_SIZE,
                 "est_gas_cost": EST_GAS_COST,
                 "min_net_spread": MIN_NET_SPREAD,
                 "pools": [p.model_dump(mode="json") for p in VALIDATED_POOLS],
+                "venues": [v.model_dump(mode="json") for v in VALIDATED_VENUES],
                 "capturability_caveat": (
                     "RPC-observed persistence is an UPPER BOUND on capturability, "
                     "not a capture guarantee; excludes MEV/searcher competition, "

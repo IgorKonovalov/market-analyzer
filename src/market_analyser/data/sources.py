@@ -51,7 +51,6 @@ if TYPE_CHECKING:
         DefiPosition,
         ExecutableQuote,
         LpPositionDetail,
-        PoolQuote,
         RewardAmount,
     )
     from market_analyser.defi.tx_models import DecodedTx
@@ -166,43 +165,17 @@ class PredictionMarketSource(Protocol):
 
 
 @runtime_checkable
-class PoolPriceSource(Protocol):
-    """A read-only source of current per-pool DEX prices for a canonical pair
-    across one or more venues (Plan 0079 / ADR-0031) — the cross-pool discrepancy
-    scanner's input, the *evidence layer* for the arbitrage-viability question
-    (ADR-0072 BA-7). Read-only by charter: a conforming source holds no private
-    key, signs nothing, submits no state-changing RPC, and moves no funds; its
-    only credential is a read-only JSON-RPC endpoint URL (ADR-0038 — a read URL,
-    not a trade key). It reports prices as facts, never a trade instruction.
-
-    `fetch_pool_quotes` returns one `PoolQuote` per pool the source has configured
-    for `pair` — each pool's *marginal* (spot) price plus the depth the screener
-    needs to estimate the size-dependent execution cost. `trade_size` is the
-    base-token size the downstream slippage estimate is computed for (the price
-    itself is the marginal price, not size-adjusted — see `PoolQuote`). An unknown
-    or unconfigured pair returns `[]` (not an error); a shape-broken on-chain read
-    raises the source's typed error taxonomy, never a fabricated price.
-
-    Members of the pool-price selector registry, keyed by source name ("onchain"),
-    built in the composition root (ADR-0031) — adding a second pool-price source is
-    then one registry entry.
-    """
-
-    def fetch_pool_quotes(self, pair: str, *, trade_size: float) -> Sequence[PoolQuote]: ...
-
-
-@runtime_checkable
 class ExecutableQuoteSource(Protocol):
     """A read-only source of **executable** per-pool DEX quotes for a canonical pair
     across one or more venues at a specific trade size (Plan 0086 / ADR-0080) — the
     cross-pool discrepancy scanner v2's input, unifying constant-product and
-    concentrated liquidity behind one contract. It supersedes `PoolPriceSource`: a
-    conforming source returns each pool's *net-of-cost* `buy_cost` (exact-output) and
-    `sell_proceeds` (exact-input) — fee + slippage already inside — instead of a
-    marginal price the screener must add an estimated cost to.
+    concentrated liquidity behind one contract: a conforming source returns each
+    pool's *net-of-cost* `buy_cost` (exact-output) and `sell_proceeds` (exact-input)
+    — fee + slippage already inside — instead of a marginal price the screener must
+    add an estimated cost to.
 
-    Read-only by charter (identical to `PoolPriceSource`): a conforming source holds
-    no private key, signs nothing, submits no state-changing RPC, and moves no funds;
+    Read-only by charter: a conforming source holds no private
+    key, signs nothing, submits no state-changing RPC, and moves no funds;
     its only credential is a read-only JSON-RPC endpoint URL (ADR-0038 — a read URL,
     not a trade key). The concentrated-liquidity implementation prices via the DEX
     **Quoter**, which is reached by `eth_call` (a staticcall simulation) and so stays

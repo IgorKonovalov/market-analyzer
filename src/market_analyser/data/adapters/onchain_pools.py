@@ -1,11 +1,12 @@
-"""On-chain DEX pool-price adapter — RPC `eth_call` over JSON-RPC (Plan 0079).
+"""On-chain constant-product DEX quote adapter — RPC `eth_call` over JSON-RPC
+(Plan 0079, executable model per Plan 0086 / ADR-0080).
 
-The read half of the cross-pool discrepancy scanner (ADR-0072 BA-7 evidence
-layer): it reads the current *marginal* price of a configured set of DEX pools for
-a canonical pair, so the screener (`defi/discrepancy.py`) can compare the same
-pair's price across venues net-of-cost. It implements the source-agnostic
-`PoolPriceSource` Protocol (`data/sources.py`, ADR-0031) and is reached only
-through that seam.
+The constant-product half of the cross-pool discrepancy scanner v2 (ADR-0072 BA-7
+evidence layer): it prices a configured set of Uniswap-v2 / Aerodrome-style pools
+for a canonical pair as **executable quotes**, so the screener (`defi/discrepancy.py`)
+can rank the same pair's net-of-cost cost across venues. It implements the
+source-agnostic `ExecutableQuoteSource` Protocol (`data/sources.py`, ADR-0031) — the
+same seam the concentrated-liquidity `ConcentratedPoolPriceAdapter` implements.
 
 **Read-only by construction (ADR-0072 / ADR-0041 proof pattern).** The only
 JSON-RPC method this adapter ever issues is `eth_call` (a view read); it carries no
@@ -15,38 +16,23 @@ endpoint URL read lazily from the `SecretsStore` (ADR-0038 server-side injection
 a read URL, categorically not a trade key. A source scan pins the property
 (`tests/defi/test_pool_price_adapter.py`).
 
-**v1 scope: constant-product (Uniswap-v2 / Aerodrome-style) pools.** Each such
-pool answers `getReserves()` → `(reserve0, reserve1, …)`, `token0()` → the address
-whose reserve is `reserve0`, and each token answers ERC-20 `decimals()`. From
-those the adapter computes the decimals-adjusted reserves and the marginal price
-(quote-per-base) — an exact, cheaply-read number. **Concentrated-liquidity
-(Uniswap-v3) pools are a documented followup** (their executable price needs a
-Quoter read or tick-walk); a v3 source would add one registry entry behind the
-same Protocol.
-
-The reported `price` is the pool's marginal (spot) price at zero size — the honest
-input for a *gross* cross-pool spread. The size-dependent execution cost is **not**
-folded into it: the adapter also returns the pool depth (`liquidity_base` /
-`liquidity_quote` — the decimals-adjusted reserves), and the screener estimates
-slippage for the trade size from that depth. Keeping the two separate is what lets
-the net-of-cost breakdown stay explicit and un-double-counted (Plan 0079 honesty
-pin).
-
-**Executable-quote method (Plan 0086 / ADR-0080).** `fetch_executable_quotes`
-implements the `ExecutableQuoteSource` contract on top of the same reserves: it
-folds the pool's fee + slippage into a real round-trip leg and returns an
-`ExecutableQuote` (`buy_cost` exact-output, `sell_proceeds` exact-input, both net)
-plus the marginal reference — so the scanner v2 ranks pre-costed quotes rather than
-estimating cost itself. The constant-product math lives in `_cp_executable_legs`; a
-pool that cannot source the size is omitted, never fabricated. `fetch_pool_quotes`
-(the v1 marginal path) stays until the scanner fully cuts over.
+**Scope: constant-product (Uniswap-v2 / Aerodrome-style) pools.** Each such pool
+answers `getReserves()` → `(reserve0, reserve1, …)`, `token0()` → the address whose
+reserve is `reserve0`, and each token answers ERC-20 `decimals()`. From those the
+adapter computes the decimals-adjusted reserves, then folds the pool's fee +
+slippage into a real round-trip leg: `fetch_executable_quotes` returns an
+`ExecutableQuote` per pool (`buy_cost` exact-output, `sell_proceeds` exact-input,
+both net) plus the marginal reference. The `x·y=k` math lives in
+`_cp_executable_legs`; a pool that cannot source the size is omitted, never
+fabricated. Concentrated-liquidity pricing is the sibling `concentrated_pools.py`
+adapter behind the same Protocol.
 
 Errors are typed (done-when): a missing RPC URL or an unsupported chain raises
 `PoolPriceConfigError`; a 429 / 5xx / transport exhaustion raises the shared
 `RateLimitedError` / `UpstreamUnavailableError`; a JSON-RPC error object (a revert)
 or a shape-broken result raises `PoolPriceError` — never a silently zeroed price.
 An out-of-range decoded measurement surfaces as `pydantic.ValidationError` from the
-`PoolQuote` boundary.
+`ExecutableQuote` boundary.
 """
 
 from __future__ import annotations
@@ -63,7 +49,7 @@ from market_analyser.data.errors import (
     UpstreamDataError,
     UpstreamUnavailableError,
 )
-from market_analyser.defi.models import Chain, ExecutableQuote, PoolQuote
+from market_analyser.defi.models import Chain, ExecutableQuote
 from market_analyser.persistence.secrets import SecretKey, SecretsStore
 
 _SOURCE = "onchain-pool-price"
@@ -138,7 +124,8 @@ DEFAULT_POOLS: tuple[PoolConfig, ...] = ()
 
 
 class OnchainPoolPriceAdapter:
-    """Reads configured constant-product DEX pools' marginal prices over JSON-RPC."""
+    """Prices configured constant-product DEX pools as executable quotes over
+    JSON-RPC (`eth_call` only)."""
 
     def __init__(
         self,
@@ -161,45 +148,22 @@ class OnchainPoolPriceAdapter:
         self._sleep = sleep
         self._now = now if now is not None else lambda: datetime.now(tz=UTC)
 
-    def fetch_pool_quotes(self, pair: str, *, trade_size: float) -> Sequence[PoolQuote]:
-        """Return a `PoolQuote` for every configured pool matching `pair`.
-
-        `trade_size` is the base-token size the downstream slippage estimate is
-        computed for; it is carried onto each quote (the price itself is the
-        marginal price, not size-adjusted). An unconfigured pair returns `[]`.
-
-        Raises `ValueError` on a non-positive `trade_size` (a caller bug, not an
-        upstream failure), `PoolPriceConfigError` on a missing RPC URL / unsupported
-        chain, the shared `RateLimitedError` / `UpstreamUnavailableError` on
-        throttle / outage, and `PoolPriceError` (or `pydantic.ValidationError`) on a
-        shape-broken read.
-        """
-        if trade_size <= 0:
-            raise ValueError("trade_size must be positive")
-        wanted = pair.strip().upper()
-        as_of = self._now()
-        return [
-            self._quote_pool(pool, trade_size=trade_size, as_of=as_of)
-            for pool in self._pools
-            if pool.pair.strip().upper() == wanted
-        ]
-
     def fetch_executable_quotes(self, pair: str, *, trade_size: float) -> Sequence[ExecutableQuote]:
         """Return an `ExecutableQuote` for every configured pool matching `pair`
         that can executably fill `trade_size` (Plan 0086 / ADR-0080).
 
-        Reads the same constant-product reserves as `fetch_pool_quotes`, then folds
-        the fee + slippage of a real round-trip leg into the quote: `buy_cost` (the
-        `x·y=k` exact-output cost to acquire `trade_size` base) and `sell_proceeds`
-        (the exact-input proceeds from selling it), both net. A pool whose base
-        depth cannot source an exact-output buy of `trade_size` (`trade_size >=`
-        base reserve) is **omitted** — the honest executable-model answer is "no
-        quote at this size", never a fabricated number.
+        Reads the constant-product reserves, then folds the fee + slippage of a real
+        round-trip leg into the quote: `buy_cost` (the `x·y=k` exact-output cost to
+        acquire `trade_size` base) and `sell_proceeds` (the exact-input proceeds from
+        selling it), both net. A pool whose base depth cannot source an exact-output
+        buy of `trade_size` (`trade_size >=` base reserve) is **omitted** — the
+        honest executable-model answer is "no quote at this size", never a fabricated
+        number.
 
-        Same error taxonomy as `fetch_pool_quotes`: `ValueError` on a non-positive
-        `trade_size`, `PoolPriceConfigError` on config, the shared rate-limit /
-        unavailable errors on transport, `PoolPriceError` / `ValidationError` on a
-        shape-broken read. An unconfigured pair returns `[]`.
+        Raises `ValueError` on a non-positive `trade_size`, `PoolPriceConfigError` on
+        config, the shared rate-limit / unavailable errors on transport,
+        `PoolPriceError` / `ValidationError` on a shape-broken read. An unconfigured
+        pair returns `[]`.
         """
         if trade_size <= 0:
             raise ValueError("trade_size must be positive")
@@ -250,24 +214,6 @@ class OnchainPoolPriceAdapter:
                 f"(base={liquidity_base}, quote={liquidity_quote})",
             )
         return liquidity_base, liquidity_quote
-
-    def _quote_pool(self, pool: PoolConfig, *, trade_size: float, as_of: datetime) -> PoolQuote:
-        liquidity_base, liquidity_quote = self._read_pool_depth(pool)
-        price = liquidity_quote / liquidity_base
-        return PoolQuote(
-            pool_id=pool.pool_id,
-            dex=pool.dex,
-            chain=pool.chain,
-            pair=pool.pair,
-            base_token=pool.base_token,
-            quote_token=pool.quote_token,
-            trade_size=trade_size,
-            price=price,
-            fee_bps=pool.fee_bps,
-            liquidity_base=liquidity_base,
-            liquidity_quote=liquidity_quote,
-            as_of=as_of,
-        )
 
     def _executable_quote_pool(
         self, pool: PoolConfig, *, trade_size: float, as_of: datetime

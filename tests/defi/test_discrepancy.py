@@ -1,14 +1,13 @@
-"""Plan 0079 phase 2 — cross-pool discrepancy screener core.
+"""Plan 0086 — cross-pool discrepancy screener v2 (executable-quote model, ADR-0080).
 
-Phase-2 done-when claims pinned here:
-- a fixture with a known cross-pool discrepancy yields the correct **net** spread,
-  with gas + slippage + fees demonstrably subtracted (a gross number is never
-  returned as the opportunity), the correct buy/sell direction, and the
-  capturability note;
-- a discrepancy smaller than its costs is flagged not-capturable rather than
-  surfaced as an opportunity (and is still returned, not silently dropped);
-- a re-run over the same quotes is byte-identical (`model_dump` equal);
-- determinism: `queried_at` is the newest quote `as_of`, not the wall clock.
+Done-when claims pinned here:
+- the screener returns the correct buy/sell venue and
+  net = max(sell_proceeds) - min(buy_cost) - gas;
+- the reconstructed slippage/fee breakdown sums back to the executable numbers;
+- a sub-threshold net is flagged not-capturable, not dropped (and still returned);
+- determinism: stable sort, `queried_at` = newest quote `as_of`, byte-identical
+  re-run;
+- the capturability caveat rides every observation.
 """
 
 from __future__ import annotations
@@ -20,263 +19,14 @@ import pytest
 from market_analyser.data.adapters.onchain_pools import _cp_executable_legs
 from market_analyser.defi.discrepancy import (
     CAPTURABILITY_NOTE,
+    ArbObservation,
     DiscrepancyParams,
-    ExecutableArbObservation,
     scan_discrepancies,
-    scan_executable_discrepancies,
 )
-from market_analyser.defi.models import ExecutableQuote, PoolQuote
+from market_analyser.defi.models import ExecutableQuote
 
 _AS_OF = datetime(2026, 7, 11, 12, 0, tzinfo=UTC)
-
-
-def _quote(
-    *,
-    pool_id: str,
-    dex: str,
-    base_reserve: float,
-    quote_reserve: float,
-    fee_bps: float,
-    pair: str = "WETH/USDC",
-    trade_size: float = 1.0,
-    as_of: datetime = _AS_OF,
-) -> PoolQuote:
-    return PoolQuote(
-        pool_id=pool_id,
-        dex=dex,
-        chain="base",
-        pair=pair,
-        base_token="0xbase000000000000000000000000000000000001",
-        quote_token="0xquote00000000000000000000000000000000002",
-        trade_size=trade_size,
-        price=quote_reserve / base_reserve,
-        fee_bps=fee_bps,
-        liquidity_base=base_reserve,
-        liquidity_quote=quote_reserve,
-        as_of=as_of,
-    )
-
-
 _PARAMS = DiscrepancyParams(est_gas_cost=1.0, min_net_spread=0.0)
-
-
-def _edge_quotes() -> list[PoolQuote]:
-    """A real net-of-cost edge: buy WETH at 3000 (pool A), sell at 3030 (pool B),
-    both 1000-WETH-deep, trade 1 WETH."""
-    return [
-        _quote(
-            pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
-        ),
-        _quote(
-            pool_id="0xB", dex="uniswap-v2", base_reserve=1000, quote_reserve=3_030_000, fee_bps=30
-        ),
-    ]
-
-
-# --- net-of-cost math + direction -----------------------------------------------
-
-
-def test_net_spread_subtracts_gas_slippage_fees_with_correct_direction() -> None:
-    (obs,) = scan_discrepancies(_edge_quotes(), params=_PARAMS)
-
-    # Direction: buy the cheap pool, sell the dear pool.
-    assert obs.buy_pool == "0xA"
-    assert obs.buy_dex == "aerodrome"
-    assert obs.sell_pool == "0xB"
-    assert obs.sell_dex == "uniswap-v2"
-    assert obs.buy_price == pytest.approx(3000.0)
-    assert obs.sell_price == pytest.approx(3030.0)
-
-    # Cost components pinned to the constant-product model (independent arithmetic).
-    assert obs.gross_spread == pytest.approx(30.0)  # (3030 - 3000) * 1
-    assert obs.est_fees == pytest.approx(1.5 + 9.09)  # 0.05%·3000 + 0.30%·3030
-    # slippage_buy = 3_000_000/999 - 3000; slippage_sell = 3030 - 3_030_000/1001
-    assert obs.est_slippage == pytest.approx((3_000_000 / 999 - 3000) + (3030 - 3_030_000 / 1001))
-    assert obs.est_gas_cost == 1.0
-
-    # net = gross - gas - slippage - fees, and it is STRICTLY below gross (costs
-    # were really subtracted — a gross number is never the opportunity).
-    assert obs.net_spread == pytest.approx(
-        obs.gross_spread - obs.est_gas_cost - obs.est_slippage - obs.est_fees
-    )
-    assert obs.net_spread == pytest.approx(12.380023976)
-    assert obs.net_spread < obs.gross_spread
-    assert obs.capturable_at_threshold is True
-    assert obs.capturability_note == CAPTURABILITY_NOTE
-    assert "UPPER BOUND" in obs.capturability_note
-
-
-def test_capturability_note_present_on_every_observation() -> None:
-    for obs in scan_discrepancies(_edge_quotes(), params=_PARAMS):
-        assert obs.capturability_note.startswith("RPC-observed spread")
-
-
-# --- sub-threshold is flagged, not dropped --------------------------------------
-
-
-def test_sub_threshold_discrepancy_flagged_not_capturable_not_dropped() -> None:
-    quotes = [
-        _quote(
-            pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
-        ),
-        # Only a $1 gross gap — the ~$10 fees alone bury it.
-        _quote(
-            pool_id="0xB", dex="uniswap-v2", base_reserve=1000, quote_reserve=3_001_000, fee_bps=30
-        ),
-    ]
-    results = scan_discrepancies(quotes, params=_PARAMS)
-
-    # Surfaced (not silently dropped) but flagged not-capturable.
-    assert len(results) == 1
-    (obs,) = results
-    assert obs.gross_spread == pytest.approx(1.0)
-    assert obs.net_spread < 0
-    assert obs.capturable_at_threshold is False
-
-
-def test_threshold_gates_capturability() -> None:
-    quotes = _edge_quotes()
-    # net ≈ 12.38 — a threshold above it flips capturable off without dropping it.
-    strict = DiscrepancyParams(est_gas_cost=1.0, min_net_spread=20.0)
-    (obs,) = scan_discrepancies(quotes, params=strict)
-    assert obs.net_spread == pytest.approx(12.380023976)
-    assert obs.capturable_at_threshold is False
-
-
-# --- grouping / ranking / minimal cases -----------------------------------------
-
-
-def test_single_pool_pair_yields_no_observation() -> None:
-    quotes = [
-        _quote(
-            pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
-        )
-    ]
-    assert scan_discrepancies(quotes, params=_PARAMS) == []
-
-
-def test_multiple_pairs_ranked_by_net_spread_desc() -> None:
-    quotes = [
-        # WETH/USDC — a healthy edge.
-        _quote(
-            pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
-        ),
-        _quote(
-            pool_id="0xB", dex="uniswap-v2", base_reserve=1000, quote_reserve=3_030_000, fee_bps=30
-        ),
-        # WBTC/USDC — a sub-cost gap (negative net).
-        _quote(
-            pool_id="0xC",
-            dex="aerodrome",
-            pair="WBTC/USDC",
-            base_reserve=1000,
-            quote_reserve=60_000_000,
-            fee_bps=5,
-        ),
-        _quote(
-            pool_id="0xD",
-            dex="uniswap-v2",
-            pair="WBTC/USDC",
-            base_reserve=1000,
-            quote_reserve=60_010_000,
-            fee_bps=30,
-        ),
-    ]
-    results = scan_discrepancies(quotes, params=_PARAMS)
-    assert [o.pair for o in results] == ["WETH/USDC", "WBTC/USDC"]
-    assert results[0].net_spread > results[1].net_spread
-
-
-def test_depth_exceeded_is_not_capturable_and_noted() -> None:
-    quotes = [
-        _quote(
-            pool_id="0xA",
-            dex="aerodrome",
-            base_reserve=1000,
-            quote_reserve=3_000_000,
-            fee_bps=5,
-            trade_size=2000.0,  # larger than the 1000-WETH pool depth
-        ),
-        _quote(
-            pool_id="0xB",
-            dex="uniswap-v2",
-            base_reserve=1000,
-            quote_reserve=3_030_000,
-            fee_bps=30,
-            trade_size=2000.0,
-        ),
-    ]
-    (obs,) = scan_discrepancies(quotes, params=_PARAMS)
-    assert obs.capturable_at_threshold is False
-    assert obs.capturability_note.endswith("not executable at this size.")
-    # Conservative finite sentinel: both pools' whole quote depth.
-    assert obs.est_slippage == pytest.approx(3_000_000 + 3_030_000)
-
-
-# --- determinism ----------------------------------------------------------------
-
-
-def test_rerun_is_byte_identical() -> None:
-    quotes = _edge_quotes()
-    first = [o.model_dump() for o in scan_discrepancies(quotes, params=_PARAMS)]
-    second = [o.model_dump() for o in scan_discrepancies(quotes, params=_PARAMS)]
-    assert first == second
-
-
-def test_queried_at_is_newest_as_of_not_wall_clock() -> None:
-    older = datetime(2026, 7, 11, 11, 0, tzinfo=UTC)
-    newer = datetime(2026, 7, 11, 11, 30, tzinfo=UTC)
-    quotes = [
-        _quote(
-            pool_id="0xA",
-            dex="aerodrome",
-            base_reserve=1000,
-            quote_reserve=3_000_000,
-            fee_bps=5,
-            as_of=older,
-        ),
-        _quote(
-            pool_id="0xB",
-            dex="uniswap-v2",
-            base_reserve=1000,
-            quote_reserve=3_030_000,
-            fee_bps=30,
-            as_of=newer,
-        ),
-    ]
-    (obs,) = scan_discrepancies(quotes, params=_PARAMS)
-    assert obs.queried_at == newer
-
-
-def test_mixed_trade_sizes_in_a_pair_is_a_caller_bug() -> None:
-    quotes = [
-        _quote(
-            pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
-        ),
-        _quote(
-            pool_id="0xB",
-            dex="uniswap-v2",
-            base_reserve=1000,
-            quote_reserve=3_030_000,
-            fee_bps=30,
-            trade_size=2.0,
-        ),
-    ]
-    with pytest.raises(ValueError, match="trade size"):
-        scan_discrepancies(quotes, params=_PARAMS)
-
-
-# ======================================================================================
-# Executable-quote screener v2 (Plan 0086 / ADR-0080)
-#
-# Phase-1 done-when claims pinned here:
-# - the screener returns the correct buy/sell venue and
-#   net = max(sell_proceeds) - min(buy_cost) - gas;
-# - the reconstructed slippage/fee breakdown sums back to the executable numbers;
-# - a sub-threshold net is flagged not-capturable, not dropped;
-# - determinism holds (stable sort, queried_at = newest as_of, byte-identical re-run);
-# - the verdict matches the Plan 0079 v1 screener on the same fixture (new schema).
-# ======================================================================================
 
 
 def _exec_quote(
@@ -315,9 +65,9 @@ def _exec_quote(
     )
 
 
-def _edge_exec_quotes() -> list[ExecutableQuote]:
-    """The same edge as `_edge_quotes` in executable form: buy at pool A (marginal
-    3000), sell at pool B (marginal 3030), both 1000-WETH-deep, trade 1 WETH."""
+def _edge_quotes() -> list[ExecutableQuote]:
+    """A net-of-cost edge: buy at pool A (marginal 3000), sell at pool B (marginal
+    3030), both 1000-WETH-deep, trade 1 WETH."""
     return [
         _exec_quote(
             pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
@@ -328,17 +78,21 @@ def _edge_exec_quotes() -> list[ExecutableQuote]:
     ]
 
 
-def test_executable_net_is_max_proceeds_minus_min_cost_minus_gas() -> None:
-    (obs,) = scan_executable_discrepancies(_edge_exec_quotes(), params=_PARAMS)
+# --- net-of-cost math + direction -----------------------------------------------
 
+
+def test_net_is_max_proceeds_minus_min_cost_minus_gas() -> None:
+    (obs,) = scan_discrepancies(_edge_quotes(), params=_PARAMS)
+
+    assert isinstance(obs, ArbObservation)
     # Buy the executably-cheapest venue, sell the executably-dearest.
     assert obs.buy_pool == "0xA"
     assert obs.buy_dex == "aerodrome"
     assert obs.sell_pool == "0xB"
     assert obs.sell_dex == "uniswap-v3"
 
-    # Hand-computed x·y=k round trip (fee on input, size 1):
-    #   buy_cost_A = 3_000_000 / (999 · 0.9995); sell_B = 0.997·3_030_000 / (1000+0.997).
+    # Hand-computed x.y=k round trip (fee on input, size 1):
+    #   buy_cost_A = 3_000_000 / (999 * 0.9995); sell_B = 0.997*3_030_000 / (1000+0.997).
     buy_cost_a = 3_000_000 / (999 * 0.9995)
     sell_b = 0.997 * 3_030_000 / (1000 + 0.997)
     assert obs.buy_cost == pytest.approx(buy_cost_a)
@@ -348,25 +102,32 @@ def test_executable_net_is_max_proceeds_minus_min_cost_minus_gas() -> None:
     assert obs.net_spread == pytest.approx(12.395897, abs=1e-5)
     assert obs.capturable_at_threshold is True
     assert obs.capturability_note == CAPTURABILITY_NOTE
-    assert isinstance(obs, ExecutableArbObservation)
+    assert "UPPER BOUND" in obs.capturability_note
+
+
+def test_capturability_note_present_on_every_observation() -> None:
+    for obs in scan_discrepancies(_edge_quotes(), params=_PARAMS):
+        assert obs.capturability_note.startswith("RPC-observed spread")
 
 
 def test_reconstructed_breakdown_sums_back_to_executable_numbers() -> None:
     """Auditability identity: sell_proceeds - buy_cost equals the marginal spread
     minus the reconstructed fees and slippage — the breakdown decomposes the
     executable numbers exactly against the zero-size reference."""
-    (obs,) = scan_executable_discrepancies(_edge_exec_quotes(), params=_PARAMS)
+    (obs,) = scan_discrepancies(_edge_quotes(), params=_PARAMS)
 
     marginal_spread = (3030.0 - 3000.0) * obs.trade_size  # P_sell - P_buy, size 1
     assert obs.sell_proceeds - obs.buy_cost == pytest.approx(
         marginal_spread - obs.reconstructed_fees - obs.reconstructed_slippage
     )
-    # Both derived components are the expected sign for a normal round trip.
     assert obs.reconstructed_fees == pytest.approx(0.0005 * 3000 + 0.003 * 3030)  # 1.5 + 9.09
     assert obs.reconstructed_slippage > 0
 
 
-def test_executable_sub_threshold_flagged_not_dropped() -> None:
+# --- sub-threshold is flagged, not dropped --------------------------------------
+
+
+def test_sub_threshold_flagged_not_capturable_not_dropped() -> None:
     quotes = [
         _exec_quote(
             pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
@@ -376,32 +137,51 @@ def test_executable_sub_threshold_flagged_not_dropped() -> None:
             pool_id="0xB", dex="uniswap-v3", base_reserve=1000, quote_reserve=3_001_000, fee_bps=30
         ),
     ]
-    results = scan_executable_discrepancies(quotes, params=_PARAMS)
+    results = scan_discrepancies(quotes, params=_PARAMS)
     assert len(results) == 1
     (obs,) = results
     assert obs.net_spread < 0
     assert obs.capturable_at_threshold is False
 
 
-def test_executable_threshold_gates_capturability() -> None:
+def test_threshold_gates_capturability() -> None:
     strict = DiscrepancyParams(est_gas_cost=1.0, min_net_spread=20.0)
-    (obs,) = scan_executable_discrepancies(_edge_exec_quotes(), params=strict)
+    (obs,) = scan_discrepancies(_edge_quotes(), params=strict)
     assert obs.net_spread == pytest.approx(12.395897, abs=1e-5)
     assert obs.capturable_at_threshold is False
 
 
-def test_executable_single_pool_pair_yields_no_observation() -> None:
+# --- grouping / ranking / minimal cases -----------------------------------------
+
+
+def test_single_pool_pair_yields_no_observation() -> None:
     quotes = [
         _exec_quote(
             pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
         )
     ]
-    assert scan_executable_discrepancies(quotes, params=_PARAMS) == []
+    assert scan_discrepancies(quotes, params=_PARAMS) == []
 
 
-def test_executable_multiple_pairs_ranked_by_net_spread_desc() -> None:
+def test_combines_cp_and_cl_venues_for_the_same_pair() -> None:
+    """The screener groups purely by pair, so quotes pooled from a CP source and a
+    CL source for WETH/USDC compete in one observation — the Plan 0086 unification."""
     quotes = [
-        *_edge_exec_quotes(),
+        _exec_quote(
+            pool_id="0xCP", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
+        ),
+        _exec_quote(
+            pool_id="0xCL", dex="uniswap-v3", base_reserve=1000, quote_reserve=3_030_000, fee_bps=30
+        ),
+    ]
+    (obs,) = scan_discrepancies(quotes, params=_PARAMS)
+    assert obs.buy_pool == "0xCP"
+    assert obs.sell_pool == "0xCL"
+
+
+def test_multiple_pairs_ranked_by_net_spread_desc() -> None:
+    quotes = [
+        *_edge_quotes(),
         _exec_quote(
             pool_id="0xC",
             dex="aerodrome",
@@ -419,19 +199,22 @@ def test_executable_multiple_pairs_ranked_by_net_spread_desc() -> None:
             fee_bps=30,
         ),
     ]
-    results = scan_executable_discrepancies(quotes, params=_PARAMS)
+    results = scan_discrepancies(quotes, params=_PARAMS)
     assert [o.pair for o in results] == ["WETH/USDC", "WBTC/USDC"]
     assert results[0].net_spread > results[1].net_spread
 
 
-def test_executable_rerun_is_byte_identical() -> None:
-    quotes = _edge_exec_quotes()
-    first = [o.model_dump() for o in scan_executable_discrepancies(quotes, params=_PARAMS)]
-    second = [o.model_dump() for o in scan_executable_discrepancies(quotes, params=_PARAMS)]
+# --- determinism ----------------------------------------------------------------
+
+
+def test_rerun_is_byte_identical() -> None:
+    quotes = _edge_quotes()
+    first = [o.model_dump() for o in scan_discrepancies(quotes, params=_PARAMS)]
+    second = [o.model_dump() for o in scan_discrepancies(quotes, params=_PARAMS)]
     assert first == second
 
 
-def test_executable_queried_at_is_newest_as_of_not_wall_clock() -> None:
+def test_queried_at_is_newest_as_of_not_wall_clock() -> None:
     older = datetime(2026, 7, 11, 11, 0, tzinfo=UTC)
     newer = datetime(2026, 7, 11, 11, 30, tzinfo=UTC)
     quotes = [
@@ -452,11 +235,11 @@ def test_executable_queried_at_is_newest_as_of_not_wall_clock() -> None:
             as_of=newer,
         ),
     ]
-    (obs,) = scan_executable_discrepancies(quotes, params=_PARAMS)
+    (obs,) = scan_discrepancies(quotes, params=_PARAMS)
     assert obs.queried_at == newer
 
 
-def test_executable_mixed_trade_sizes_in_a_pair_is_a_caller_bug() -> None:
+def test_mixed_trade_sizes_in_a_pair_is_a_caller_bug() -> None:
     quotes = [
         _exec_quote(
             pool_id="0xA", dex="aerodrome", base_reserve=1000, quote_reserve=3_000_000, fee_bps=5
@@ -471,15 +254,4 @@ def test_executable_mixed_trade_sizes_in_a_pair_is_a_caller_bug() -> None:
         ),
     ]
     with pytest.raises(ValueError, match="trade size"):
-        scan_executable_discrepancies(quotes, params=_PARAMS)
-
-
-def test_executable_verdict_matches_v1_on_same_fixture() -> None:
-    """Equivalence to the Plan 0079 result (done-when): on the same fixture reserves
-    the v2 screener picks the same buy/sell venue and the same capturable verdict —
-    a new schema, not a new answer."""
-    v1 = scan_discrepancies(_edge_quotes(), params=_PARAMS)
-    v2 = scan_executable_discrepancies(_edge_exec_quotes(), params=_PARAMS)
-    assert len(v1) == len(v2) == 1
-    assert (v1[0].buy_pool, v1[0].sell_pool) == (v2[0].buy_pool, v2[0].sell_pool)
-    assert v1[0].capturable_at_threshold == v2[0].capturable_at_threshold is True
+        scan_discrepancies(quotes, params=_PARAMS)
