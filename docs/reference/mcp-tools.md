@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 49 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 50 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -21,6 +21,7 @@ The 49 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`detect_chart_patterns`](#detectchartpatterns) | Detect classical chart patterns on the cached bars and draw them on the chart in one call: recognises head & shoulders (+inverse), double top/bottom, ascending/descending/symmetrical triangles, and rising/falling wedges over confirmed swing pivots, returns the typed hits as data (pattern, forming/confirmed state, direction, pivots, defining lines, measured-move target, strength), AND publishes a single `chart.trendlines v1` event carrying one trendline per hit line (dashed = forming, solid = confirmed) onto the chart already showing that symbol/timeframe. |
 | [`detect_levels`](#detectlevels) | Detect support/resistance levels on the cached bars and draw them on the chart in one call: clusters confirmed swing pivots into zones, ranks each zone's strength by touch count weighted by the volume traded at that price (volume-by-price), returns the ranked levels as data, AND publishes a single `chart.show v1` event carrying one `price_line` overlay per level (role support/resistance, labels S1/R1/... |
 | [`evaluate_signals`](#evaluatesignals) | Evaluate a strategy against the CURRENT bar of one symbol — a live signal read, not a historical backtest. |
+| [`find_convergence_opportunities`](#findconvergenceopportunities) | Screen prediction markets matching a query for CONVERGENCE opportunities — markets nearing resolution whose top outcome is near-certain, where a price converging to 1.00 leaves a few percent of implied upside. |
 | [`forecast`](#forecast) | Forecast the price DIRECTION of a cached symbol over one or more horizons, each as a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. |
 | [`forecast_regime`](#forecastregime) | Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. |
 | [`forecast_volatility`](#forecastvolatility) | Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. |
@@ -321,6 +322,20 @@ Evaluate a strategy against the CURRENT bar of one symbol — a live signal read
 | `fresh_signal` | boolean |
 
 **Source:** [`src/market_analyser/api/mcp_tools/evaluate_signals.py`](../../src/market_analyser/api/mcp_tools/evaluate_signals.py)
+
+## `find_convergence_opportunities`
+
+Screen prediction markets matching a query for CONVERGENCE opportunities — markets nearing resolution whose top outcome is near-certain, where a price converging to 1.00 leaves a few percent of implied upside. Returns ranked opportunities {market_id, question, outcome_label, implied_probability, implied_return_if_right, time_to_resolution, capital_lockup_note, liquidity_caution, resolution_risk {level, reasons}, volume_usd, closes_at, queried_at, source}. implied_return_if_right = (1 - price) / price is GROSS of the resolution tail — it is NOT expected value; the tail lives in resolution_risk (a LABELED HEURISTIC over multi-outcome wording, thin/unknown book, and dispute-prone question terms — never a guarantee), liquidity_caution, and capital_lockup_note (market close is not settlement — UMA resolution can lag or be disputed, locking capital). IMPORTANT: these are facts with their risks attached, never a call — this reports conditions and never tells you to take a position; it signs nothing and moves no funds. Filter knobs: max_days_to_close (window, default 7), min_confidence (probability floor, default 0.90), thin_book_volume_usd (thin-book threshold, default 50000). Results are bounded to 50 per page: when more remain partial_reason='too_large' and total_available/offset/returned tell you how to page (call again with offset=returned). On failure opportunities is null and error is a typed reason (rate_limited / upstream_unavailable / malformed_response). Data from Polymarket public endpoints (no account, no funds).
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `params` | FindConvergenceOpportunitiesInput | yes | — |
+
+**Returns:** `dict[str, Any]`
+
+**Source:** [`src/market_analyser/api/mcp_tools/prediction_screener.py`](../../src/market_analyser/api/mcp_tools/prediction_screener.py)
 
 ## `forecast`
 

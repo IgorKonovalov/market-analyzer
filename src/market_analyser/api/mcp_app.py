@@ -63,6 +63,7 @@ from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.pool_discrepancies import register_pool_discrepancies
 from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
 from market_analyser.api.mcp_tools.prediction_markets import register_prediction_market_tools
+from market_analyser.api.mcp_tools.prediction_screener import register_prediction_screener
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.recommend import register_recommend
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
@@ -230,13 +231,26 @@ def create_mcp_components(
     # (tests inject a spy); otherwise the keyless Polymarket adapter is the default.
     # Construction is network-free (it only builds the resilient client), so the
     # default reaches the network only on an actual search/odds call.
+    resolved_prediction_market_sources = (
+        prediction_market_sources
+        if prediction_market_sources is not None
+        else {"polymarket": PolymarketOddsAdapter()}
+    )
     register_prediction_market_tools(
         server,
-        prediction_market_sources=(
-            prediction_market_sources
-            if prediction_market_sources is not None
-            else {"polymarket": PolymarketOddsAdapter()}
-        ),
+        prediction_market_sources=resolved_prediction_market_sources,
+    )
+
+    # Convergence screener (Plan 0078, ADR-0041/0029): the read-only analysis layer
+    # over the same prediction-market registry — finds near-decided markets and
+    # surfaces the edge WITH its risk context (resolution risk, liquidity caution,
+    # capital-lockup note). Always registered alongside the keyless odds tools; it
+    # reports opportunities as facts, never a buy call, and publishes
+    # `prediction.screen_completed v1` so the viewer renders them live.
+    register_prediction_screener(
+        server,
+        prediction_market_sources=resolved_prediction_market_sources,
+        event_bus=event_bus,
     )
 
     # Cross-pool discrepancy scanner (Plan 0079, ADR-0072 BA-7): the read-only

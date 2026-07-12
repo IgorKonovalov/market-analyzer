@@ -4,7 +4,7 @@
 
 # SSE events
 
-The 24 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
+The 25 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
 
 | Event | Summary |
 | --- | --- |
@@ -25,6 +25,7 @@ The 24 SSE envelope kinds published on `/events`, from the event type registry. 
 | [`ohlcv.backfill_failed`](#ohlcvbackfillfailed) | `ohlcv.backfill_failed v1`: a backfill failed with a typed reason. |
 | [`ohlcv.backfill_started`](#ohlcvbackfillstarted) | `ohlcv.backfill_started v1`: a backfill fetch began for symbol+timeframe. Emitted before the upstream call so the renderer can show its spinner. |
 | [`ohlcv.backfilled`](#ohlcvbackfilled) | `ohlcv.backfilled v1`: a backfill completed; the cache is now hot for the `[range_start, range_end]` span. |
+| [`prediction.screen_completed`](#predictionscreencompleted) | `prediction.screen_completed v1` payload (Plan 0078, ADR-0041/0029): the `find_convergence_opportunities` tool screened a query and produced ranked near-decided opportunities. |
 | [`recommendation.completed`](#recommendationcompleted) | `recommendation.completed v1` payload (Plan 0039, ADR-0029): the advisor produced a labeled advisory `Recommendation` for one symbol/timeframe. |
 | [`recommendation.scored`](#recommendationscored) | `recommendation.scored v1` payload (Plan 0080, ADR-0075): the scheduled scorer resolved one matured advisory recommendation against realized price. |
 | [`regime_forecast.completed`](#regimeforecastcompleted) | `regime_forecast.completed v1` payload (Plan 0077, ADR-0070): the `forecast_regime` tool produced a regime-transition forecast. |
@@ -356,6 +357,36 @@ Emitted before the upstream call so the renderer can show its spinner.
 | `range_start` | string (date-time) | yes | — |
 | `range_end` | string (date-time) | yes | — |
 | `bars_added` | integer | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
+## `prediction.screen_completed`
+
+**Version:** 1
+
+`prediction.screen_completed v1` payload (Plan 0078, ADR-0041/0029): the
+`find_convergence_opportunities` tool screened a query and produced ranked
+near-decided opportunities.
+
+Like `signal.evaluated` and `technical_read.completed`, the models ride inline —
+small and ephemeral, nothing persisted for the viewer to follow-up fetch; the
+`opportunities` list is the bounded top-N page the tool returned (ADR-0046), so
+the payload stays small. Each `ConvergenceOpportunity` carries its edge math AND
+its risk context (resolution risk, liquidity caution, capital-lockup note) and has
+no direction/size/action field, so anything this payload validates is safe to
+render as *opportunities with their risks attached* and only that — never a buy
+call (ADR-0029; the buying is the deferred ADR-0072 pillar). Published only when a
+screen yields at least one opportunity — an empty screen has nothing to show, so
+it leaves the bus untouched.
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `query` | string | yes | — |
+| `opportunities` | array[ConvergenceOpportunity] | yes | — |
+| `queried_at` | string (date-time) | yes | — |
+| `source` | string | yes | — |
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 

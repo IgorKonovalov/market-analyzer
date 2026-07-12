@@ -532,6 +532,7 @@ EXPECTED_FULL_TOOLSET = {
     "detect_chart_patterns",
     "detect_levels",
     "evaluate_signals",
+    "find_convergence_opportunities",
     "forecast",
     "forecast_regime",
     "forecast_volatility",

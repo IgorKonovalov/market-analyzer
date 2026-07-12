@@ -24,6 +24,7 @@ from market_analyser.events.chart_types import Marker, OverlaySpec, TrendlineSpe
 from market_analyser.forecast.regime import RegimeForecast
 from market_analyser.forecast.result import MultiHorizonForecastResult
 from market_analyser.forecast.volatility import VolatilityForecast
+from market_analyser.prediction.models import ConvergenceOpportunity
 
 
 class ChartShowPayloadV1(BaseModel):
@@ -224,6 +225,31 @@ class TechnicalReadCompletedPayloadV1(BaseModel):
     read: TechnicalRead
 
 
+class PredictionScreenCompletedPayloadV1(BaseModel):
+    """`prediction.screen_completed v1` payload (Plan 0078, ADR-0041/0029): the
+    `find_convergence_opportunities` tool screened a query and produced ranked
+    near-decided opportunities.
+
+    Like `signal.evaluated` and `technical_read.completed`, the models ride inline —
+    small and ephemeral, nothing persisted for the viewer to follow-up fetch; the
+    `opportunities` list is the bounded top-N page the tool returned (ADR-0046), so
+    the payload stays small. Each `ConvergenceOpportunity` carries its edge math AND
+    its risk context (resolution risk, liquidity caution, capital-lockup note) and has
+    no direction/size/action field, so anything this payload validates is safe to
+    render as *opportunities with their risks attached* and only that — never a buy
+    call (ADR-0029; the buying is the deferred ADR-0072 pillar). Published only when a
+    screen yields at least one opportunity — an empty screen has nothing to show, so
+    it leaves the bus untouched."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    query: str
+    opportunities: list[ConvergenceOpportunity]
+    queried_at: datetime
+    source: str
+
+
 class ChartUpdateDroppedPayloadV1(BaseModel):
     """Synthetic notice emitted when a subscriber's queue overflowed.
 
@@ -415,6 +441,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "volatility_forecast.completed": VolatilityForecastCompletedPayloadV1,
     "regime_forecast.completed": RegimeForecastCompletedPayloadV1,
     "technical_read.completed": TechnicalReadCompletedPayloadV1,
+    "prediction.screen_completed": PredictionScreenCompletedPayloadV1,
     "chart.update_dropped": ChartUpdateDroppedPayloadV1,
     "ohlcv.backfill_started": OhlcvBackfillStartedPayloadV1,
     "ohlcv.backfilled": OhlcvBackfilledPayloadV1,
@@ -450,6 +477,7 @@ __all__ = [
     "OhlcvBackfillFailedPayloadV1",
     "OhlcvBackfillStartedPayloadV1",
     "OhlcvBackfilledPayloadV1",
+    "PredictionScreenCompletedPayloadV1",
     "RecommendationCompletedPayloadV1",
     "RecommendationScoredPayloadV1",
     "RunCompletedPayloadV1",
