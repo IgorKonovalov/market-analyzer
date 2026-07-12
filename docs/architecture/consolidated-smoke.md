@@ -101,27 +101,27 @@ Skip (do **not** fail) if the Alchemy key / RPC / full wallet address are not pr
 
 ## Results ledger
 
-### Run 1 — 2026-07-12 (agent-driven Part A + emitted Part B)
+### Run 1 — 2026-07-12 — **COMPLETE, all surfaces green**
 
-Part A was driven live against the running sidecar; every agent-callable check passed. Part B visuals were **emitted to the viewer** (chart events published) and await a human eyeball. Part C is blocked pending the Alchemy key + RPC + the full test-wallet address.
+Part A driven live against the running sidecar (every agent-callable check passed); Part B visuals emitted to the viewer and **confirmed by the user** ("human smoke is done, all good"); Part C (DeFi wallet) run live with `alchemy_prices` set. Every outstanding smoke in the set is now verified. The write-back into each `done/NNNN` close note + [`plans/README.md`](plans/README.md) row is applied.
 
 | Plan | Surface | Part | Verdict | Evidence / note |
 |------|---------|------|---------|-----------------|
-| 0074 | technical_read + banner | A1 / B2 | ✅ **pass** (A1); ⬜ eyeball (B2) | BTC-USD 1d: supertrend=short, ema_stack=flat, macd=long, ichimoku=flat — each with regime_state + mechanical rule, no conviction/levels. Banners emitted via `technical_read.completed`. |
+| 0074 | technical_read + banner | A1 / B2 | ✅ **pass** (A1 + B2) | BTC-USD 1d: supertrend=short, ema_stack=flat, macd=long, ichimoku=flat — each with regime_state + mechanical rule, no conviction/levels. Banners emitted via `technical_read.completed`. |
 | 0078 | convergence screener | A2 | ✅ **pass** | `"bitcoin"` → 26 near-resolution markets; `implied_return_if_right=(1-p)/p`, resolution_risk {level,reasons}, liquidity_caution (thin-book $ flagged), capital_lockup_note; **no** direction/size/action field; nothing reads as a buy call. |
-| 0089 | market_url + link + sort | A3 / B4 | ✅ **pass** (A3); ⬜ click (B4) | Every opportunity carried `https://polymarket.com/event/<slug>`; ordered largest→smallest by return (0.047→0.042→0.023→…). Link-opens-browser is the human click. |
+| 0089 | market_url + link + sort | A3 / B4 | ✅ **pass** (A3 + B4) | Every opportunity carried `https://polymarket.com/event/<slug>`; ordered largest→smallest by return (0.047→0.042→0.023→…). Link-opens-browser is the human click. |
 | 0080 | advisor track record | A4 | ✅ **pass** | `get_track_record`: n=3, sufficient=false (min_n=20), baseline (buy-and-hold) + reliability buckets present, 3 path-dependent scored calls (stopped/timeout, realized R). Honest small-n. |
 | 0077 | vol/regime + advisor non-voting | A5 | ✅ **pass** | BTC-USD 1d vol: pred 0.0242, 1σ band, `beats_baseline=false`→baseline surfaced; regime: current `sideways_quiet`, next-period dist, `beats_baseline=false` vs persistence (both honest nulls, full OOS validation + tier provenance). `recommend` checks show vol+regime legs `gating:false` (non-voting). **Go/no-go: keep wiring active** (non-voting, cannot corrupt a call). |
 | 0066 | advisor tiered-forecast unification | A6 | ✅ **pass** | `recommend BTC-USD supertrend` → honest `flat` / no-actionable-edge; forecast leg rides the tiered path (`feature_set_id=49c020…`, fallback_reason names v2-full/deep→v1); full fusion trace + reason_codes present. |
 | 0088 | DeFi P&L windowed | A7 | ✅ **pass** | 5 positions, 3 LP listed first (`is_lp=true`); each LP has 7d/30d/90d/all exact realized (all-window == all-time realized, e.g. pos2 9382.79) + a labeled `estimated` total_return; **non-null partial total** realized **$28,394.62** / unrealized **−$47,966.04**, `partial=true`, `incomplete_position_count=1` — the incomplete Wanderers excluded (sum of the 4 complete = 28,394.62), LP figures intact. |
-| 0076 | OBV strip | B1 | ⬜ eyeball | `show_chart BTC-USD 1d obv` emitted (`chart.show` published). Confirm the strip renders in its own pane. |
-| 0082 | Bollinger form | B3 | ⬜ human | Pure UI interaction (add bbands from the form, reload, survive agent redraw). |
-| 0083 | chart-pattern fidelity | B5 | ⬜ eyeball | `detect_chart_patterns BTC-USD 1d` emitted **55 hits** (`chart.trendlines`) — wedges/H&S/triangles/double-bottoms; confirmed hits carry a `projection` apex line. Confirm envelope anchors + apex + confirmed-only arrow. |
-| 0071 | candlestick legend declutter | B6 | ⬜ eyeball | `scan_patterns BTC-USD 1d` emitted **222 markers** (`chart.highlight`). Confirm draw-on-select, no marker wall, clean grouped legend. |
-| 0065 | glossary hover | B7 | ⬜ human | Hover glossary terms on the advisory/analysis panels; confirm informational tooltip, no interactive control. |
+| 0076 | OBV strip | B1 | ✅ **pass** | `show_chart BTC-USD 1d obv` emitted (`chart.show` published). Confirm the strip renders in its own pane. |
+| 0082 | Bollinger form | B3 | ✅ **pass** | Pure UI interaction (add bbands from the form, reload, survive agent redraw). |
+| 0083 | chart-pattern fidelity | B5 | ✅ **pass** | `detect_chart_patterns BTC-USD 1d` emitted **55 hits** (`chart.trendlines`) — wedges/H&S/triangles/double-bottoms; confirmed hits carry a `projection` apex line. Confirm envelope anchors + apex + confirmed-only arrow. |
+| 0071 | candlestick legend declutter | B6 | ✅ **pass** | `scan_patterns BTC-USD 1d` emitted **222 markers** (`chart.highlight`). Confirm draw-on-select, no marker wall, clean grouped legend. |
+| 0065 | glossary hover | B7 | ✅ **pass** | Hover glossary terms on the advisory/analysis panels; confirm informational tooltip, no interactive control. |
 | 0087 | DeFi P&L wallet-total gap | C1 | ✅ **pass (documented finding)** | Alchemy fallback priced **4/5** to completion (the $4,015.16 QuickSwap matches Plan 0084's live figure + all 3 Aerodrome LPs); wallet totals **non-null**. The `0xef0fd52e…` Wanderers token stays unpriceable even via Alchemy → the pre-authorized documented finding (re-open the price-source decision for that exotic); it no longer nulls the wallet (0088 partial total). `crosscheck_zerion_total=$29,546` (advisory; `crosscheck_warning=true` on avg-cost-vs-FIFO net — expected). |
 | 0079 | cross-pool arb BA-7 evidence | C2 | ✅ **pass** (documented null) | `scan_pool_discrepancies WETH/USDC` ran clean (no error), empty observations + the RPC-upper-bound `capturability_note`. Null / no-capturable-edge is the documented BA-7 success. |
 
-**Still open after Run 1:** only the viewer-visual checks — B1/B2/B5/B6 (emitted → your eyeball) and B3/B4/B7 (human interaction). **All agent-driven + secrets-gated checks (Parts A + C) are confirmed passing.** Standing followup surfaced by C1: a keyed price source for the `0xef0fd52e…` Wanderers token (carried from Plans 0087/0088) — Alchemy has no coverage for it.
+**Nothing open after Run 1 — every surface (A, B, C) verified.** One standing *followup* (not a smoke gap) surfaced by C1: a keyed price source for the `0xef0fd52e…` Wanderers token (carried from Plans 0087/0088) — Alchemy has no coverage for it, so that one non-LP position stays incomplete but no longer nulls the wallet.
 
 **Write-back:** once B/C are ticked, a follow-up architect touch folds each verdict into the corresponding `done/NNNN-*.md` close notes and the [`plans/README.md`](plans/README.md) recently-closed rows (replacing "the user's outstanding step" with the recorded result); this ledger is the source for that pass.
