@@ -179,13 +179,13 @@ def test_model_rejects_conviction_and_stop_fields() -> None:
         "rationale": ["supertrend rule: long while direction == +1"],
     }
     # A valid read constructs fine…
-    assert TechnicalRead(**base).direction == "long"
+    assert TechnicalRead.model_validate(base).direction == "long"
     # …but a conviction or a stop is structurally forbidden (ADR-0068): a thin
     # single-indicator basis can never be dressed as a trade ticket.
     with pytest.raises(ValidationError):
-        TechnicalRead(**base, conviction=0.7)  # type: ignore[call-arg]
+        TechnicalRead.model_validate({**base, "conviction": 0.7})
     with pytest.raises(ValidationError):
-        TechnicalRead(**base, stop=100.0)  # type: ignore[call-arg]
+        TechnicalRead.model_validate({**base, "stop": 100.0})
 
 
 # --------------------------------------------------------------------------- #

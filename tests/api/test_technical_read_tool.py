@@ -86,7 +86,7 @@ def _call(
 
 def test_returns_technical_read_for_requested_indicator() -> None:
     bus = EventBus()
-    read = asyncio.run(_call(_BarsProvider(BARS), bus))  # type: ignore[arg-type]
+    read: object = asyncio.run(_call(_BarsProvider(BARS), bus))  # type: ignore[arg-type]
     assert isinstance(read, TechnicalRead)
     assert read.indicator_id == "supertrend"
     assert read.direction in {"long", "short", "flat"}
