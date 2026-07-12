@@ -94,15 +94,28 @@ _WINDOW_SPANS: tuple[tuple[Window, timedelta | None], ...] = (
 
 
 class WindowPnl(BaseModel):
-    """Realized P&L over one rolling window (Plan 0088 / ADR-0082). Exact: the
-    sum of the per-event realized deltas whose `mined_at` falls inside the window
-    (`all` = every delta), so `all` always equals the position's all-time
-    `realized_usd`. Deterministic given the run's `now`."""
+    """P&L over one rolling window (Plan 0088 / ADR-0082).
+
+    `realized_usd` is **exact**: the sum of the per-event realized deltas whose
+    `mined_at` falls inside the window (`all` = every delta), so `all` always
+    equals the position's all-time `realized_usd`. Deterministic given `now`.
+
+    `total_return_usd` is an **estimate** (`estimated` is always `True`, labeling
+    it): `realized_in_window + (unrealized_now - unrealized_at_window_start)`,
+    where the window-start mark values the replay's contributed lots at
+    window-start block-time prices against the basis as of that time. It is
+    `None` for any window whose start-mark cannot be priced — an honest per-window
+    gap that does NOT mark the position incomplete and does NOT touch the exact
+    `realized_usd`. The contributed-lot mark is a proxy for the true (unmodeled)
+    historical CL composition, so the estimate diverges for out-of-range positions
+    (ADR-0082); the `estimated` label carries that honesty."""
 
     model_config = ConfigDict(frozen=True)
 
     window: Window
     realized_usd: float
+    total_return_usd: float | None
+    estimated: bool
 
 
 class PositionPnl(BaseModel):
@@ -238,8 +251,18 @@ def _replay_position(
     # to `realized` exactly — the `all` window equals the all-time figure.
     realized_deltas: list[tuple[datetime, float]] = []
     contributed: dict[str, float] = {}  # net contributed amount per token key
+    # Window-start basis + contributed lots (Plan 0088 phase 3 / ADR-0082), for the
+    # estimated total-return mark. Events are chronological (block order), so the
+    # state captured just before the first event past a window's cutoff includes
+    # exactly the events with `mined_at <= cutoff`. Windows never crossed (all
+    # events inside them) fall back to the final state after the loop.
+    finite_cutoffs = [(label, now - span) for label, span in _WINDOW_SPANS if span is not None]
+    window_start_state: dict[Window, tuple[float, dict[str, float]]] = {}
     try:
         for event in events:
+            for label, cutoff in finite_cutoffs:
+                if label not in window_start_state and cutoff < event.mined_at:
+                    window_start_state[label] = (basis, dict(contributed))
             kind = event.kind
             if kind in _CONTRIBUTION_KINDS:
                 value = _legs_value(event, "out", price_source)
@@ -305,6 +328,10 @@ def _replay_position(
         for figure in (realized, unrealized, remaining, vs_hodl):
             if figure is not None and not math.isfinite(figure):
                 return _incomplete(position, ["non-finite figure in replay arithmetic"])
+        # Windows never crossed during the loop hold every event, so their start
+        # state is the final state (unrealized_at_start marks the whole holding).
+        for label, _cutoff in finite_cutoffs:
+            window_start_state.setdefault(label, (basis, dict(contributed)))
         return PositionPnl(
             position_id=position.position_id,
             realized_usd=realized,
@@ -313,7 +340,9 @@ def _replay_position(
             vs_hodl_usd=vs_hodl,
             incomplete=False,
             notes=notes,
-            windows=_windowed_realized(realized_deltas, now),
+            windows=_windows(
+                realized_deltas, window_start_state, unrealized, position, price_source, now
+            ),
         )
     except _MissingPrice as gap:
         return _incomplete(
@@ -322,20 +351,74 @@ def _replay_position(
         )
 
 
-def _windowed_realized(deltas: list[tuple[datetime, float]], now: datetime) -> list[WindowPnl]:
-    """Bucket the per-event realized deltas into the fixed windows relative to
-    `now`. A window sums the deltas whose `mined_at` is on or after `now - span`
-    (`all` = every delta), in event order — so `all` reproduces the running
-    `realized` total exactly. Pure given `(deltas, now)`."""
+def _windows(
+    deltas: list[tuple[datetime, float]],
+    window_start_state: dict[Window, tuple[float, dict[str, float]]],
+    unrealized_now: float,
+    position: DefiPosition,
+    price_source: HistoricalPriceSource,
+    now: datetime,
+) -> list[WindowPnl]:
+    """Build every window's exact realized + estimated total-return figure.
+
+    Realized: the deltas whose `mined_at` is on or after `now - span` (`all` =
+    every delta), summed in event order — so `all` reproduces the running
+    `realized` total exactly. Total return (estimated, ADR-0082):
+    `realized_in_window + (unrealized_now - unrealized_at_window_start)`, with the
+    window-start mark = contributed-lots value at the window-start block-time
+    prices minus the basis as of that time. `all` has no start mark (it captures
+    the whole lifetime), so its total return is `realized_all + unrealized_now`.
+    A finite window whose start mark cannot be priced reports `total_return_usd =
+    None` — an honest per-window gap that leaves the exact realized figure intact.
+    Deterministic given `(deltas, window_start_state, now, price snapshots)`."""
     windows: list[WindowPnl] = []
     for label, span in _WINDOW_SPANS:
         if span is None:
-            total = sum((delta for _, delta in deltas), 0.0)
+            realized = sum((delta for _, delta in deltas), 0.0)
+            total_return: float | None = realized + unrealized_now
         else:
             cutoff = now - span
-            total = sum((delta for ts, delta in deltas if ts >= cutoff), 0.0)
-        windows.append(WindowPnl(window=label, realized_usd=total))
+            realized = sum((delta for ts, delta in deltas if ts >= cutoff), 0.0)
+            basis_start, contributed_start = window_start_state[label]
+            holdings_start = _mark_holdings(
+                contributed_start, position, int(cutoff.timestamp()), price_source
+            )
+            if holdings_start is None:
+                total_return = None  # honest per-window gap; realized is unaffected
+            else:
+                unrealized_at_start = holdings_start - basis_start
+                total_return = realized + (unrealized_now - unrealized_at_start)
+        windows.append(
+            WindowPnl(
+                window=label,
+                realized_usd=realized,
+                total_return_usd=total_return,
+                estimated=True,
+            )
+        )
     return windows
+
+
+def _mark_holdings(
+    contributed: dict[str, float],
+    position: DefiPosition,
+    ts: int,
+    price_source: HistoricalPriceSource,
+) -> float | None:
+    """Value the contributed lots at `ts` (the window-start mark). Soft pricing:
+    returns `None` if any held token is unpriceable at `ts` — a per-window gap
+    that must NOT raise `_MissingPrice` (which would null the whole position).
+    Insertion-ordered iteration (accrual order), never set iteration."""
+    total = 0.0
+    for key, amount in contributed.items():
+        if amount <= 0:
+            continue
+        address = None if key.startswith("coingecko:") else key.split(":", 1)[1]
+        price = price_source.fetch_price(chain=position.chain, address=address, ts=ts)
+        if price is None:
+            return None
+        total += amount * price
+    return total
 
 
 def _incomplete(position: DefiPosition, notes: list[str]) -> PositionPnl:

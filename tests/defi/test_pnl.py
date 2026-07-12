@@ -625,6 +625,136 @@ def test_incomplete_position_has_no_windows() -> None:
     assert position.windows == []
 
 
+# -- Plan 0088 phase 3: per-window estimated total return (labeled) ---------------
+#
+# total_return = realized_in_window + (unrealized_now - unrealized_at_window_start),
+# where the window-start mark values the contributed lots at window-start prices
+# minus the basis then. Worked for a single-USDC LP (usd_value 130, basis 100 →
+# unrealized_now 30), add_liquidity 100 days ago, a 10-USDC fee 10 days ago:
+#   7d : start = after both events (basis 100, held 100 → unreal_start 0),
+#        realized 0  → TR = 0 + (30 - 0) = 30
+#   30d: start = after the deposit only (basis 100, held 100 → unreal_start 0),
+#        realized 10 → TR = 10 + (30 - 0) = 40
+#   all: no start mark → realized 10 + unrealized_now 30 = 40
+
+
+class _ConstUsdcPrice:
+    """USDC priced at 1.0 at every timestamp (so window-start marks resolve);
+    every other token is unpriceable."""
+
+    def fetch_price(self, *, chain: Chain, address: str | None, ts: int) -> float | None:
+        return 1.0 if address == _USDC else None
+
+
+_CONST_USDC = _ConstUsdcPrice()
+
+_TR_POSITION = DefiPosition(
+    position_id="base:aerodrome:total-return",
+    chain="base",
+    protocol="aerodrome",
+    kind="lp",
+    tokens=[PositionToken(symbol="USDC", address=_USDC, amount=130.0)],
+    usd_value=130.0,
+    pool="USDC pool",
+    pool_address="0xpool0000000000000000000000000000000000004",
+)
+_TR_EVENTS = [
+    _event(
+        "add_liquidity", _TR_POSITION, _days_before(100), 1, [_leg("out", "USDC", _USDC, 100.0)]
+    ),
+    _event("fee_claim", _TR_POSITION, _days_before(10), 2, [_leg("in", "USDC", _USDC, 10.0)]),
+]
+
+
+def _tr_result() -> Any:
+    return compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_TR_POSITION],
+        events=_TR_EVENTS,
+        price_source=_CONST_USDC,
+        as_of=_WIN_NOW,
+        now=_WIN_NOW,
+    )
+
+
+def test_windowed_total_return_estimates_realized_plus_unrealized_drift() -> None:
+    position = _tr_result().positions[0]
+    assert position.incomplete is False
+    by_window = {w.window: w for w in position.windows}
+    assert by_window["7d"].total_return_usd == 30.0
+    assert by_window["30d"].total_return_usd == 40.0
+    assert by_window["all"].total_return_usd == 40.0
+    # The exact realized figures are the headline and are unchanged by the estimate.
+    assert by_window["7d"].realized_usd == 0.0
+    assert by_window["30d"].realized_usd == 10.0
+    # Every total-return figure is labeled an estimate.
+    assert all(w.estimated is True for w in position.windows)
+
+
+def test_windowed_total_return_is_byte_identical_with_a_fixed_now() -> None:
+    assert _tr_result().model_dump_json() == _tr_result().model_dump_json()
+
+
+# A two-token LP whose GHST leg is priceable at its block time and at `as_of`
+# (so the replay + vs-HODL complete) but NOT at the finite window-start marks.
+
+_TR_GAP_POSITION = DefiPosition(
+    position_id="base:aerodrome:tr-gap",
+    chain="base",
+    protocol="aerodrome",
+    kind="lp",
+    tokens=[
+        PositionToken(symbol="GHST", address=_GHST, amount=50.0),
+        PositionToken(symbol="USDC", address=_USDC, amount=50.0),
+    ],
+    usd_value=150.0,
+    pool="GHST / USDC",
+    pool_address="0xpool0000000000000000000000000000000000005",
+)
+_TR_GAP_EVENTS = [
+    _event(
+        "add_liquidity",
+        _TR_GAP_POSITION,
+        _days_before(100),
+        1,
+        [_leg("out", "GHST", _GHST, 50.0), _leg("out", "USDC", _USDC, 50.0)],
+    ),
+    _event("fee_claim", _TR_GAP_POSITION, _days_before(10), 2, [_leg("in", "USDC", _USDC, 10.0)]),
+]
+_TR_GAP_PRICES = _TablePriceSource(
+    {
+        # GHST priced at the deposit block and at `as_of`, absent at every window cutoff.
+        (f"base:{_GHST}", _epoch(_days_before(100))): 2.0,
+        (f"base:{_GHST}", _epoch(_WIN_NOW)): 2.0,
+        (f"base:{_USDC}", _epoch(_days_before(100))): 1.0,
+        (f"base:{_USDC}", _epoch(_days_before(10))): 1.0,
+        (f"base:{_USDC}", _epoch(_WIN_NOW)): 1.0,
+    }
+)
+
+
+def test_unpriceable_window_start_reports_none_total_return_without_marking_incomplete() -> None:
+    result = compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_TR_GAP_POSITION],
+        events=_TR_GAP_EVENTS,
+        price_source=_TR_GAP_PRICES,
+        as_of=_WIN_NOW,
+        now=_WIN_NOW,
+    )
+    position = result.positions[0]
+    # The per-window pricing gap must NOT null the position.
+    assert position.incomplete is False
+    by_window = {w.window: w for w in position.windows}
+    # GHST can't be priced at the 30d window start → an honest per-window gap...
+    assert by_window["30d"].total_return_usd is None
+    # ...that leaves the exact realized figure and the estimate label intact.
+    assert by_window["30d"].realized_usd == 10.0
+    assert by_window["30d"].estimated is True
+    # `all` needs no window-start mark, so it still reports a value.
+    assert by_window["all"].total_return_usd is not None
+
+
 def test_rerun_on_the_same_inputs_is_byte_identical() -> None:
     first = _lp_pnl()
     second = _lp_pnl()
