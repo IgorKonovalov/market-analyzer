@@ -34,7 +34,12 @@ from market_analyser.analysis.types import (
     MomentumStance,
     Trend,
 )
-from market_analyser.analysis.volume import volume_summary
+from market_analyser.analysis.volume import (
+    accumulation_distribution,
+    chaikin_money_flow,
+    mfi,
+    volume_summary,
+)
 from market_analyser.data.types import Bar
 
 # --- Tunable classification thresholds -------------------------------------- #
@@ -248,6 +253,18 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
     st_series = ind.supertrend(bars, 10)
     ichimoku_series = ind.ichimoku(bars)
 
+    # Plan 0091 oscillators + money-flow: reported latest values (facts), not a
+    # re-vote — the `momentum` stance stays RSI-zone + MACD (ADR-0023).
+    stoch_series = ind.stochastic(bars)
+    stoch_rsi_series = ind.stochastic_rsi(closes)
+    cci_series = ind.cci(bars)
+    williams_series = ind.williams_r(bars)
+    roc_series = ind.roc(closes)
+    mfi_series = mfi(bars)
+    ad_series = accumulation_distribution(bars)
+    cmf_series = chaikin_money_flow(bars)
+    last_stoch = next((v for v in reversed(stoch_series) if v is not None), None)
+
     rsi_val = _last(rsi_series)
     atr_val = _last(atr_series)
     last_macd = next((v for v in reversed(macd_series) if v is not None), None)
@@ -315,6 +332,21 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
             "obv": volume.obv,
             "obv_slope": volume.obv_slope,
             "vwap": volume.vwap,
+        }
+    )
+
+    # Plan 0091 oscillator + money-flow latest values (reported facts, ADR-0023).
+    indicator_values.update(
+        {
+            "stoch_k": last_stoch.k if last_stoch else None,
+            "stoch_d": last_stoch.d if last_stoch else None,
+            "stoch_rsi": _last(stoch_rsi_series),
+            "cci": _last(cci_series),
+            "williams_r": _last(williams_series),
+            "roc": _last(roc_series),
+            "mfi": _last(mfi_series),
+            "ad_line": _last(ad_series),
+            "cmf": _last(cmf_series),
         }
     )
 

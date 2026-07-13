@@ -334,7 +334,11 @@ class ConditionSnapshot(BaseModel):
     level sits on that side. `volume_stance` is the coarse volume reading
     (heavy/normal/light); the numeric volume measures (``volume``,
     ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``, ``obv_slope``,
-    ``vwap``) ride in `indicators` alongside the others. `active_patterns`
+    ``vwap``) ride in `indicators` alongside the others, as do the Plan-0091
+    momentum oscillators (``stoch_k`` / ``stoch_d`` / ``stoch_rsi`` / ``cci`` /
+    ``williams_r`` / ``roc``) and money-flow gauges (``mfi`` / ``ad_line`` /
+    ``cmf``) — reported latest values, not a re-vote of the ``momentum`` stance
+    (which stays RSI-zone + MACD, ADR-0023). `active_patterns`
     (Plan 0052 phase 3) carries the classical chart patterns still in play —
     the latest-state `ChartPatternHit` per formation whose completing /
     confirming bar falls inside the trailing activity window (the breakout

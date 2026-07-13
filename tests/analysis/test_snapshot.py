@@ -15,7 +15,12 @@ from market_analyser.analysis.snapshot import (
     condition_snapshot,
 )
 from market_analyser.analysis.types import ConditionSnapshot, MomentumStance, Trend, VolumeStance
-from market_analyser.analysis.volume import volume_summary
+from market_analyser.analysis.volume import (
+    accumulation_distribution,
+    chaikin_money_flow,
+    mfi,
+    volume_summary,
+)
 from market_analyser.data.types import Bar
 
 _TOL = 1e-9
@@ -529,6 +534,16 @@ _EXPECTED_INDICATOR_KEYS = {
     "obv",
     "obv_slope",
     "vwap",
+    # Plan 0091 oscillators + money-flow.
+    "stoch_k",
+    "stoch_d",
+    "stoch_rsi",
+    "cci",
+    "williams_r",
+    "roc",
+    "mfi",
+    "ad_line",
+    "cmf",
 }
 
 
@@ -541,6 +556,46 @@ def test_snapshot_indicator_keys_frozen() -> None:
     assert set(snap.indicators) == _EXPECTED_INDICATOR_KEYS
     for key in ("bb_width", "bb_width_pct90", "squeeze_on"):
         assert key in snap.indicators
+
+
+def _last_defined(series: Sequence[float | None]) -> float | None:
+    return next((v for v in reversed(series) if v is not None), None)
+
+
+def test_snapshot_oscillator_moneyflow_values_match_standalone() -> None:
+    """Each Plan-0091 value on the snapshot equals the standalone indicator's latest
+    defined value — reported facts, wired straight through (ADR-0023). Uses a choppy
+    fixture so all nine are actually defined (a monotonic rise flattens RSI, leaving
+    stoch_rsi undefined)."""
+
+    bars = _choppy(60)
+    closes = [b.close for b in bars]
+    snap = condition_snapshot(bars, "1d")
+
+    last_stoch = next((v for v in reversed(ind.stochastic(bars)) if v is not None), None)
+    assert last_stoch is not None
+    assert snap.indicators["stoch_k"] == last_stoch.k
+    assert snap.indicators["stoch_d"] == last_stoch.d
+    assert snap.indicators["stoch_rsi"] == _last_defined(ind.stochastic_rsi(closes))
+    assert snap.indicators["cci"] == _last_defined(ind.cci(bars))
+    assert snap.indicators["williams_r"] == _last_defined(ind.williams_r(bars))
+    assert snap.indicators["roc"] == _last_defined(ind.roc(closes))
+    assert snap.indicators["mfi"] == _last_defined(mfi(bars))
+    assert snap.indicators["ad_line"] == _last_defined(accumulation_distribution(bars))
+    assert snap.indicators["cmf"] == _last_defined(chaikin_money_flow(bars))
+    # All nine are genuinely computed on this fixture (not silently None).
+    for key in (
+        "stoch_k",
+        "stoch_d",
+        "stoch_rsi",
+        "cci",
+        "williams_r",
+        "roc",
+        "mfi",
+        "ad_line",
+        "cmf",
+    ):
+        assert snap.indicators[key] is not None
 
 
 def _flat_wide_range_bars(n: int = 40) -> list[Bar]:
