@@ -50,9 +50,9 @@ import { useSupertrendSeries } from '../hooks/useSupertrendSeries'
 import type { ChartMarker } from '../lib/markers'
 import { candleGroupKeyFromLayerId } from '../lib/candleGroups'
 import { ChartLegend } from './ChartLegend'
+import { ChartSidePanel } from './ChartSidePanel'
 import { ChartToolbar } from './ChartToolbar'
 import { ChartTooltip } from './ChartTooltip'
-import { LayersPanel } from './LayersPanel'
 import { MarketStructureBadge } from './MarketStructureBadge'
 import { buildLegendValues } from '../lib/legendValues'
 import { marketStructure } from '../lib/marketStructure'
@@ -1024,6 +1024,10 @@ export function CandlestickChart({
         timeframe={timeframe}
       />
       <div className={styles.chartArea}>
+        {/* Reserved slot for the future left-edge drawing dock (Plan 0096 defers
+            the tools; this only holds the layout position so it lands without
+            shifting the chart). No drawing tools built here. */}
+        <div className={styles.leftRail} aria-hidden="true" data-testid="chart-left-rail" />
         <div
           ref={containerRef}
           className={`${styles.chartContainer} ${selectRangeMode ? styles.selectRangeActive : ''}`.trim()}
@@ -1073,15 +1077,10 @@ export function CandlestickChart({
             containerHeight={containerRef.current?.clientHeight ?? 0}
           />
         )}
-        {/* The add-control moved to the inline legend (Plan 0096 phase 2); the
-            panel keeps only its (demoted) checklist role until phase 4 repurposes
-            its container. */}
-        <LayersPanel
-          layers={layers}
-          onToggle={onLayerToggle}
-          onHighlight={onLayerHighlight}
-          onRemove={handleRemoveOverlay}
-        />
+        {/* The LAYERS checklist is retired — layer control lives in the inline
+            legend (phases 2/3). The right dock is now a collapsible, contextual
+            symbol-details panel (Plan 0096 phase 4). */}
+        <ChartSidePanel symbol={symbol} bars={bars} quote={quote} />
       </div>
     </div>
   )

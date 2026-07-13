@@ -133,34 +133,43 @@ function renderChart() {
 }
 
 function row(id: string): HTMLElement {
-  return screen.getByTestId(`layer-row:${id}`)
+  return screen.getByTestId(`legend-row:${id}`)
+}
+// The inline legend (Plan 0096 phase 2) replaced the LAYERS checklist: the
+// swatch button is the visibility toggle, aria-pressed carries the on/off state.
+function toggle(id: string): void {
+  fireEvent.click(screen.getByTestId(`legend-toggle:${id}`))
+}
+function isVisible(id: string): boolean {
+  return screen.getByTestId(`legend-toggle:${id}`).getAttribute('aria-pressed') === 'true'
 }
 
 it('renders one row per layer: overlays + OBV + candlestick master/group + price line', () => {
   renderChart()
-  const panel = screen.getByTestId('layers-panel')
-  const rows = within(panel).getAllByRole('listitem')
+  const legend = screen.getByTestId('chart-legend')
+  const rows = within(legend).getAllByRole('listitem')
   // overlays ×2 + always-on OBV + candlestick master + (hammer, bullish) group + price line.
   expect(rows).toHaveLength(6)
-  expect(screen.getByTestId('layer-row:overlay:ema:20')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:overlay:sma:50')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:series:obv')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:candles-master')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:candles:hammer|bullish_marker')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:pline:R1')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:overlay:ema:20')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:overlay:sma:50')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:series:obv')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:candles-master')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:candles:hammer|bullish_marker')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:pline:R1')).toBeInTheDocument()
 })
 
-// Plan 0076 phase 2: the always-on OBV strip is toggleable. Unchecking the row
-// hides the OBV series in place (applyOptions visible:false); re-checking shows it.
+// Plan 0076 phase 2: the always-on OBV strip is toggleable. Toggling the row off
+// hides the OBV series in place (applyOptions visible:false); on shows it. (No
+// symbol → the legacy ephemeral, all-visible default, so OBV starts visible.)
 it('toggling the OBV row hides and re-shows the OBV series', () => {
   renderChart()
   const obv = lineSeries.find((s) => s._opts.priceScaleId === 'obv')
   expect(obv).toBeDefined()
 
-  fireEvent.click(within(row('series:obv')).getByRole('checkbox'))
+  toggle('series:obv')
   expect(obv?.applyOptions).toHaveBeenCalledWith({ visible: false })
 
-  fireEvent.click(within(row('series:obv')).getByRole('checkbox'))
+  toggle('series:obv')
   expect(obv?.applyOptions).toHaveBeenLastCalledWith({ visible: true })
 })
 
@@ -168,70 +177,70 @@ it('each swatch colour equals the colour the layer was drawn with', () => {
   renderChart()
   const [ema, sma] = overlayLines()
   // Overlay swatch === the line series colour.
-  expect(screen.getByTestId('layer-swatch:overlay:ema:20')).toHaveStyle({
+  expect(screen.getByTestId('legend-swatch:overlay:ema:20')).toHaveStyle({
     backgroundColor: ema._opts.color as string,
   })
-  expect(screen.getByTestId('layer-swatch:overlay:sma:50')).toHaveStyle({
+  expect(screen.getByTestId('legend-swatch:overlay:sma:50')).toHaveStyle({
     backgroundColor: sma._opts.color as string,
   })
   // Group swatch === the colour the group's markers were drawn with.
   expect(lastMarkers.length).toBeGreaterThan(0)
-  expect(screen.getByTestId('layer-swatch:candles:hammer|bullish_marker')).toHaveStyle({
+  expect(screen.getByTestId('legend-swatch:candles:hammer|bullish_marker')).toHaveStyle({
     backgroundColor: lastMarkers[0].color as string,
   })
   // Price-line swatch === the createPriceLine colour.
   expect(createdPriceLines).toHaveLength(1)
-  expect(screen.getByTestId('layer-swatch:pline:R1')).toHaveStyle({
+  expect(screen.getByTestId('legend-swatch:pline:R1')).toHaveStyle({
     backgroundColor: createdPriceLines[0].color,
   })
 })
 
-it('unchecking an overlay removes exactly that series; re-checking re-adds it', () => {
+it('toggling an overlay off removes exactly that series; on re-adds it', () => {
   renderChart()
   const ema = overlayLines()[0]
   expect(removedSeries).not.toContain(ema)
 
-  fireEvent.click(within(row('overlay:ema:20')).getByRole('checkbox'))
+  toggle('overlay:ema:20')
   expect(removedSeries).toContain(ema) // ema gone…
   // …and the sma series is untouched (still drawn).
   expect(removedSeries).not.toContain(overlayLines().find((s) => s._opts.color !== ema._opts.color))
 
   const beforeReadd = overlayLines().length
-  fireEvent.click(within(row('overlay:ema:20')).getByRole('checkbox'))
+  toggle('overlay:ema:20')
   expect(overlayLines().length).toBe(beforeReadd + 1) // ema re-added
 })
 
-it('unchecking the price line removes it; re-checking re-creates it', () => {
+it('toggling the price line off removes it; on re-creates it', () => {
   renderChart()
   expect(createdPriceLines).toHaveLength(1)
   const first = createdPriceLines[0].line
 
-  fireEvent.click(within(row('pline:R1')).getByRole('checkbox'))
+  toggle('pline:R1')
   expect(removedPriceLines).toContain(first)
 
-  fireEvent.click(within(row('pline:R1')).getByRole('checkbox'))
+  toggle('pline:R1')
   expect(createdPriceLines).toHaveLength(2) // re-created
 })
 
-it('unchecking the sole candlestick group hides those markers (empty setMarkers)', () => {
+it('toggling the sole candlestick group off hides those markers (empty setMarkers)', () => {
   renderChart()
   // The single (hammer, bullish) group is the most-recent, so it draws by default.
   expect(lastMarkers.length).toBe(1)
-  fireEvent.click(within(row('candles:hammer|bullish_marker')).getByRole('checkbox'))
+  toggle('candles:hammer|bullish_marker')
   expect(lastMarkers.length).toBe(0)
 })
 
-it('toggle state is ephemeral — a remount restores all layers visible', () => {
+it('toggle state is ephemeral (no symbol) — a remount restores all layers visible', () => {
   const { unmount } = renderChart()
-  fireEvent.click(within(row('overlay:ema:20')).getByRole('checkbox'))
-  expect(within(row('overlay:ema:20')).getByRole('checkbox')).not.toBeChecked()
+  toggle('overlay:ema:20')
+  expect(isVisible('overlay:ema:20')).toBe(false)
 
   unmount()
   reset()
   renderChart()
   // Fresh mount: overlays/price-lines back to visible.
-  expect(within(row('overlay:ema:20')).getByRole('checkbox')).toBeChecked()
-  expect(within(row('pline:R1')).getByRole('checkbox')).toBeChecked()
+  expect(isVisible('overlay:ema:20')).toBe(true)
+  expect(isVisible('pline:R1')).toBe(true)
 })
 
 // ── Plan 0071 phase 2: grouped legend + draw-on-select for candlestick markers ──
@@ -263,34 +272,34 @@ it('does NOT paint all N markers at once — only the most-recent group draws', 
 
 it('lists exactly one legend row per (type, direction) group with its count', () => {
   renderSweep()
-  expect(screen.getByTestId('layer-row:candles-master')).toBeInTheDocument()
-  expect(screen.getByTestId(`layer-count:${HAMMER_ROW}`)).toHaveTextContent('3')
-  expect(screen.getByTestId(`layer-count:${DOJI_ROW}`)).toHaveTextContent('2')
+  expect(screen.getByTestId('legend-row:candles-master')).toBeInTheDocument()
+  expect(screen.getByTestId(`legend-count:${HAMMER_ROW}`)).toHaveTextContent('3')
+  expect(screen.getByTestId(`legend-count:${DOJI_ROW}`)).toHaveTextContent('2')
   // Default selection: doji (most-recent) on, hammer off.
-  expect(within(row(DOJI_ROW)).getByRole('checkbox')).toBeChecked()
-  expect(within(row(HAMMER_ROW)).getByRole('checkbox')).not.toBeChecked()
+  expect(isVisible(DOJI_ROW)).toBe(true)
+  expect(isVisible(HAMMER_ROW)).toBe(false)
 })
 
 it('toggling a group on draws exactly that group and off removes it', () => {
   renderSweep()
   expect(lastMarkers.length).toBe(2) // doji only
   // Enable hammer → its 3 markers add to the 2 doji (draws that group, nothing else).
-  fireEvent.click(within(row(HAMMER_ROW)).getByRole('checkbox'))
+  toggle(HAMMER_ROW)
   expect(lastMarkers.length).toBe(5)
   // Disable it again → back to the 2 doji.
-  fireEvent.click(within(row(HAMMER_ROW)).getByRole('checkbox'))
+  toggle(HAMMER_ROW)
   expect(lastMarkers.length).toBe(2)
 })
 
 it('the master toggle hides the whole layer without desyncing the per-group toggles', () => {
   renderSweep()
   expect(lastMarkers.length).toBe(2)
-  // Master off → nothing draws, but the doji group stays selected (checkbox checked).
-  fireEvent.click(within(row('candles-master')).getByRole('checkbox'))
+  // Master off → nothing draws, but the doji group stays selected.
+  toggle('candles-master')
   expect(lastMarkers.length).toBe(0)
-  expect(within(row(DOJI_ROW)).getByRole('checkbox')).toBeChecked()
+  expect(isVisible(DOJI_ROW)).toBe(true)
   // Master back on → the preserved doji selection redraws (no desync).
-  fireEvent.click(within(row('candles-master')).getByRole('checkbox'))
+  toggle('candles-master')
   expect(lastMarkers.length).toBe(2)
 })
 
@@ -308,8 +317,8 @@ it('hovering a group row emphasises that group and clears on leave', () => {
 it('still renders the empty/error states unchanged (no candlestick markers)', () => {
   render(<CandlestickChart bars={BARS} overlays={OVERLAYS} />)
   // No annotations → no candlestick master/group rows, but overlays + OBV + pline remain.
-  expect(screen.queryByTestId('layer-row:candles-master')).toBeNull()
-  expect(screen.getByTestId('layer-row:overlay:ema:20')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:series:obv')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:pline:R1')).toBeInTheDocument()
+  expect(screen.queryByTestId('legend-row:candles-master')).toBeNull()
+  expect(screen.getByTestId('legend-row:overlay:ema:20')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:series:obv')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:pline:R1')).toBeInTheDocument()
 })

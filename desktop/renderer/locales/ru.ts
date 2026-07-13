@@ -683,6 +683,20 @@ export const ru = {
   'chartLegend.preset.meanReversion': 'Возврат к среднему',
   'chartLegend.preset.patterns': 'Паттерны',
 
+  // ── Chart side dock (ChartSidePanel.tsx) — Plan 0096 phase 4 ──
+  'sidePanel.expandAria': 'Показать сведения о символе',
+  'sidePanel.collapseAria': 'Скрыть сведения о символе',
+  'sidePanel.title': 'Сведения',
+  'sidePanel.last': 'Последняя',
+  'sidePanel.change': 'Изменение',
+  'sidePanel.open': 'Открытие',
+  'sidePanel.high': 'Максимум',
+  'sidePanel.low': 'Минимум',
+  'sidePanel.close': 'Закрытие',
+  'sidePanel.volume': 'Объём',
+  'sidePanel.asOf': 'На',
+  'sidePanel.noData': 'Нет данных',
+
   // ── Layers panel (LayersPanel.tsx) ──
   'layers.panelAriaLabel': 'Слои графика',
   'layers.heading': 'Слои',

@@ -15,7 +15,7 @@
  * `lib/trendlines.test.ts`.
  */
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { SeriesAttachedParameter, Time } from 'lightweight-charts'
 
 import { CandlestickChart } from './CandlestickChart'
@@ -134,8 +134,8 @@ it('draws trendlines (one pane view) and a legend row per (pattern type, state)'
   render(<CandlestickChart bars={BARS} trendlines={[FORMING, CONFIRMED]} />)
   expect(mockTrendlinePrimitive).not.toBeNull()
   expect(mockTrendlinePrimitive?.paneViews()).toHaveLength(1)
-  expect(screen.getByTestId('layer-row:trendlines:head_shoulders|dashed')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:trendlines:double_top|solid')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:trendlines:head_shoulders|dashed')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:trendlines:double_top|solid')).toBeInTheDocument()
 })
 
 it('renders a forming hit dashed and a confirmed hit solid (segment style state)', () => {
@@ -169,7 +169,9 @@ it('shows NO trendline rows and NO pane view when there are no trendlines', () =
   render(<CandlestickChart bars={BARS} />)
   expect(mockTrendlinePrimitive).not.toBeNull() // attached once, idle
   expect(mockTrendlinePrimitive?.paneViews()).toHaveLength(0)
-  expect(screen.queryByTestId('layer-row:trendlines:head_shoulders|dashed')).not.toBeInTheDocument()
+  expect(
+    screen.queryByTestId('legend-row:trendlines:head_shoulders|dashed'),
+  ).not.toBeInTheDocument()
 })
 
 it("unchecking a group's row removes exactly that group's lines; re-checking restores them", () => {
@@ -177,15 +179,15 @@ it("unchecking a group's row removes exactly that group's lines; re-checking res
   // Two groups, one line each → two drawn segments.
   expect(mockTrendlinePrimitive?.currentSegments()).toHaveLength(2)
 
-  const checkbox = (): HTMLElement =>
-    within(screen.getByTestId('layer-row:trendlines:head_shoulders|dashed')).getByRole('checkbox')
+  const toggleBtn = (): HTMLElement =>
+    screen.getByTestId('legend-toggle:trendlines:head_shoulders|dashed')
 
-  fireEvent.click(checkbox())
+  fireEvent.click(toggleBtn())
   // Only the head_shoulders forming group is removed; the confirmed double-top
   // line remains (group-granular visibility).
   expect(mockTrendlinePrimitive?.currentSegments()).toHaveLength(1)
 
-  fireEvent.click(checkbox())
+  fireEvent.click(toggleBtn())
   expect(mockTrendlinePrimitive?.currentSegments()).toHaveLength(2)
 })
 
@@ -203,17 +205,17 @@ const FORMING_B: TrendlineSpec = {
 
 it('lists one row per (pattern type, state) with the instance count', () => {
   render(<CandlestickChart bars={BARS} trendlines={[FORMING, FORMING_B, CONFIRMED]} />)
-  expect(screen.getByTestId('layer-count:trendlines:head_shoulders|dashed')).toHaveTextContent('2')
-  expect(screen.getByTestId('layer-count:trendlines:double_top|solid')).toHaveTextContent('1')
+  expect(screen.getByTestId('legend-count:trendlines:head_shoulders|dashed')).toHaveTextContent('2')
+  expect(screen.getByTestId('legend-count:trendlines:double_top|solid')).toHaveTextContent('1')
   // The row also names the pattern + state.
-  expect(screen.getByTestId('layer-row:trendlines:double_top|solid')).toHaveTextContent(
+  expect(screen.getByTestId('legend-row:trendlines:double_top|solid')).toHaveTextContent(
     'Double top (confirmed)',
   )
 })
 
 it("hovering a group's row highlights that group; leaving clears it", () => {
   render(<CandlestickChart bars={BARS} trendlines={[FORMING, CONFIRMED]} />)
-  const row = screen.getByTestId('layer-row:trendlines:head_shoulders|dashed')
+  const row = screen.getByTestId('legend-row:trendlines:head_shoulders|dashed')
 
   fireEvent.mouseEnter(row)
   expect(mockTrendlinePrimitive?.highlightedGroup()).toBe('head_shoulders|dashed')

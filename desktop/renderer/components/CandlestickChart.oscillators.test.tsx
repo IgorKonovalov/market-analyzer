@@ -10,7 +10,7 @@
  * removes the pane + its series; toggling back on re-creates them.
  */
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 import { CandlestickChart } from './CandlestickChart'
 import type { Bar } from '../types/sidecar/bar'
@@ -108,10 +108,6 @@ function oscillatorPaneSeries(): FakeSeries[] {
   return allSeries.filter((s) => s._type === 'Line' && (s._paneIndex ?? 0) >= 2)
 }
 
-function row(id: string): HTMLElement {
-  return screen.getByTestId(`layer-row:${id}`)
-}
-
 beforeEach(reset)
 
 describe('oscillator sub-panes (Plan 0091 phase 6)', () => {
@@ -126,13 +122,13 @@ describe('oscillator sub-panes (Plan 0091 phase 6)', () => {
       expect(s.setData).toHaveBeenCalled()
     }
     // A toggleable legend row exists for it.
-    expect(screen.getByTestId('layer-row:overlay:stochastic:na')).toBeInTheDocument()
+    expect(screen.getByTestId('legend-row:overlay:stochastic:na')).toBeInTheDocument()
   })
 
   it('draws a single-line oscillator (CCI) on its own pane', () => {
     render(<CandlestickChart bars={BARS} overlays={[{ kind: 'cci' }]} />)
     expect(oscillatorPaneSeries()).toHaveLength(1)
-    expect(screen.getByTestId('layer-row:overlay:cci:na')).toBeInTheDocument()
+    expect(screen.getByTestId('legend-row:overlay:cci:na')).toBeInTheDocument()
   })
 
   it('toggling the legend row off removes the oscillator pane + its series', () => {
@@ -140,13 +136,13 @@ describe('oscillator sub-panes (Plan 0091 phase 6)', () => {
     const drawn = oscillatorPaneSeries()
     expect(drawn).toHaveLength(2)
 
-    fireEvent.click(within(row('overlay:stochastic:na')).getByRole('checkbox'))
+    fireEvent.click(screen.getByTestId('legend-toggle:overlay:stochastic:na'))
     // Both pane series removed, and the pane itself torn down.
     for (const s of drawn) expect(removedSeries).toContain(s)
     expect(removePaneCalls.length).toBeGreaterThanOrEqual(1)
 
     // Re-checking re-creates the pane + its two lines.
-    fireEvent.click(within(row('overlay:stochastic:na')).getByRole('checkbox'))
+    fireEvent.click(screen.getByTestId('legend-toggle:overlay:stochastic:na'))
     expect(oscillatorPaneSeries().filter((s) => !removedSeries.includes(s))).toHaveLength(2)
   })
 
@@ -155,7 +151,7 @@ describe('oscillator sub-panes (Plan 0091 phase 6)', () => {
     (kind) => {
       render(<CandlestickChart bars={BARS} overlays={[{ kind }]} />)
       expect(oscillatorPaneSeries()).toHaveLength(1)
-      expect(screen.getByTestId(`layer-row:overlay:${kind}:na`)).toBeInTheDocument()
+      expect(screen.getByTestId(`legend-row:overlay:${kind}:na`)).toBeInTheDocument()
     },
   )
 

@@ -16,7 +16,7 @@
  * covered canvas-free in `lib/spans.test.ts`.
  */
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 import { CandlestickChart } from './CandlestickChart'
 import type { ChartMarker } from '../lib/markers'
@@ -110,8 +110,8 @@ it('attaches the span primitive and draws a band + candlestick legend for a mult
   // The 3-bar morning_star is the sole (and most-recent) group → enabled by
   // default → fed as one span → one pane view (the band).
   expect(mockAttachedPrimitive?.paneViews()).toHaveLength(1)
-  expect(screen.getByTestId('layer-row:candles-master')).toBeInTheDocument()
-  expect(screen.getByTestId('layer-row:candles:morning_star|bullish_marker')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:candles-master')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:candles:morning_star|bullish_marker')).toBeInTheDocument()
 })
 
 it('draws NO band for a single-bar pattern, but still legends it as a marker group', () => {
@@ -120,7 +120,7 @@ it('draws NO band for a single-bar pattern, but still legends it as a marker gro
   // No span_* → no band…
   expect(mockAttachedPrimitive?.paneViews()).toHaveLength(0)
   // …but the doji is still a candlestick marker, so its group row lists.
-  expect(screen.getByTestId('layer-row:candles:doji|neutral_marker')).toBeInTheDocument()
+  expect(screen.getByTestId('legend-row:candles:doji|neutral_marker')).toBeInTheDocument()
 })
 
 it('toggling the group off removes the band (spans follow the group, not a separate row)', () => {
@@ -129,11 +129,7 @@ it('toggling the group off removes the band (spans follow the group, not a separ
 
   // No standalone "Pattern spans" row exists anymore; the span is gated by its
   // (morning_star, bullish) group. Unchecking that group removes the band.
-  expect(screen.queryByTestId('layer-row:spans')).not.toBeInTheDocument()
-  fireEvent.click(
-    within(screen.getByTestId('layer-row:candles:morning_star|bullish_marker')).getByRole(
-      'checkbox',
-    ),
-  )
+  expect(screen.queryByTestId('legend-row:spans')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByTestId('legend-toggle:candles:morning_star|bullish_marker'))
   expect(mockAttachedPrimitive?.paneViews()).toHaveLength(0)
 })

@@ -14,6 +14,14 @@
   min-height: 360px;
 }
 
+/* Reserved slot for the future left-edge drawing dock (Plan 0096 phase 4). Zero
+   width today — a future plan gives it a rail width; it holds the flex order so
+   the dock lands left of the chart without shifting anything. */
+.leftRail {
+  flex: 0 0 auto;
+  width: 0;
+}
+
 .chartContainer {
   flex: 1;
   /* Let the chart shrink within the `.chartArea` row so the fixed-width Layers

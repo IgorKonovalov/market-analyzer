@@ -674,6 +674,20 @@ export const en = {
   'chartLegend.preset.meanReversion': 'Mean-reversion',
   'chartLegend.preset.patterns': 'Patterns',
 
+  // ── Chart side dock (ChartSidePanel.tsx) — Plan 0096 phase 4 ──
+  'sidePanel.expandAria': 'Show symbol details',
+  'sidePanel.collapseAria': 'Hide symbol details',
+  'sidePanel.title': 'Details',
+  'sidePanel.last': 'Last',
+  'sidePanel.change': 'Change',
+  'sidePanel.open': 'Open',
+  'sidePanel.high': 'High',
+  'sidePanel.low': 'Low',
+  'sidePanel.close': 'Close',
+  'sidePanel.volume': 'Volume',
+  'sidePanel.asOf': 'As of',
+  'sidePanel.noData': 'No data',
+
   // ── Layers panel (LayersPanel.tsx) ──
   'layers.panelAriaLabel': 'Chart layers',
   'layers.heading': 'Layers',

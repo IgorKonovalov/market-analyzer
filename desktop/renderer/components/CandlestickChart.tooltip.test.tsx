@@ -8,7 +8,7 @@
  * renderer state — the mock makes no sidecar call.
  */
 import '@testing-library/jest-dom'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { MouseEventParams, UTCTimestamp } from 'lightweight-charts'
 
 import { CandlestickChart } from './CandlestickChart'
@@ -148,11 +148,7 @@ it('shows NO hover for a group toggled off — no arrow is drawn there (bug fix)
   expect(screen.getByTestId('chart-tooltip')).toBeInTheDocument()
 
   // Toggle the group off → its arrow is gone, so hovering that bar shows nothing.
-  fireEvent.click(
-    within(screen.getByTestId('layer-row:candles:bullish_engulfing|bullish_marker')).getByRole(
-      'checkbox',
-    ),
-  )
+  fireEvent.click(screen.getByTestId('legend-toggle:candles:bullish_engulfing|bullish_marker'))
   moveCrosshair({ time: APR15_TS, point: { x: 40, y: 60 } })
   expect(screen.queryByTestId('chart-tooltip')).not.toBeInTheDocument()
 })

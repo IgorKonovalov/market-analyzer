@@ -8,7 +8,7 @@
  * across the toggle.
  */
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 import { CandlestickChart } from './CandlestickChart'
 import type { Bar } from '../types/sidecar/bar'
@@ -117,13 +117,13 @@ it('does NOT refit when a legend toggle hides/shows an overlay, but still remove
   const ema = overlayLines()[0]
 
   // Hide the overlay via its legend checkbox.
-  fireEvent.click(within(screen.getByTestId('layer-row:overlay:ema:20')).getByRole('checkbox'))
+  fireEvent.click(screen.getByTestId('legend-toggle:overlay:ema:20'))
   expect(mockRemoved).toContain(ema) // series removed…
   expect(mockFitContent).toHaveBeenCalledTimes(1) // …but the view was NOT refit
 
   // Show it again.
   const beforeReadd = overlayLines().length
-  fireEvent.click(within(screen.getByTestId('layer-row:overlay:ema:20')).getByRole('checkbox'))
+  fireEvent.click(screen.getByTestId('legend-toggle:overlay:ema:20'))
   expect(overlayLines().length).toBe(beforeReadd + 1) // re-added…
   expect(mockFitContent).toHaveBeenCalledTimes(1) // …still no refit
 })
