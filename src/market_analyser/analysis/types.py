@@ -394,12 +394,55 @@ class MultiTimeframeAlignment(BaseModel):
     agreement: float  # 0..1 fraction of available timeframes agreeing
 
 
+DivergenceKind = Literal["regular_bullish", "regular_bearish", "hidden_bullish", "hidden_bearish"]
+
+
+class Divergence(BaseModel):
+    """A price↔oscillator divergence over confirmed swing pivots (Plan 0091).
+
+    Pairs the two most recent confirmed price pivots of one kind against the
+    oscillator's own pivots and classifies the disagreement between the price
+    slope and the oscillator slope:
+
+    * ``regular_bearish`` — price higher high, oscillator lower high (a rally
+      losing momentum);
+    * ``regular_bullish`` — price lower low, oscillator higher low (a decline
+      losing momentum);
+    * ``hidden_bearish`` — price lower high, oscillator higher high (trend
+      continuation warning, down);
+    * ``hidden_bullish`` — price higher low, oscillator lower low (trend
+      continuation, up).
+
+    `price_pivots` are the two `(ts, price)` price anchors (older first);
+    `oscillator_pivots` the two matched oscillator anchors, whose ``price`` field
+    carries the oscillator *value* at that pivot (the y-coordinate on the
+    oscillator pane, the same geometry `PivotPoint` the trendline primitive
+    consumes). `bar_index` is the confirming bar — the bar at which the *later* of
+    the four pivots is first confirmed, so a divergence reported at bar ``i`` is
+    byte-identical on ``bars[0..=i]`` (trailing, anti-lookahead, ADR-0023).
+    `strength` is a detector-defined 0..1 relative magnitude (blending the price
+    and oscillator slope fractions), **not** a probability. Conditions only — a
+    divergence is chart geometry, never a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    oscillator: Literal["rsi", "macd_hist", "obv", "mfi"]
+    kind: DivergenceKind
+    price_pivots: list[PivotPoint]
+    oscillator_pivots: list[PivotPoint]
+    bar_index: int
+    strength: float
+
+
 __all__ = [
     "ChartPatternHit",
     "ConditionSnapshot",
     "CounterTrendBar",
     "CounterTrendVolume",
     "Direction",
+    "Divergence",
+    "DivergenceKind",
     "Level",
     "LineSeg",
     "MomentumStance",
