@@ -212,7 +212,7 @@ def test_oscillator_selection_and_validation() -> None:
     bars = _regular_bearish_bars()
     # Every declared oscillator runs without error and stays trailing.
     for osc in ("rsi", "macd_hist", "obv", "mfi"):
-        result = detect_divergences(bars, osc)  # type: ignore[arg-type]
+        result = detect_divergences(bars, osc)
         assert all(d.oscillator == osc for d in result)
     with pytest.raises(ValueError, match="oscillator must be one of"):
         detect_divergences(bars, "stochastic")  # type: ignore[arg-type]

@@ -557,10 +557,11 @@ def test_oscillators_reject_bad_periods() -> None:
         ind.stochastic_rsi(CLOSES, stoch_period=0)
     with pytest.raises(ValueError, match="period must be >= 1"):
         ind.rsi(CLOSES, 0)  # stochastic_rsi delegates rsi_period validation to rsi
-    for make in (
+    makes: tuple[Callable[[], object], ...] = (
         lambda: ind.cci(BARS, 0),
         lambda: ind.williams_r(BARS, 0),
         lambda: ind.roc(CLOSES, 0),
-    ):
+    )
+    for make in makes:
         with pytest.raises(ValueError, match="period must be >= 1"):
             make()

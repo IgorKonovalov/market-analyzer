@@ -17,7 +17,13 @@ from market_analyser.analysis.snapshot import (
     _ema_adx_trend,
     condition_snapshot,
 )
-from market_analyser.analysis.types import ConditionSnapshot, MomentumStance, Trend, VolumeStance
+from market_analyser.analysis.types import (
+    ConditionSnapshot,
+    Divergence,
+    MomentumStance,
+    Trend,
+    VolumeStance,
+)
 from market_analyser.analysis.volume import (
     accumulation_distribution,
     chaikin_money_flow,
@@ -632,7 +638,7 @@ def test_snapshot_recent_divergences_match_detector() -> None:
     snap = condition_snapshot(bars, "1d")
 
     cutoff = len(bars) - RECENT_DIVERGENCE_BARS
-    expected = []
+    expected: list[Divergence] = []
     for oscillator in DIVERGENCE_OSCILLATORS:
         expected.extend(d for d in detect_divergences(bars, oscillator) if d.bar_index >= cutoff)
     expected.sort(key=lambda d: (d.bar_index, d.oscillator, d.kind))

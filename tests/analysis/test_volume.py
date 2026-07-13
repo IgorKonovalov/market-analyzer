@@ -601,7 +601,8 @@ def test_mfi_saturates_on_monotonic_rise() -> None:
     bars = [_bar(i, c=100.0 + i, v=100.0) for i in range(30)]  # tp strictly rising
     series = vol.mfi(bars, period=14)
     for i in (20, 29):
-        assert series[i] is not None and abs(series[i] - 100.0) < _TOL
+        val = series[i]
+        assert val is not None and abs(val - 100.0) < _TOL
 
 
 def test_accumulation_distribution_matches_hand_computed() -> None:
@@ -642,7 +643,8 @@ def test_chaikin_money_flow_saturates_when_closing_at_high() -> None:
     bars = [_bar(i, c=100.0 + i, v=100.0, h=100.0 + i, low=98.0 + i) for i in range(30)]
     series = vol.chaikin_money_flow(bars, period=20)
     for i in (25, 29):
-        assert series[i] is not None and abs(series[i] - 1.0) < _TOL
+        val = series[i]
+        assert val is not None and abs(val - 1.0) < _TOL
 
 
 def test_money_flow_degenerate_guards() -> None:
