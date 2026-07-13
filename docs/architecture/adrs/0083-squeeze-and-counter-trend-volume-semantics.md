@@ -1,6 +1,6 @@
 # ADR-0083 — Squeeze and counter-trend volume are defined against canonical anchors, not proxied
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0090 close 2026-07-13)
 > **Date:** 2026-07-12
 > **Related plan(s):** [0090-squeeze-and-counter-trend-volume](../plans/0090-squeeze-and-counter-trend-volume.md)
 
