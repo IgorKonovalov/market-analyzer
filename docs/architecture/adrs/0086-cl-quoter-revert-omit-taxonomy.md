@@ -1,6 +1,6 @@
 # ADR-0086 — Concentrated-liquidity Quoter reverts: omit the pool on a quote-leg revert, raise on structural-read / decode failure
 
-> **Status:** proposed (2026-07-12)
+> **Status:** accepted (2026-07-13, at Plan 0094's close)
 > **Date:** 2026-07-12
 > **Related plan(s):** 0094-cl-quoter-revert-omit-taxonomy (accepts at close)
 > **Related ADRs:** **refines [ADR-0080](0080-executable-quote-pricing-concentrated-liquidity.md)** (the executable-quote read-error taxonomy — one clause was self-contradictory; this ADR resolves it, it does not supersede); [ADR-0031](0031-data-source-adapter-contract.md) (the `ExecutableQuoteSource` Protocol whose contract this sharpens); [ADR-0019](0019-external-http-adapter-resilience.md) (transport-failure taxonomy is unchanged); [ADR-0072](0072-bounded-autonomy-and-prediction-market-execution.md)/[ADR-0074](0074-edge-selection-criteria-for-execution.md) (the BA-7 evidence this unblocks against un-curated venue sets)
