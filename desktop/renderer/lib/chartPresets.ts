@@ -15,7 +15,7 @@
  * after which normal stickiness remembers any tweak. They never cross the wire,
  * issue no sidecar call, and never touch `candleType` (the ADR-0062 global pref).
  */
-import { OBV_LAYER_ID } from './chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID, OBV_LAYER_ID } from './chartSeries'
 import { overlayLayerId } from './overlays'
 import type { ChartLayer } from '../components/LayersPanel'
 import type { OverlaySpec } from '../types/events'
@@ -107,6 +107,9 @@ export function hiddenForPreset(preset: ChartPreset, layers: ChartLayer[]): Set<
     }
   }
   if (!preset.show.obv) hidden.add(OBV_LAYER_ID)
+  // Market structure is a manual opt-in (never part of a preset), so every preset
+  // — including the built-ins — leaves it off.
+  hidden.add(MARKET_STRUCTURE_LAYER_ID)
   return hidden
 }
 

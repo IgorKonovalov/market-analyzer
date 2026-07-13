@@ -10,7 +10,14 @@
  * colour the layer is drawn with. Pure — the hook resolves the DOM tokens and
  * calls this.
  */
-import { OBV_LAYER_ID, overlayKey, overlayStyleColor, type ChartColors } from './chartSeries'
+import {
+  MARKET_STRUCTURE_LAYER_ID,
+  OBV_LAYER_ID,
+  overlayKey,
+  overlayStyleColor,
+  type ChartColors,
+} from './chartSeries'
+import { t } from './i18n'
 import type { ResolvedChartStyle } from './chartStyle'
 import {
   CANDLE_MASTER_ID,
@@ -43,6 +50,10 @@ export interface BuildChartLayersParams {
    * the chart has bars. Emits a single toggleable OBV legend row; unlike the
    * agent overlays there is no per-instance identity, so the row always lists. */
   hasObv: boolean
+  /** Whether the bars carry confirmed market structure (Plan 0092 / ADR-0084):
+   * emits one toggleable "Market structure" row gating the HH/HL/LH/LL + BOS/CHoCH
+   * markers and the structural-trend badge. Off by default (Plan 0096 phase 3). */
+  hasMarketStructure: boolean
   /** The `overlayKey`s present in the user-overlay layer (Plan 0082 phase 4,
    * ADR-0077). Their legend rows are marked `removable` (the user owns them);
    * agent overlays stay hide-only. Optional — absent ⇒ no removable rows. */
@@ -61,6 +72,7 @@ export function buildChartLayers({
   visibleTrendlines,
   hidden,
   hasObv,
+  hasMarketStructure,
   userOverlayKeys = NO_USER_KEYS,
   style,
   colors,
@@ -94,6 +106,19 @@ export function buildChartLayers({
       color: colors.obv,
       kind: 'series',
       visible: !hidden.has(OBV_LAYER_ID),
+    })
+  }
+  // Market-structure toggle (Plan 0092 / ADR-0084, made a togglable legend layer
+  // in Plan 0096): one row gating all HH/HL/LH/LL + BOS/CHoCH markers and the
+  // structural-trend badge. Off by default; lists whenever the bars carry
+  // confirmed structure so it can be turned on.
+  if (hasMarketStructure) {
+    next.push({
+      id: MARKET_STRUCTURE_LAYER_ID,
+      label: t('chart.structure.label'),
+      color: colors.markerNeutral,
+      kind: 'series',
+      visible: !hidden.has(MARKET_STRUCTURE_LAYER_ID),
     })
   }
   // Candlestick marker layer (Plan 0071 phase 2): a single MASTER row for the

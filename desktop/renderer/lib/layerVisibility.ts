@@ -17,7 +17,7 @@
  * kept. The store is bounded (max buckets) so per-`(symbol,timeframe)`
  * persistence can't grow without limit.
  */
-import { OBV_LAYER_ID } from './chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID, OBV_LAYER_ID } from './chartSeries'
 
 const STORAGE_KEY = 'ma.layerVisibility'
 const MAX_KEYS = 50
@@ -27,11 +27,15 @@ const MAX_PER_KEY = 64
  * Object-key insertion order is the LRU order used for eviction. */
 export type LayerVisibilityStore = Record<string, string[]>
 
-/** The "Clean on open" default hidden set (ADR-0089): only the always-on OBV
- * strip is off. Overlays / patterns aren't present on a fresh chart, so this
- * yields candles + volume only; the explicit Clean preset hides the rest when
- * clutter has accumulated. Stable module constant — never mutate. */
-export const DEFAULT_HIDDEN: ReadonlySet<string> = new Set([OBV_LAYER_ID])
+/** The "Clean on open" default hidden set (ADR-0089): the always-on OBV strip
+ * and the market-structure markers/badge are off. Overlays / patterns aren't
+ * present on a fresh chart, so this yields candles + volume only; the explicit
+ * Clean preset hides the rest when clutter has accumulated. Stable module
+ * constant — never mutate. */
+export const DEFAULT_HIDDEN: ReadonlySet<string> = new Set([
+  OBV_LAYER_ID,
+  MARKET_STRUCTURE_LAYER_ID,
+])
 
 type Listener = () => void
 const listeners = new Set<Listener>()

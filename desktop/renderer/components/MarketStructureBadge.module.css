@@ -1,8 +1,12 @@
 .badge {
   position: absolute;
   top: 8px;
-  /* Top-right so it clears the inline chart legend at top-left (Plan 0096 ph2). */
-  right: 8px;
+  /* Top-centre so it clears the inline legend (top-left) and the collapsible side
+     dock (top-right). Shown only when the Structure layer is toggled on (Plan
+     0096 phase 3). */
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 16px);
   display: flex;
   align-items: center;
   gap: 8px;

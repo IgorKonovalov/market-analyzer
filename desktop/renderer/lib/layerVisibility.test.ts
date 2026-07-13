@@ -14,7 +14,7 @@ import {
   setLayerVisibility,
   toggleLayerVisibility,
 } from './layerVisibility'
-import { OBV_LAYER_ID } from './chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID, OBV_LAYER_ID } from './chartSeries'
 
 afterEach(() => {
   try {
@@ -24,10 +24,11 @@ afterEach(() => {
   }
 })
 
-it('an unstored bucket defaults to Clean — only OBV hidden', () => {
+it('an unstored bucket defaults to Clean — OBV and market structure hidden', () => {
   const hidden = hiddenForBucket(getLayerVisibilitySnapshot(), 'AAA-USD', '1d')
   expect(hidden.has(OBV_LAYER_ID)).toBe(true)
-  expect(hidden.size).toBe(1)
+  expect(hidden.has(MARKET_STRUCTURE_LAYER_ID)).toBe(true)
+  expect(hidden.size).toBe(2)
   expect(DEFAULT_HIDDEN.has(OBV_LAYER_ID)).toBe(true)
 })
 

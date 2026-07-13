@@ -47,6 +47,11 @@ export const OBV_PANE_ID = 'obv'
 // series in place (its pane is retained).
 export const OBV_LAYER_ID = 'series:obv'
 
+// Stable layers-legend id for the whole market-structure marker set (Plan 0092 /
+// ADR-0084): HH/HL/LH/LL labels + BOS/CHoCH markers + the structural-trend badge,
+// toggled as one layer. Off by default (Plan 0096 phase 3 — a Clean chart).
+export const MARKET_STRUCTURE_LAYER_ID = 'structure'
+
 export interface ChartColors {
   text: string
   border: string

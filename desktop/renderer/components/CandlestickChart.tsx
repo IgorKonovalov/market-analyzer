@@ -57,6 +57,7 @@ import { MarketStructureBadge } from './MarketStructureBadge'
 import { buildLegendValues } from '../lib/legendValues'
 import { marketStructure } from '../lib/marketStructure'
 import {
+  MARKET_STRUCTURE_LAYER_ID,
   OBV_LAYER_ID,
   OBV_PANE_HEIGHT,
   OBV_PANE_ID,
@@ -336,6 +337,11 @@ export function CandlestickChart({
   // second, distinct trend read — reported beside the price, never merged into any
   // indicator trend.
   const marketStructureResult = useMemo(() => marketStructure(bars), [bars])
+  // Whether the bars carry confirmed structure — gates the toggleable legend row,
+  // the on-chart markers, and the badge (all off by default, Plan 0096 phase 3).
+  // `hidden` is resolved below; the badge gates on it inline at render.
+  const hasMarketStructure =
+    marketStructureResult.labeledPivots.length > 0 || marketStructureResult.events.length > 0
   // Add / remove a user overlay (Plan 0082 phase 4). Only available when the chart
   // carries a (symbol, timeframe) to key the store by. Remove maps the legend row
   // id back to the stored spec via its overlayLayerId.
@@ -921,6 +927,7 @@ export function CandlestickChart({
     visibleTrendlines,
     hidden,
     hasObv: bars.length > 0,
+    hasMarketStructure,
     userOverlayKeys: merged.userKeys,
     effectiveTheme,
     styleVersion,
@@ -1035,7 +1042,9 @@ export function CandlestickChart({
           role="img"
           aria-label={ariaLabel ?? t('chart.ariaLabel', { count: bars.length })}
         />
-        <MarketStructureBadge structure={marketStructureResult} />
+        {!hidden.has(MARKET_STRUCTURE_LAYER_ID) && (
+          <MarketStructureBadge structure={marketStructureResult} />
+        )}
         <ChartLegend
           layers={layers}
           values={legendValues}

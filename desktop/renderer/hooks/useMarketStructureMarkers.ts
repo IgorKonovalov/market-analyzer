@@ -17,14 +17,15 @@ import type { RefObject } from 'react'
 import { createSeriesMarkers } from 'lightweight-charts'
 import type { ISeriesMarkersPluginApi, SeriesMarker, Time, UTCTimestamp } from 'lightweight-charts'
 
-import { chartColorsFrom, type MainSeries } from '../lib/chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID, chartColorsFrom, type MainSeries } from '../lib/chartSeries'
 import { resolveChartStyle } from '../lib/chartStyle'
 import type { MarketStructureResult } from '../lib/marketStructure'
 import type { EffectiveTheme } from '../lib/theme'
 import type { Bar } from '../types/sidecar/bar'
 
-/** The single legend layer id for the whole market-structure marker set. */
-export const MARKET_STRUCTURE_LAYER_ID = 'structure'
+// The market-structure legend layer id now lives in `lib/chartSeries` (shared
+// with the visibility store + preset logic); re-export for existing importers.
+export { MARKET_STRUCTURE_LAYER_ID }
 /** A change-of-character stands apart from the trend colours — amber. */
 export const CHOCH_MARKER_COLOR = '#f59e0b'
 

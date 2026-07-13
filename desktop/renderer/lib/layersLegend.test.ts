@@ -18,6 +18,7 @@ function build(overrides: Partial<Parameters<typeof buildChartLayers>[0]>) {
     visibleTrendlines: [],
     hidden: new Set(),
     hasObv: false,
+    hasMarketStructure: false,
     style,
     colors,
     trendlineColors,
@@ -96,6 +97,17 @@ describe('buildChartLayers', () => {
   it('marks the OBV row hidden when its id is in the hidden set', () => {
     const rows = build({ hasObv: true, hidden: new Set(['series:obv']) })
     expect(rows.find((r) => r.id === 'series:obv')?.visible).toBe(false)
+  })
+
+  // Plan 0096: market structure is one toggleable row, off by default (hidden).
+  it('emits a Market structure row when hasMarketStructure, hidden by default', () => {
+    const rows = build({ hasMarketStructure: true, hidden: new Set(['structure']) })
+    const structure = rows.find((r) => r.id === 'structure')
+    expect(structure).toMatchObject({ kind: 'series', visible: false })
+  })
+
+  it('omits the Market structure row when hasMarketStructure is false', () => {
+    expect(build({ hasMarketStructure: false }).some((r) => r.id === 'structure')).toBe(false)
   })
 
   it('groups trendlines by (pattern, state) with a count', () => {
