@@ -12,6 +12,9 @@
  *   6. A `no wallet-positions source configured` error renders the actionable
  *      Settings hint, not a raw 500.
  *   7. The DeFi nav tab mounts the view.
+ *   8. The summary carries labeled realized/unrealized stats and a copyable id.
+ *   9. Each held chain links the wallet to its explorer (OS browser, not in-app);
+ *      a `pool_address` deep-links the pool contract.
  */
 import '@testing-library/jest-dom'
 
@@ -190,6 +193,56 @@ it('maps a missing-source 503 to the actionable Settings hint, not a raw error',
   const alert = await screen.findByTestId('defi-error')
   expect(alert).toHaveTextContent(/set your Zerion API key in Settings/i)
   expect(alert).not.toHaveTextContent('503')
+})
+
+it('renders labeled realized/unrealized stats and a copyable full position id', async () => {
+  getWalletPnl.mockResolvedValue(fixture())
+  render(<DefiPnlView />)
+  analyze(ADDRESS)
+
+  const totals = await screen.findByTestId('defi-totals')
+  expect(totals).toHaveTextContent('Realized P&L')
+  expect(totals).toHaveTextContent('Unrealized P&L')
+  expect(totals).toHaveTextContent('+$70.00') // realized total, sign-explicit
+  // The display shortens the ref, but the full id stays copyable.
+  const copy = await screen.findByTestId('defi-copy-id')
+  expect(copy).toHaveAttribute('title', 'Copy full position ID')
+})
+
+it('links each held chain to the wallet on its explorer, opened in the OS browser', async () => {
+  const openExternal = jest.fn().mockResolvedValue(undefined)
+  // @ts-expect-error — minimal window.api stub for this test only.
+  window.api = { shell: { openExternal } }
+  getWalletPnl.mockResolvedValue(fixture())
+  render(<DefiPnlView />)
+  analyze(ADDRESS)
+
+  const link = await screen.findByTestId('defi-wallet-link')
+  expect(link).toHaveTextContent(/Basescan/)
+  fireEvent.click(link)
+  expect(openExternal).toHaveBeenCalledWith({
+    url: `https://basescan.org/address/${ADDRESS.toLowerCase()}`,
+  })
+  // @ts-expect-error — tear down the stub.
+  delete window.api
+})
+
+it('deep-links the pool contract when the sidecar exposes a pool_address', async () => {
+  const openExternal = jest.fn().mockResolvedValue(undefined)
+  // @ts-expect-error — minimal window.api stub for this test only.
+  window.api = { shell: { openExternal } }
+  const pool = '0x' + 'b'.repeat(40)
+  getWalletPnl.mockResolvedValue(
+    fixture({ positions: [{ ...LP, chain: 'base', pool_address: pool }] }),
+  )
+  render(<DefiPnlView />)
+  analyze(ADDRESS)
+
+  const link = await screen.findByTestId('defi-pool-link')
+  fireEvent.click(link)
+  expect(openExternal).toHaveBeenCalledWith({ url: `https://basescan.org/address/${pool}` })
+  // @ts-expect-error — tear down the stub.
+  delete window.api
 })
 
 it('exposes a DeFi nav tab that mounts the Wallet P&L view when selected', async () => {

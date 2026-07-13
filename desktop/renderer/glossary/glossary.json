@@ -1113,5 +1113,110 @@
     "whatItMeans": {
       "en": "Strong, steady bearish momentum — three orderly declines in a row, a sign sellers are firmly in control."
     }
+  },
+  "defi_realized": {
+    "term": {
+      "en": "Realized P&L",
+      "ru": "Реализованный P&L"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "Profit or loss locked in by actual on-chain events — swaps, withdrawals, closed positions — each priced at its block time, then summed over the wallet's fully-priced positions.",
+      "ru": "Прибыль или убыток, зафиксированные реальными ончейн-событиями — свопами, выводами, закрытыми позициями — каждое оценено по цене на момент блока и просуммировано по полностью оценённым позициям кошелька."
+    },
+    "whatItMeans": {
+      "en": "Money you have actually made or lost and can no longer un-make. Unlike unrealized figures, it does not move with the market.",
+      "ru": "Деньги, которые вы реально заработали или потеряли и уже не отмените. В отличие от нереализованных величин, они не меняются вместе с рынком."
+    }
+  },
+  "defi_unrealized": {
+    "term": {
+      "en": "Unrealized P&L",
+      "ru": "Нереализованный P&L"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "The paper gain or loss on positions still open, marking current holdings to their latest price against cost basis. A live read, outside the deterministic replay.",
+      "ru": "Бумажная прибыль или убыток по всё ещё открытым позициям: текущие активы переоценены по последней цене относительно базиса стоимости. Живой показатель, вне детерминированного воспроизведения."
+    },
+    "whatItMeans": {
+      "en": "What you would gain or lose if you closed everything right now. It swings with prices until you realize it.",
+      "ru": "Что вы получите или потеряете, если закроете всё прямо сейчас. Колеблется вместе с ценами, пока вы это не зафиксируете."
+    }
+  },
+  "defi_est_return": {
+    "term": {
+      "en": "Estimated total return",
+      "ru": "Оценочная полная доходность"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "Realized P&L plus the position's unrealized drift over the window — an estimate, shown parenthesized. An em dash appears when the window's start price could not be sourced.",
+      "ru": "Реализованный P&L плюс нереализованный дрейф позиции за окно — оценка, показанная в скобках. Прочерк означает, что цену на начало окна получить не удалось."
+    },
+    "whatItMeans": {
+      "en": "A rough read on how a position did overall in the window, not just what you locked in. Treat it as directional, not exact.",
+      "ru": "Грубая оценка того, как позиция отработала в целом за окно, а не только зафиксированная часть. Воспринимайте как направление, а не точное число."
+    }
+  },
+  "defi_unclaimed": {
+    "term": {
+      "en": "Unclaimed rewards",
+      "ru": "Неполученные награды"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "Rewards owed right now but not yet claimed — a live on-chain earned() read, deliberately outside the replayed realized figures. Shown in USD when every leg is priced, else as raw token amounts.",
+      "ru": "Награды, причитающиеся прямо сейчас, но ещё не полученные — живое ончейн-чтение earned(), намеренно вне воспроизведённых реализованных величин. Показаны в USD, когда оценены все составляющие, иначе — в количестве токенов."
+    },
+    "whatItMeans": {
+      "en": "Value you could claim but have not. It is not in the realized total yet, so count it separately.",
+      "ru": "Стоимость, которую вы можете забрать, но пока не забрали. Она ещё не в реализованном итоге, так что учитывайте её отдельно."
+    }
+  },
+  "defi_window": {
+    "term": {
+      "en": "P&L window",
+      "ru": "Окно P&L"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "Exact realized P&L attributable to events within the trailing window (7, 30, 90 days, or all time), anchored to the moment of analysis. The ALL column equals the position's total realized figure.",
+      "ru": "Точный реализованный P&L от событий внутри скользящего окна (7, 30, 90 дней или всё время), привязанного к моменту анализа. Столбец ALL равен полному реализованному значению позиции."
+    },
+    "whatItMeans": {
+      "en": "How much this position locked in recently versus over its whole life — a quick sense of what is driving the number.",
+      "ru": "Сколько эта позиция зафиксировала недавно в сравнении со всем сроком жизни — быстрое понимание, что движет числом."
+    }
+  },
+  "defi_position": {
+    "term": {
+      "en": "Position",
+      "ru": "Позиция"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "One holding grouped by chain, protocol, and pool. Liquidity (LP) positions are the headline and are listed first; other holdings follow, de-emphasized.",
+      "ru": "Одно вложение, сгруппированное по сети, протоколу и пулу. Позиции ликвидности (LP) — главные и идут первыми; прочие вложения следуют за ними, приглушённо."
+    },
+    "whatItMeans": {
+      "en": "A single position you hold. Its row shows what it earned across the time windows and any unclaimed rewards.",
+      "ru": "Отдельная позиция, которой вы владеете. Её строка показывает заработок по временным окнам и неполученные награды."
+    }
+  },
+  "defi_partial": {
+    "term": {
+      "en": "Partial totals",
+      "ru": "Частичные итоги"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "One or more positions could not be priced and are excluded from the wallet totals — the totals are a partial sum over the complete positions, never zero-filled or nulled as a whole.",
+      "ru": "Одну или несколько позиций не удалось оценить, и они исключены из итогов кошелька — итоги являются частичной суммой по полным позициям, а не обнулены и не занулены целиком."
+    },
+    "whatItMeans": {
+      "en": "The headline realized and unrealized numbers leave out the excluded positions. Treat them as a floor, not the full picture.",
+      "ru": "Итоговые реализованные и нереализованные числа не учитывают исключённые позиции. Считайте их нижней границей, а не полной картиной."
+    }
   }
 }

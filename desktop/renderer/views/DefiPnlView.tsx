@@ -10,14 +10,29 @@
  * suppress the LP view. A partial banner + excluded count appear only when one or
  * more positions couldn't be priced.
  *
+ * Every P&L term the table uses (realized vs unrealized, the rolling windows,
+ * estimated total return, unclaimed rewards, partial totals) is a `<GlossaryTerm>`
+ * — hover or focus discloses the dual-hat card (ADR-0060). Positions carry a
+ * block-explorer link: the wallet on its chain's explorer, plus the pool contract
+ * itself once the sidecar folds `pool_address` onto the response. Links open in
+ * the OS browser via `shell.openExternal` (ADR-0008), never in-app.
+ *
  * The MCP `compute_wallet_pnl` tool remains the primary agent surface (ADR-0015);
  * this is the human paste-and-scan twin.
  */
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import { ApiError, sanitizeApiErrorBody } from '../api/client'
+import { GlossaryTerm } from '../components/GlossaryTerm'
 import { isValidAddress, loadRecentWallets, rememberWallet } from '../lib/defiWallets'
+import {
+  displayPositionId,
+  explorerAddressUrl,
+  explorerName,
+  parsePositionId,
+  type DefiChain,
+} from '../lib/defiExplorer'
 import { formatUsd, formatUsdSigned } from '../lib/format'
 import { t } from '../lib/i18n'
 import { useWalletPnl } from '../hooks/useWalletPnl'
@@ -33,6 +48,7 @@ import styles from './DefiPnlView.module.css'
 
 export function DefiPnlView(): JSX.Element {
   const [addressInput, setAddressInput] = useState('')
+  const [analyzed, setAnalyzed] = useState('')
   const [refresh, setRefresh] = useState(false)
   const [invalid, setInvalid] = useState(false)
   const [recent, setRecent] = useState<string[]>(() => loadRecentWallets())
@@ -40,6 +56,7 @@ export function DefiPnlView(): JSX.Element {
 
   const run = (address: string, doRefresh: boolean): void => {
     setRecent(rememberWallet(address))
+    setAnalyzed(address)
     analyze(address, doRefresh)
   }
 
@@ -139,16 +156,18 @@ export function DefiPnlView(): JSX.Element {
         </div>
       )}
 
-      {ready && <Results result={ready} />}
+      {ready && <Results result={ready} wallet={analyzed} />}
     </section>
   )
 }
 
 interface ResultsProps {
   result: WalletPnlResponse
+  /** The full (unmasked) address just analyzed — for the wallet explorer link. */
+  wallet: string
 }
 
-function Results({ result }: ResultsProps): JSX.Element {
+function Results({ result, wallet }: ResultsProps): JSX.Element {
   const lp = result.positions.filter((p) => p.is_lp)
   const other = result.positions.filter((p) => !p.is_lp)
   const complete = result.position_count - result.incomplete_position_count
@@ -156,10 +175,12 @@ function Results({ result }: ResultsProps): JSX.Element {
     <div className={styles.results}>
       {result.partial && (
         <div className={styles.partialBanner} role="status" data-testid="defi-partial-banner">
-          {t('defi.partialBanner', {
-            excluded: result.incomplete_position_count,
-            total: result.position_count,
-          })}
+          <GlossaryTerm termKey="defi_partial">
+            {t('defi.partialBanner', {
+              excluded: result.incomplete_position_count,
+              total: result.position_count,
+            })}
+          </GlossaryTerm>
         </div>
       )}
 
@@ -169,17 +190,106 @@ function Results({ result }: ResultsProps): JSX.Element {
         </div>
       ) : (
         <>
-          <p className={styles.totals} data-testid="defi-totals">
-            {t('defi.totals', {
-              realized: signedUsd(result.realized_usd),
-              unrealized: signedUsd(result.unrealized_usd),
-              complete,
-            })}
-          </p>
+          <Summary
+            realized={result.realized_usd}
+            unrealized={result.unrealized_usd}
+            complete={complete}
+            total={result.position_count}
+            wallet={wallet}
+            positions={result.positions}
+          />
           {lp.length > 0 && <LpTable positions={lp} />}
           {other.length > 0 && <OtherPositions positions={other} />}
         </>
       )}
+    </div>
+  )
+}
+
+interface SummaryProps {
+  realized: number | null
+  unrealized: number | null
+  complete: number
+  total: number
+  wallet: string
+  positions: PositionPnl[]
+}
+
+/** The headline stat strip: realized / unrealized / complete-count, each a
+ * glossary term, plus a per-chain "view wallet on explorer" link. */
+function Summary({
+  realized,
+  unrealized,
+  complete,
+  total,
+  wallet,
+  positions,
+}: SummaryProps): JSX.Element {
+  return (
+    <div className={styles.summary} data-testid="defi-totals">
+      <dl className={styles.stats}>
+        <Stat termKey="defi_realized" label={t('defi.summary.realized')}>
+          <span className={signClass(realized)}>{signedUsd(realized)}</span>
+        </Stat>
+        <Stat termKey="defi_unrealized" label={t('defi.summary.unrealized')}>
+          <span className={signClass(unrealized)}>{signedUsd(unrealized)}</span>
+        </Stat>
+        <Stat termKey="defi_partial" label={t('defi.summary.complete')}>
+          {t('defi.summary.completeValue', { complete, total })}
+        </Stat>
+      </dl>
+      <WalletLinks wallet={wallet} positions={positions} />
+    </div>
+  )
+}
+
+interface StatProps {
+  termKey: string
+  label: string
+  children: ReactNode
+}
+
+function Stat({ termKey, label, children }: StatProps): JSX.Element {
+  return (
+    <div className={styles.stat}>
+      <dt className={styles.statLabel}>
+        <GlossaryTerm termKey={termKey}>{label}</GlossaryTerm>
+      </dt>
+      <dd className={styles.statValue}>{children}</dd>
+    </div>
+  )
+}
+
+interface WalletLinksProps {
+  wallet: string
+  positions: PositionPnl[]
+}
+
+/** One explorer link per distinct chain the wallet holds positions on (usually
+ * one). Correct today from the address alone — the pool-contract deep links
+ * light up per row once the sidecar exposes `pool_address`. */
+function WalletLinks({ wallet, positions }: WalletLinksProps): JSX.Element | null {
+  const chains = distinctChains(positions)
+  const links = chains
+    .map((chain) => ({ chain, url: explorerAddressUrl(chain, wallet) }))
+    .filter((l): l is { chain: DefiChain; url: string } => l.url !== null)
+  if (links.length === 0) return null
+  return (
+    <div className={styles.walletLinks}>
+      {links.map(({ chain, url }) => {
+        const name = explorerName(chain) ?? chain
+        return (
+          <ExternalLink
+            key={chain}
+            url={url}
+            title={t('defi.explorerWalletTitle', { explorer: name })}
+            className={styles.walletLink}
+            testId="defi-wallet-link"
+          >
+            {t('defi.explorerLink', { explorer: name })} ↗
+          </ExternalLink>
+        )
+      })}
     </div>
   )
 }
@@ -190,26 +300,31 @@ interface LpTableProps {
 
 function LpTable({ positions }: LpTableProps): JSX.Element {
   return (
-    <table className={styles.table} aria-label={t('defi.tableLabel')}>
-      <thead>
-        <tr>
-          <th scope="col">{t('defi.col.position')}</th>
-          {PNL_WINDOWS.map((w) => (
-            <th key={w} scope="col" className={styles.num}>
-              {w}
+    <>
+      <table className={styles.table} aria-label={t('defi.tableLabel')}>
+        <thead>
+          <tr>
+            <th scope="col">
+              <GlossaryTerm termKey="defi_position">{t('defi.col.position')}</GlossaryTerm>
             </th>
+            {PNL_WINDOWS.map((w) => (
+              <th key={w} scope="col" className={styles.num}>
+                <GlossaryTerm termKey="defi_window">{w}</GlossaryTerm>
+              </th>
+            ))}
+            <th scope="col" className={styles.num}>
+              <GlossaryTerm termKey="defi_unclaimed">{t('defi.col.unclaimed')}</GlossaryTerm>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {positions.map((position) => (
+            <LpRows key={position.position_id} position={position} />
           ))}
-          <th scope="col" className={styles.num}>
-            {t('defi.col.unclaimed')}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {positions.map((position) => (
-          <LpRows key={position.position_id} position={position} />
-        ))}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+      <p className={styles.legend}>{t('defi.legend')}</p>
+    </>
   )
 }
 
@@ -224,8 +339,8 @@ function LpRows({ position }: LpRowsProps): JSX.Element {
   return (
     <>
       <tr className={styles.lpRow} data-testid="defi-lp-row">
-        <td className={styles.positionCell} title={position.position_id}>
-          {position.position_id}
+        <td className={styles.positionCell}>
+          <PositionCell position={position} />
         </td>
         {PNL_WINDOWS.map((w) => (
           <td key={w} className={styles.num}>
@@ -235,7 +350,9 @@ function LpRows({ position }: LpRowsProps): JSX.Element {
         <td className={styles.num}>{formatUnclaimed(position.unclaimed_rewards)}</td>
       </tr>
       <tr className={styles.estRow} data-testid="defi-est-row">
-        <td className={styles.estLabel}>{t('defi.estReturnLabel')}</td>
+        <td className={styles.estLabel}>
+          <GlossaryTerm termKey="defi_est_return">{t('defi.estReturnLabel')}</GlossaryTerm>
+        </td>
         {PNL_WINDOWS.map((w) => (
           <td key={w} className={styles.num}>
             {estimateCell(byWindow[w])}
@@ -244,6 +361,44 @@ function LpRows({ position }: LpRowsProps): JSX.Element {
         <td aria-hidden="true" />
       </tr>
     </>
+  )
+}
+
+interface PositionCellProps {
+  position: PositionPnl
+}
+
+/** The position identity: a chain badge + protocol name, the canonical id
+ * (ref-shortened, full in `title`) with a copy button, and — when the sidecar
+ * exposes a real `pool_address` — a deep link to the pool contract. */
+function PositionCell({ position }: PositionCellProps): JSX.Element {
+  const parsed = parsePositionId(position.position_id)
+  const chain = normalizeChain(position.chain) ?? parsed.chain
+  const poolUrl = explorerAddressUrl(chain, position.pool_address ?? null)
+  const explorer = explorerName(chain)
+  return (
+    <div className={styles.position}>
+      <div className={styles.positionHead}>
+        {chain && <span className={styles.chainBadge}>{chain}</span>}
+        {parsed.protocol && <span className={styles.protocol}>{parsed.protocol}</span>}
+        {poolUrl && explorer && (
+          <ExternalLink
+            url={poolUrl}
+            title={t('defi.poolLinkTitle', { explorer })}
+            className={styles.poolLink}
+            testId="defi-pool-link"
+          >
+            {t('defi.explorerLink', { explorer })} ↗
+          </ExternalLink>
+        )}
+      </div>
+      <div className={styles.positionIdRow}>
+        <code className={styles.positionId} title={position.position_id}>
+          {displayPositionId(position.position_id)}
+        </code>
+        <CopyButton value={position.position_id} />
+      </div>
+    </div>
   )
 }
 
@@ -261,9 +416,9 @@ function OtherPositions({ positions }: OtherPositionsProps): JSX.Element {
       <ul className={styles.otherList}>
         {positions.map((position) => (
           <li key={position.position_id} className={styles.otherRow} data-testid="defi-other-row">
-            <span className={styles.otherId} title={position.position_id}>
-              {position.position_id}
-            </span>
+            <code className={styles.otherId} title={position.position_id}>
+              {displayPositionId(position.position_id)}
+            </code>
             <span className={styles.otherReason}>{otherReason(position)}</span>
           </li>
         ))}
@@ -272,20 +427,88 @@ function OtherPositions({ positions }: OtherPositionsProps): JSX.Element {
   )
 }
 
+// ── Small shared components ──────────────────────────────────────────────────
+
+interface ExternalLinkProps {
+  url: string
+  title: string
+  className?: string
+  testId?: string
+  children: ReactNode
+}
+
+/** An anchor that opens in the OS browser via `shell.openExternal` (ADR-0008),
+ * never navigating the renderer. */
+function ExternalLink({ url, title, className, testId, children }: ExternalLinkProps): JSX.Element {
+  return (
+    <a
+      href={url}
+      rel="noreferrer"
+      title={title}
+      className={className}
+      data-testid={testId}
+      onClick={(e) => {
+        e.preventDefault()
+        void window.api?.shell?.openExternal({ url })
+      }}
+    >
+      {children}
+    </a>
+  )
+}
+
+interface CopyButtonProps {
+  value: string
+}
+
+/** Copies the full position id to the clipboard, flashing "Copied" briefly. */
+function CopyButton({ value }: CopyButtonProps): JSX.Element {
+  const [copied, setCopied] = useState(false)
+  const onCopy = (): void => {
+    void navigator.clipboard?.writeText(value)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1200)
+  }
+  return (
+    <button
+      type="button"
+      className={styles.copyButton}
+      title={t('defi.copyId')}
+      aria-label={t('defi.copyId')}
+      data-testid="defi-copy-id"
+      onClick={onCopy}
+    >
+      {copied ? t('defi.copied') : '⧉'}
+    </button>
+  )
+}
+
 // ── Cell + value helpers ─────────────────────────────────────────────────────
+
+/** A sign-driven color class: bull for a gain, bear for a loss, none for zero
+ * or a null (an unpriceable figure shows an em dash, not a colored zero). */
+function signClass(value: number | null): string | undefined {
+  if (value === null || value === 0 || !Number.isFinite(value)) return undefined
+  return value > 0 ? styles.pos : styles.neg
+}
 
 /** USD with an explicit sign; an em dash for a null figure (never a fake 0). */
 function signedUsd(value: number | null): string {
   return value === null ? '—' : formatUsdSigned(value)
 }
 
-/** Exact realized P&L for a window (never null in the model; em dash if absent). */
-function realizedCell(window: WindowPnl | undefined): string {
-  return window === undefined ? '—' : formatUsdSigned(window.realized_usd)
+/** Exact realized P&L for a window (never null in the model; em dash if absent),
+ * sign-colored. */
+function realizedCell(window: WindowPnl | undefined): ReactNode {
+  if (window === undefined) return '—'
+  return (
+    <span className={signClass(window.realized_usd)}>{formatUsdSigned(window.realized_usd)}</span>
+  )
 }
 
 /** The labeled estimate, parenthesized; an em dash when the window start couldn't
- * be priced (an honest per-window gap) or the window is absent. */
+ * be priced (an honest per-window gap) or the window is absent. Deliberately
+ * muted (no sign color) so the exact figures stay the visual headline. */
 function estimateCell(window: WindowPnl | undefined): string {
   if (window === undefined || window.total_return_usd === null) return '—'
   return `(${formatUsdSigned(window.total_return_usd)})`
@@ -319,6 +542,28 @@ function otherReason(position: PositionPnl): string {
     realized: signedUsd(position.realized_usd),
     unrealized: signedUsd(position.unrealized_usd),
   })
+}
+
+/** The distinct, known chains among a position set — the sidecar `chain` field
+ * when present, else the chain parsed from `position_id`. Order-stable. */
+function distinctChains(positions: PositionPnl[]): DefiChain[] {
+  const seen = new Set<DefiChain>()
+  const out: DefiChain[] = []
+  for (const p of positions) {
+    const chain = normalizeChain(p.chain) ?? parsePositionId(p.position_id).chain
+    if (chain && !seen.has(chain)) {
+      seen.add(chain)
+      out.push(chain)
+    }
+  }
+  return out
+}
+
+const KNOWN_CHAINS = new Set<string>(['ethereum', 'base', 'arbitrum', 'optimism'])
+
+/** Narrow the sidecar's free-form `chain` string to a known `DefiChain`. */
+function normalizeChain(chain: string | null | undefined): DefiChain | null {
+  return chain && KNOWN_CHAINS.has(chain) ? (chain as DefiChain) : null
 }
 
 /** `0x1234…abcd` — a compact chip label for a full address (title carries the full). */

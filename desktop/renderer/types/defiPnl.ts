@@ -36,6 +36,14 @@ export interface PositionPnl {
   position_id: string
   /** LP positions are the headline and are sorted first by the sidecar. */
   is_lp: boolean
+  /** The chain the position lives on. Optional: present once the sidecar folds
+   * `DefiPosition.chain` onto the P&L output; absent responses fall back to the
+   * chain parsed from `position_id`'s first segment. */
+  chain?: string | null
+  /** The on-chain pool/pair contract address (`0x…`) — the join key the sidecar
+   * exposes on complex positions. Optional; when present (and a real address) the
+   * position links to its pool on the chain's block explorer. */
+  pool_address?: string | null
   realized_usd: number | null
   unrealized_usd: number | null
   cost_basis_usd: number | null

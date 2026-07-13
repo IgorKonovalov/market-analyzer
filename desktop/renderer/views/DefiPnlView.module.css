@@ -14,7 +14,7 @@
 
 .title {
   margin: 0;
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-xl);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--color-fg);
@@ -23,7 +23,7 @@
 .lede {
   margin: 0;
   color: var(--color-fg-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 
 .controls {
@@ -37,7 +37,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--color-fg-muted);
   flex: 1 1 24rem;
   min-width: 18rem;
@@ -45,7 +45,7 @@
 
 .address {
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   padding: var(--space-2);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
@@ -73,7 +73,7 @@
   border-radius: var(--radius-md);
   background: var(--color-error-bg);
   color: var(--color-error);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 
 .recent {
@@ -84,7 +84,7 @@
 }
 
 .recentLabel {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -92,7 +92,7 @@
 
 .chip {
   font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
@@ -110,7 +110,7 @@
   padding: var(--space-4);
   text-align: center;
   color: var(--color-fg-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 
 .results {
@@ -125,19 +125,84 @@
   border-left: 3px solid var(--color-bear);
   background: var(--color-bear-bg);
   color: var(--color-fg);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 
-.totals {
+/* ── Summary stat strip ─────────────────────────────────────────────────── */
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
   margin: 0;
-  font-size: var(--font-size-sm);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.statLabel {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-fg-muted);
+}
+
+.statValue {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--color-fg);
 }
+
+.walletLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.walletLink,
+.poolLink {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.walletLink:hover,
+.poolLink:hover {
+  text-decoration: underline;
+}
+
+.walletLink:focus-visible,
+.poolLink:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── LP table ───────────────────────────────────────────────────────────── */
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
 }
 
 .table th {
@@ -157,26 +222,97 @@
   font-family: var(--font-mono);
 }
 
+.pos {
+  color: var(--color-bull);
+}
+
+.neg {
+  color: var(--color-bear);
+}
+
+/* Each LP position is two rows (exact + estimate); a thicker top border on the
+   exact row groups them visually. */
 .lpRow td {
   padding: var(--space-2);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-border-strong);
   color: var(--color-fg);
+  vertical-align: top;
 }
 
 .positionCell {
+  min-width: 16rem;
+}
+
+.position {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.positionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.chainBadge {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+}
+
+.protocol {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.positionIdRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.positionId {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  max-width: 22rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--color-fg-muted);
+}
+
+.copyButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  padding: 0 var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-fg);
+}
+
+.copyButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 /* The estimated-total-return sub-row is clearly secondary to the exact figures. */
 .estRow td {
   padding: 0 var(--space-2) var(--space-2);
   color: var(--color-fg-muted);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-style: italic;
 }
 
@@ -185,6 +321,15 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+
+.legend {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  line-height: var(--line-normal);
+}
+
+/* ── Other (non-LP) positions ───────────────────────────────────────────── */
 
 .other {
   display: flex;
@@ -215,7 +360,7 @@
   display: flex;
   justify-content: space-between;
   gap: var(--space-3);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   color: var(--color-fg-muted);
 }
 
