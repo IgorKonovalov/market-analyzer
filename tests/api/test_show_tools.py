@@ -35,6 +35,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from pydantic import ValidationError
 
+from market_analyser.analysis.types import Divergence, PivotPoint
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.data.types import (
@@ -48,6 +49,7 @@ from market_analyser.data.types import (
     SymbolInfo,
 )
 from market_analyser.events import (
+    ChartDivergencesPayloadV1,
     ChartHighlightPayloadV1,
     ChartShowPayloadV1,
     ChartTrendlinesPayloadV1,
@@ -995,5 +997,51 @@ def test_trendline_spec_rejects_fewer_than_two_points() -> None:
     single = [TrendPoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=99.0)]
     with pytest.raises(ValidationError, match="at least 2 points"):
         TrendlineSpec(points=single)
+
+
+def test_chart_divergences_payload_round_trips() -> None:
+    """A `Divergence` rides the dedicated `chart.divergences v1` payload intact
+    (ADR-0090, Plan 0091 ph8): the payload carries symbol/timeframe/divergences
+    only, version 1, and round-trips losslessly through the model (every field
+    required, so nothing drops). The oscillator pivot's `price` field carries the
+    oscillator VALUE at that pivot — its y-coordinate on the oscillator pane."""
+    div = Divergence(
+        oscillator="rsi",
+        kind="regular_bearish",
+        price_pivots=[
+            PivotPoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=120.0),
+            PivotPoint(ts=datetime(2026, 5, 5, tzinfo=UTC), price=124.0),  # higher price high
+        ],
+        oscillator_pivots=[
+            PivotPoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=78.0),
+            PivotPoint(ts=datetime(2026, 5, 5, tzinfo=UTC), price=71.0),  # lower RSI high
+        ],
+        bar_index=42,
+        strength=0.6,
+    )
+    payload = ChartDivergencesPayloadV1(symbol="AAPL", timeframe="1d", divergences=[div])
+    assert ChartDivergencesPayloadV1.VERSION == 1
+    reparsed = ChartDivergencesPayloadV1.model_validate(payload.model_dump())
+    assert reparsed.divergences[0] == div
+    assert payload.model_dump(mode="json", exclude_none=True) == {
+        "symbol": "AAPL",
+        "timeframe": "1d",
+        "divergences": [
+            {
+                "oscillator": "rsi",
+                "kind": "regular_bearish",
+                "price_pivots": [
+                    {"ts": "2026-04-25T00:00:00Z", "price": 120.0},
+                    {"ts": "2026-05-05T00:00:00Z", "price": 124.0},
+                ],
+                "oscillator_pivots": [
+                    {"ts": "2026-04-25T00:00:00Z", "price": 78.0},
+                    {"ts": "2026-05-05T00:00:00Z", "price": 71.0},
+                ],
+                "bar_index": 42,
+                "strength": 0.6,
+            }
+        ],
+    }
     with pytest.raises(ValidationError, match="at least 2 points"):
         TrendlineSpec(points=[])

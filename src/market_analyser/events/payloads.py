@@ -19,6 +19,7 @@ from typing import ClassVar, Literal
 from pydantic import BaseModel, ConfigDict
 
 from market_analyser.advisor.models import Recommendation, TechnicalRead
+from market_analyser.analysis.types import Divergence
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.events.chart_types import Marker, OverlaySpec, TrendlineSpec
 from market_analyser.forecast.regime import RegimeForecast
@@ -81,6 +82,30 @@ class ChartTrendlinesPayloadV1(BaseModel):
     symbol: str
     timeframe: str
     trendlines: list[TrendlineSpec]
+
+
+class ChartDivergencesPayloadV1(BaseModel):
+    """`chart.divergences v1` payload: layer price↔oscillator divergence segments
+    onto the chart already showing `symbol`/`timeframe` (ADR-0090, Plan 0091).
+
+    A divergence is two connecting segments across TWO panes — the price pivots on
+    the price pane (pane 0) and the matched oscillator pivots on that oscillator's
+    own v5 pane — geometry no single-pane channel (`chart.trendlines`) can carry.
+    Each `Divergence` rides inline (the `chart.highlight`/`Marker` precedent): it is
+    already pure geometry, and its `oscillator` field is the pane-routing key the
+    renderer uses to pick which oscillator pane the second segment attaches to.
+
+    Its own channel — not `chart.show`/`chart.update` — so a plain `chart.show`
+    can no longer wipe it, and derived (never persisted), recomputed from bars.
+    Active-chart-gated in the renderer exactly like `chart.trendlines`: the reducer
+    applies it only when `symbol`+`timeframe` match the chart on screen."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    divergences: list[Divergence]
 
 
 class RunCompletedPayloadV1(BaseModel):
@@ -433,6 +458,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.update": ChartUpdatePayloadV1,
     "chart.highlight": ChartHighlightPayloadV1,
     "chart.trendlines": ChartTrendlinesPayloadV1,
+    "chart.divergences": ChartDivergencesPayloadV1,
     "run.completed": RunCompletedPayloadV1,
     "signal.evaluated": SignalEvaluatedPayloadV1,
     "recommendation.completed": RecommendationCompletedPayloadV1,
@@ -460,6 +486,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
 __all__ = [
     "TYPE_REGISTRY",
     "AlertTriggeredPayloadV1",
+    "ChartDivergencesPayloadV1",
     "ChartHighlightPayloadV1",
     "ChartShowPayloadV1",
     "ChartTrendlinesPayloadV1",

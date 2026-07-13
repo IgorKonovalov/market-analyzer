@@ -7,6 +7,14 @@ oscillator. `result` is `None` with `partial_reason="no_bars"` when nothing is
 cached (an honest miss — never a silent fetch); an empty list means the scan ran
 and found nothing (a valid result, distinct from no-data).
 
+When the scan finds at least one divergence it ALSO publishes a single
+`chart.divergences v1` event (ADR-0090) carrying the divergences onto the chart
+already showing that symbol/timeframe — a layer-only, active-chart-gated side
+effect like `detect_chart_patterns`'s `chart.trendlines` (each divergence draws as
+two segments, one on the price pane and one on that oscillator's own pane). An
+empty result and a `no_bars` miss publish nothing; the data return shape is
+unchanged.
+
 `as_of` is honoured — the window ends at `as_of` and is passed to the provider,
 which truncates to `event_ts <= as_of` (anti-lookahead replay for free). The tool
 validates at the MCP boundary and dispatches only through the provider (ADR-0007);
@@ -34,6 +42,7 @@ from market_analyser.api.mcp_tools._validation import (
 )
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.timeframes import max_history, supported_timeframes_label
+from market_analyser.events import ChartDivergencesPayloadV1, EventBus
 
 # Fetch window: the timeframe's feed-limited history, or a generous default for the
 # unbounded cadences — wide enough for the oscillator warmup plus the divergence
@@ -51,9 +60,12 @@ DETECT_DIVERGENCES_DESCRIPTION = (
     "losing momentum); regular bullish = lower low + higher oscillator low; hidden "
     "divergences flag trend continuation. An empty list means the scan ran and found "
     "nothing; result is null with partial_reason='no_bars' when nothing is cached "
-    "(backfill via get_ohlcv first). Strictly trailing: a divergence at bar i reads "
-    "only bars up to i. Pass `as_of` for historical replay (no future leak). "
-    "Conditions only — never buy/sell advice. "
+    "(backfill via get_ohlcv first). When it finds a divergence it ALSO publishes a "
+    "single chart.divergences v1 event onto the chart already showing that "
+    "symbol/timeframe (each drawn as two segments — one on the price pane, one on "
+    "that oscillator's own pane); an empty or no_bars scan publishes nothing. "
+    "Strictly trailing: a divergence at bar i reads only bars up to i. Pass `as_of` "
+    "for historical replay (no future leak). Conditions only — never buy/sell advice. "
     f"Supported timeframes: {supported_timeframes_label()}."
 )
 
@@ -74,6 +86,7 @@ class DivergencesResponse(BaseModel):
 async def _detect_divergences_response(
     *,
     provider: MarketDataProvider,
+    event_bus: EventBus,
     symbol: str,
     timeframe: str,
     oscillator: Oscillator,
@@ -81,8 +94,11 @@ async def _detect_divergences_response(
     as_of: datetime | None,
 ) -> DivergencesResponse:
     """Body of the `detect_divergences` tool. Validates at the boundary, reads bars
-    through the provider, and runs the trailing divergence detector off the fetched
-    bars."""
+    through the provider, runs the trailing divergence detector off the fetched
+    bars, and — when the scan finds anything — publishes one `chart.divergences v1`
+    event so the renderer can draw the segments (ADR-0090). The data return shape is
+    unchanged; publishing is an added, layer-only side effect (no publish on an empty
+    result or a `no_bars` miss), mirroring `detect_chart_patterns`."""
 
     _require_non_empty_symbol(symbol)
     _require_supported_timeframe(timeframe)
@@ -94,12 +110,19 @@ async def _detect_divergences_response(
     if not bars:
         return DivergencesResponse(result=None, partial_reason="no_bars", scanned_at=now)
     result = await asyncio.to_thread(detect_divergences, list(bars), oscillator, lookback)
+    if result:
+        event_bus.publish(
+            "chart.divergences",
+            ChartDivergencesPayloadV1(symbol=symbol, timeframe=timeframe, divergences=result),
+        )
     return DivergencesResponse(result=result, partial_reason=None, scanned_at=now)
 
 
-def register_detect_divergences(server: FastMCP, *, provider: MarketDataProvider) -> None:
-    """Bind the `detect_divergences` tool to `server`. The provider is captured by
-    closure so the tool body keeps the parameters FastMCP introspects."""
+def register_detect_divergences(
+    server: FastMCP, *, provider: MarketDataProvider, event_bus: EventBus
+) -> None:
+    """Bind the `detect_divergences` tool to `server`. The provider and event bus are
+    captured by closure so the tool body keeps the parameters FastMCP introspects."""
 
     # Explicit `name=` so the MCP tool is `detect_divergences` regardless of the
     # closure's Python function name (suffixed to avoid shadowing the import).
@@ -113,6 +136,7 @@ def register_detect_divergences(server: FastMCP, *, provider: MarketDataProvider
     ) -> DivergencesResponse:
         return await _detect_divergences_response(
             provider=provider,
+            event_bus=event_bus,
             symbol=symbol,
             timeframe=timeframe,
             oscillator=oscillator,

@@ -31,6 +31,7 @@ from market_analyser.events.chart_types import (
 from market_analyser.events.payloads import (
     TYPE_REGISTRY,
     AlertTriggeredPayloadV1,
+    ChartDivergencesPayloadV1,
     ChartHighlightPayloadV1,
     ChartShowPayloadV1,
     ChartTrendlinesPayloadV1,
@@ -62,6 +63,7 @@ __all__ = [
     "DEFAULT_QUEUE_CAP",
     "TYPE_REGISTRY",
     "AlertTriggeredPayloadV1",
+    "ChartDivergencesPayloadV1",
     "ChartHighlightPayloadV1",
     "ChartShowPayloadV1",
     "ChartTrendlinesPayloadV1",

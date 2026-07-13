@@ -4,11 +4,12 @@
 
 # SSE events
 
-The 25 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
+The 26 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
 
 | Event | Summary |
 | --- | --- |
 | [`alert.triggered`](#alerttriggered) | `alert.triggered v1` payload (Plan 0060, ADR-0055): a watch's condition transitioned false→true on its latest evaluation. |
+| [`chart.divergences`](#chartdivergences) | `chart.divergences v1` payload: layer price↔oscillator divergence segments onto the chart already showing `symbol`/`timeframe` (ADR-0090, Plan 0091). |
 | [`chart.highlight`](#charthighlight) | `chart.highlight v1` payload: render markers on a chart. |
 | [`chart.show`](#chartshow) | `chart.show v1` payload: render this chart fresh. |
 | [`chart.trendlines`](#charttrendlines) | `chart.trendlines v1` payload: layer sloped pattern lines onto the chart already showing `symbol`/`timeframe` (ADR-0059, Plan 0064). |
@@ -61,6 +62,35 @@ schema test in `tests/alerts/test_scheduler.py` pin this).
 | `fired_at` | string (date-time) | yes | — |
 | `condition` | string | yes | — |
 | `values` | object | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
+## `chart.divergences`
+
+**Version:** 1
+
+`chart.divergences v1` payload: layer price↔oscillator divergence segments
+onto the chart already showing `symbol`/`timeframe` (ADR-0090, Plan 0091).
+
+A divergence is two connecting segments across TWO panes — the price pivots on
+the price pane (pane 0) and the matched oscillator pivots on that oscillator's
+own v5 pane — geometry no single-pane channel (`chart.trendlines`) can carry.
+Each `Divergence` rides inline (the `chart.highlight`/`Marker` precedent): it is
+already pure geometry, and its `oscillator` field is the pane-routing key the
+renderer uses to pick which oscillator pane the second segment attaches to.
+
+Its own channel — not `chart.show`/`chart.update` — so a plain `chart.show`
+can no longer wipe it, and derived (never persisted), recomputed from bars.
+Active-chart-gated in the renderer exactly like `chart.trendlines`: the reducer
+applies it only when `symbol`+`timeframe` match the chart on screen.
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `divergences` | array[Divergence] | yes | — |
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 

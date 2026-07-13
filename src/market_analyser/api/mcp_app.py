@@ -219,7 +219,7 @@ def create_mcp_components(
     register_volume_breakout(server, provider=provider)
     register_volume_confirmation(server, provider=provider)
     register_counter_trend_volume(server, provider=provider)
-    register_detect_divergences(server, provider=provider)
+    register_detect_divergences(server, provider=provider, event_bus=event_bus)
     register_smart_volume(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
