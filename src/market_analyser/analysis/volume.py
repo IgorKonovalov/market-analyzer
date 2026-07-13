@@ -50,6 +50,8 @@ RELATIVE_VOLUME_PERIOD = 20  # trailing MA window for latest ÷ MA
 VOLUME_PERCENTILE_WINDOW = 90  # trailing window for the volume percentile rank
 OBV_SLOPE_LOOKBACK = 10  # trailing window for the signed OBV slope
 VWAP_PERIOD = 20  # rolling trailing VWAP window (NOT session-anchored)
+MFI_PERIOD = 14  # trailing window for the money-flow index (Plan 0091)
+CMF_PERIOD = 20  # trailing window for Chaikin Money Flow (Plan 0091)
 HEAVY_MULT = 1.5  # latest >= HEAVY_MULT * trailing MA -> HEAVY
 LIGHT_MULT = 0.5  # latest <= LIGHT_MULT * trailing MA -> LIGHT
 
@@ -177,6 +179,107 @@ def vwap(bars: Sequence[Bar], period: int = VWAP_PERIOD) -> list[float | None]:
             continue  # degenerate zero-volume window — leave undefined
         weighted = sum(((b.high + b.low + b.close) / 3.0) * b.volume for b in window)
         out[i] = weighted / volume_sum
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Money-flow indicators (Plan 0091 phase 2)                                    #
+#                                                                              #
+# Volume-weighted conviction gauges that OBV (binary up/down volume) misses:   #
+# MFI (a volume-weighted RSI), the cumulative Accumulation/Distribution line,  #
+# and Chaikin Money Flow (windowed A/D-flow ÷ volume). Same trailing,          #
+# anti-lookahead, None-guarded-degenerate discipline as the measures above.    #
+# --------------------------------------------------------------------------- #
+
+
+def mfi(bars: Sequence[Bar], period: int = MFI_PERIOD) -> list[float | None]:
+    """Money Flow Index — a volume-weighted RSI over the trailing `period` bars.
+
+    Raw money flow is the typical price `(high + low + close) / 3` times volume;
+    each bar's flow is *positive* when its typical price rose from the prior bar,
+    *negative* when it fell (a flat bar counts for neither). `MFI = 100 * positive
+    / (positive + negative)` over the trailing window — algebraically the classic
+    `100 - 100 / (1 + positive/negative)`, but written so `negative == 0` yields
+    `100` without a special case. `None` for `i < period` (needs the prior bar for
+    the first delta) and `None` for a wholly flat typical-price window (no
+    directional flow — undefined, never a divide-by-zero).
+    """
+
+    if period < 1:
+        raise ValueError(f"period must be >= 1, got {period}")
+    n = len(bars)
+    tp = [(b.high + b.low + b.close) / 3.0 for b in bars]
+    raw = [tp[i] * bars[i].volume for i in range(n)]
+    out: list[float | None] = [None] * n
+    for i in range(period, n):
+        positive = 0.0
+        negative = 0.0
+        for j in range(i - period + 1, i + 1):
+            if tp[j] > tp[j - 1]:
+                positive += raw[j]
+            elif tp[j] < tp[j - 1]:
+                negative += raw[j]
+        denom = positive + negative
+        if denom == 0.0:
+            continue  # flat typical-price window — no directional flow, undefined
+        out[i] = 100.0 * positive / denom
+    return out
+
+
+def _money_flow_volume(bar: Bar) -> float:
+    """One bar's Chaikin money-flow volume: the money-flow multiplier
+    `((close - low) - (high - close)) / (high - low)` times volume. A zero-range
+    bar (`high == low`) contributes `0.0` — no divide-by-zero, the standard
+    convention that keeps the cumulative A/D line dense."""
+
+    rng = bar.high - bar.low
+    if rng == 0.0:
+        return 0.0
+    multiplier = ((bar.close - bar.low) - (bar.high - bar.close)) / rng
+    return multiplier * bar.volume
+
+
+def accumulation_distribution(bars: Sequence[Bar]) -> list[float | None]:
+    """Cumulative Accumulation/Distribution line, seeded at the first bar's
+    money-flow volume.
+
+    Each bar adds its `_money_flow_volume` to the running total. Defined for every
+    bar (length-aligned, dense — a zero-range bar contributes `0.0`, never a gap);
+    `None` only when there are no bars. Trailing: `result[i]` depends only on
+    `bars[0..=i]`, so it mirrors `obv`'s cumulative anti-lookahead property.
+    """
+
+    n = len(bars)
+    out: list[float | None] = [None] * n
+    if n == 0:
+        return out
+    cumulative = 0.0
+    for i in range(n):
+        cumulative += _money_flow_volume(bars[i])
+        out[i] = cumulative
+    return out
+
+
+def chaikin_money_flow(bars: Sequence[Bar], period: int = CMF_PERIOD) -> list[float | None]:
+    """Chaikin Money Flow: the trailing `period`-bar sum of money-flow volume
+    divided by the trailing `period`-bar sum of volume — a zero-centred conviction
+    read in `[-1, 1]`.
+
+    `None` for `i < period - 1`, and `None` for a window whose total volume is `0`
+    (no weighting defined — never a divide-by-zero, matching the `vwap` guard).
+    """
+
+    if period < 1:
+        raise ValueError(f"period must be >= 1, got {period}")
+    n = len(bars)
+    out: list[float | None] = [None] * n
+    for i in range(period - 1, n):
+        window = bars[i - period + 1 : i + 1]
+        volume_sum = sum(b.volume for b in window)
+        if volume_sum == 0.0:
+            continue  # degenerate zero-volume window — leave undefined
+        flow_sum = sum(_money_flow_volume(b) for b in window)
+        out[i] = flow_sum / volume_sum
     return out
 
 
@@ -474,11 +577,13 @@ def counter_trend_volume(
 __all__ = [
     "BREAKOUT_PRICE_LOOKBACK",
     "BREAKOUT_VOL_MULTIPLE",
+    "CMF_PERIOD",
     "CONFIRMATION_LOOKBACK",
     "CONFIRMATION_MIN",
     "COUNTER_TREND_LOOKBACK",
     "HEAVY_MULT",
     "LIGHT_MULT",
+    "MFI_PERIOD",
     "OBV_SLOPE_LOOKBACK",
     "RELATIVE_VOLUME_PERIOD",
     "RSI_PERIOD",
@@ -488,7 +593,10 @@ __all__ = [
     "VOLUME_PERCENTILE_WINDOW",
     "VOLUME_SMA_PERIOD",
     "VWAP_PERIOD",
+    "accumulation_distribution",
+    "chaikin_money_flow",
     "counter_trend_volume",
+    "mfi",
     "obv",
     "obv_slope",
     "relative_volume",

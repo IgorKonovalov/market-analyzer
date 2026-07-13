@@ -574,3 +574,125 @@ def test_counter_trend_reproduces_btc_probe_shape() -> None:
     # the shape the single aggregate score (volume_confirmation) would have hidden.
     assert result.counter_trend_volume_share is not None
     assert result.counter_trend_volume_share > 0.5
+
+
+# --------------------------------------------------------------------------- #
+# Money-flow indicators (Plan 0091 phase 2) — mfi / A-D line / CMF             #
+# --------------------------------------------------------------------------- #
+
+
+def test_mfi_matches_hand_computed() -> None:
+    """h == low == c so typical price == close and raw money flow == close*volume;
+    the positive/negative split and the 100*pos/(pos+neg) form are hand-verified."""
+
+    closes = [10.0, 11.0, 12.0, 11.0, 13.0]
+    volumes = [100.0, 200.0, 300.0, 400.0, 500.0]
+    bars = [_bar(i, c=c, v=v) for i, (c, v) in enumerate(zip(closes, volumes, strict=True))]
+    series = vol.mfi(bars, period=2)
+    assert series[0] is None and series[1] is None  # first defined at index `period` = 2
+    # i=2: deltas j=1 (11>10, +2200), j=2 (12>11, +3600) -> all positive -> 100.
+    assert series[2] is not None and abs(series[2] - 100.0) < _TOL
+    # i=3: j=2 (+3600), j=3 (11<12, -4400) -> 100*3600/(3600+4400) = 45.0.
+    assert series[3] is not None and abs(series[3] - 45.0) < _TOL
+    assert len(series) == len(bars)
+
+
+def test_mfi_saturates_on_monotonic_rise() -> None:
+    bars = [_bar(i, c=100.0 + i, v=100.0) for i in range(30)]  # tp strictly rising
+    series = vol.mfi(bars, period=14)
+    for i in (20, 29):
+        assert series[i] is not None and abs(series[i] - 100.0) < _TOL
+
+
+def test_accumulation_distribution_matches_hand_computed() -> None:
+    """Money-flow multiplier `(2c - h - l)/(h - l)` chosen to be exactly +1 / -1 / 0;
+    the cumulative line is hand-verified and dense from bar 0 (like OBV)."""
+
+    bars = [
+        _bar(0, c=10.0, v=100.0, h=10.0, low=8.0),  # MFM = (20-18)/2 = +1 -> MFV +100
+        _bar(1, c=10.0, v=200.0, h=12.0, low=10.0),  # MFM = (20-22)/2 = -1 -> MFV -200
+        _bar(2, c=13.0, v=300.0, h=14.0, low=12.0),  # MFM = (26-26)/2 = 0  -> MFV 0
+    ]
+    series = vol.accumulation_distribution(bars)
+    assert series == [100.0, -100.0, -100.0]  # 100; 100-200; -100+0
+
+
+def test_accumulation_distribution_empty_is_none_list() -> None:
+    assert vol.accumulation_distribution([]) == []
+
+
+def test_chaikin_money_flow_matches_hand_computed() -> None:
+    bars = [
+        _bar(0, c=10.0, v=100.0, h=10.0, low=8.0),  # MFV +100
+        _bar(1, c=10.0, v=200.0, h=12.0, low=10.0),  # MFV -200
+        _bar(2, c=13.0, v=300.0, h=14.0, low=12.0),  # MFV 0
+    ]
+    series = vol.chaikin_money_flow(bars, period=2)
+    assert series[0] is None  # first defined at index period-1 = 1
+    # i=1: (100 - 200) / (100 + 200) = -1/3.
+    assert series[1] is not None and abs(series[1] - (-1.0 / 3.0)) < _TOL
+    # i=2: (-200 + 0) / (200 + 300) = -0.4.
+    assert series[2] is not None and abs(series[2] - (-0.4)) < _TOL
+
+
+def test_chaikin_money_flow_saturates_when_closing_at_high() -> None:
+    """Closing at the high with a fixed range makes every money-flow multiplier +1,
+    so CMF (flow ÷ volume) saturates to +1."""
+
+    bars = [_bar(i, c=100.0 + i, v=100.0, h=100.0 + i, low=98.0 + i) for i in range(30)]
+    series = vol.chaikin_money_flow(bars, period=20)
+    for i in (25, 29):
+        assert series[i] is not None and abs(series[i] - 1.0) < _TOL
+
+
+def test_money_flow_degenerate_guards() -> None:
+    """Flat typical price -> MFI None; zero-range bars -> A/D contributes 0 (stays
+    dense); zero-volume window -> CMF None (never a divide-by-zero)."""
+
+    flat = [_bar(i, c=10.0, v=100.0) for i in range(20)]  # h == low == c -> tp flat
+    assert vol.mfi(flat, period=14)[-1] is None
+    ad = vol.accumulation_distribution(flat)
+    assert all(x == 0.0 for x in ad)  # zero-range MFM -> flat, dense
+    zero_vol = [_bar(i, c=10.0, v=0.0, h=11.0, low=9.0) for i in range(20)]
+    assert vol.chaikin_money_flow(zero_vol, period=20)[-1] is None
+
+
+def test_money_flow_truncation_invariance() -> None:
+    bars = _varied_series(41)
+    full_mfi = vol.mfi(bars, 14)
+    full_ad = vol.accumulation_distribution(bars)
+    full_cmf = vol.chaikin_money_flow(bars, 20)
+    for k in (20, 30, 40):
+        head = bars[: k + 1]
+        assert vol.mfi(head, 14)[k] == full_mfi[k]
+        assert vol.accumulation_distribution(head)[k] == full_ad[k]
+        assert vol.chaikin_money_flow(head, 20)[k] == full_cmf[k]
+
+
+def test_money_flow_none_prefix_and_length() -> None:
+    bars = _varied_series(41)
+    m = vol.mfi(bars, 14)
+    assert len(m) == 41
+    assert all(x is None for x in m[:14]) and m[14] is not None
+    assert all(x is not None for x in m[14:])  # dense once started
+    ad = vol.accumulation_distribution(bars)
+    assert len(ad) == 41 and all(x is not None for x in ad)  # dense from bar 0
+    cmf = vol.chaikin_money_flow(bars, 20)
+    assert len(cmf) == 41
+    assert all(x is None for x in cmf[:19]) and cmf[19] is not None
+    assert all(x is not None for x in cmf[19:])
+
+
+def test_money_flow_determinism() -> None:
+    bars = _varied_series(41)
+    assert vol.mfi(bars) == vol.mfi(bars)
+    assert vol.accumulation_distribution(bars) == vol.accumulation_distribution(bars)
+    assert vol.chaikin_money_flow(bars) == vol.chaikin_money_flow(bars)
+
+
+def test_money_flow_reject_bad_periods() -> None:
+    bars = _varied_series(41)
+    with pytest.raises(ValueError, match="period must be >= 1"):
+        vol.mfi(bars, 0)
+    with pytest.raises(ValueError, match="period must be >= 1"):
+        vol.chaikin_money_flow(bars, 0)
