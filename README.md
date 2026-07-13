@@ -139,9 +139,28 @@ The installer bundles `src/market_analyser/` as `extraResources` so the runtime 
 
 The sidecar accepts an optional `--config <path>` to a JSON file; defaults are sensible for development. The one key today is `db_path` (default `<user-data-dir>/market-analyser/cache.sqlite`), the SQLite location for the `bars`, `annotations`, `backtest_runs`, `metric_points`, `watches`, `alerts`, `defi_tx`, and `price_snapshots` tables.
 
-Secrets:
+### Secrets
 
-> **Where a third-party credential comes from — one store, one override, not a `.env`-vs-`secrets.json` choice.** Every data-source key and RPC URL is resolved inside the sidecar by `SecretsStore.get(key)` ([`persistence/secrets.py`](src/market_analyser/persistence/secrets.py), [ADR-0038](docs/architecture/adrs/0038-third-party-api-key-storage.md)) in this order:
+**You need no third-party secret to run the core app.** OHLCV charts, backtests, strategies, TradFi/technical analysis, and forecasting all work with zero keys configured. The only secrets the core app uses are two bearer tokens it generates and manages itself ([The two internal bearers](#the-two-internal-bearer-tokens-auto-managed), below) — you never set those by hand.
+
+Every key in the table below is **optional** and unlocks **one specific crypto/DeFi feature**. If a key is absent, only that feature is affected: it returns a typed "no key configured" error, and nothing else in the app breaks. This is the full set — there are no other secrets.
+
+#### What each key unlocks
+
+Each key has two spellings for the **same value**: the bare form (used in `secrets.json`) and the `MARKET_ANALYSER_<KEY>` uppercased form (used as an env var / in `.env`). Set a key by either route — see [resolution order](#where-a-key-is-resolved-from) below.
+
+| Key — `secrets.json` / `MARKET_ANALYSER_…` env var | What it unlocks (feature that needs it) | Where to get it |
+| --- | --- | --- |
+| `zerion_api_key`<br>`MARKET_ANALYSER_ZERION_API_KEY` | **DeFi wallet analysis.** Position discovery + transaction history behind `scan_wallet`, `POST /defi/scan`, `compute_wallet_pnl`, and the Zerion portfolio leg. Without it, every DeFi wallet scan errors. | Free Developer tier — <https://zerion.io/api> |
+| `eth_rpc_url`<br>`MARKET_ANALYSER_ETH_RPC_URL` | **Ethereum on-chain reads** (`eth_call`): deep Uniswap-v3 LP state (tick range, in-range, uncollected fees) and on-chain pool pricing / discrepancy scans on Ethereum. | Any Ethereum JSON-RPC endpoint — Alchemy, Infura, QuickNode, or a public RPC |
+| `base_rpc_url`<br>`MARKET_ANALYSER_BASE_RPC_URL` | **Base on-chain reads** — the same deep LP state and the cross-pool discrepancy / executable-quote scanner, on the Base chain. | Any Base JSON-RPC endpoint — Alchemy, Infura, QuickNode, or a public Base RPC |
+| `binance_read_api_key` + `binance_read_api_secret`<br>`MARKET_ANALYSER_BINANCE_READ_API_KEY` / `…_SECRET` | **Read-only Binance account leg** of cross-venue portfolio aggregation (your spot holdings). Read scope only — never a trade key (trade keys live in a separate OS-keychain store, [ADR-0044](docs/architecture/adrs/0044-trade-secret-store.md)). | Binance → API Management → create a **read-only** key pair |
+| `alchemy_prices_key`<br>`MARKET_ANALYSER_ALCHEMY_PRICES_KEY` | **DeFi P&L historical-price fallback** for tokens DefiLlama can't price — improves P&L completeness ([ADR-0081](docs/architecture/adrs/0081-defi-pnl-wallet-total-gap.md)). Injected server-side via the Alchemy `Authorization` header, never the URL. | Alchemy dashboard → Prices API key |
+| `graph_api_key`<br>`MARKET_ANALYSER_GRAPH_API_KEY` | **Reserved — no live consumer yet.** Held for future subgraph-backed DeFi adapters; setting it today does nothing. | The Graph Studio (only once a future feature needs it) |
+
+#### Where a key is resolved from
+
+> **One store, one override — not a `.env`-vs-`secrets.json` choice.** Every key above is resolved inside the sidecar by `SecretsStore.get(key)` ([`persistence/secrets.py`](src/market_analyser/persistence/secrets.py), [ADR-0038](docs/architecture/adrs/0038-third-party-api-key-storage.md)) in this order:
 >
 > 1. **Env override** `MARKET_ANALYSER_<KEY>` (the key uppercased, e.g. `MARKET_ANALYSER_BASE_RPC_URL`) — wins if set to a non-empty value.
 > 2. **`secrets.json`** — the canonical `0600` file at `<user-data-dir>/secrets.json`, a flat map of the known keys. Written by the Settings page / `POST /settings/secret`, survives restarts.
@@ -149,33 +168,36 @@ Secrets:
 >
 > A repo-root **`.env`** (dev / source checkout only, gitignored) is **not a third store**. At startup the sidecar loads it into the `MARKET_ANALYSER_*` environment (`override=False`, so a real env var still wins; a missing file is a no-op; **packaged builds ship no `.env` and load nothing**), which just feeds layer 1. So `.env` and `secrets.json` carry the **same keys** — `.env` / env use the `MARKET_ANALYSER_<UPPER>` form, `secrets.json` uses the bare key — and `.env` is only the dev-ergonomic way to populate the override without exporting by hand.
 >
-> **Known keys** (the complete set): `zerion_api_key`, `graph_api_key`, `eth_rpc_url`, `base_rpc_url`, `binance_read_api_key`, `binance_read_api_secret`, `alchemy_prices_key`.
->
 > **One-off scripts** (e.g. the `scripts/defi/*` and `runs/defi/audits/*` evidence smokes) must read credentials through the real `SecretsStore(default_app_data_dir() / "secrets.json")` — the exact resolution above — rather than inventing a bare `BASE_RPC_URL`-style env var, so there is a single source of truth. Trade-execution keys are deliberately a **separate, stricter** store (OS keychain via `keyring`, [ADR-0044](docs/architecture/adrs/0044-trade-secret-store.md)) and never live in `secrets.json` or `.env`.
 
-The three secret categories, by home:
+The value is never logged and never returned by any endpoint — `GET /settings/secrets` reports only `"set"` / absent, never the value itself.
 
-- **`MARKET_ANALYSER_SECRET`** — per-launch renderer bearer. Generated by the Electron supervisor on every spawn, passed via the child's environment, never persisted, never logged. Constant-time compare.
+#### The two internal bearer tokens (auto-managed)
+
+These are **not** data-source keys and you do not create them — the app generates and stores them itself. Listed here only so the picture is complete:
+
+- **`MARKET_ANALYSER_SECRET`** — per-launch renderer bearer. Generated by the Electron supervisor on every spawn, passed via the child's environment, never persisted, never logged. Constant-time compare. (You set this by hand only when running the [sidecar standalone](#running-the-sidecar-standalone).)
 - **`mcp-secret.json`** — long-lived MCP bearer under the user-data dir (gitignored, OS-user-readable only). Rotate from the Settings page.
-- **Third-party data-source keys (e.g. `MARKET_ANALYSER_ZERION_API_KEY`)** — per [ADR-0038](docs/architecture/adrs/0038-third-party-api-key-storage.md), stored in a `0600` `secrets.json` under the user-data dir, with a per-key `MARKET_ANALYSER_<KEY>` env-var override that takes precedence. The value is never logged and never returned by any endpoint (`GET /settings/secrets` reports only `"set"`/absent).
 
-  **DeFi wallet discovery requires a Zerion key.** The `scan_wallet` MCP tool and `POST /defi/scan` need `zerion_api_key`; without it a scan returns a typed "no API key configured" error. Provide it either by **exporting** the variable in the sidecar's launch shell:
+#### Worked example: providing the Zerion key
 
-  ```bash
-  # PowerShell: $env:MARKET_ANALYSER_ZERION_API_KEY = "zk_..."
-  export MARKET_ANALYSER_ZERION_API_KEY=zk_...
-  ```
+The `scan_wallet` MCP tool and `POST /defi/scan` need `zerion_api_key`; without it a scan returns a typed "no API key configured" error. Provide it either by **exporting** the variable in the sidecar's launch shell:
 
-  or at runtime via the write-only endpoint (persists to `secrets.json`, survives restart):
+```bash
+# PowerShell: $env:MARKET_ANALYSER_ZERION_API_KEY = "zk_..."
+export MARKET_ANALYSER_ZERION_API_KEY=zk_...
+```
 
-  ```bash
-  curl -X POST -H "Authorization: Bearer $MARKET_ANALYSER_SECRET" \
-    -H "Content-Type: application/json" \
-    -d '{"key":"zerion_api_key","value":"zk_..."}' \
-    http://127.0.0.1:<port>/settings/secret
-  ```
+or at runtime via the write-only endpoint (persists to `secrets.json`, survives restart):
 
-  In a **dev / source checkout** the sidecar auto-loads a repo-root `.env` (see [`.env.example`](.env.example)) at startup, so putting `MARKET_ANALYSER_ZERION_API_KEY=zk_…` there is enough — no manual export needed. A real environment variable still wins over `.env` (`override=False`), and **packaged builds load nothing** (no `.env` ships next to the bundled source), so the endpoint / `secrets.json` path remains the mechanism for installed apps. Free Developer tier: <https://zerion.io/api>.
+```bash
+curl -X POST -H "Authorization: Bearer $MARKET_ANALYSER_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"key":"zerion_api_key","value":"zk_..."}' \
+  http://127.0.0.1:<port>/settings/secret
+```
+
+In a **dev / source checkout** the sidecar auto-loads a repo-root `.env` (see [`.env.example`](.env.example)) at startup, so putting `MARKET_ANALYSER_ZERION_API_KEY=zk_…` there is enough — no manual export needed. A real environment variable still wins over `.env` (`override=False`), and **packaged builds load nothing** (no `.env` ships next to the bundled source), so the endpoint / `secrets.json` path remains the mechanism for installed apps. The same two routes (env/`.env` or `POST /settings/secret`) work for every key in the table above.
 
 ## Project structure
 
@@ -274,6 +296,20 @@ These apply to every change (also in [`CLAUDE.md`](CLAUDE.md)):
 ### Commit style
 
 Conventional commits, enforced by `commitizen` and a `commit-msg` Husky hook. Implementers commit per phase; pushes are user-driven. CI runs on push and tag.
+
+### Versioning
+
+Semantic versioning, held in the `0.x` band until the public surface (MCP tools + REST contract) is declared stable. The current version is **0.5.0**. The single source of truth is `pyproject.toml` `[project].version`; `desktop/package.json` is synced from it — one number for the whole app.
+
+Bumps are owned by `commitizen` and run **once per shipped plan**, in the architect's close ceremony (not per commit):
+
+```bash
+uv run cz bump            # feat → minor, fix → patch; auto-detects the increment, writes both files, creates the vX.Y.Z tag
+uv run cz bump --dry-run  # preview the next version without writing
+uv run cz version -p      # print the current project version
+```
+
+`major_version_zero = true` keeps a `BREAKING CHANGE` as a minor bump while pre-1.0, so reaching `1.0.0` is a deliberate future act, never an accident. See [ADR-0087](docs/architecture/adrs/0087-versioning-and-release-cadence.md).
 
 ## Roadmap
 

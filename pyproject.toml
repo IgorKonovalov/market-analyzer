@@ -1,6 +1,6 @@
 [project]
 name = "market-analyser"
-version = "0.0.1"
+version = "0.5.0"
 description = "Desktop trading-analysis app: Electron shell + Python sidecar."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -145,5 +145,13 @@ exclude_lines = [
 name = "cz_conventional_commits"
 tag_format = "v$version"
 version_scheme = "pep440"
-version = "0.0.1"
+# Single source of truth is [project].version above (read/written by the pep621
+# provider); desktop/package.json is synced from it on `cz bump`. major_version_zero
+# keeps us in the 0.x band — feat -> minor, fix -> patch, breaking -> minor (never
+# an accidental 1.0.0). Bump runs once per plan in the architect close ceremony. ADR-0087.
+version_provider = "pep621"
+major_version_zero = true
+version_files = [
+    "desktop/package.json:\"version\":",
+]
 update_changelog_on_bump = false
