@@ -1,6 +1,6 @@
 # ADR-0090 — Divergences on a dedicated cross-pane `chart.divergences` channel
 
-> **Status:** proposed (accepts at Plan 0091 close)
+> **Status:** accepted (Plan 0091 close 2026-07-13)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0091-momentum-divergence-moneyflow-layer](../plans/0091-momentum-divergence-moneyflow-layer.md)
 > **Related ADRs:** extends the dedicated-channel precedent of [0045](0045-candlestick-pattern-span-delivery.md) (`chart.highlight` markers) and [0059](0059-trendline-event-channel-and-recompute.md) (`chart.trendlines`); exploits the real-panes substrate of [0088](0088-lightweight-charts-v5-panes.md); reuses the trendline draw primitive of [0049](0049-chart-trendline-overlay-primitive.md) / [0061](0061-trendline-pattern-identity-and-colour.md); rides the event stream of [0017](0017-live-ui-updates-via-sse.md)
