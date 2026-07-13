@@ -2,7 +2,7 @@
 
 > **Type:** reference (capability catalog, not a decision or a plan).
 > **Date:** 2026-06-05.
-> **Provenance:** every endpoint below was probed **live** against the Zerion v1 REST API (`https://api.zerion.io/v1`) using the project's free Developer-tier key, for the public test wallet `0xae5b…9790` (a test wallet). Status codes, response shapes, and the sample values are observed, not snippet-sourced — they resolve the "vendor pages not directly loadable" confidence gap flagged in [ADR-0034](../adrs/0034-defi-portfolio-aggregator.md). Live values (totals, prices, PnL) move; treat the *numbers* as a 2026-06-05 snapshot and the *shapes* as durable.
+> **Provenance:** every endpoint below was probed **live** against the Zerion v1 REST API (`https://api.zerion.io/v1`) using the project's free Developer-tier key, for a public test wallet `0xae5b…9790`. Status codes, response shapes, and the sample values are observed, not snippet-sourced — they resolve the "vendor pages not directly loadable" confidence gap flagged in [ADR-0034](../adrs/0034-defi-portfolio-aggregator.md). Live values (totals, prices, PnL) move; treat the *numbers* as a 2026-06-05 snapshot and the *shapes* as durable.
 > **Related:** [ADR-0034](../adrs/0034-defi-portfolio-aggregator.md) (picked Zerion for discovery + tx history), [ADR-0035](../adrs/0035-defi-domain-placement.md) (the per-capability source Protocols this maps onto), [ADR-0036](../adrs/0036-defi-pnl-reconstruction.md) (consumes tx history), [ADR-0037](../adrs/0037-defi-position-risk-forecast.md) (risk/forecast), [ADR-0038](../adrs/0038-third-party-api-key-storage.md) (the key store). Current consumer: `src/market_analyser/data/adapters/zerion.py` (positions only).
 
 ## TL;DR
