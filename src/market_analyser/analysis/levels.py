@@ -36,9 +36,11 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Literal
 
-from market_analyser.analysis.types import Level, Pivot
+from market_analyser.analysis.types import Level, Pivot, PivotPoints
 from market_analyser.analysis.volume_profile import volume_profile
 from market_analyser.data.types import Bar
+
+PivotMethod = Literal["floor", "camarilla", "woodie"]
 
 # Default pivot wings: a 3-left/3-right window matches the 3-bar centred window
 # the snapshot's private helper has always used (SR_PIVOT_WINDOW).
@@ -198,6 +200,52 @@ def support_resistance_levels(
     return kept
 
 
+def pivot_points(bars: Sequence[Bar], method: PivotMethod = "floor") -> PivotPoints:
+    """Classic pivot levels (P, R1-3, S1-3) from the last completed bar's HLC.
+
+    The pivots frame the *next* period and are computed from the *prior completed
+    period* — the last bar in `bars` (our cached bars are completed; the default is
+    the prior completed bar of the series' timeframe, the Plan 0092 open question's
+    resolution). Three methods, each a named, hand-verifiable formula set:
+
+    * ``floor`` — the classic floor-trader set: ``P = (H+L+C)/3``, ``R1 = 2P-L``,
+      ``S1 = 2P-H``, ``R2 = P+(H-L)``, ``S2 = P-(H-L)``, ``R3 = H+2(P-L)``,
+      ``S3 = L-2(H-P)``.
+    * ``camarilla`` — ``P = (H+L+C)/3`` with resistances/supports fanned off the
+      close by the 1.1/12, 1.1/6, 1.1/4 factors: ``Rn = C + (H-L)*1.1*{1/12,1/6,
+      1/4}``, ``Sn = C - (H-L)*1.1*{...}``.
+    * ``woodie`` — a close-weighted pivot ``P = (H+L+2C)/4`` feeding the same
+      R1/S1/R2/S2 shape as floor, with ``R3 = H+2(P-L)`` / ``S3 = L-2(H-P)``.
+
+    Requires at least one bar (raises otherwise). Trailing — reads only the last
+    bar, so no future data is involved.
+    """
+
+    if not bars:
+        raise ValueError("pivot_points requires at least one bar")
+    last = bars[-1]
+    high, low, close = last.high, last.low, last.close
+    rng = high - low
+
+    if method == "camarilla":
+        pivot = (high + low + close) / 3.0
+        resistances = [close + rng * 1.1 / d for d in (12.0, 6.0, 4.0)]
+        supports = [close - rng * 1.1 / d for d in (12.0, 6.0, 4.0)]
+        return PivotPoints(method=method, pivot=pivot, resistances=resistances, supports=supports)
+
+    if method == "woodie":
+        pivot = (high + low + 2.0 * close) / 4.0
+    elif method == "floor":
+        pivot = (high + low + close) / 3.0
+    else:  # unreachable for a well-typed caller; explicit for the runtime boundary
+        raise ValueError(f"unknown pivot method {method!r}")
+
+    # floor / woodie share the R1/S1/R2/S2/R3/S3 shape off their respective pivot.
+    resistances = [2.0 * pivot - low, pivot + rng, high + 2.0 * (pivot - low)]
+    supports = [2.0 * pivot - high, pivot - rng, low - 2.0 * (high - pivot)]
+    return PivotPoints(method=method, pivot=pivot, resistances=resistances, supports=supports)
+
+
 __all__ = [
     "CLUSTER_TOLERANCE_PCT",
     "DEFAULT_MAX_LEVELS",
@@ -205,6 +253,8 @@ __all__ = [
     "DEFAULT_PIVOT_RIGHT",
     "TOUCH_STRENGTH_WEIGHT",
     "VOLUME_STRENGTH_WEIGHT",
+    "PivotMethod",
+    "pivot_points",
     "support_resistance_levels",
     "swing_pivots",
 ]

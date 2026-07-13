@@ -32,6 +32,7 @@ from itertools import pairwise
 
 from market_analyser.analysis import indicators as ind
 from market_analyser.analysis.types import (
+    AnchoredVwapValue,
     CounterTrendBar,
     CounterTrendVolume,
     Direction,
@@ -180,6 +181,54 @@ def vwap(bars: Sequence[Bar], period: int = VWAP_PERIOD) -> list[float | None]:
         weighted = sum(((b.high + b.low + b.close) / 3.0) * b.volume for b in window)
         out[i] = weighted / volume_sum
     return out
+
+
+def anchored_vwap(bars: Sequence[Bar], anchor_index: int) -> list[float | None]:
+    """Anchored VWAP: the volume-weighted average of the typical price
+    `(high + low + close) / 3` accumulated from `anchor_index` to each bar.
+
+    Length-aligned to `bars`: `None` for `i < anchor_index` (before the anchor) and
+    for a bar whose cumulative volume since the anchor is still `0` (degenerate — no
+    weighting defined, never divide-by-zero). Unlike the rolling `vwap`, the window
+    has a fixed start, so it is a running accumulation — `result[i]` reads only
+    `bars[anchor_index..=i]`, never a future bar (trailing, ADR-0023).
+
+    Raises `ValueError` for an out-of-range `anchor_index`; returns `[]` for empty
+    `bars`.
+    """
+
+    n = len(bars)
+    if n == 0:
+        return []
+    if not 0 <= anchor_index < n:
+        raise ValueError(f"anchor_index {anchor_index} out of range for {n} bars")
+    out: list[float | None] = [None] * n
+    cum_volume = 0.0
+    cum_weighted = 0.0
+    for i in range(anchor_index, n):
+        b = bars[i]
+        cum_volume += b.volume
+        cum_weighted += ((b.high + b.low + b.close) / 3.0) * b.volume
+        if cum_volume == 0.0:
+            continue  # no volume since the anchor yet — leave undefined
+        out[i] = cum_weighted / cum_volume
+    return out
+
+
+def anchored_vwap_value(bars: Sequence[Bar], anchor_index: int) -> AnchoredVwapValue:
+    """Compose the latest anchored VWAP into a frozen `AnchoredVwapValue`, carrying
+    the anchor's index + timestamp as provenance. `value` is `None` when the volume
+    accumulated from the anchor is zero (degenerate). Raises on an out-of-range
+    anchor (or empty `bars` — there is no anchor bar to reference)."""
+
+    if not bars:
+        raise ValueError("anchored_vwap_value requires at least one bar")
+    series = anchored_vwap(bars, anchor_index)
+    return AnchoredVwapValue(
+        anchor_index=anchor_index,
+        anchor_ts=bars[anchor_index].event_ts,
+        value=series[-1],
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -594,6 +643,8 @@ __all__ = [
     "VOLUME_SMA_PERIOD",
     "VWAP_PERIOD",
     "accumulation_distribution",
+    "anchored_vwap",
+    "anchored_vwap_value",
     "chaikin_money_flow",
     "counter_trend_volume",
     "mfi",

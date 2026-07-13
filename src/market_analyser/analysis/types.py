@@ -428,6 +428,46 @@ class MarketStructure(BaseModel):
     events: list[StructureEvent]
 
 
+class PivotPoints(BaseModel):
+    """Classic floor-trader / Camarilla / Woodie pivot levels (Plan 0092).
+
+    Static horizontal support/resistance derived from the prior completed period's
+    high/low/close (the last completed bar of the series' timeframe). `pivot` is the
+    central level; `resistances` is ``[R1, R2, R3]`` and `supports` is ``[S1, S2,
+    S3]``, always three each in ascending index (R1 nearest the pivot). The formula
+    set is selected by `method`. Trailing — reads only the last completed bar, no
+    future data (ADR-0023). Conditions only — chart geometry, never a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    method: Literal["floor", "camarilla", "woodie"]
+    pivot: float
+    resistances: list[float]  # R1, R2, R3
+    supports: list[float]  # S1, S2, S3
+
+
+class AnchoredVwapValue(BaseModel):
+    """The latest anchored VWAP for one symbol, anchored to a chosen bar (Plan 0092).
+
+    Anchored VWAP is the volume-weighted average of the typical price
+    ``(high + low + close) / 3`` accumulated from an *anchor* bar (a swing or event)
+    to the last bar — dynamic support/resistance that, unlike the rolling
+    `VolumeSummary.vwap`, has a fixed start. `anchor_index` / `anchor_ts` are the
+    anchor's position and timestamp (provenance the renderer re-anchors from);
+    `value` is the latest anchored VWAP, or ``None`` when the volume accumulated
+    from the anchor is zero (degenerate — no weighting defined, never a
+    divide-by-zero). Trailing by construction: the value at bar ``i`` reads only
+    ``anchor..i``. Conditions only — never a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    anchor_index: int
+    anchor_ts: datetime
+    value: float | None
+
+
 class ConditionSnapshot(BaseModel):
     """A composed, point-in-time technical condition read over cached bars.
 
@@ -517,6 +557,7 @@ class MultiTimeframeAlignment(BaseModel):
 
 
 __all__ = [
+    "AnchoredVwapValue",
     "ChartPatternHit",
     "ConditionSnapshot",
     "CounterTrendBar",
@@ -534,6 +575,7 @@ __all__ = [
     "PatternState",
     "Pivot",
     "PivotPoint",
+    "PivotPoints",
     "SmartVolumeHit",
     "StructureEvent",
     "StructureEventKind",
