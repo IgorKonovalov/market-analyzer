@@ -47,6 +47,7 @@ jest.mock('lightweight-charts', () => {
     createSeriesMarkers: shared.createSeriesMarkers,
     ColorType: { Solid: 'solid' },
     createChart: jest.fn(() => ({
+      ...shared.paneStubs,
       addSeries: shared.dispatchAddSeries({
         candle: () => {
           // Bind the module-level handles when the chart mounts (after load).

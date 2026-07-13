@@ -62,6 +62,7 @@ function buildFakeChart(): Record<string, unknown> {
     removePriceLine: jest.fn(),
   }
   return {
+    ...jest.requireActual('../tests/chartMockShared').paneStubs,
     addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
       candle: () => candle,
       line: (opts: unknown) => {

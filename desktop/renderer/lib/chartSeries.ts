@@ -22,21 +22,29 @@ import type { OverlaySpec } from '../types/events'
 export const DEFAULT_OVERLAY_LINE_WIDTH = 2 as LineWidth
 
 // Always-on volume series (Plan 0027 phase 3), each derived client-side from
-// `bars`. The histogram + its MA sit on their own bottom-band price scale; VWAP
-// rides the main price scale; OBV gets its own band. lightweight-charts 4.2.x has
-// no panes API, so "own pane" is an overlay price scale with `scaleMargins` (the
-// plan's documented v4 mechanism / OBV fallback).
+// `bars`. The histogram + its MA sit on their own bottom-band price scale on the
+// price pane; VWAP rides the main price scale. OBV moved to its own REAL pane
+// (Plan 0095 phase 2, v5 `addPane()`) — see the pane registry in `lib/panes.ts`.
+// Volume stays a price-pane `scaleMargins` band (still supported in v5) because
+// volume-under-price is the standard idiom.
 export const PRICE_SCALE_ID = 'right' // the default price (candlestick) scale
 export const VOLUME_SCALE_ID = 'volume'
+// OBV's price scale — now a per-pane overlay scale on the OBV pane (Plan 0095 ph2),
+// not a `scaleMargins` band on the price pane. Kept named so OBV stays a
+// distinguishable always-on derived series rather than an agent overlay.
 export const OBV_SCALE_ID = 'obv'
-// Candles occupy the upper band; volume hugs the bottom; OBV gets a strip above it.
-export const PRICE_SCALE_MARGINS = { top: 0.05, bottom: 0.4 }
+// Candles occupy the upper band of the price pane; volume hugs its bottom. With
+// OBV now on its own pane, the price pane reclaims the space OBV used to band.
+export const PRICE_SCALE_MARGINS = { top: 0.05, bottom: 0.2 }
 export const VOLUME_SCALE_MARGINS = { top: 0.82, bottom: 0 }
-export const OBV_SCALE_MARGINS = { top: 0.62, bottom: 0.22 }
-// Stable layers-legend id for the always-on OBV strip (Plan 0076 phase 2). Unlike
+// Height (px) of the OBV pane below the price pane (Plan 0095 phase 2).
+export const OBV_PANE_HEIGHT = 110
+// Stable id for the OBV pane in the `lib/panes.ts` registry.
+export const OBV_PANE_ID = 'obv'
+// Stable layers-legend id for the always-on OBV series (Plan 0076 phase 2). Unlike
 // the agent overlays (`overlay:<kind>:<period>`) OBV is a standalone derived
 // series, so it gets its own `series:` namespace; toggling this row hides the
-// strip in place (the fixed scale margins keep its vertical space).
+// series in place (its pane is retained).
 export const OBV_LAYER_ID = 'series:obv'
 
 export interface ChartColors {

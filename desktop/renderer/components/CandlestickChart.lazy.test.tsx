@@ -42,6 +42,7 @@ function buildFakeChart(): Record<string, unknown> {
     unsubscribeVisibleLogicalRangeChange: jest.fn(),
   }
   return {
+    ...jest.requireActual('../tests/chartMockShared').paneStubs,
     addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
       candle: () => ({
         setData: jest.fn(),

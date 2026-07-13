@@ -50,8 +50,9 @@ import { ChartTooltip } from './ChartTooltip'
 import { LayersPanel } from './LayersPanel'
 import {
   OBV_LAYER_ID,
+  OBV_PANE_HEIGHT,
+  OBV_PANE_ID,
   OBV_SCALE_ID,
-  OBV_SCALE_MARGINS,
   PRICE_SCALE_ID,
   PRICE_SCALE_MARGINS,
   VOLUME_SCALE_ID,
@@ -66,6 +67,7 @@ import {
 } from '../lib/chartSeries'
 import { formatRangeLabel, monthlyTickMarkFormatter } from '../lib/chartAxis'
 import { IchimokuPrimitive, readIchimokuColors } from '../lib/ichimoku'
+import { PaneRegistry } from '../lib/panes'
 import { PatternSpanPrimitive } from '../lib/spans'
 import {
   TrendlinePrimitive,
@@ -443,18 +445,28 @@ export function CandlestickChart({
       priceLineVisible: false,
       lastValueVisible: false,
     })
-    const obvSeries = chart.addSeries(LineSeries, {
-      priceScaleId: OBV_SCALE_ID,
-      color: colors.obv,
-      lineWidth: style.widths.obv as LineWidth,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    })
-    // Push the candles into the upper band and dock each derived band on its own
-    // overlay scale, so the volume/OBV strips don't share the price axis.
+    // OBV lives on its own REAL pane below the price pane (Plan 0095 phase 2, v5
+    // `addPane()` via the pane registry) — no longer a `scaleMargins` band sharing
+    // the price axis. Volume/VWAP stay on the price pane (pane 0).
+    const paneRegistry = new PaneRegistry(chart)
+    const obvPaneIndex = paneRegistry.ensure(OBV_PANE_ID)
+    const obvSeries = chart.addSeries(
+      LineSeries,
+      {
+        // OBV's own (per-pane) overlay scale — keeps it a distinguishable always-on
+        // series, not an agent overlay. No scaleMargins now: it owns the pane.
+        priceScaleId: OBV_SCALE_ID,
+        color: colors.obv,
+        lineWidth: style.widths.obv as LineWidth,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      },
+      obvPaneIndex,
+    )
+    paneRegistry.pane(OBV_PANE_ID)?.setHeight(OBV_PANE_HEIGHT)
+    // Candles occupy the upper band of the price pane; volume hugs its bottom.
     chart.priceScale(PRICE_SCALE_ID).applyOptions({ scaleMargins: PRICE_SCALE_MARGINS })
     chart.priceScale(VOLUME_SCALE_ID).applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS })
-    chart.priceScale(OBV_SCALE_ID).applyOptions({ scaleMargins: OBV_SCALE_MARGINS })
 
     // Attach the pattern-span band primitive once (Plan 0049 phase 7). It draws
     // nothing until the spans effect feeds it spans; `chart.remove()` detaches it.
@@ -568,9 +580,9 @@ export function CandlestickChart({
     // hook now (Plan 0072 phase 8), so this effect no longer keys on overlays/hidden.
   }, [bars, syncTestRenderHook, candleType])
 
-  // OBV strip visibility (Plan 0076 phase 2): the always-on OBV series (Plan 0027,
-  // drawn on its own bottom scale) is toggleable from the layers legend. Hiding it
-  // blanks the strip in place — the fixed scale margins keep its vertical space.
+  // OBV visibility (Plan 0076 phase 2): the always-on OBV series (Plan 0027, now on
+  // its own real pane — Plan 0095 ph2) is toggleable from the layers legend. Hiding
+  // it blanks the series in place; its pane is retained.
   // Keyed on `candleType` so a rebuild's fresh series re-applies the current toggle.
   useEffect(() => {
     obvSeriesRef.current?.applyOptions({ visible: !hidden.has(OBV_LAYER_ID) })

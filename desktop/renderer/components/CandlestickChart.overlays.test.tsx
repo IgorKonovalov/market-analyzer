@@ -78,6 +78,7 @@ jest.mock('lightweight-charts', () => ({
 
 function buildFakeChart(): FakeChart {
   return {
+    ...jest.requireActual('../tests/chartMockShared').paneStubs,
     addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
       candle: () => ({
         setData: jest.fn(),

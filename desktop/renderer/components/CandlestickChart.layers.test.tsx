@@ -46,6 +46,7 @@ jest.mock('lightweight-charts', () => ({
   createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   createChart: jest.fn(() => ({
+    ...jest.requireActual('../tests/chartMockShared').paneStubs,
     addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
       candle: () => ({
         setData: jest.fn(),

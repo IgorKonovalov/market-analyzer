@@ -64,6 +64,7 @@ jest.mock('lightweight-charts', () => {
         },
       }
       const api = {
+        ...jest.requireActual('../tests/chartMockShared').paneStubs,
         addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
           candle: () => series,
           line: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),

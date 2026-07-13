@@ -61,6 +61,7 @@ function makeSeries(kind: string, opts: unknown): FakeSeries {
 
 function buildChart(): FakeChart {
   const chart: FakeChart = {
+    ...jest.requireActual('../tests/chartMockShared').paneStubs,
     addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
       candle: (o: unknown) => makeSeries('candlestick', o),
       bar: (o: unknown) => makeSeries('bar', o),

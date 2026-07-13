@@ -34,6 +34,18 @@ export const createSeriesMarkers = jest.fn((series?: { setMarkers?: jest.Mock })
   markers: jest.fn(() => []),
 }))
 
+/** v5 pane-API stubs for chart mocks (Plan 0095 phase 2): addPane / removePane /
+ * panes. `panes()` returns two panes so a registry pane index (1, the OBV pane)
+ * resolves for `setHeight`. Spread into a factory's `createChart` return. */
+export const paneStubs = {
+  addPane: jest.fn(() => ({ setHeight: jest.fn(), getHeight: jest.fn(() => 0) })),
+  removePane: jest.fn(),
+  panes: jest.fn(() => [
+    { setHeight: jest.fn(), getHeight: jest.fn(() => 0) },
+    { setHeight: jest.fn(), getHeight: jest.fn(() => 0) },
+  ]),
+}
+
 /** Build a v5 `addSeries(def, opts)` jest.fn from per-type fake-series factories.
  * `candle`/`histogram` fall back to `line` when a suite only cares about one. */
 export function dispatchAddSeries(makers: {
