@@ -31,6 +31,7 @@ import {
 } from '../lib/oscillators'
 import { isOscillatorOverlay, overlayColorFor, overlayLayerId } from '../lib/overlays'
 import { computeAccumulationDistribution, computeChaikinMoneyFlow, computeMfi } from '../lib/volume'
+import { DivergencePrimitive, fallbackDivergenceColors } from '../lib/divergences'
 import type { PaneRegistry } from '../lib/panes'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlayKind, OverlaySpec } from '../types/events'
@@ -54,6 +55,10 @@ export interface OscillatorPaneEntry {
   paneId: string
   /** One line for cci/williams_r/roc/stoch_rsi; two (%K, %D) for stochastic. */
   series: ISeriesApi<'Line'>[]
+  /** The divergence primitive attached to this pane's primary series (Plan 0091
+   * phase 9): `useDivergences` feeds it the oscillator-pivot segments of any
+   * divergence for this oscillator. Disposed with the pane's series on removal. */
+  divergencePrimitive: DivergencePrimitive
 }
 
 /** The oscillator's line data — one array per drawn line (stochastic returns
@@ -117,6 +122,12 @@ export interface UseOscillatorPanesParams {
   bars: Bar[]
   overlays: ReadonlyArray<OverlaySpec> | undefined
   hidden: ReadonlySet<string>
+  /** Oscillator kinds a divergence needs a pane for (Plan 0091 phase 9): these
+   * panes are ensured (created if absent) even when the user has not added — or has
+   * toggled off — that oscillator overlay, so the divergence's oscillator segment
+   * always has a pane to draw on. `obv` divergences use the always-on OBV base pane
+   * and are NOT included here. */
+  requiredKinds: ReadonlySet<OverlayKind>
   rebuildToken: unknown
   syncTestRenderHook: () => void
 }
@@ -125,7 +136,14 @@ export function useOscillatorPanes(
   chartRef: RefObject<IChartApi | null>,
   paneRegistryRef: RefObject<PaneRegistry | null>,
   oscillatorPanesRef: RefObject<Map<string, OscillatorPaneEntry>>,
-  { bars, overlays, hidden, rebuildToken, syncTestRenderHook }: UseOscillatorPanesParams,
+  {
+    bars,
+    overlays,
+    hidden,
+    requiredKinds,
+    rebuildToken,
+    syncTestRenderHook,
+  }: UseOscillatorPanesParams,
 ): void {
   useEffect(() => {
     const chart = chartRef.current
@@ -140,6 +158,12 @@ export function useOscillatorPanes(
       if (!isOscillatorOverlay(spec.kind)) continue
       if (hidden.has(overlayLayerId(spec))) continue
       desired.set(oscillatorPaneId(spec.kind), spec)
+    }
+    // Ensure a pane for every oscillator a divergence needs (Plan 0091 phase 9),
+    // even if the user hasn't added it or has toggled it off — the oscillator
+    // segment must have a pane to draw on. A synthetic `{ kind }` spec suffices.
+    for (const kind of requiredKinds) {
+      if (isOscillatorOverlay(kind)) desired.set(oscillatorPaneId(kind), { kind })
     }
 
     // Remove panes no longer wanted (gone from overlays, or toggled off).
@@ -158,7 +182,15 @@ export function useOscillatorPanes(
         const paneIndex = registry.ensure(paneId)
         const series = createOscillatorSeries(chart, spec.kind, overlayColorFor(spec), paneIndex)
         registry.pane(paneId)?.setHeight(OSCILLATOR_PANE_HEIGHT)
-        entry = { kind: spec.kind, paneId, series }
+        // Attach the divergence primitive to the pane's primary series so its
+        // lifecycle is the series' (disposed on pane removal); `useDivergences`
+        // feeds it. Draws nothing until fed.
+        const divergencePrimitive = new DivergencePrimitive(
+          'oscillator',
+          fallbackDivergenceColors(),
+        )
+        series[0].attachPrimitive(divergencePrimitive)
+        entry = { kind: spec.kind, paneId, series, divergencePrimitive }
         panes.set(paneId, entry)
       }
       const lines = computeOscillatorLines(spec.kind, bars)
@@ -173,6 +205,7 @@ export function useOscillatorPanes(
     bars,
     overlays,
     hidden,
+    requiredKinds,
     rebuildToken,
     syncTestRenderHook,
   ])

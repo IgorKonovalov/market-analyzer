@@ -78,6 +78,8 @@ import {
   trendlineGroupLayerId,
 } from '../lib/trendlines'
 import { useTrendlines } from '../hooks/useTrendlines'
+import { DivergencePrimitive, readDivergenceColors } from '../lib/divergences'
+import { useDivergences, requiredOscillatorKindsFor } from '../hooks/useDivergences'
 import {
   getStoredTheme,
   resolveEffective,
@@ -103,7 +105,7 @@ import {
   computeVwap,
 } from '../lib/volume'
 import type { Bar } from '../types/sidecar/bar'
-import type { OverlaySpec, TrendlineSpec } from '../types/events'
+import type { Divergence, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
 import styles from './CandlestickChart.module.css'
 
@@ -127,6 +129,9 @@ declare global {
 // re-run the useTrendlines effect every time.
 const NO_TRENDLINES: ReadonlyArray<TrendlineSpec> = []
 
+// Stable empty divergence list (same re-render-stability rationale as trendlines).
+const NO_DIVERGENCES: ReadonlyArray<Divergence> = []
+
 // Stable empty user-overlay list for charts with no (symbol, timeframe) — a fresh
 // `[]` per render would re-run the merge memo every time.
 const NO_USER_OVERLAYS: OverlaySpec[] = []
@@ -139,6 +144,10 @@ interface Props {
    * bounds) from `chart.show`/`chart.update`, drawn by the trendline primitive
    * via `useTrendlines`. Dashed = forming, solid = confirmed. */
   trendlines?: ReadonlyArray<TrendlineSpec>
+  /** Plan 0091 phase 9 (ADR-0090): price↔oscillator divergences from the dedicated
+   * `chart.divergences` channel, drawn by `useDivergences` as two segments — price
+   * pivots on pane 0, oscillator pivots on that oscillator's own pane. */
+  divergences?: ReadonlyArray<Divergence>
   ariaLabel?: string
   /** Plan 0014: when true, chart gestures (range-select, bar-click) are
    * forwarded to the agent via `POST /ui_events`. Default false — the
@@ -164,6 +173,7 @@ export function CandlestickChart({
   annotations,
   overlays,
   trendlines = NO_TRENDLINES,
+  divergences = NO_DIVERGENCES,
   ariaLabel,
   agentModeEnabled = false,
   symbol,
@@ -218,6 +228,13 @@ export function CandlestickChart({
   // by `chart.remove()`. Draws the five lines + displaced filled cloud; fed by
   // `useIchimokuSeries` below.
   const ichimokuPrimitiveRef = useRef<IchimokuPrimitive | null>(null)
+  // Divergence primitives (Plan 0091 phase 9, ADR-0090): the price-pane primitive
+  // rides the candle series (draws price-pivot segments); the OBV-pane primitive
+  // rides the OBV series (draws obv oscillator-pivot segments). Each oscillator
+  // pane's own divergence primitive is attached by `useOscillatorPanes`. All fed by
+  // `useDivergences` below, same lifecycle discipline as the trendline primitive.
+  const divergencePricePrimitiveRef = useRef<DivergencePrimitive | null>(null)
+  const obvDivergencePrimitiveRef = useRef<DivergencePrimitive | null>(null)
   // Always-on volume series (Plan 0027 phase 3).
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -498,6 +515,19 @@ export function CandlestickChart({
     series.attachPrimitive(ichimokuPrimitive)
     ichimokuPrimitiveRef.current = ichimokuPrimitive
 
+    // Divergence primitives (Plan 0091 phase 9, ADR-0090): the price-pane one on the
+    // candle series (draws every divergence's price-pivot segment), the OBV one on
+    // the OBV series (draws obv oscillator-pivot segments). Each oscillator pane's
+    // own primitive is attached by `useOscillatorPanes`. All fed by `useDivergences`;
+    // `chart.remove()` detaches these two.
+    const divergenceColors = readDivergenceColors(container)
+    const divergencePricePrimitive = new DivergencePrimitive('price', divergenceColors)
+    series.attachPrimitive(divergencePricePrimitive)
+    divergencePricePrimitiveRef.current = divergencePricePrimitive
+    const obvDivergencePrimitive = new DivergencePrimitive('oscillator', divergenceColors)
+    obvSeries.attachPrimitive(obvDivergencePrimitive)
+    obvDivergencePrimitiveRef.current = obvDivergencePrimitive
+
     chartRef.current = chart
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
@@ -521,6 +551,8 @@ export function CandlestickChart({
       spanPrimitiveRef.current = null
       trendlinePrimitiveRef.current = null
       ichimokuPrimitiveRef.current = null
+      divergencePricePrimitiveRef.current = null
+      obvDivergencePrimitiveRef.current = null
       volumeSeriesRef.current = null
       volumeMaSeriesRef.current = null
       vwapSeriesRef.current = null
@@ -637,6 +669,13 @@ export function CandlestickChart({
     effectiveTheme,
     rebuildToken: candleType,
   })
+  // Oscillator panes a divergence needs (Plan 0091 phase 9): ensured below even if
+  // the user hasn't added — or has toggled off — that oscillator, so the divergence's
+  // oscillator segment always has a pane. `obv` uses the always-on OBV base pane.
+  const requiredOscillatorKinds = useMemo(
+    () => requiredOscillatorKindsFor(divergences),
+    [divergences],
+  )
   // Oscillator sub-panes (Plan 0091 phase 6): each active oscillator overlay draws
   // in its own real v5 pane (via the shared PaneRegistry), toggleable from the
   // layers legend. Reconciles create / reuse / teardown by stable pane id.
@@ -644,9 +683,20 @@ export function CandlestickChart({
     bars,
     overlays: effectiveOverlays,
     hidden,
+    requiredKinds: requiredOscillatorKinds,
     rebuildToken: candleType,
     syncTestRenderHook,
   })
+  // Divergence segments (Plan 0091 phase 9, ADR-0090): feed the price/OBV/oscillator
+  // divergence primitives their segments + theme colours. Runs after the pane
+  // reconcile so every oscillator pane's primitive exists.
+  useDivergences(
+    containerRef,
+    divergencePricePrimitiveRef,
+    obvDivergencePrimitiveRef,
+    oscillatorPanesRef,
+    { divergences, effectiveTheme, rebuildToken: candleType },
+  )
 
   // Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`
   // into the chart's CURRENT (forming) bar in place (Plan 0072 phase 8: `useFormingBar`).
@@ -761,6 +811,7 @@ export function CandlestickChart({
     overlaySeriesRef,
     spanPrimitiveRef,
     trendlinePrimitiveRef,
+    divergencePricePrimitiveRef,
     { drawnMarkers, rebuildToken: candleType },
   )
 

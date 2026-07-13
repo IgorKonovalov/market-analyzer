@@ -11,10 +11,11 @@
  */
 import type { UTCTimestamp } from 'lightweight-charts'
 
-import type { MarkerKind, OverlaySpec, TrendlineSpec } from '../types/events'
+import type { Divergence, MarkerKind, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { ChartMarker } from './markers'
 import { candlePatternDisplayName } from './candleGroups'
 import { patternDisplayName, trendlineStateLabel } from './trendlines'
+import { divergenceGlossaryKey, divergenceLabel } from './divergences'
 import { localize, term } from '../glossary/types'
 import type { Locale } from './i18n'
 
@@ -38,6 +39,9 @@ export interface TooltipContent {
   /** Hovered trendline read-outs — pattern + state (Plan 0067 phase 2 /
    * ADR-0061). Absent when the cursor isn't over a line. */
   trendlines?: string[]
+  /** Hovered divergence read-outs — kind name + glossary meaning (Plan 0091
+   * phase 9 / ADR-0090). Absent when the cursor isn't over a divergence line. */
+  divergences?: string[]
 }
 
 /**
@@ -49,6 +53,16 @@ export interface TooltipContent {
  */
 export function trendlineTooltipText(spec: TrendlineSpec): string {
   return `${patternDisplayName(spec.pattern)} — ${trendlineStateLabel(spec.style)}`
+}
+
+/** Hovered-divergence read-out: the localized kind name plus its glossary
+ * what-it-means line (Plan 0091 phase 9). Degrades to the bare kind name if the
+ * glossary has no entry for the kind — a name is always shown, never a raw key. */
+export function divergenceTooltipText(divergence: Divergence, locale: Locale = 'en'): string {
+  const record = term(divergenceGlossaryKey(divergence.kind))
+  const name = record ? localize(record.term, locale) : divergenceLabel(divergence.kind)
+  const meaning = record ? localize(record.whatItMeans, locale) : ''
+  return meaning ? `${name} — ${meaning}` : name
 }
 
 /** Default gap (px) between the crosshair and the tooltip box. */

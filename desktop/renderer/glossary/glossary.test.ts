@@ -22,6 +22,7 @@ const CATEGORIES: readonly GlossaryCategory[] = [
   'overlay',
   'candlestick',
   'defi',
+  'divergence',
 ]
 const RECORD_KEYS = new Set(['term', 'category', 'howComputed', 'whatItMeans', 'formulaAnchor'])
 

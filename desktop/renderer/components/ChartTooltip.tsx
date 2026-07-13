@@ -64,6 +64,11 @@ export function ChartTooltip({
           {label}
         </div>
       ))}
+      {(content.divergences ?? []).map((label, i) => (
+        <div key={`divergence-${i}`} className={styles.trendline} data-testid="tooltip-divergence">
+          {label}
+        </div>
+      ))}
       {content.markers.map((label, i) => (
         <div key={`marker-${i}`} className={styles.marker} data-testid="tooltip-marker">
           {label}

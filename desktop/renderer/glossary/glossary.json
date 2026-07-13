@@ -1338,5 +1338,65 @@
       "en": "The headline realized and unrealized numbers leave out the excluded positions. Treat them as a floor, not the full picture.",
       "ru": "Итоговые реализованные и нереализованные числа не учитывают исключённые позиции. Считайте их нижней границей, а не полной картиной."
     }
+  },
+  "divergence_regular_bearish": {
+    "term": {
+      "en": "Regular bearish divergence",
+      "ru": "Обычная медвежья дивергенция"
+    },
+    "category": "divergence",
+    "howComputed": {
+      "en": "Price prints a higher high while the oscillator prints a lower high over the two most recent confirmed swing pivots. Drawn as two connecting lines — one across the price highs, one across the oscillator highs on its own pane.",
+      "ru": "Цена формирует более высокий максимум, а осциллятор — более низкий максимум на двух последних подтверждённых опорных точках. Рисуется двумя линиями — по максимумам цены и по максимумам осциллятора в его подпанели."
+    },
+    "whatItMeans": {
+      "en": "A rally losing momentum — the classic top-warning divergence. A condition, not a sell signal: it flags weakening thrust, nothing more.",
+      "ru": "Ралли теряет импульс — классическая дивергенция-предупреждение о вершине. Это состояние, а не сигнал к продаже: указывает лишь на ослабление движения."
+    }
+  },
+  "divergence_regular_bullish": {
+    "term": {
+      "en": "Regular bullish divergence",
+      "ru": "Обычная бычья дивергенция"
+    },
+    "category": "divergence",
+    "howComputed": {
+      "en": "Price prints a lower low while the oscillator prints a higher low over the two most recent confirmed swing pivots, drawn as two connecting lines across the price and oscillator lows.",
+      "ru": "Цена формирует более низкий минимум, а осциллятор — более высокий минимум на двух последних подтверждённых опорных точках; рисуется двумя линиями по минимумам цены и осциллятора."
+    },
+    "whatItMeans": {
+      "en": "A decline losing momentum — the classic bottom-warning divergence. A condition, not a buy signal.",
+      "ru": "Снижение теряет импульс — классическая дивергенция-предупреждение о дне. Это состояние, а не сигнал к покупке."
+    }
+  },
+  "divergence_hidden_bearish": {
+    "term": {
+      "en": "Hidden bearish divergence",
+      "ru": "Скрытая медвежья дивергенция"
+    },
+    "category": "divergence",
+    "howComputed": {
+      "en": "Price prints a lower high while the oscillator prints a higher high over the two most recent confirmed swing pivots.",
+      "ru": "Цена формирует более низкий максимум, а осциллятор — более высокий максимум на двух последних подтверждённых опорных точках."
+    },
+    "whatItMeans": {
+      "en": "A downtrend-continuation warning — momentum hidden beneath a lower high suggests the down move may resume. A condition, never a call.",
+      "ru": "Предупреждение о продолжении нисходящего тренда — скрытый импульс под более низким максимумом намекает на возобновление снижения. Это состояние, а не рекомендация."
+    }
+  },
+  "divergence_hidden_bullish": {
+    "term": {
+      "en": "Hidden bullish divergence",
+      "ru": "Скрытая бычья дивергенция"
+    },
+    "category": "divergence",
+    "howComputed": {
+      "en": "Price prints a higher low while the oscillator prints a lower low over the two most recent confirmed swing pivots.",
+      "ru": "Цена формирует более высокий минимум, а осциллятор — более низкий минимум на двух последних подтверждённых опорных точках."
+    },
+    "whatItMeans": {
+      "en": "An uptrend-continuation signal — the pullback held a higher low while momentum washed out, suggesting the up move may resume. A condition, never a call.",
+      "ru": "Сигнал продолжения восходящего тренда — откат удержал более высокий минимум при вымывании импульса, что намекает на возобновление роста. Это состояние, а не рекомендация."
+    }
   }
 }

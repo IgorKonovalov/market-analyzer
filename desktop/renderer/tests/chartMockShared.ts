@@ -57,20 +57,34 @@ export function dispatchAddSeries(makers: {
   baseline?: (o: unknown) => unknown
 }) {
   return jest.fn((def: { seriesType?: string }, o: unknown) => {
+    let series: unknown
     switch (def?.seriesType) {
       case 'Candlestick':
-        return makers.candle(o)
+        series = makers.candle(o)
+        break
       case 'Histogram':
-        return (makers.histogram ?? makers.line)(o)
+        series = (makers.histogram ?? makers.line)(o)
+        break
       case 'Bar':
-        return (makers.bar ?? makers.candle)(o)
+        series = (makers.bar ?? makers.candle)(o)
+        break
       case 'Area':
-        return (makers.area ?? makers.line)(o)
+        series = (makers.area ?? makers.line)(o)
+        break
       case 'Baseline':
-        return (makers.baseline ?? makers.line)(o)
+        series = (makers.baseline ?? makers.line)(o)
+        break
       case 'Line':
       default:
-        return makers.line(o)
+        series = makers.line(o)
     }
+    // Ensure every mocked series can host a primitive: Plan 0091 phase 9 attaches
+    // a `DivergencePrimitive` to the OBV line series and each oscillator pane's line
+    // series, not just the candle series. Adds no-op stubs when a suite's maker
+    // didn't provide them (harmless for suites that don't assert on primitives).
+    const s = series as Record<string, unknown>
+    if (typeof s.attachPrimitive !== 'function') s.attachPrimitive = jest.fn()
+    if (typeof s.detachPrimitive !== 'function') s.detachPrimitive = jest.fn()
+    return series
   })
 }

@@ -23,6 +23,7 @@ export type GlossaryCategory =
   | 'overlay'
   | 'candlestick'
   | 'defi'
+  | 'divergence'
 
 /**
  * A locale-keyed prose field (Plan 0069 phase 3). `en` is always present (the

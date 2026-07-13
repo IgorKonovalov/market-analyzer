@@ -25,7 +25,7 @@ import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useBackfillState } from '../hooks/useBackfillState'
 import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
 import { useQuotePoll } from '../hooks/useQuotePoll'
-import type { Marker, OverlaySpec, TrendlineSpec } from '../types/events'
+import type { Divergence, Marker, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
 import styles from './OhlcvView.module.css'
@@ -45,6 +45,9 @@ export interface OhlcvViewProps {
   /** Plan 0052 phase 4 (ADR-0049): sloped trendlines (necklines, triangle/
    * wedge bounds) the agent pushed via `chart.show`/`chart.update`. */
   trendlines?: ReadonlyArray<TrendlineSpec>
+  /** Plan 0091 phase 9 (ADR-0090): price↔oscillator divergences the agent surfaced
+   * via `chart.divergences`, drawn as two segments across the price + oscillator panes. */
+  divergences?: ReadonlyArray<Divergence>
   onSymbolChange: (symbol: string) => void
   onTimeframeChange: (timeframe: Timeframe) => void
   onRefresh: () => void
@@ -58,6 +61,7 @@ export function OhlcvView({
   liveHighlights,
   overlays,
   trendlines,
+  divergences,
   onSymbolChange,
   onTimeframeChange,
   onRefresh,
@@ -217,6 +221,7 @@ export function OhlcvView({
             annotations={mergedAnnotations}
             overlays={overlays}
             trendlines={trendlines}
+            divergences={divergences}
             agentModeEnabled={agentModeEnabled}
             symbol={symbol}
             timeframe={timeframe}

@@ -132,10 +132,12 @@ const BARS: Bar[] = Array.from({ length: 20 }, (_, i) => {
   }
 })
 
-/** The main series of a chart is the one the component attaches primitives to
- * (span + trendline) — overlay/volume line series never get a primitive. */
+/** The main series of a chart is the one the component attaches MULTIPLE primitives
+ * to (span + trendline + ichimoku + price-divergence, Plan 0091 phase 9). The OBV
+ * line and each oscillator pane now bear exactly one divergence primitive, so
+ * `> 1` isolates the main series from those single-primitive panes. */
 function primitiveBearingSeries(): FakeSeries[] {
-  return allSeries.filter((s) => s.attachPrimitive.mock.calls.length > 0)
+  return allSeries.filter((s) => s.attachPrimitive.mock.calls.length > 1)
 }
 
 describe('CandlestickChart — candle series-type switch (Plan 0068 phase 4)', () => {
@@ -164,12 +166,12 @@ describe('CandlestickChart — candle series-type switch (Plan 0068 phase 4)', (
     // The main series is now a line series (reflected in the test hook).
     expect(window.__test_chart_render__!.seriesKinds[0]).toEqual({ kind: 'line' })
 
-    // The new main line series has all three primitives re-attached (span +
-    // trendline + ichimoku, Plan 0073 phase 4) and its markers re-set — proving
-    // the primitives/markers survived the rebuild.
+    // The new main line series has all four primitives re-attached (span +
+    // trendline + ichimoku + price-divergence, Plan 0091 phase 9) and its markers
+    // re-set — proving the primitives/markers survived the rebuild.
     const lineMains = primitiveBearingSeries().filter((s) => s.kind === 'line')
     expect(lineMains).toHaveLength(1)
-    expect(lineMains[0].attachPrimitive).toHaveBeenCalledTimes(3)
+    expect(lineMains[0].attachPrimitive).toHaveBeenCalledTimes(4)
     expect(lineMains[0].setMarkers).toHaveBeenCalled()
     // The line main series was fed data as {time, value} (setData called).
     expect(lineMains[0].setData).toHaveBeenCalled()

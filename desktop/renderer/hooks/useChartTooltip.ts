@@ -22,9 +22,11 @@ import type { OverlayEntry } from '../lib/chartSeries'
 import type { ChartMarker } from '../lib/markers'
 import { PatternSpanPrimitive, markerHighlightSpan } from '../lib/spans'
 import { TrendlinePrimitive } from '../lib/trendlines'
+import { DivergencePrimitive } from '../lib/divergences'
 import {
   type OverlayReading,
   type TooltipContent,
+  divergenceTooltipText,
   overlayLabel,
   tooltipAtTime,
   trendlineTooltipText,
@@ -47,6 +49,7 @@ export function useChartTooltip(
   overlaySeriesRef: RefObject<Map<string, OverlayEntry>>,
   spanPrimitiveRef: RefObject<PatternSpanPrimitive | null>,
   trendlinePrimitiveRef: RefObject<TrendlinePrimitive | null>,
+  divergencePricePrimitiveRef: RefObject<DivergencePrimitive | null>,
   { drawnMarkers, rebuildToken }: UseChartTooltipParams,
 ): TooltipState | null {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
@@ -93,15 +96,28 @@ export function useChartTooltip(
       const hovered =
         trendlinePrimitiveRef.current?.hitTestTrendline(param.point.x, param.point.y) ?? null
       const trendlines = hovered ? [trendlineTooltipText(hovered)] : []
+      // Divergence under the cursor (Plan 0091 phase 9): the price-pane primitive
+      // hit-tests the hovered pixel against its price-pivot segments — same pane and
+      // coordinate space as the trendline hit-test.
+      const hoveredDivergence =
+        divergencePricePrimitiveRef.current?.hitTestDivergence(param.point.x, param.point.y) ?? null
+      const divergences = hoveredDivergence
+        ? [divergenceTooltipText(hoveredDivergence, locale)]
+        : []
       const markers = timeContent?.markers ?? []
       const overlays = timeContent?.overlays ?? []
       const markerMeaning = timeContent?.markerMeaning
-      if (markers.length === 0 && overlays.length === 0 && trendlines.length === 0) {
+      if (
+        markers.length === 0 &&
+        overlays.length === 0 &&
+        trendlines.length === 0 &&
+        divergences.length === 0
+      ) {
         setTooltip(null)
         return
       }
       setTooltip({
-        content: { markers, overlays, trendlines, markerMeaning },
+        content: { markers, overlays, trendlines, divergences, markerMeaning },
         x: param.point.x,
         y: param.point.y,
       })
@@ -114,6 +130,7 @@ export function useChartTooltip(
     overlaySeriesRef,
     spanPrimitiveRef,
     trendlinePrimitiveRef,
+    divergencePricePrimitiveRef,
     drawnMarkers,
     rebuildToken,
     locale,

@@ -363,6 +363,7 @@ export function App(): JSX.Element {
           liveHighlights={chartState.liveHighlights}
           overlays={chartState.overlays}
           trendlines={chartState.trendlines}
+          divergences={chartState.divergences}
           onSymbolChange={onSymbolChange}
           onTimeframeChange={onTimeframeChange}
           onRefresh={onRefresh}

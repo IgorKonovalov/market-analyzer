@@ -118,6 +118,13 @@
   --trendline-symmetrical-triangle: #1971c2;
   --trendline-rising-wedge: #6741d9;
   --trendline-falling-wedge: #0c8599;
+
+  /* Divergence segment palette (Plan 0091 phase 9 / ADR-0090): class × direction —
+     bearish reds/oranges, bullish greens/teals; regular saturated, hidden muted. */
+  --divergence-regular-bearish: #e03131;
+  --divergence-regular-bullish: #2f9e44;
+  --divergence-hidden-bearish: #e8590c;
+  --divergence-hidden-bullish: #0c8599;
 }
 
 /* Dark palette — explicit choice; wins over `prefers-color-scheme`. */
@@ -183,6 +190,12 @@
   --trendline-symmetrical-triangle: #4dabf7;
   --trendline-rising-wedge: #b197fc;
   --trendline-falling-wedge: #3bc9db;
+
+  /* Divergence segment palette — brighter shades for the dark chart background. */
+  --divergence-regular-bearish: #ff8787;
+  --divergence-regular-bullish: #69db7c;
+  --divergence-hidden-bearish: #ffa94d;
+  --divergence-hidden-bullish: #3bc9db;
 }
 
 /* System-follow dark — applies only when the user has made no explicit choice
