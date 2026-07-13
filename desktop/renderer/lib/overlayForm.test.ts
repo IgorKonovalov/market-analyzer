@@ -22,6 +22,9 @@ describe('overlay form kinds', () => {
       'cci',
       'williams_r',
       'roc',
+      'mfi',
+      'cmf',
+      'ad_line',
     ])
   })
 

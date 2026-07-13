@@ -1021,6 +1021,51 @@
       "ru": "Чистый показатель моментума. Положительное значение означает, что цена выше, чем period баров назад, и моментум растёт; пересечения нуля и расхождения с ценой отмечают смену моментума."
     }
   },
+  "mfi": {
+    "term": {
+      "en": "Money Flow Index",
+      "ru": "Индекс денежного потока"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "A volume-weighted RSI over the period (default 14): each bar's typical price times volume counts as positive or negative money flow as the typical price rose or fell; MFI is 100 * positive / (positive + negative), a 0-100 pane.",
+      "ru": "RSI, взвешенный по объёму, за период (по умолчанию 14): типичная цена бара, умноженная на объём, считается положительным или отрицательным денежным потоком в зависимости от роста или падения типичной цены; MFI = 100 * положительный / (положительный + отрицательный), панель 0-100."
+    },
+    "whatItMeans": {
+      "en": "An overbought/oversold read that weights conviction by volume. High (>80) is overbought, low (<20) oversold; unlike RSI it fades a move that runs on thin volume.",
+      "ru": "Индикатор перекупленности/перепроданности, взвешивающий убеждённость по объёму. Высокие значения (>80) — перекупленность, низкие (<20) — перепроданность; в отличие от RSI, ослабляет движение на тонком объёме."
+    }
+  },
+  "cmf": {
+    "term": {
+      "en": "Chaikin Money Flow",
+      "ru": "Денежный поток Чайкина"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "The trailing period-bar sum of money-flow volume (the close's position within each bar's range, times volume) divided by the trailing volume sum — a zero-centred read in -1..+1 (default period 20).",
+      "ru": "Сумма объёма денежного потока за период (положение закрытия в диапазоне бара, умноженное на объём), делённая на сумму объёма за тот же период — показатель с центром в нуле в диапазоне -1..+1 (период по умолчанию 20)."
+    },
+    "whatItMeans": {
+      "en": "A buying- vs selling-pressure gauge. Above zero is net accumulation, below zero net distribution; the further from zero, the stronger the pressure.",
+      "ru": "Индикатор давления покупателей против продавцов. Выше нуля — чистое накопление, ниже нуля — чистое распределение; чем дальше от нуля, тем сильнее давление."
+    }
+  },
+  "ad_line": {
+    "term": {
+      "en": "Accumulation/Distribution Line",
+      "ru": "Линия накопления/распределения"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "A cumulative running total of money-flow volume: each bar adds (close's position within its high-low range) times volume. A rising line is net accumulation, a falling line net distribution.",
+      "ru": "Кумулятивная сумма объёма денежного потока: каждый бар добавляет (положение закрытия в диапазоне максимум-минимум), умноженное на объём. Растущая линия — чистое накопление, падающая — чистое распределение."
+    },
+    "whatItMeans": {
+      "en": "A running measure of whether volume is flowing into or out of the asset. Its direction confirms a trend; a divergence between the line and price warns the move may lack volume support.",
+      "ru": "Текущий показатель того, втекает объём в актив или вытекает из него. Его направление подтверждает тренд; расхождение между линией и ценой предупреждает, что движению может не хватать поддержки объёмом."
+    }
+  },
   "doji": {
     "term": {
       "en": "Doji"

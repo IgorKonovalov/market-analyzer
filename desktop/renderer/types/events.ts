@@ -30,6 +30,10 @@ export type OverlayKind =
   | 'cci'
   | 'williams_r'
   | 'roc'
+  // Plan 0091 money-flow — each drawn in its own v5 sub-pane.
+  | 'mfi'
+  | 'cmf'
+  | 'ad_line'
 
 /** Support/resistance role for a `price_line` overlay; absent for plain levels. */
 export type PriceLineRole = 'support' | 'resistance'

@@ -27,6 +27,9 @@ import type { Bar } from '../types/sidecar/bar'
 // Defaults mirror analysis/volume.py (VOLUME_SMA_PERIOD / VWAP_PERIOD = 20).
 export const VOLUME_MA_PERIOD = 20
 export const VWAP_PERIOD = 20
+// Money-flow defaults mirror analysis/volume.py (Plan 0091 phase 7).
+export const MFI_PERIOD = 14
+export const CMF_PERIOD = 20
 
 // Volume bars are tinted by candle direction. Semi-transparent so the histogram
 // reads as a backdrop band rather than competing with the candlesticks; the hues
@@ -109,4 +112,80 @@ export function computeObv(bars: ReadonlyArray<Bar>): LineData[] {
     result.push({ time: tsOf(bars[i]), value: cumulative })
   }
   return result
+}
+
+/**
+ * Money Flow Index — a volume-weighted RSI over the trailing `period` bars.
+ * Mirror of `analysis/volume.py::mfi`: raw money flow is the typical price
+ * `(high + low + close) / 3` times volume; `MFI = 100 * positive / (positive +
+ * negative)` where a bar's flow is positive/negative as its typical price rose /
+ * fell from the prior bar. `None`/skip for `i < period` and for a wholly flat
+ * typical-price window (no directional flow). Default 14.
+ */
+export function computeMfi(bars: ReadonlyArray<Bar>, period = MFI_PERIOD): LineData[] {
+  if (period < 1 || bars.length <= period) return []
+  const tp = bars.map((b) => (b.high + b.low + b.close) / 3)
+  const raw = bars.map((b, i) => tp[i] * b.volume)
+  const out: LineData[] = []
+  for (let i = period; i < bars.length; i++) {
+    let positive = 0
+    let negative = 0
+    for (let j = i - period + 1; j <= i; j++) {
+      if (tp[j] > tp[j - 1]) positive += raw[j]
+      else if (tp[j] < tp[j - 1]) negative += raw[j]
+    }
+    const denom = positive + negative
+    if (denom === 0) continue
+    out.push({ time: tsOf(bars[i]), value: (100 * positive) / denom })
+  }
+  return out
+}
+
+/** One bar's Chaikin money-flow volume — the money-flow multiplier
+ * `((close - low) - (high - close)) / (high - low)` times volume; a zero-range bar
+ * contributes `0`. Mirror of `analysis/volume.py::_money_flow_volume`. */
+function moneyFlowVolume(b: Bar): number {
+  const range = b.high - b.low
+  if (range === 0) return 0
+  const multiplier = (b.close - b.low - (b.high - b.close)) / range
+  return multiplier * b.volume
+}
+
+/**
+ * Cumulative Accumulation/Distribution line — mirror of
+ * `analysis/volume.py::accumulation_distribution`. Each bar adds its money-flow
+ * volume to the running total; dense from bar 0 (a zero-range bar contributes 0).
+ * One point per bar; empty when `bars` is empty.
+ */
+export function computeAccumulationDistribution(bars: ReadonlyArray<Bar>): LineData[] {
+  if (bars.length === 0) return []
+  const out: LineData[] = []
+  let cumulative = 0
+  for (let i = 0; i < bars.length; i++) {
+    cumulative += moneyFlowVolume(bars[i])
+    out.push({ time: tsOf(bars[i]), value: cumulative })
+  }
+  return out
+}
+
+/**
+ * Chaikin Money Flow — mirror of `analysis/volume.py::chaikin_money_flow`. The
+ * trailing `period`-bar sum of money-flow volume divided by the trailing volume
+ * sum, a zero-centred read in `[-1, 1]`. `None`/skip for `i < period - 1` and for
+ * a zero-volume window. Default 20.
+ */
+export function computeChaikinMoneyFlow(bars: ReadonlyArray<Bar>, period = CMF_PERIOD): LineData[] {
+  if (period < 1 || bars.length < period) return []
+  const out: LineData[] = []
+  for (let i = period - 1; i < bars.length; i++) {
+    let volumeSum = 0
+    let flowSum = 0
+    for (let j = i - period + 1; j <= i; j++) {
+      volumeSum += bars[j].volume
+      flowSum += moneyFlowVolume(bars[j])
+    }
+    if (volumeSum === 0) continue
+    out.push({ time: tsOf(bars[i]), value: flowSum / volumeSum })
+  }
+  return out
 }

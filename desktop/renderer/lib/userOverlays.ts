@@ -38,6 +38,10 @@ export const USER_OVERLAY_KINDS: readonly OverlayKind[] = [
   'cci',
   'williams_r',
   'roc',
+  // Plan 0091 money-flow — user-addable, each in its own sub-pane.
+  'mfi',
+  'cmf',
+  'ad_line',
 ]
 
 const STORAGE_KEY = 'ma.userOverlays'

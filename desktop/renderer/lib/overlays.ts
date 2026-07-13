@@ -109,10 +109,14 @@ export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> =
   cci: { color: '#a855f7', compute: () => [] },
   williams_r: { color: '#e11d48', compute: () => [] },
   roc: { color: '#ca8a04', compute: () => [] },
+  // Money-flow (Plan 0091 phase 7): same sub-pane draw path via `useOscillatorPanes`.
+  mfi: { color: '#0d9488', compute: () => [] },
+  cmf: { color: '#7c3aed', compute: () => [] },
+  ad_line: { color: '#c2410c', compute: () => [] },
 }
 
-/** The Plan-0091 oscillator kinds — drawn in their own v5 sub-panes (not on the
- * price pane), so the generic overlay/line reconcile skips them and
+/** The Plan-0091 oscillator + money-flow kinds — drawn in their own v5 sub-panes
+ * (not on the price pane), so the generic overlay/line reconcile skips them and
  * `useOscillatorPanes` owns their draw. */
 export const OSCILLATOR_KINDS: readonly OverlayKind[] = [
   'stochastic',
@@ -120,6 +124,9 @@ export const OSCILLATOR_KINDS: readonly OverlayKind[] = [
   'cci',
   'williams_r',
   'roc',
+  'mfi',
+  'cmf',
+  'ad_line',
 ]
 
 /** Whether an overlay kind draws in its own oscillator sub-pane (Plan 0091). */

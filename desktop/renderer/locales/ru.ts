@@ -688,6 +688,9 @@ export const ru = {
   'layers.kind.cci': 'CCI',
   'layers.kind.williams_r': 'Williams %R',
   'layers.kind.roc': 'Скорость изменения',
+  'layers.kind.mfi': 'Индекс денежного потока',
+  'layers.kind.cmf': 'Денежный поток Чайкина',
+  'layers.kind.ad_line': 'Линия A/D',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) ──
   'glossary.howComputedLabel': 'Как вычисляется',

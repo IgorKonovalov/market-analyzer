@@ -77,6 +77,10 @@ class OverlaySpec(BaseModel):
         "cci",
         "williams_r",
         "roc",
+        # Plan 0091 phase 7: volume-weighted money-flow, each in its own sub-pane.
+        "mfi",
+        "cmf",
+        "ad_line",
     ]
     period: int | None = None
     multiplier: float | None = None  # supertrend's ATR multiplier; None on other kinds

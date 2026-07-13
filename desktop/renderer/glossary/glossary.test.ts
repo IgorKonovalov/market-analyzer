@@ -208,9 +208,12 @@ it('the indicator-category keys equal exactly the frozen feature-name union', ()
 // copy, not a forecast feature, so it is deliberately excluded from the phase-3
 // FEATURE_NAMES pin.
 const EXPECTED_OVERLAY_KEYS = [
+  'ad_line',
   'bbands',
   'cci',
+  'cmf',
   'ema',
+  'mfi',
   'roc',
   'sma',
   'stoch_rsi',

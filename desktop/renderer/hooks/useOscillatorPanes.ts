@@ -28,6 +28,7 @@ import {
   computeWilliamsR,
 } from '../lib/oscillators'
 import { isOscillatorOverlay, overlayColorFor, overlayLayerId } from '../lib/overlays'
+import { computeAccumulationDistribution, computeChaikinMoneyFlow, computeMfi } from '../lib/volume'
 import type { PaneRegistry } from '../lib/panes'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlayKind, OverlaySpec } from '../types/events'
@@ -69,6 +70,12 @@ function computeOscillatorLines(kind: OverlayKind, bars: Bar[]): LineData[][] {
       return [computeWilliamsR(bars)]
     case 'roc':
       return [computeRoc(bars)]
+    case 'mfi':
+      return [computeMfi(bars)]
+    case 'cmf':
+      return [computeChaikinMoneyFlow(bars)]
+    case 'ad_line':
+      return [computeAccumulationDistribution(bars)]
     default:
       return []
   }

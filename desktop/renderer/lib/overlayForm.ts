@@ -29,6 +29,9 @@ export const OVERLAY_FORM_KINDS = [
   'cci',
   'williams_r',
   'roc',
+  'mfi',
+  'cmf',
+  'ad_line',
 ] as const satisfies readonly OverlayKind[]
 
 export type OverlayFormKind = (typeof OVERLAY_FORM_KINDS)[number]

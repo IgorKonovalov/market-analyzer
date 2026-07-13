@@ -679,6 +679,9 @@ export const en = {
   'layers.kind.cci': 'CCI',
   'layers.kind.williams_r': 'Williams %R',
   'layers.kind.roc': 'Rate of Change',
+  'layers.kind.mfi': 'Money Flow Index',
+  'layers.kind.cmf': 'Chaikin Money Flow',
+  'layers.kind.ad_line': 'A/D Line',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) — prose is phase 3 ──
   'glossary.howComputedLabel': "How it's computed",

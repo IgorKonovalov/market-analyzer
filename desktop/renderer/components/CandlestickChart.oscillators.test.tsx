@@ -150,6 +150,15 @@ describe('oscillator sub-panes (Plan 0091 phase 6)', () => {
     expect(oscillatorPaneSeries().filter((s) => !removedSeries.includes(s))).toHaveLength(2)
   })
 
+  it.each(['mfi', 'cmf', 'ad_line'] as const)(
+    'draws money-flow %s on its own pane with a legend row',
+    (kind) => {
+      render(<CandlestickChart bars={BARS} overlays={[{ kind }]} />)
+      expect(oscillatorPaneSeries()).toHaveLength(1)
+      expect(screen.getByTestId(`layer-row:overlay:${kind}:na`)).toBeInTheDocument()
+    },
+  )
+
   it('does not draw an oscillator on the price pane (no double-draw)', () => {
     render(<CandlestickChart bars={BARS} overlays={[{ kind: 'roc' }]} />)
     // The ROC line sits on its own pane, never the price pane (paneIndex 0/undefined

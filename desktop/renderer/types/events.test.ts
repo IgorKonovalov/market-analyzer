@@ -241,11 +241,14 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     expect(requiredNames(dumped.OverlaySpec)).toEqual(['kind'])
     expect(literalValues(dumped.OverlaySpec, 'kind')).toEqual(
       [
+        'ad_line',
         'bbands',
         'cci',
+        'cmf',
         'ema',
         'ichimoku',
         'macd',
+        'mfi',
         'obv',
         'price_line',
         'roc',
