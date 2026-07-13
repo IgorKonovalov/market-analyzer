@@ -22,7 +22,7 @@
  * regression that loses a series cannot pass.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { ColorType, createChart } from 'lightweight-charts'
+import { ColorType, HistogramSeries, LineSeries, createChart } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, LineWidth, Logical } from 'lightweight-charts'
 
 import type { IPriceLine } from 'lightweight-charts'
@@ -422,28 +422,28 @@ export function CandlestickChart({
     // Always-on volume series (Plan 0027 phase 3). Created once at mount; their
     // data is pushed in the bars effect. Disposed by `chart.remove()` on unmount
     // alongside the candlestick (the chart owns all its series).
-    const volumeSeries = chart.addHistogramSeries({
+    const volumeSeries = chart.addSeries(HistogramSeries, {
       priceScaleId: VOLUME_SCALE_ID,
       color: colors.volume,
       priceFormat: { type: 'volume' },
       priceLineVisible: false,
       lastValueVisible: false,
     })
-    const volumeMaSeries = chart.addLineSeries({
+    const volumeMaSeries = chart.addSeries(LineSeries, {
       priceScaleId: VOLUME_SCALE_ID,
       color: colors.volumeMa,
       lineWidth: style.widths.volumeMa as LineWidth,
       priceLineVisible: false,
       lastValueVisible: false,
     })
-    const vwapSeries = chart.addLineSeries({
+    const vwapSeries = chart.addSeries(LineSeries, {
       priceScaleId: PRICE_SCALE_ID, // rides the main price scale alongside candles
       color: colors.vwap,
       lineWidth: style.widths.vwap as LineWidth,
       priceLineVisible: false,
       lastValueVisible: false,
     })
-    const obvSeries = chart.addLineSeries({
+    const obvSeries = chart.addSeries(LineSeries, {
       priceScaleId: OBV_SCALE_ID,
       color: colors.obv,
       lineWidth: style.widths.obv as LineWidth,

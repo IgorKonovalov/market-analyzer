@@ -35,6 +35,7 @@ interface FakeBaselineSeries {
 
 interface FakeChart {
   addBaselineSeries: jest.Mock<FakeBaselineSeries, [unknown]>
+  addSeries: jest.Mock
   remove: jest.Mock<void, []>
   timeScale: () => { fitContent: jest.Mock }
 }
@@ -43,6 +44,8 @@ let lastBaselineSeries: FakeBaselineSeries | null = null
 let fakeChart: FakeChart
 
 jest.mock('lightweight-charts', () => ({
+  ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+  createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   createChart: jest.fn(() => fakeChart),
 }))
@@ -59,6 +62,11 @@ beforeEach(() => {
       }
       lastBaselineSeries = s
       return s
+    }),
+    addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+      candle: (o: unknown) => fakeChart.addBaselineSeries(o),
+      line: (o: unknown) => fakeChart.addBaselineSeries(o),
+      baseline: (o: unknown) => fakeChart.addBaselineSeries(o),
     }),
     remove: jest.fn(),
     timeScale: () => ({ fitContent: jest.fn() }),

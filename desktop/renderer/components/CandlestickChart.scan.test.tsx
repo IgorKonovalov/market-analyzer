@@ -38,12 +38,16 @@ jest.mock('lightweight-charts', () => {
     attachPrimitive: jest.fn(),
     detachPrimitive: jest.fn(),
   }
+  const shared = jest.requireActual('../tests/chartMockShared')
   return {
+    ...shared.seriesDefs,
+    createSeriesMarkers: shared.createSeriesMarkers,
     ColorType: { Solid: 'solid' },
     createChart: jest.fn(() => ({
-      addCandlestickSeries: jest.fn(() => series),
-      addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
-      addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+      addSeries: shared.dispatchAddSeries({
+        candle: () => series,
+        line: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
+      }),
       priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
       removeSeries: jest.fn(),
       remove: jest.fn(),

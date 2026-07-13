@@ -15,7 +15,7 @@
  */
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
-import { LineStyle } from 'lightweight-charts'
+import { LineSeries, LineStyle } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 import { computeBbands } from '../lib/indicators'
@@ -75,9 +75,9 @@ export function useBbandsSeries(
           priceLineVisible: false,
           lastValueVisible: false,
         }
-        const upper = chart.addLineSeries(band)
-        const middle = chart.addLineSeries({ ...band, lineStyle: LineStyle.Dashed })
-        const lower = chart.addLineSeries(band)
+        const upper = chart.addSeries(LineSeries, band)
+        const middle = chart.addSeries(LineSeries, { ...band, lineStyle: LineStyle.Dashed })
+        const lower = chart.addSeries(LineSeries, band)
         entry = { upper, middle, lower }
         bbandsSeries.set(key, entry)
       }

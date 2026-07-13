@@ -8,6 +8,7 @@
  * style resolvers, and the always-on volume/OBV price-scale constants. All pure
  * (no React, no chart lifecycle) — the component owns creation order and refs.
  */
+import { AreaSeries, BarSeries, CandlestickSeries, LineSeries } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, LineWidth } from 'lightweight-charts'
 
 import { toLightweightBar } from '../api/client'
@@ -103,14 +104,14 @@ export function createMainSeries(chart: IChartApi, type: CandleSeriesType): Main
   const common = { priceLineVisible: false, lastValueVisible: false }
   switch (type) {
     case 'bars':
-      return chart.addBarSeries({})
+      return chart.addSeries(BarSeries, {})
     case 'line':
-      return chart.addLineSeries({ priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
+      return chart.addSeries(LineSeries, { priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
     case 'area':
-      return chart.addAreaSeries({ priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
+      return chart.addSeries(AreaSeries, { priceScaleId: PRICE_SCALE_ID, lineWidth: 2, ...common })
     case 'candles':
     default:
-      return chart.addCandlestickSeries({})
+      return chart.addSeries(CandlestickSeries, {})
   }
 }
 

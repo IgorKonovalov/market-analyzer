@@ -15,6 +15,7 @@
  */
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
+import { LineSeries } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 
 import { overlayKey } from '../lib/chartSeries'
@@ -70,8 +71,8 @@ export function useSupertrendSeries(
       let entry = supertrendSeries.get(key)
       if (entry === undefined) {
         const lineOpts = { lineWidth: 2 as const, priceLineVisible: false, lastValueVisible: false }
-        const up = chart.addLineSeries({ color: upColor, ...lineOpts })
-        const down = chart.addLineSeries({ color: downColor, ...lineOpts })
+        const up = chart.addSeries(LineSeries, { color: upColor, ...lineOpts })
+        const down = chart.addSeries(LineSeries, { color: downColor, ...lineOpts })
         entry = { up, down }
         supertrendSeries.set(key, entry)
       } else {

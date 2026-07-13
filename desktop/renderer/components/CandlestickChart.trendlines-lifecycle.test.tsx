@@ -42,6 +42,8 @@ jest.mock('lightweight-charts', () => {
     getVisibleRange: jest.fn(() => null),
   })
   return {
+    ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+    createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
     ColorType: { Solid: 'solid' },
     createChart: jest.fn(() => {
       const record: ChartRecord = { trendlinePrimitive: null, removed: false }
@@ -62,9 +64,10 @@ jest.mock('lightweight-charts', () => {
         },
       }
       const api = {
-        addCandlestickSeries: jest.fn(() => series),
-        addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
-        addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+        addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+          candle: () => series,
+          line: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
+        }),
         priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
         removeSeries: jest.fn(),
         remove: jest.fn(() => {

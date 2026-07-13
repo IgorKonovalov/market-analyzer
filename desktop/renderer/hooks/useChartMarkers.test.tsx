@@ -1,4 +1,5 @@
 import { renderHook } from '@testing-library/react'
+import { createSeriesMarkers } from 'lightweight-charts'
 import type { SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 
 import { useChartMarkers } from './useChartMarkers'
@@ -7,8 +8,16 @@ import type { ChartMarker } from '../lib/markers'
 import { PatternSpanPrimitive } from '../lib/spans'
 
 function harness() {
+  // v5 routes markers through the createSeriesMarkers plugin, not series.setMarkers.
+  // Capture the plugin's setMarkers so the existing assertions hold unchanged.
   const setMarkers = jest.fn<void, [SeriesMarker<UTCTimestamp>[]]>()
-  const series = { setMarkers } as unknown as MainSeries
+  ;(createSeriesMarkers as jest.Mock).mockReturnValue({
+    setMarkers,
+    detach: jest.fn(),
+    applyOptions: jest.fn(),
+    markers: jest.fn(() => []),
+  })
+  const series = {} as unknown as MainSeries
   const setSpans = jest.fn()
   const setColors = jest.fn()
   const setVisible = jest.fn()

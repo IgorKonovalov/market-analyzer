@@ -37,17 +37,9 @@ interface FakeHistogramSeries {
   _opts: unknown
 }
 
-interface FakeCandlestickSeries {
-  setData: jest.Mock
-  setMarkers: jest.Mock
-  applyOptions: jest.Mock
-}
-
 interface FakeChart {
-  addCandlestickSeries: jest.Mock<FakeCandlestickSeries, []>
-  addLineSeries: jest.Mock<FakeLineSeries, [unknown]>
-  // Plan 0027: always-on volume histogram + its own price scales.
-  addHistogramSeries: jest.Mock<FakeHistogramSeries, [unknown]>
+  // v5: one unified addSeries(SeriesDefinition, opts) (Plan 0095).
+  addSeries: jest.Mock
   priceScale: jest.Mock<{ applyOptions: jest.Mock }, [string]>
   removeSeries: jest.Mock<void, [unknown]>
   remove: jest.Mock<void, []>
@@ -78,32 +70,36 @@ function overlayLineSeries(): FakeLineSeries[] {
 }
 
 jest.mock('lightweight-charts', () => ({
+  ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+  createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   createChart: jest.fn(() => fakeChart),
 }))
 
 function buildFakeChart(): FakeChart {
   return {
-    addCandlestickSeries: jest.fn(() => ({
-      setData: jest.fn(),
-      setMarkers: jest.fn(),
-      applyOptions: jest.fn(),
-      attachPrimitive: jest.fn(),
-      detachPrimitive: jest.fn(),
-    })),
-    addLineSeries: jest.fn((opts: unknown) => {
-      const s: FakeLineSeries = {
+    addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+      candle: () => ({
         setData: jest.fn(),
+        setMarkers: jest.fn(),
         applyOptions: jest.fn(),
-        _opts: (opts ?? {}) as FakeLineSeries['_opts'],
-      }
-      createdLineSeries.push(s)
-      return s
-    }),
-    addHistogramSeries: jest.fn((opts: unknown) => {
-      const s: FakeHistogramSeries = { setData: jest.fn(), applyOptions: jest.fn(), _opts: opts }
-      createdHistogramSeries.push(s)
-      return s
+        attachPrimitive: jest.fn(),
+        detachPrimitive: jest.fn(),
+      }),
+      line: (opts: unknown) => {
+        const s: FakeLineSeries = {
+          setData: jest.fn(),
+          applyOptions: jest.fn(),
+          _opts: (opts ?? {}) as FakeLineSeries['_opts'],
+        }
+        createdLineSeries.push(s)
+        return s
+      },
+      histogram: (opts: unknown) => {
+        const s: FakeHistogramSeries = { setData: jest.fn(), applyOptions: jest.fn(), _opts: opts }
+        createdHistogramSeries.push(s)
+        return s
+      },
     }),
     priceScale: jest.fn((_id: string) => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn((s: unknown) => {
@@ -175,7 +171,7 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
     expect(hook!.seriesCount).toBe(BASE_COUNT)
     expect(hook!.seriesKinds).toEqual(BASE_KINDS)
     // The volume histogram is drawn; no agent OVERLAY line series exist yet.
-    expect(fakeChart.addHistogramSeries).toHaveBeenCalledTimes(1)
+    expect(createdHistogramSeries).toHaveLength(1)
     expect(overlayLineSeries()).toHaveLength(0)
   })
 

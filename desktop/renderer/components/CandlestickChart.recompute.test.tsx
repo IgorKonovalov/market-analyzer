@@ -29,6 +29,9 @@ const VISIBLE_TO = Math.floor(Date.UTC(2026, 3, 18) / 1000)
 let rangeHandler: (() => void) | null = null
 
 jest.mock('lightweight-charts', () => {
+  const { seriesDefs, createSeriesMarkers, dispatchAddSeries } = jest.requireActual(
+    '../tests/chartMockShared',
+  )
   const series = {
     setData: jest.fn(),
     setMarkers: jest.fn(),
@@ -37,11 +40,14 @@ jest.mock('lightweight-charts', () => {
     detachPrimitive: jest.fn(),
   }
   return {
+    ...seriesDefs,
+    createSeriesMarkers,
     ColorType: { Solid: 'solid' },
     createChart: jest.fn(() => ({
-      addCandlestickSeries: jest.fn(() => series),
-      addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
-      addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+      addSeries: dispatchAddSeries({
+        candle: () => series,
+        line: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
+      }),
       priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
       removeSeries: jest.fn(),
       remove: jest.fn(),

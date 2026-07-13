@@ -46,11 +46,14 @@ let clickHandler: ((param: unknown) => void) | null = null
 let coordinateToTime: (x: number) => number | null = (x) => 1_714_000_000 + x
 
 jest.mock('lightweight-charts', () => ({
+  ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+  createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   createChart: jest.fn(() => ({
-    addCandlestickSeries: jest.fn(() => candleSeries),
-    addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
-    addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+    addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+      candle: () => candleSeries,
+      line: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
+    }),
     priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn(),
     remove: jest.fn(),

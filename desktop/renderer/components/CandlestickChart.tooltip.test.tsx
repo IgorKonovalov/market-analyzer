@@ -20,17 +20,20 @@ import { localize, term } from '../glossary/types'
 let crosshairHandler: ((param: MouseEventParams) => void) | null = null
 
 jest.mock('lightweight-charts', () => ({
+  ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+  createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   createChart: jest.fn(() => ({
-    addCandlestickSeries: jest.fn(() => ({
-      setData: jest.fn(),
-      setMarkers: jest.fn(),
-      applyOptions: jest.fn(),
-      attachPrimitive: jest.fn(),
-      detachPrimitive: jest.fn(),
-    })),
-    addLineSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
-    addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
+    addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+      candle: () => ({
+        setData: jest.fn(),
+        setMarkers: jest.fn(),
+        applyOptions: jest.fn(),
+        attachPrimitive: jest.fn(),
+        detachPrimitive: jest.fn(),
+      }),
+      line: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
+    }),
     priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn(),
     remove: jest.fn(),

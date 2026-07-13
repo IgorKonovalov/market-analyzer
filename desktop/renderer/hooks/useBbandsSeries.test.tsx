@@ -16,7 +16,7 @@ function fakeChart() {
   const added: Array<{ setData: jest.Mock; applyOptions: jest.Mock }> = []
   const removed: unknown[] = []
   const chart = {
-    addLineSeries: () => {
+    addSeries: () => {
       const s = { setData: jest.fn(), applyOptions: jest.fn() }
       added.push(s)
       return s as unknown as ISeriesApi<'Line'>

@@ -24,11 +24,11 @@
  */
 import type {
   ISeriesPrimitive,
-  ISeriesPrimitivePaneRenderer,
-  ISeriesPrimitivePaneView,
+  IPrimitivePaneRenderer,
+  IPrimitivePaneView,
   Logical,
   SeriesAttachedParameter,
-  SeriesPrimitivePaneViewZOrder,
+  PrimitivePaneViewZOrder,
   Time,
 } from 'lightweight-charts'
 
@@ -308,7 +308,7 @@ interface PixelRegion {
   color: string
 }
 
-class IchimokuPaneRenderer implements ISeriesPrimitivePaneRenderer {
+class IchimokuPaneRenderer implements IPrimitivePaneRenderer {
   constructor(
     private readonly fills: PixelRegion[],
     private readonly lines: PixelLine[],
@@ -348,16 +348,16 @@ class IchimokuPaneRenderer implements ISeriesPrimitivePaneRenderer {
   }
 }
 
-class IchimokuPaneView implements ISeriesPrimitivePaneView {
+class IchimokuPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: IchimokuPrimitive) {}
 
-  zOrder(): SeriesPrimitivePaneViewZOrder {
+  zOrder(): PrimitivePaneViewZOrder {
     // Above the candles' body but the translucent cloud reads fine over them; the
     // trendline primitive uses 'top' for the same reason (thin lines need to show).
     return 'top'
   }
 
-  renderer(): ISeriesPrimitivePaneRenderer {
+  renderer(): IPrimitivePaneRenderer {
     const { fills, lines } = this.primitive.currentPixels()
     return new IchimokuPaneRenderer(fills, lines)
   }
@@ -397,7 +397,7 @@ export class IchimokuPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = null
   }
 
-  paneViews(): readonly ISeriesPrimitivePaneView[] {
+  paneViews(): readonly IPrimitivePaneView[] {
     return this.visible && this.geometries.length > 0 ? [this.paneView] : []
   }
 

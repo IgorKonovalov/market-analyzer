@@ -14,9 +14,10 @@
  * them after a chart restyle / rebuild. MUST be called after the chart-creation
  * effect so `seriesRef` / `spanPrimitiveRef` are populated on mount.
  */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
-import type { SeriesMarker, UTCTimestamp } from 'lightweight-charts'
+import { createSeriesMarkers } from 'lightweight-charts'
+import type { ISeriesMarkersPluginApi, SeriesMarker, Time, UTCTimestamp } from 'lightweight-charts'
 
 import { chartColorsFrom, type MainSeries } from '../lib/chartSeries'
 import { resolveChartStyle } from '../lib/chartStyle'
@@ -49,6 +50,13 @@ export function useChartMarkers(
     rebuildToken,
   }: UseChartMarkersParams,
 ): void {
+  // v5 removed `ISeriesApi.setMarkers`; markers are a plugin now
+  // (`createSeriesMarkers`). Hold one plugin instance across renders and update it
+  // in place. A candle-type rebuild recreates the main series, so the plugin is
+  // keyed on series identity — a new series means the old plugin died with it.
+  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
+  const markersSeriesRef = useRef<MainSeries | null>(null)
+
   useEffect(() => {
     const series = seriesRef.current
     const container = containerRef.current
@@ -78,10 +86,17 @@ export function useChartMarkers(
         color: colors.markerClicked,
         text: clickedBarTs.slice(0, 10),
       }
-      // setMarkers requires ascending time order.
+      // The markers plugin requires ascending time order.
       markers = [...base, clicked].sort((a, b) => (a.time as number) - (b.time as number))
     }
-    series.setMarkers(markers)
+    if (markersPluginRef.current === null || markersSeriesRef.current !== series) {
+      // First run, or the series was rebuilt (candle-type change): attach a fresh
+      // plugin to the current series. The old plugin (if any) died with its series.
+      markersPluginRef.current = createSeriesMarkers(series)
+      markersSeriesRef.current = series
+    }
+    // Always drive the markers through the plugin (one uniform path).
+    markersPluginRef.current.setMarkers(markers)
   }, [
     seriesRef,
     containerRef,

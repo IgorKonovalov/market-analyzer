@@ -1,6 +1,6 @@
 # 0095 — lightweight-charts v4 → v5 migration (real panes substrate)
 
-> **Status:** approved (user "approve plan 95", 2026-07-13)
+> **Status:** in-progress (ui-builder, 2026-07-13)
 > **Created:** 2026-07-13
 > **Owner skill(s):** ui-builder, human
 > **Related ADRs:** [0088-lightweight-charts-v5-panes](../adrs/0088-lightweight-charts-v5-panes.md) (paired — accepts at this plan's close), [0008-electron-shell-conventions](../adrs/0008-electron-shell-conventions.md) (CSP posture reaffirmed, unchanged), [0012-dependency-cooldown](../adrs/0012-dependency-cooldown.md) + [0013-pin-direct-dependencies](../adrs/0013-pin-direct-dependencies.md) (exact pin, cooldown gate), [0049](../adrs/0049-chart-trendline-overlay-primitive.md)/[0061](../adrs/0061-trendline-pattern-identity-and-colour.md)/[0062](../adrs/0062-user-chart-style-overrides.md)/[0077](../adrs/0077-user-originated-display-overlays.md)/[0045](../adrs/0045-candlestick-pattern-span-delivery.md) (call-site/primitive substrate updated, no decision reversed)

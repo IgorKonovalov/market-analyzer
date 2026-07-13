@@ -32,12 +32,12 @@
  */
 import type {
   ISeriesPrimitive,
-  ISeriesPrimitivePaneRenderer,
-  ISeriesPrimitivePaneView,
+  IPrimitivePaneRenderer,
+  IPrimitivePaneView,
   Logical,
   PrimitiveHoveredItem,
   SeriesAttachedParameter,
-  SeriesPrimitivePaneViewZOrder,
+  PrimitivePaneViewZOrder,
   Time,
   UTCTimestamp,
 } from 'lightweight-charts'
@@ -544,7 +544,7 @@ interface TrendlineDrawTarget {
   useMediaCoordinateSpace(callback: (scope: MediaCoordinateScope) => void): void
 }
 
-class TrendlinePaneRenderer implements ISeriesPrimitivePaneRenderer {
+class TrendlinePaneRenderer implements IPrimitivePaneRenderer {
   constructor(
     private readonly segments: TrendlineSegment[],
     private readonly fills: TrendlineFill[] = [],
@@ -604,16 +604,16 @@ class TrendlinePaneRenderer implements ISeriesPrimitivePaneRenderer {
   }
 }
 
-class TrendlinePaneView implements ISeriesPrimitivePaneView {
+class TrendlinePaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: TrendlinePrimitive) {}
 
-  zOrder(): SeriesPrimitivePaneViewZOrder {
+  zOrder(): PrimitivePaneViewZOrder {
     // Above the candles — a 2px neckline behind the bodies would be illegible
     // (unlike the span BAND, which deliberately paints behind them).
     return 'top'
   }
 
-  renderer(): ISeriesPrimitivePaneRenderer {
+  renderer(): IPrimitivePaneRenderer {
     return new TrendlinePaneRenderer(
       this.primitive.currentSegments(),
       this.primitive.currentFills(),
@@ -656,7 +656,7 @@ export class TrendlinePrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = null
   }
 
-  paneViews(): readonly ISeriesPrimitivePaneView[] {
+  paneViews(): readonly IPrimitivePaneView[] {
     return this.visible && this.specs.length > 0 ? [this.paneView] : []
   }
 

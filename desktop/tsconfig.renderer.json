@@ -12,6 +12,7 @@
     "dist",
     "release",
     "tests/**/*",
+    "renderer/tests/**/*",
     "electron/**/*",
     "**/*.test.ts",
     "**/*.test.tsx",

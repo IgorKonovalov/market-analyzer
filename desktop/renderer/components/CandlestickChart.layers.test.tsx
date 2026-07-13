@@ -42,31 +42,35 @@ function reset(): void {
 }
 
 jest.mock('lightweight-charts', () => ({
+  ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+  createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   createChart: jest.fn(() => ({
-    addCandlestickSeries: jest.fn(() => ({
-      setData: jest.fn(),
-      attachPrimitive: jest.fn(),
-      detachPrimitive: jest.fn(),
-      setMarkers: jest.fn((m: typeof lastMarkers) => {
-        lastMarkers = m
+    addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+      candle: () => ({
+        setData: jest.fn(),
+        attachPrimitive: jest.fn(),
+        detachPrimitive: jest.fn(),
+        setMarkers: jest.fn((m: typeof lastMarkers) => {
+          lastMarkers = m
+        }),
+        applyOptions: jest.fn(),
+        createPriceLine: jest.fn((opts: { price: number; color: string }) => {
+          const line: FakePriceLine = { applyOptions: jest.fn() }
+          createdPriceLines.push({ price: opts.price, color: opts.color, line })
+          return line
+        }),
+        removePriceLine: jest.fn((line: FakePriceLine) => {
+          removedPriceLines.push(line)
+        }),
       }),
-      applyOptions: jest.fn(),
-      createPriceLine: jest.fn((opts: { price: number; color: string }) => {
-        const line: FakePriceLine = { applyOptions: jest.fn() }
-        createdPriceLines.push({ price: opts.price, color: opts.color, line })
-        return line
-      }),
-      removePriceLine: jest.fn((line: FakePriceLine) => {
-        removedPriceLines.push(line)
-      }),
-    })),
-    addLineSeries: jest.fn((opts: FakeLine['_opts']) => {
-      const s: FakeLine = { _opts: opts, setData: jest.fn(), applyOptions: jest.fn() }
-      lineSeries.push(s)
-      return s
+      line: (opts: FakeLine['_opts']) => {
+        const s: FakeLine = { _opts: opts, setData: jest.fn(), applyOptions: jest.fn() }
+        lineSeries.push(s)
+        return s
+      },
+      histogram: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
     }),
-    addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
     priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn((s: FakeLine) => {
       removedSeries.push(s)

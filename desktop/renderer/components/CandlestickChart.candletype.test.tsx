@@ -61,11 +61,13 @@ function makeSeries(kind: string, opts: unknown): FakeSeries {
 
 function buildChart(): FakeChart {
   const chart: FakeChart = {
-    addCandlestickSeries: jest.fn((o: unknown) => makeSeries('candlestick', o)),
-    addBarSeries: jest.fn((o: unknown) => makeSeries('bar', o)),
-    addLineSeries: jest.fn((o: unknown) => makeSeries('line', o)),
-    addAreaSeries: jest.fn((o: unknown) => makeSeries('area', o)),
-    addHistogramSeries: jest.fn((o: unknown) => makeSeries('histogram', o)),
+    addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+      candle: (o: unknown) => makeSeries('candlestick', o),
+      bar: (o: unknown) => makeSeries('bar', o),
+      line: (o: unknown) => makeSeries('line', o),
+      area: (o: unknown) => makeSeries('area', o),
+      histogram: (o: unknown) => makeSeries('histogram', o),
+    }),
     priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn(),
     remove: jest.fn(),
@@ -88,6 +90,8 @@ function buildChart(): FakeChart {
 }
 
 jest.mock('lightweight-charts', () => ({
+  ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+  createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   TickMarkType: { Year: 0 },
   createChart: jest.fn(),

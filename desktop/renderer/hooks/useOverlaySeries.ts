@@ -16,6 +16,7 @@
  */
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
+import { LineSeries } from 'lightweight-charts'
 import type { IChartApi } from 'lightweight-charts'
 
 import {
@@ -109,7 +110,7 @@ export function useOverlaySeries(
       let entry = overlaySeries.get(key)
       if (entry === undefined) {
         const color = overlayStyle ? overlayStyleColor(spec, overlayStyle) : overlayColorFor(spec)
-        const series = chart.addLineSeries({
+        const series = chart.addSeries(LineSeries, {
           color,
           lineWidth: overlayStyle
             ? overlayStyleWidth(spec, overlayStyle)

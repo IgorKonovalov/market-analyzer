@@ -41,22 +41,27 @@ jest.mock('lightweight-charts', () => {
     attachPrimitive: jest.fn(),
     detachPrimitive: jest.fn(),
   }
+  const shared = jest.requireActual('../tests/chartMockShared')
   return {
+    ...shared.seriesDefs,
+    createSeriesMarkers: shared.createSeriesMarkers,
     ColorType: { Solid: 'solid' },
     createChart: jest.fn(() => ({
-      addCandlestickSeries: jest.fn(() => {
-        // Bind the module-level handles when the chart mounts (after load).
-        mockFitContent = fitContent
-        mockCreatedLines = createdLines
-        mockRemoved = removed
-        return candle
+      addSeries: shared.dispatchAddSeries({
+        candle: () => {
+          // Bind the module-level handles when the chart mounts (after load).
+          mockFitContent = fitContent
+          mockCreatedLines = createdLines
+          mockRemoved = removed
+          return candle
+        },
+        line: (opts: { priceScaleId?: string }) => {
+          const s: MockLine = { setData: jest.fn(), applyOptions: jest.fn(), _opts: opts }
+          createdLines.push(s)
+          return s
+        },
+        histogram: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
       }),
-      addLineSeries: jest.fn((opts: { priceScaleId?: string }) => {
-        const s: MockLine = { setData: jest.fn(), applyOptions: jest.fn(), _opts: opts }
-        createdLines.push(s)
-        return s
-      }),
-      addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
       priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
       removeSeries: jest.fn((s: MockLine) => {
         removed.push(s)

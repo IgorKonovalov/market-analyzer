@@ -2,7 +2,7 @@
  * Annotation → chart-marker mapping (Plan 0029 phase 2, moved out of
  * `CandlestickChart.tsx`). Pure: no React, no chart instance — inputs are
  * `Annotation` records, outputs are lightweight-charts series markers the chart
- * layer hands to `series.setMarkers(...)`.
+ * layer hands to the v5 markers plugin (`createSeriesMarkers(series).setMarkers(...)`).
  */
 import type { SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 

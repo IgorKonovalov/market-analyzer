@@ -22,7 +22,7 @@
  * series exists and has the right point count without touching canvas pixels.
  */
 import { useEffect, useMemo, useRef } from 'react'
-import { ColorType, createChart } from 'lightweight-charts'
+import { BaselineSeries, ColorType, createChart } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, LineData, UTCTimestamp } from 'lightweight-charts'
 
 import {
@@ -280,7 +280,7 @@ function EquityCurveChart({
     // Baseline series colors gains (above initial_capital) green and losses red.
     // The numerical values are sober — high-saturation reds and greens read as
     // alarms; we want a calm "ok / not ok" gradient.
-    const series = chart.addBaselineSeries({
+    const series = chart.addSeries(BaselineSeries, {
       baseValue: { type: 'price', price: initialCapital },
       topLineColor: 'rgba(22, 163, 74, 1)',
       topFillColor1: 'rgba(22, 163, 74, 0.28)',

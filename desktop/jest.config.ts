@@ -14,6 +14,10 @@ const config: Config = {
     '^@/(.*)$': '<rootDir>/renderer/$1',
     '^@shared/(.*)$': '<rootDir>/shared/$1',
     '\\.(css|less|scss)$': '<rootDir>/tests/__mocks__/styleMock.cjs',
+    // lightweight-charts v5 is ESM-only; jest's CJS resolver can't load it. Map to a
+    // shared manual mock (Plan 0095). Per-file `jest.mock('lightweight-charts', …)`
+    // factories in the component suites still override this for their file.
+    '^lightweight-charts$': '<rootDir>/renderer/tests/lightweightChartsMock.ts',
   },
   transform: {
     '^.+\\.tsx?$': [

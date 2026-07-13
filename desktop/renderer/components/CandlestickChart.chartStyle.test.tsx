@@ -42,6 +42,8 @@ let candle: {
 let fakeChart: Record<string, unknown>
 
 jest.mock('lightweight-charts', () => ({
+  ...jest.requireActual('../tests/chartMockShared').seriesDefs,
+  createSeriesMarkers: jest.requireActual('../tests/chartMockShared').createSeriesMarkers,
   ColorType: { Solid: 'solid' },
   TickMarkType: { Year: 0 },
   createChart: jest.fn(() => fakeChart),
@@ -60,17 +62,19 @@ function buildFakeChart(): Record<string, unknown> {
     removePriceLine: jest.fn(),
   }
   return {
-    addCandlestickSeries: jest.fn(() => candle),
-    addLineSeries: jest.fn((opts: unknown) => {
-      const s: FakeLine = {
-        setData: jest.fn(),
-        applyOptions: jest.fn(),
-        _opts: (opts ?? {}) as FakeLine['_opts'],
-      }
-      createdLines.push(s)
-      return s
+    addSeries: jest.requireActual('../tests/chartMockShared').dispatchAddSeries({
+      candle: () => candle,
+      line: (opts: unknown) => {
+        const s: FakeLine = {
+          setData: jest.fn(),
+          applyOptions: jest.fn(),
+          _opts: (opts ?? {}) as FakeLine['_opts'],
+        }
+        createdLines.push(s)
+        return s
+      },
+      histogram: () => ({ setData: jest.fn(), applyOptions: jest.fn() }),
     }),
-    addHistogramSeries: jest.fn(() => ({ setData: jest.fn(), applyOptions: jest.fn() })),
     priceScale: jest.fn(() => ({ applyOptions: jest.fn() })),
     removeSeries: jest.fn(),
     remove: jest.fn(),

@@ -14,10 +14,10 @@
  */
 import type {
   ISeriesPrimitive,
-  ISeriesPrimitivePaneRenderer,
-  ISeriesPrimitivePaneView,
+  IPrimitivePaneRenderer,
+  IPrimitivePaneView,
   SeriesAttachedParameter,
-  SeriesPrimitivePaneViewZOrder,
+  PrimitivePaneViewZOrder,
   Time,
   UTCTimestamp,
 } from 'lightweight-charts'
@@ -129,7 +129,7 @@ export function computeSpanRects(
 // The renderer's canvas target — the minimal slice of fancy-canvas'
 // `CanvasRenderingTarget2D` we use. Typed locally so this file doesn't import the
 // (pnpm-nested) `fancy-canvas` package directly; method-param bivariance makes the
-// renderer structurally assignable to `ISeriesPrimitivePaneRenderer`.
+// renderer structurally assignable to `IPrimitivePaneRenderer`.
 interface MediaCoordinateScope {
   context: CanvasRenderingContext2D
   mediaSize: { width: number; height: number }
@@ -138,7 +138,7 @@ interface SpanDrawTarget {
   useMediaCoordinateSpace(callback: (scope: MediaCoordinateScope) => void): void
 }
 
-class SpanPaneRenderer implements ISeriesPrimitivePaneRenderer {
+class SpanPaneRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly rects: SpanRect[]) {}
 
   draw(target: SpanDrawTarget): void {
@@ -153,14 +153,14 @@ class SpanPaneRenderer implements ISeriesPrimitivePaneRenderer {
   }
 }
 
-class SpanPaneView implements ISeriesPrimitivePaneView {
+class SpanPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: PatternSpanPrimitive) {}
 
-  zOrder(): SeriesPrimitivePaneViewZOrder {
+  zOrder(): PrimitivePaneViewZOrder {
     return 'bottom'
   }
 
-  renderer(): ISeriesPrimitivePaneRenderer {
+  renderer(): IPrimitivePaneRenderer {
     return new SpanPaneRenderer(this.primitive.currentRects())
   }
 }
@@ -168,7 +168,7 @@ class SpanPaneView implements ISeriesPrimitivePaneView {
 /** Draws the hovered-pattern highlight (Plan 0071 follow-up): a full-height
  * STROKED border box around the pattern's bar(s) in its opaque direction colour,
  * so hovering a marker arrow outlines exactly which candles the pattern occupies. */
-class SpanHighlightPaneRenderer implements ISeriesPrimitivePaneRenderer {
+class SpanHighlightPaneRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly rect: SpanRect | null) {}
 
   draw(target: SpanDrawTarget): void {
@@ -185,16 +185,16 @@ class SpanHighlightPaneRenderer implements ISeriesPrimitivePaneRenderer {
   }
 }
 
-class SpanHighlightPaneView implements ISeriesPrimitivePaneView {
+class SpanHighlightPaneView implements IPrimitivePaneView {
   constructor(private readonly primitive: PatternSpanPrimitive) {}
 
-  zOrder(): SeriesPrimitivePaneViewZOrder {
+  zOrder(): PrimitivePaneViewZOrder {
     // Above the candles — the outline must be visible, unlike the translucent
     // band, which deliberately sits behind them.
     return 'top'
   }
 
-  renderer(): ISeriesPrimitivePaneRenderer {
+  renderer(): IPrimitivePaneRenderer {
     return new SpanHighlightPaneRenderer(this.primitive.currentHighlightRect())
   }
 }
@@ -232,8 +232,8 @@ export class PatternSpanPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = null
   }
 
-  paneViews(): readonly ISeriesPrimitivePaneView[] {
-    const views: ISeriesPrimitivePaneView[] = []
+  paneViews(): readonly IPrimitivePaneView[] {
+    const views: IPrimitivePaneView[] = []
     if (this.visible && this.spans.length > 0) views.push(this.paneView)
     if (this.highlight !== null) views.push(this.highlightView)
     return views
