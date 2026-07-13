@@ -112,6 +112,16 @@ class IchimokuValue:
     chikou: float  # close[i] — PLOTTED at i - displacement
 
 
+@dataclass(frozen=True)
+class StochasticValue:
+    """One Stochastic reading: the fast `%K` line and its `%D` smoothing (an SMA of
+    `%K`). Both are 0-100. Emitted only once both are defined, so the object never
+    holds a `None` field (Plan 0091 phase 1)."""
+
+    k: float
+    d: float
+
+
 # --------------------------------------------------------------------------- #
 # Single-value indicators                                                      #
 # --------------------------------------------------------------------------- #
@@ -577,6 +587,153 @@ def ichimoku(
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Momentum oscillators (Plan 0091 phase 1)                                     #
+# --------------------------------------------------------------------------- #
+
+
+def stochastic(
+    bars: Sequence[Bar], k_period: int = 14, d_period: int = 3
+) -> list[StochasticValue | None]:
+    """Fast Stochastic oscillator over the trailing window inclusive of bar `i`.
+
+    Raw `%K = 100 * (close - lowest_low) / (highest_high - lowest_low)` over the
+    trailing `k_period` bars; `%D` is the `d_period`-SMA of `%K`. A flat window
+    (`highest_high == lowest_low`) leaves `%K` undefined — `None`, never a
+    divide-by-zero (matching the `vwap`/`relative_volume` guards). The value object
+    is emitted only once both lines are defined — from index `(k_period - 1) +
+    (d_period - 1)` on a series with no flat windows; earlier bars are `None`.
+    """
+
+    if k_period < 1:
+        raise ValueError(f"k_period must be >= 1, got {k_period}")
+    if d_period < 1:
+        raise ValueError(f"d_period must be >= 1, got {d_period}")
+    n = len(bars)
+    raw_k: list[float | None] = [None] * n
+    for i in range(k_period - 1, n):
+        window = bars[i - k_period + 1 : i + 1]
+        hh = max(b.high for b in window)
+        ll = min(b.low for b in window)
+        rng = hh - ll
+        if rng == 0.0:
+            continue  # flat window — %K undefined
+        raw_k[i] = 100.0 * (bars[i].close - ll) / rng
+
+    out: list[StochasticValue | None] = [None] * n
+    for i in range(d_period - 1, n):
+        k = raw_k[i]
+        if k is None:
+            continue
+        dwin = raw_k[i - d_period + 1 : i + 1]
+        if any(v is None for v in dwin):
+            continue
+        d = sum(v for v in dwin if v is not None) / d_period
+        out[i] = StochasticValue(k=k, d=d)
+    return out
+
+
+def stochastic_rsi(
+    closes: Sequence[float], rsi_period: int = 14, stoch_period: int = 14
+) -> list[float | None]:
+    """Stochastic RSI — the Stochastic %K formula applied to the RSI series rather
+    than price, scaled 0-100.
+
+    `stoch_rsi[i] = 100 * (rsi[i] - min(rsi)) / (max(rsi) - min(rsi))` over the
+    trailing `stoch_period` RSI values. A flat RSI window (`max == min`) is `None`,
+    never a divide-by-zero. Defined from index `rsi_period + stoch_period - 1` on a
+    series with no flat RSI windows; earlier bars are `None`. Trailing because the
+    underlying `rsi` is trailing.
+    """
+
+    if stoch_period < 1:
+        raise ValueError(f"stoch_period must be >= 1, got {stoch_period}")
+    rsi_series = rsi(closes, rsi_period)  # validates rsi_period
+    n = len(closes)
+    out: list[float | None] = [None] * n
+    for i in range(stoch_period - 1, n):
+        cur = rsi_series[i]
+        if cur is None:
+            continue
+        window = rsi_series[i - stoch_period + 1 : i + 1]
+        if any(v is None for v in window):
+            continue
+        defined = [v for v in window if v is not None]
+        hi, lo = max(defined), min(defined)
+        rng = hi - lo
+        if rng == 0.0:
+            continue  # flat RSI window — undefined
+        out[i] = 100.0 * (cur - lo) / rng
+    return out
+
+
+def cci(bars: Sequence[Bar], period: int = 20) -> list[float | None]:
+    """Commodity Channel Index over the trailing `period` bars inclusive of `i`.
+
+    Typical price `TP = (high + low + close) / 3`, `CCI = (TP - SMA(TP)) / (0.015 *
+    mean_deviation)` where the mean deviation is the average absolute deviation of
+    `TP` from its SMA over the window. A zero mean deviation (a flat `TP` window)
+    is `None`, never a divide-by-zero. `None` for `i < period - 1`.
+    """
+
+    if period < 1:
+        raise ValueError(f"period must be >= 1, got {period}")
+    n = len(bars)
+    tp = [(b.high + b.low + b.close) / 3 for b in bars]
+    out: list[float | None] = [None] * n
+    for i in range(period - 1, n):
+        window = tp[i - period + 1 : i + 1]
+        sma_tp = sum(window) / period
+        mean_dev = sum(abs(x - sma_tp) for x in window) / period
+        if mean_dev == 0.0:
+            continue  # flat typical-price window — undefined
+        out[i] = (tp[i] - sma_tp) / (0.015 * mean_dev)
+    return out
+
+
+def williams_r(bars: Sequence[Bar], period: int = 14) -> list[float | None]:
+    """Williams %R over the trailing `period` bars inclusive of `i`, ranged -100..0.
+
+    `%R = -100 * (highest_high - close) / (highest_high - lowest_low)`. A flat
+    window (`highest_high == lowest_low`) is `None`, never a divide-by-zero. `None`
+    for `i < period - 1`.
+    """
+
+    if period < 1:
+        raise ValueError(f"period must be >= 1, got {period}")
+    n = len(bars)
+    out: list[float | None] = [None] * n
+    for i in range(period - 1, n):
+        window = bars[i - period + 1 : i + 1]
+        hh = max(b.high for b in window)
+        ll = min(b.low for b in window)
+        rng = hh - ll
+        if rng == 0.0:
+            continue  # flat window — undefined
+        out[i] = -100.0 * (hh - bars[i].close) / rng
+    return out
+
+
+def roc(closes: Sequence[float], period: int = 12) -> list[float | None]:
+    """Rate of Change: percent change from `period` bars ago, `100 * (close[i] -
+    close[i - period]) / close[i - period]`.
+
+    `None` for `i < period` (no reference bar) and `None` where the reference close
+    is exactly `0` (no divide-by-zero).
+    """
+
+    if period < 1:
+        raise ValueError(f"period must be >= 1, got {period}")
+    n = len(closes)
+    out: list[float | None] = [None] * n
+    for i in range(period, n):
+        prev = closes[i - period]
+        if prev == 0.0:
+            continue  # zero reference — undefined
+        out[i] = 100.0 * (closes[i] - prev) / prev
+    return out
+
+
 def _unwrap(value: float | None) -> float:
     """Assert a series entry is defined and return it — narrows `float | None` to
     `float` for the dense interior of a smoothed series (mypy-strict friendly)."""
@@ -592,17 +749,23 @@ __all__ = [
     "IchimokuValue",
     "KeltnerValue",
     "MacdValue",
+    "StochasticValue",
     "SupertrendValue",
     "adx",
     "atr",
     "bollinger",
     "bollinger_bandwidth",
+    "cci",
     "donchian",
     "ema",
     "ichimoku",
     "keltner",
     "macd",
+    "roc",
     "rsi",
     "sma",
+    "stochastic",
+    "stochastic_rsi",
     "supertrend",
+    "williams_r",
 ]

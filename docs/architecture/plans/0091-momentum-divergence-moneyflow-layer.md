@@ -1,6 +1,6 @@
 # 0091 — Momentum, divergence & money-flow analysis layer
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-12
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0023-technical-analysis-surface](../adrs/0023-technical-analysis-surface.md) (realizes; no new ADR), [0060-glossary-tooltip-interaction-posture](../adrs/0060-glossary-tooltip-interaction-posture.md) (glossary), [0077-user-originated-display-overlays](../adrs/0077-user-originated-display-overlays.md) (client-computable overlays), [0049-chart-trendline-overlay-primitive](../adrs/0049-chart-trendline-overlay-primitive.md) / [0061-trendline-pattern-identity-and-colour](../adrs/0061-trendline-pattern-identity-and-colour.md) (divergence segment rendering), [0046-mcp-large-result-delivery](../adrs/0046-mcp-large-result-delivery.md) + [0064-generated-sidecar-api-reference](../adrs/0064-generated-sidecar-api-reference.md) (tool surface)

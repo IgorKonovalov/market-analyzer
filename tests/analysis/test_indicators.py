@@ -389,6 +389,16 @@ _INDICATORS: list[tuple[str, Callable[[Sequence[Bar]], list[tuple[float, ...] | 
     # Ichimoku's defined-from is the widest computed window, span_b - 1 = 51 for
     # the classic defaults; displacement (a plotting offset) does not shift it.
     ("ichimoku", lambda b: [_floats(v) for v in ind.ichimoku(b)], 51),
+    # Plan 0091 phase-1 oscillators.
+    ("stochastic14_3", lambda b: [_floats(v) for v in ind.stochastic(b, 14, 3)], 15),
+    (
+        "stoch_rsi14_14",
+        lambda b: [_floats(v) for v in ind.stochastic_rsi([x.close for x in b], 14, 14)],
+        27,
+    ),
+    ("cci20", lambda b: [_floats(v) for v in ind.cci(b, 20)], 19),
+    ("williams14", lambda b: [_floats(v) for v in ind.williams_r(b, 14)], 13),
+    ("roc12", lambda b: [_floats(v) for v in ind.roc([x.close for x in b], 12)], 12),
 ]
 
 
@@ -432,3 +442,125 @@ def test_undefined_prefix_and_length() -> None:
 def test_determinism() -> None:
     for name, fn, _ in _INDICATORS:
         assert fn(BARS) == fn(BARS), name
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0091 phase-1 oscillators — independent references on the fixture        #
+# --------------------------------------------------------------------------- #
+
+
+def test_stochastic_matches_independent_window() -> None:
+    series = ind.stochastic(BARS, 14, 3)
+    raw: list[float | None] = [None] * N
+    for i in range(13, N):
+        w = BARS[i - 13 : i + 1]
+        hh = max(b.high for b in w)
+        ll = min(b.low for b in w)
+        raw[i] = 100.0 * (BARS[i].close - ll) / (hh - ll)
+    for i in _INDICES:
+        val = series[i]
+        k = raw[i]
+        assert val is not None and k is not None
+        assert abs(val.k - k) < _TOL
+        window = [raw[j] for j in range(i - 2, i + 1)]
+        assert all(x is not None for x in window)
+        assert abs(val.d - statistics.fmean(x for x in window if x is not None)) < _TOL
+
+
+def test_stochastic_rsi_matches_independent_scaling() -> None:
+    """The stochastic transform (min/max rescale) is verified independently against
+    the fixture's Wilder RSI series (`_wilder_rsi`, the module-independent pin)."""
+
+    series = ind.stochastic_rsi(CLOSES, 14, 14)
+    rsi_ref = _wilder_rsi(CLOSES, 14)
+    for i in _INDICES:
+        window = rsi_ref[i - 13 : i + 1]
+        defined = [v for v in window if v is not None]
+        cur = rsi_ref[i]
+        assert cur is not None
+        hi, lo = max(defined), min(defined)
+        expected = 100.0 * (cur - lo) / (hi - lo)
+        val = series[i]
+        assert val is not None
+        assert abs(val - expected) < _TOL
+
+
+def test_cci_matches_independent_window() -> None:
+    series = ind.cci(BARS, 20)
+    tp = [(b.high + b.low + b.close) / 3 for b in BARS]
+    for i in _INDICES:
+        window = tp[i - 19 : i + 1]
+        mean = statistics.fmean(window)
+        mean_dev = statistics.fmean(abs(x - mean) for x in window)
+        expected = (tp[i] - mean) / (0.015 * mean_dev)
+        val = series[i]
+        assert val is not None
+        assert abs(val - expected) < _TOL
+
+
+def test_williams_r_matches_independent_window() -> None:
+    series = ind.williams_r(BARS, 14)
+    for i in _INDICES:
+        window = BARS[i - 13 : i + 1]
+        hh = max(b.high for b in window)
+        ll = min(b.low for b in window)
+        expected = -100.0 * (hh - BARS[i].close) / (hh - ll)
+        val = series[i]
+        assert val is not None
+        assert abs(val - expected) < _TOL
+
+
+def test_roc_matches_independent() -> None:
+    series = ind.roc(CLOSES, 12)
+    for i in _INDICES:
+        expected = 100.0 * (CLOSES[i] - CLOSES[i - 12]) / CLOSES[i - 12]
+        val = series[i]
+        assert val is not None
+        assert abs(val - expected) < _TOL
+
+
+def test_oscillators_none_on_flat_window() -> None:
+    """A flat window leaves the range-normalised oscillators undefined (`None`, no
+    divide-by-zero); ROC of an unchanging series is exactly 0."""
+
+    const = _constant_bars(60, 50.0)
+    closes = [b.close for b in const]
+    for i in (30, 45, 59):
+        assert ind.stochastic(const, 14, 3)[i] is None
+        assert ind.williams_r(const, 14)[i] is None
+        assert ind.cci(const, 20)[i] is None
+        assert ind.stochastic_rsi(closes, 14, 14)[i] is None
+        roc_i = ind.roc(closes, 12)[i]
+        assert roc_i is not None and abs(roc_i - 0.0) < _TOL
+
+
+def test_stochastic_williams_saturate_at_window_high() -> None:
+    """A rise that closes at each bar's high makes the current bar the window's
+    highest high, so %K saturates to 100 and Williams %R to 0 (closed forms)."""
+
+    up = _strong_uptrend_bars(40)
+    stoch = ind.stochastic(up, 14, 3)
+    wr = ind.williams_r(up, 14)
+    for i in (30, 39):
+        s = stoch[i]
+        assert s is not None and abs(s.k - 100.0) < _TOL and abs(s.d - 100.0) < _TOL
+        w = wr[i]
+        assert w is not None and abs(w - 0.0) < _TOL
+
+
+def test_oscillators_reject_bad_periods() -> None:
+    with pytest.raises(ValueError, match="k_period must be >= 1"):
+        ind.stochastic(BARS, k_period=0)
+    with pytest.raises(ValueError, match="d_period must be >= 1"):
+        ind.stochastic(BARS, d_period=0)
+    with pytest.raises(ValueError, match="stoch_period must be >= 1"):
+        ind.stochastic_rsi(CLOSES, stoch_period=0)
+    with pytest.raises(ValueError, match="period must be >= 1"):
+        ind.rsi(CLOSES, 0)  # stochastic_rsi delegates rsi_period validation to rsi
+    for make in (
+        lambda: ind.cci(BARS, 0),
+        lambda: ind.williams_r(BARS, 0),
+        lambda: ind.roc(CLOSES, 0),
+    ):
+        with pytest.raises(ValueError, match="period must be >= 1"):
+            make()
