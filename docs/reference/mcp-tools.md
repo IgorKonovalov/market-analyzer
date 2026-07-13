@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 50 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -14,6 +14,7 @@ The 50 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`btc_cycle_snapshot`](#btccyclesnapshot) | Get the current BTC cycle picture in one call: days since the 2024-04-19 halving, ESTIMATED days to the next (the next-halving date is an estimate, hence the _est suffix), the cycle phase fraction (0.0 just after a halving, 1.0 at the estimated next), Mayer Multiple (close / 200-day SMA) and distance to the 200-week MA (close / SMA1400 - 1) from cached daily BTC-USD bars, plus the latest Fear & Greed and BTC dominance with 7/30-day deltas from the stored metric series, plus on-chain MVRV (market value / realized value) with its trailing full-history percentile. |
 | [`compare_strategies`](#comparestrategies) | Run every reference strategy on one symbol/timeframe/window at its default parameters and return a leaderboard ranked by a chosen metric. |
 | [`compute_wallet_pnl`](#computewalletpnl) | Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction history (Ethereum, Base, Arbitrum, Optimism): per-position and total realized/unrealized P&L under average-cost lots, every leg valued at its own block timestamp - never trusting an aggregator's number. |
+| [`counter_trend_volume`](#countertrendvolume) | Decompose one symbol's recent volume into with-trend vs counter-trend on cached bars, anchored to the symbol's canonical trend (the same up/down/sideways label analyze_symbol reports). |
 | [`create_watch`](#createwatch) | Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). |
 | [`crypto_fear_greed`](#cryptofeargreed) | Get the current crypto Fear & Greed index (Alternative.me): a single 0-100 value with a label (Extreme Fear / Fear / Neutral / Greed / Extreme Greed). |
 | [`delete_watch`](#deletewatch) | Delete a watch by id, including its alert history. |
@@ -177,6 +178,29 @@ Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction 
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/compute_wallet_pnl.py`](../../src/market_analyser/api/mcp_tools/compute_wallet_pnl.py)
+
+## `counter_trend_volume`
+
+Decompose one symbol's recent volume into with-trend vs counter-trend on cached bars, anchored to the symbol's canonical trend (the same up/down/sideways label analyze_symbol reports). Returns {result, partial_reason, scanned_at}: result.bars lists each of the trailing `lookback` bars with its direction (close-vs-open), trailing relative volume, and a counter-trend flag, and result.counter_trend_volume_share is the share of directional volume on the counter-trend bars (high = a volume divergence against the trend). When the trend is sideways there is nothing to run counter to: anchored_to_sideways is true and the share is null (undefined, not forced). result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first). Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `lookback` | integer | no | `20` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `CounterTrendVolumeResponse`
+
+| Field | Type |
+| --- | --- |
+| `result` | CounterTrendVolume \| null |
+| `partial_reason` | string \| null |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/counter_trend_volume.py`](../../src/market_analyser/api/mcp_tools/counter_trend_volume.py)
 
 ## `create_watch`
 

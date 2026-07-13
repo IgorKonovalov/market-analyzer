@@ -37,6 +37,7 @@ from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.compute_wallet_pnl import register_compute_wallet_pnl
+from market_analyser.api.mcp_tools.counter_trend_volume import register_counter_trend_volume
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.cycle_snapshot import register_btc_cycle_snapshot
 from market_analyser.api.mcp_tools.derivatives_snapshot import (
@@ -216,6 +217,7 @@ def create_mcp_components(
     register_multi_timeframe_analysis(server, provider=provider)
     register_volume_breakout(server, provider=provider)
     register_volume_confirmation(server, provider=provider)
+    register_counter_trend_volume(server, provider=provider)
     register_smart_volume(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)

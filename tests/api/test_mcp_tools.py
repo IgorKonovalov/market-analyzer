@@ -525,6 +525,7 @@ EXPECTED_FULL_TOOLSET = {
     "btc_cycle_snapshot",
     "compare_strategies",
     "compute_wallet_pnl",
+    "counter_trend_volume",
     "create_watch",
     "crypto_fear_greed",
     "delete_watch",
