@@ -671,9 +671,17 @@ export const ru = {
   'chartStyle.colorLabel': 'Цвет',
   'chartStyle.resetButton': 'Сбросить стиль графика',
 
-  // ── Chart legend (ChartLegend.tsx) — Plan 0096 phase 2 ──
+  // ── Chart legend (ChartLegend.tsx) — Plan 0096 phase 2/3 ──
   'chartLegend.ariaLabel': 'Легенда слоёв графика',
   'chartLegend.settingsAria': 'Стиль {layerName}',
+  'chartLegend.presetLabel': 'Пресет',
+  'chartLegend.presetCustom': 'Свой',
+  'chartLegend.savePreset': 'Сохранить как…',
+  'chartLegend.presetNamePlaceholder': 'Название пресета',
+  'chartLegend.preset.clean': 'Чистый',
+  'chartLegend.preset.trend': 'Тренд',
+  'chartLegend.preset.meanReversion': 'Возврат к среднему',
+  'chartLegend.preset.patterns': 'Паттерны',
 
   // ── Layers panel (LayersPanel.tsx) ──
   'layers.panelAriaLabel': 'Слои графика',

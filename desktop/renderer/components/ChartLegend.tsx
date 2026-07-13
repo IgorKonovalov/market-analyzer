@@ -18,6 +18,7 @@ import { useState, useSyncExternalStore } from 'react'
 import { AddOverlayForm } from './AddOverlayForm'
 import { GlossaryTerm } from './GlossaryTerm'
 import type { ChartLayer } from './LayersPanel'
+import { CLEAN_PRESET_NAME, type ChartPreset } from '../lib/chartPresets'
 import { OBV_LAYER_ID } from '../lib/chartSeries'
 import {
   MAX_LINE_WIDTH,
@@ -53,6 +54,33 @@ export interface ChartLegendProps {
   /** Remove a user overlay by layer id (wired to the remove control on
    * `removable` rows only; agent rows are hide-only). */
   onRemove?: (id: string) => void
+  /** Available presets (built-ins + user-saved), in selector order (Plan 0096
+   * phase 3). */
+  presets?: ChartPreset[]
+  /** The applied preset name, or `null` when the layout has diverged (Custom). */
+  activePreset?: string | null
+  /** Apply a preset into the current (symbol, timeframe). Present only when the
+   * chart is keyed; absent ⇒ the preset selector is hidden. */
+  onApplyPreset?: (preset: ChartPreset) => void
+  /** Save the current layout as a named preset. */
+  onSavePreset?: (name: string) => void
+}
+
+/** Localised display name for a built-in preset; user presets show verbatim. */
+function presetDisplayName(preset: ChartPreset): string {
+  if (!preset.builtIn) return preset.name
+  switch (preset.name) {
+    case CLEAN_PRESET_NAME:
+      return t('chartLegend.preset.clean')
+    case 'Trend':
+      return t('chartLegend.preset.trend')
+    case 'Mean-reversion':
+      return t('chartLegend.preset.meanReversion')
+    case 'Patterns':
+      return t('chartLegend.preset.patterns')
+    default:
+      return preset.name
+  }
 }
 
 const WIDTH_OPTIONS: readonly number[] = Array.from(
@@ -133,8 +161,14 @@ export function ChartLegend({
   onHighlight,
   onAddOverlay,
   onRemove,
+  presets,
+  activePreset = null,
+  onApplyPreset,
+  onSavePreset,
 }: ChartLegendProps): JSX.Element | null {
   const [showAdd, setShowAdd] = useState(false)
+  const [showSave, setShowSave] = useState(false)
+  const [saveName, setSaveName] = useState('')
   // The row whose inline style editor is open (one at a time), or null.
   const [openSettings, setOpenSettings] = useState<string | null>(null)
 
@@ -142,12 +176,76 @@ export function ChartLegend({
   // overlays still lists the OBV row + the add control, so this is rare).
   if (layers.length === 0 && onAddOverlay === undefined) return null
 
+  const submitSave = (e: React.FormEvent): void => {
+    e.preventDefault()
+    const name = saveName.trim()
+    if (name === '') return
+    onSavePreset?.(name)
+    setSaveName('')
+    setShowSave(false)
+  }
+
   return (
     <div
       className={styles.legend}
       aria-label={t('chartLegend.ariaLabel')}
       data-testid="chart-legend"
     >
+      {onApplyPreset !== undefined && presets !== undefined && (
+        <div className={styles.presetBar}>
+          <label className={styles.presetLabel} htmlFor="chart-preset-select">
+            {t('chartLegend.presetLabel')}
+          </label>
+          <select
+            id="chart-preset-select"
+            className={styles.presetSelect}
+            value={activePreset ?? ''}
+            onChange={(e) => {
+              const preset = presets.find((p) => p.name === e.target.value)
+              if (preset) onApplyPreset(preset)
+            }}
+            data-testid="preset-select"
+          >
+            {activePreset === null && (
+              <option value="" data-testid="preset-custom-option">
+                {t('chartLegend.presetCustom')}
+              </option>
+            )}
+            {presets.map((preset) => (
+              <option key={preset.name} value={preset.name}>
+                {presetDisplayName(preset)}
+              </option>
+            ))}
+          </select>
+          {onSavePreset !== undefined && (
+            <button
+              type="button"
+              className={styles.presetSave}
+              onClick={() => setShowSave((v) => !v)}
+              aria-expanded={showSave}
+              data-testid="preset-save-toggle"
+            >
+              {t('chartLegend.savePreset')}
+            </button>
+          )}
+        </div>
+      )}
+      {showSave && onSavePreset !== undefined && (
+        <form className={styles.saveForm} onSubmit={submitSave} data-testid="preset-save-form">
+          <input
+            className={styles.saveInput}
+            type="text"
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder={t('chartLegend.presetNamePlaceholder')}
+            aria-label={t('chartLegend.presetNamePlaceholder')}
+            data-testid="preset-name-input"
+          />
+          <button type="submit" className={styles.presetSave} data-testid="preset-save-submit">
+            {t('chartLegend.savePreset')}
+          </button>
+        </form>
+      )}
       {onAddOverlay !== undefined && (
         <div className={styles.header}>
           <button

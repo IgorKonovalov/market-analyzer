@@ -211,6 +211,33 @@ export function removeUserOverlay(symbol: string, timeframe: string, spec: Overl
   notify()
 }
 
+/**
+ * Replace a `(symbol, timeframe)`'s user overlays wholesale (Plan 0096 phase 3):
+ * preset application seeds the bucket with exactly the preset's overlays. Each
+ * spec is sanitized; a non-storable one is dropped. An empty result drops the
+ * bucket. Bounded like `addUserOverlay`; persists + notifies once.
+ */
+export function setUserOverlays(
+  symbol: string,
+  timeframe: string,
+  specs: ReadonlyArray<OverlaySpec>,
+): void {
+  const bucketKey = userOverlayStoreKey(symbol, timeframe)
+  const clean = dedupeByKey(
+    specs.map(sanitizeSpec).filter((s): s is OverlaySpec => s !== null),
+  ).slice(0, MAX_PER_KEY)
+  const next: UserOverlaysStore = { ...store }
+  delete next[bucketKey]
+  if (clean.length > 0) next[bucketKey] = clean
+  const keys = Object.keys(next)
+  if (keys.length > MAX_KEYS) {
+    for (const stale of keys.slice(0, keys.length - MAX_KEYS)) delete next[stale]
+  }
+  store = next
+  persist()
+  notify()
+}
+
 /** Subscribe to any user-overlay mutation. Returns an unsubscribe function. */
 export function subscribeUserOverlays(callback: Listener): () => void {
   listeners.add(callback)

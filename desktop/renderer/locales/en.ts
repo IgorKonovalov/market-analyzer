@@ -662,9 +662,17 @@ export const en = {
   'chartStyle.colorLabel': 'Color',
   'chartStyle.resetButton': 'Reset chart style',
 
-  // ── Chart legend (ChartLegend.tsx) — Plan 0096 phase 2 ──
+  // ── Chart legend (ChartLegend.tsx) — Plan 0096 phase 2/3 ──
   'chartLegend.ariaLabel': 'Chart layers legend',
   'chartLegend.settingsAria': 'Style {layerName}',
+  'chartLegend.presetLabel': 'Preset',
+  'chartLegend.presetCustom': 'Custom',
+  'chartLegend.savePreset': 'Save as…',
+  'chartLegend.presetNamePlaceholder': 'Preset name',
+  'chartLegend.preset.clean': 'Clean',
+  'chartLegend.preset.trend': 'Trend',
+  'chartLegend.preset.meanReversion': 'Mean-reversion',
+  'chartLegend.preset.patterns': 'Patterns',
 
   // ── Layers panel (LayersPanel.tsx) ──
   'layers.panelAriaLabel': 'Chart layers',

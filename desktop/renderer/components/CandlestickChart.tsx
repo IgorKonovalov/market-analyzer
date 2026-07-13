@@ -99,9 +99,28 @@ import {
   getUserOverlaysSnapshot,
   mergeOverlays,
   removeUserOverlay,
+  setUserOverlays,
   subscribeUserOverlays,
   userOverlayStoreKey,
 } from '../lib/userOverlays'
+import {
+  getLayerVisibilitySnapshot,
+  hiddenForBucket,
+  layerVisibilityStoreKey,
+  setLayerVisibility,
+  subscribeLayerVisibility,
+  toggleLayerVisibility,
+} from '../lib/layerVisibility'
+import {
+  CLEAN_PRESET_NAME,
+  allPresets,
+  getUserPresetsSnapshot,
+  hiddenForPreset,
+  saveCurrentAsPreset,
+  subscribeChartPresets,
+  type ChartPreset,
+  type PresetShow,
+} from '../lib/chartPresets'
 import { overlayLayerId } from '../lib/overlays'
 import {
   VOLUME_MA_PERIOD,
@@ -321,9 +340,46 @@ export function CandlestickChart({
   // carries a (symbol, timeframe) to key the store by. Remove maps the legend row
   // id back to the stored spec via its overlayLayerId.
   const canAddOverlay = Boolean(symbol && timeframe)
+
+  // Persisted per-(symbol,timeframe) layer visibility (Plan 0096 phase 3,
+  // ADR-0089): the formerly-ephemeral `hidden` set is promoted to renderer-owned
+  // display state. The in-memory shape stays a ReadonlySet<string>, so every
+  // consumer (useCandleMarkerGroups, buildChartLayers, the series-visibility
+  // effects) is unaffected. A symbol-less chart (no bucket to key) keeps the
+  // legacy ephemeral, all-visible behaviour.
+  const visibilitySnapshot = useSyncExternalStore(
+    subscribeLayerVisibility,
+    getLayerVisibilitySnapshot,
+    getLayerVisibilitySnapshot,
+  )
+  const bucketKey = symbol && timeframe ? layerVisibilityStoreKey(symbol, timeframe) : null
+  const [ephemeralHidden, setEphemeralHidden] = useState<ReadonlySet<string>>(() => new Set())
+  const hidden = useMemo<ReadonlySet<string>>(() => {
+    if (bucketKey === null || !symbol || !timeframe) return ephemeralHidden
+    return hiddenForBucket(visibilitySnapshot, symbol, timeframe)
+  }, [bucketKey, ephemeralHidden, visibilitySnapshot, symbol, timeframe])
+
+  // The applied-preset name (Plan 0096 phase 3): the legend selector shows it
+  // until the layout diverges, then reads "Custom". A fresh bucket (no stored
+  // visibility) opens on Clean; any user tweak clears it to Custom. Re-derived
+  // when the (symbol, timeframe) changes so a symbol switch reflects that
+  // bucket's provenance (reading the store directly, not the render snapshot,
+  // keeps this keyed on bucketKey alone).
+  const [activePreset, setActivePreset] = useState<string | null>(null)
+  useEffect(() => {
+    if (bucketKey === null) {
+      setActivePreset(null)
+      return
+    }
+    setActivePreset(
+      getLayerVisibilitySnapshot()[bucketKey] === undefined ? CLEAN_PRESET_NAME : null,
+    )
+  }, [bucketKey])
+
   const handleAddOverlay = useCallback(
     (spec: OverlaySpec): void => {
       if (symbol && timeframe) addUserOverlay(symbol, timeframe, spec)
+      setActivePreset(null)
     },
     [symbol, timeframe],
   )
@@ -332,21 +388,29 @@ export function CandlestickChart({
       if (!symbol || !timeframe) return
       const spec = userOverlays.find((s) => overlayLayerId(s) === id)
       if (spec) removeUserOverlay(symbol, timeframe, spec)
+      setActivePreset(null)
     },
     [symbol, timeframe, userOverlays],
   )
-  // Layers-legend state (Plan 0047 phase 9), all ephemeral: `hidden` is the set
-  // of layer ids the user toggled off; `layers` is the resolved descriptor list
-  // the panel renders. Reset on remount (no persistence) by construction.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
-  const toggleLayer = useCallback((id: string): void => {
-    setHidden((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }, [])
+  // Toggle a layer's visibility (Plan 0096 phase 3): write through the persisted
+  // store when the chart is keyed, else the ephemeral fallback. Any manual toggle
+  // diverges from an applied preset → "Custom".
+  const toggleLayer = useCallback(
+    (id: string): void => {
+      if (bucketKey === null || !symbol || !timeframe) {
+        setEphemeralHidden((prev) => {
+          const next = new Set(prev)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        })
+      } else {
+        toggleLayerVisibility(symbol, timeframe, id)
+      }
+      setActivePreset(null)
+    },
+    [bucketKey, symbol, timeframe],
+  )
   // Collapse the redundant forming(dashed)+confirmed(solid) twin of each geometry
   // (Plan 0067 phase 1 / ADR-0061) before anything consumes the specs — the
   // primitive draws these, and the legend counts from them. Memoised so a stable
@@ -870,6 +934,43 @@ export function CandlestickChart({
     [bars, effectiveOverlays],
   )
 
+  // Chart presets (Plan 0096 phase 3, ADR-0089): the built-ins plus any user-saved
+  // presets, offered in the legend's selector. Applying is "not pinned" — it
+  // writes the preset's overlays into the user bucket and the resolved hidden set
+  // into the visibility bucket for the current (symbol, timeframe), then normal
+  // stickiness remembers any tweak. Presets never touch `candleType`.
+  const userPresetsSnapshot = useSyncExternalStore(
+    subscribeChartPresets,
+    getUserPresetsSnapshot,
+    getUserPresetsSnapshot,
+  )
+  const presets = useMemo(() => allPresets(userPresetsSnapshot), [userPresetsSnapshot])
+  const applyPreset = useCallback(
+    (preset: ChartPreset): void => {
+      if (!symbol || !timeframe) return
+      setUserOverlays(symbol, timeframe, preset.overlays)
+      setLayerVisibility(symbol, timeframe, hiddenForPreset(preset, layers))
+      setActivePreset(preset.name)
+    },
+    [symbol, timeframe, layers],
+  )
+  // Capture the current category visibility for "save current as preset". Overlay
+  // membership comes from the user's own overlays; the category flags read the
+  // live resolved layers.
+  const handleSavePreset = useCallback(
+    (name: string): void => {
+      const show: PresetShow = {
+        obv: layers.some((l) => l.kind === 'series' && l.visible),
+        candlesticks: layers.some((l) => l.kind === 'marker' && l.visible),
+        trendlines: layers.some((l) => l.kind === 'trendline' && l.visible),
+        priceLines: layers.some((l) => l.kind === 'price_line' && l.visible),
+      }
+      saveCurrentAsPreset(name, userOverlays, show)
+      setActivePreset(name)
+    },
+    [layers, userOverlays],
+  )
+
   // Hover tooltip (Plan 0047 phase 8 / Plan 0067 phase 2): crosshair-driven
   // marker/overlay/trendline read-out + pattern-bar outline (Plan 0072 phase 8:
   // `useChartTooltip` owns the state and returns it).
@@ -938,6 +1039,10 @@ export function CandlestickChart({
           onHighlight={onLayerHighlight}
           onAddOverlay={canAddOverlay ? handleAddOverlay : undefined}
           onRemove={handleRemoveOverlay}
+          presets={presets}
+          activePreset={activePreset}
+          onApplyPreset={canAddOverlay ? applyPreset : undefined}
+          onSavePreset={canAddOverlay ? handleSavePreset : undefined}
         />
         {selection && (
           <div
