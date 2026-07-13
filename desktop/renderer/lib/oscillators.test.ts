@@ -11,7 +11,9 @@
  */
 import {
   computeCci,
+  computeMacdHist,
   computeRoc,
+  computeRsi,
   computeStochastic,
   computeStochasticRsi,
   computeWilliamsR,
@@ -196,6 +198,61 @@ describe('computeRoc (pinned to analysis.indicators.roc)', () => {
     const full = computeRoc(FIXTURE, 2)
     for (let end = 3; end <= FIXTURE.length; end++) {
       const trunc = computeRoc(FIXTURE.slice(0, end), 2)
+      const last = trunc[trunc.length - 1]
+      expect(last.value).toBeCloseTo(full.find((p) => p.time === last.time)!.value, 6)
+    }
+  })
+})
+
+describe('computeRsi (pinned to analysis.indicators.rsi) — Plan 0091 phase 9', () => {
+  it('matches within 1e-6 (period=3), the RSI divergence pane series', () => {
+    expectSeries(computeRsi(FIXTURE, 3), [
+      [3, 50.0],
+      [4, 82.6086956522],
+      [5, 85.4545454545],
+      [6, 49.2146596859],
+      [7, 34.5588235294],
+      [8, 72.034564022],
+      [9, 75.5368493386],
+    ])
+  })
+
+  it('returns empty for invalid period', () => {
+    expect(computeRsi(FIXTURE, 0)).toEqual([])
+  })
+
+  it('is lookahead-free: RSI at bar k unchanged whether fed bars[0..=k] or full', () => {
+    const full = computeRsi(FIXTURE, 3)
+    for (let end = 4; end <= FIXTURE.length; end++) {
+      const trunc = computeRsi(FIXTURE.slice(0, end), 3)
+      const last = trunc[trunc.length - 1]
+      expect(last.value).toBeCloseTo(full.find((p) => p.time === last.time)!.value, 6)
+    }
+  })
+})
+
+describe('computeMacdHist (pinned to analysis.indicators.macd histogram) — Plan 0091 phase 9', () => {
+  it('matches within 1e-6 (fast=2, slow=4, signal=2), the MACD divergence pane series', () => {
+    expectSeries(computeMacdHist(FIXTURE, 2, 4, 2), [
+      [4, 0.7055555556],
+      [5, 0.3297530864],
+      [6, -0.2514485597],
+      [7, -0.3511160494],
+      [8, 0.416865807],
+      [9, 0.2462816546],
+    ])
+  })
+
+  it('returns empty for invalid params (fast >= slow, non-positive)', () => {
+    expect(computeMacdHist(FIXTURE, 4, 4, 2)).toEqual([])
+    expect(computeMacdHist(FIXTURE, 5, 4, 2)).toEqual([])
+    expect(computeMacdHist(FIXTURE, 2, 4, 0)).toEqual([])
+  })
+
+  it('is lookahead-free: histogram at bar k unchanged whether fed bars[0..=k] or full', () => {
+    const full = computeMacdHist(FIXTURE, 2, 4, 2)
+    for (let end = 5; end <= FIXTURE.length; end++) {
+      const trunc = computeMacdHist(FIXTURE.slice(0, end), 2, 4, 2)
       const last = trunc[trunc.length - 1]
       expect(last.value).toBeCloseTo(full.find((p) => p.time === last.time)!.value, 6)
     }

@@ -682,6 +682,8 @@ export const en = {
   'layers.kind.mfi': 'Money Flow Index',
   'layers.kind.cmf': 'Chaikin Money Flow',
   'layers.kind.ad_line': 'A/D Line',
+  'layers.kind.rsi': 'RSI',
+  'layers.kind.macd': 'MACD',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) — prose is phase 3 ──
   'glossary.howComputedLabel': "How it's computed",

@@ -10,9 +10,11 @@
  * the component but consults these helpers.
  *
  * MVP scope is `ema` and `sma`; `supertrend`/`ichimoku`/`bbands` are additive
- * indicator kinds with their own dedicated draw paths. `rsi`/`macd` remain
- * reserved `OverlayKind` values with no registry entry yet, so the chart
- * logs-and-skips them (see `isSupportedOverlay`).
+ * indicator kinds with their own dedicated draw paths. `rsi`/`macd` draw in their
+ * own oscillator sub-panes (Plan 0091 phase 9, via `useOscillatorPanes`), so —
+ * like the other oscillators — their registry `compute` returns `[]` and the
+ * sub-pane hook owns their draw. (They were previously unrendered "log-and-skip"
+ * kinds; the divergence work needed real RSI/MACD panes to draw onto.)
  */
 import type { LineData, UTCTimestamp, WhitespaceData } from 'lightweight-charts'
 
@@ -113,6 +115,12 @@ export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> =
   mfi: { color: '#0d9488', compute: () => [] },
   cmf: { color: '#7c3aed', compute: () => [] },
   ad_line: { color: '#c2410c', compute: () => [] },
+  // RSI + MACD-histogram (Plan 0091 phase 9): promoted from unrendered reserved
+  // kinds to real oscillator sub-panes so price↔RSI / price↔MACD divergence
+  // segments have a pane to draw on. Same sub-pane draw path via `useOscillatorPanes`
+  // (`compute` returns `[]`); `macd` draws its histogram line.
+  rsi: { color: '#4f46e5', compute: () => [] },
+  macd: { color: '#0284c7', compute: () => [] },
 }
 
 /** The Plan-0091 oscillator + money-flow kinds — drawn in their own v5 sub-panes
@@ -127,6 +135,9 @@ export const OSCILLATOR_KINDS: readonly OverlayKind[] = [
   'mfi',
   'cmf',
   'ad_line',
+  // Plan 0091 phase 9: RSI + MACD-histogram draw in their own sub-panes too.
+  'rsi',
+  'macd',
 ]
 
 /** Whether an overlay kind draws in its own oscillator sub-pane (Plan 0091). */

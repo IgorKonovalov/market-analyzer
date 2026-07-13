@@ -10,7 +10,7 @@ import {
 } from './overlayForm'
 
 describe('overlay form kinds', () => {
-  it('offers only the client-computable overlay-path kinds (no price_line/rsi/macd/vwap/obv)', () => {
+  it('offers the client-computable overlay-path kinds incl. rsi/macd panes (no price_line/vwap/obv)', () => {
     expect([...OVERLAY_FORM_KINDS]).toEqual([
       'ema',
       'sma',
@@ -25,6 +25,9 @@ describe('overlay form kinds', () => {
       'mfi',
       'cmf',
       'ad_line',
+      // Plan 0091 phase 9: RSI + MACD-histogram became addable oscillator panes.
+      'rsi',
+      'macd',
     ])
   })
 

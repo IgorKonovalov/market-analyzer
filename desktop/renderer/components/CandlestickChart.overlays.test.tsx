@@ -22,6 +22,12 @@ import { render } from '@testing-library/react'
 import { CandlestickChart } from './CandlestickChart'
 import { OVERLAY_REGISTRY } from '../lib/overlays'
 import type { Bar } from '../types/sidecar/bar'
+import type { OverlayKind } from '../types/events'
+
+// A kind with no registry entry — the "unsupported" (log-and-skip) probe. rsi/macd
+// became real oscillator panes in Plan 0091 phase 9, so a cast synthetic kind now
+// stands in for the MVP-unsupported placeholder they used to be.
+const UNSUPPORTED = 'unsupported_test_kind' as OverlayKind
 
 // ---------- lightweight-charts mock --------------------------------------- //
 
@@ -223,16 +229,16 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
     }
   })
 
-  it('logs a warning and renders no overlay series when the overlay kind is rsi (MVP-unsupported)', () => {
+  it('logs a warning and renders no overlay series when the overlay kind is unregistered', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
-      render(<CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: 'rsi', period: 14 }]} />)
+      render(<CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: UNSUPPORTED }]} />)
       const hook = window.__test_chart_render__
       expect(hook).toBeDefined()
       expect(hook!.seriesCount).toBe(BASE_COUNT) // base volume block only
       expect(hook!.seriesKinds).toEqual(BASE_KINDS)
       expect(overlayLineSeries()).toHaveLength(0)
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rsi'))
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(UNSUPPORTED))
     } finally {
       warnSpy.mockRestore()
     }
@@ -246,7 +252,7 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
           bars={FIXTURE_BARS}
           overlays={[
             { kind: 'ema', period: 20 },
-            { kind: 'macd', period: 12 },
+            { kind: UNSUPPORTED },
             { kind: 'sma', period: 50 },
           ]}
         />,
@@ -258,7 +264,7 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
         { kind: 'ema', period: 20 },
         { kind: 'sma', period: 50 },
       ])
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('macd'))
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(UNSUPPORTED))
     } finally {
       warnSpy.mockRestore()
     }
@@ -278,17 +284,21 @@ describe('CandlestickChart — overlays prop (Plan 0007 phase 4.5)', () => {
   })
 
   it('reconciles a newly-registered overlay kind — registry entry is the only seam (Plan 0029)', () => {
-    // `rsi` is MVP-unsupported (logged-and-skipped in the prior test). Adding a
-    // single OVERLAY_REGISTRY entry — no other component edit — must make it
-    // render: this is the four-spots-to-one collapse the plan delivers.
+    // A synthetic kind is unsupported (logged-and-skipped in the prior test).
+    // Adding a single OVERLAY_REGISTRY entry — no other component edit — must make
+    // it render as a price-pane line: this is the four-spots-to-one collapse the
+    // plan delivers. (A real indicator kind can no longer play this role — they're
+    // all registered now.)
     try {
-      OVERLAY_REGISTRY.rsi = { color: '#abcdef', compute: () => [] }
-      render(<CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: 'rsi', period: 14 }]} />)
+      OVERLAY_REGISTRY[UNSUPPORTED] = { color: '#abcdef', compute: () => [] }
+      render(
+        <CandlestickChart bars={FIXTURE_BARS} overlays={[{ kind: UNSUPPORTED, period: 14 }]} />,
+      )
       const hook = window.__test_chart_render__
-      expect(hook!.seriesKinds).toEqual([...BASE_KINDS, { kind: 'rsi', period: 14 }])
+      expect(hook!.seriesKinds).toEqual([...BASE_KINDS, { kind: UNSUPPORTED, period: 14 }])
       expect(overlayLineSeries()).toHaveLength(1)
     } finally {
-      delete OVERLAY_REGISTRY.rsi
+      delete OVERLAY_REGISTRY[UNSUPPORTED]
     }
   })
 })

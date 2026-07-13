@@ -32,6 +32,11 @@ export const OVERLAY_FORM_KINDS = [
   'mfi',
   'cmf',
   'ad_line',
+  // Plan 0091 phase 9: RSI + MACD-histogram, promoted to first-class oscillator
+  // sub-panes (so divergence segments have a pane to draw on) and thus addable /
+  // toggleable like the rest. Fieldless in v1 (classic default periods).
+  'rsi',
+  'macd',
 ] as const satisfies readonly OverlayKind[]
 
 export type OverlayFormKind = (typeof OVERLAY_FORM_KINDS)[number]

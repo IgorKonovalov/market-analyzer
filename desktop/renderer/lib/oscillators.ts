@@ -79,6 +79,103 @@ export function computeStochastic(
   return { k, d }
 }
 
+/**
+ * Wilder RSI as a drawable series — mirror of `indicators.py::rsi` (0-100),
+ * emitting only the defined points from index `period` onward (the leading
+ * `None` region dropped, as the other oscillators do). Feeds the RSI sub-pane
+ * (Plan 0091 phase 9) and hosts price↔RSI divergence segments. Default 14.
+ */
+export function computeRsi(bars: ReadonlyArray<Bar>, period = 14): LineData[] {
+  if (period < 1) return []
+  const rsi = rsiSeries(
+    bars.map((b) => b.close),
+    period,
+  )
+  const out: LineData[] = []
+  for (let i = 0; i < bars.length; i++) {
+    const v = rsi[i]
+    if (v === null) continue
+    out.push({ time: tsOf(bars[i]), value: v })
+  }
+  return out
+}
+
+/**
+ * EMA over a possibly-`null`-prefixed value sequence — faithful mirror of
+ * `indicators.py::ema`: SMA-seed the first `period` consecutive defined values,
+ * then advance by `alpha = 2 / (period + 1)`; collapse back to `null` on any
+ * interior gap. Used by `computeMacdHist` for the fast/slow EMAs (over closes)
+ * and the signal EMA (over the `null`-prefixed MACD line), so the histogram
+ * matches Python within 1e-6.
+ */
+function emaOverValues(values: ReadonlyArray<number | null>, period: number): Array<number | null> {
+  const n = values.length
+  const out: Array<number | null> = new Array<number | null>(n).fill(null)
+  if (period < 1) return out
+  let firstDefined = -1
+  for (let j = 0; j < n; j++) {
+    if (values[j] !== null) {
+      firstDefined = j
+      break
+    }
+  }
+  if (firstDefined === -1) return out
+  const seedEnd = firstDefined + period - 1
+  if (seedEnd >= n) return out
+  let seedSum = 0
+  for (let j = firstDefined; j <= seedEnd; j++) {
+    const v = values[j]
+    if (v === null) return out
+    seedSum += v
+  }
+  const seed = seedSum / period
+  out[seedEnd] = seed
+  const alpha = 2 / (period + 1)
+  let prev = seed
+  for (let i = seedEnd + 1; i < n; i++) {
+    const v = values[i]
+    if (v === null) return out
+    const curr = alpha * v + (1 - alpha) * prev
+    out[i] = curr
+    prev = curr
+  }
+  return out
+}
+
+/**
+ * MACD histogram as a drawable series — mirror of `indicators.py::macd`'s
+ * `histogram` (`(EMA(fast) - EMA(slow)) - signal-EMA`). Defined from index
+ * `(slow - 1) + (signal - 1)` onward; earlier bars dropped. `fast` must be
+ * strictly less than `slow`. This is the series the MACD sub-pane draws and the
+ * one price↔MACD divergence (`oscillator = "macd_hist"`) pivots against.
+ * Defaults 12 / 26 / 9.
+ */
+export function computeMacdHist(
+  bars: ReadonlyArray<Bar>,
+  fast = 12,
+  slow = 26,
+  signal = 9,
+): LineData[] {
+  if (fast < 1 || slow < 1 || signal < 1 || fast >= slow) return []
+  const closes: Array<number | null> = bars.map((b) => b.close)
+  const fastEma = emaOverValues(closes, fast)
+  const slowEma = emaOverValues(closes, slow)
+  const macdLine: Array<number | null> = closes.map((_, i) => {
+    const f = fastEma[i]
+    const s = slowEma[i]
+    return f === null || s === null ? null : f - s
+  })
+  const signalLine = emaOverValues(macdLine, signal)
+  const out: LineData[] = []
+  for (let i = 0; i < bars.length; i++) {
+    const m = macdLine[i]
+    const sg = signalLine[i]
+    if (m === null || sg === null) continue
+    out.push({ time: tsOf(bars[i]), value: m - sg })
+  }
+  return out
+}
+
 /** Wilder RSI series aligned to `closes`, `null` until index `period` — the
  * internal input to Stochastic RSI, matching `indicators.py::rsi`. */
 function rsiSeries(closes: ReadonlyArray<number>, period: number): Array<number | null> {

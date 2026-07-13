@@ -18,6 +18,13 @@ import {
   type SupertrendPoint,
 } from './overlays'
 import type { Bar } from '../types/sidecar/bar'
+import type { OverlayKind } from '../types/events'
+
+// A kind with no registry entry — the generic-path "unsupported" probe. Every
+// real indicator `OverlayKind` is now registered (rsi/macd became oscillator
+// panes in Plan 0091 phase 9), so the fallback paths are probed with a cast
+// synthetic kind rather than a real one.
+const UNREGISTERED = 'unregistered_test_kind' as OverlayKind
 
 function bar(eventTs: string, close: number): Bar {
   return {
@@ -59,8 +66,8 @@ describe('computeOverlayData', () => {
     ])
   })
 
-  it('returns [] for an unregistered kind (rsi)', () => {
-    expect(computeOverlayData(BARS, { kind: 'rsi', period: 14 })).toEqual([])
+  it('returns [] for an unregistered kind', () => {
+    expect(computeOverlayData(BARS, { kind: UNREGISTERED, period: 14 })).toEqual([])
   })
 
   it.each([{ period: null }, { period: undefined }])(
@@ -80,7 +87,7 @@ describe('overlayColorFor', () => {
   })
 
   it('falls back to neutral grey for an unregistered kind', () => {
-    expect(overlayColorFor({ kind: 'rsi', period: 14 })).toBe('#888888')
+    expect(overlayColorFor({ kind: UNREGISTERED, period: 14 })).toBe('#888888')
   })
 })
 
@@ -90,8 +97,12 @@ describe('isSupportedOverlay', () => {
     { kind: 'sma' as const, supported: true },
     { kind: 'supertrend' as const, supported: true },
     { kind: 'bbands' as const, supported: true },
-    { kind: 'rsi' as const, supported: false },
-    { kind: 'macd' as const, supported: false },
+    // rsi/macd became first-class oscillator panes in Plan 0091 phase 9 (so
+    // price↔RSI / price↔MACD divergence segments have a pane to draw on), hence
+    // now supported/toggleable — previously MVP-unsupported.
+    { kind: 'rsi' as const, supported: true },
+    { kind: 'macd' as const, supported: true },
+    { kind: UNREGISTERED, supported: false },
   ])('$kind → $supported', ({ kind, supported }) => {
     expect(isSupportedOverlay(kind)).toBe(supported)
   })
@@ -187,19 +198,21 @@ describe('supertrendBands (masked up/down series for flip colouring)', () => {
 
 describe('the registry is the single seam for a new kind', () => {
   afterEach(() => {
-    delete OVERLAY_REGISTRY.rsi
+    delete OVERLAY_REGISTRY[UNREGISTERED]
   })
 
   it('one entry makes a kind supported, colored, and computable at once', () => {
-    expect(isSupportedOverlay('rsi')).toBe(false)
+    expect(isSupportedOverlay(UNREGISTERED)).toBe(false)
 
-    OVERLAY_REGISTRY.rsi = {
+    OVERLAY_REGISTRY[UNREGISTERED] = {
       color: '#abcdef',
       compute: () => [{ time: T2 as UTCTimestamp, value: 42 }],
     }
 
-    expect(isSupportedOverlay('rsi')).toBe(true)
-    expect(overlayColorFor({ kind: 'rsi', period: 14 })).toBe('#abcdef')
-    expect(computeOverlayData(BARS, { kind: 'rsi', period: 14 })).toEqual([{ time: T2, value: 42 }])
+    expect(isSupportedOverlay(UNREGISTERED)).toBe(true)
+    expect(overlayColorFor({ kind: UNREGISTERED, period: 14 })).toBe('#abcdef')
+    expect(computeOverlayData(BARS, { kind: UNREGISTERED, period: 14 })).toEqual([
+      { time: T2, value: 42 },
+    ])
   })
 })

@@ -691,6 +691,8 @@ export const ru = {
   'layers.kind.mfi': 'Индекс денежного потока',
   'layers.kind.cmf': 'Денежный поток Чайкина',
   'layers.kind.ad_line': 'Линия A/D',
+  'layers.kind.rsi': 'RSI',
+  'layers.kind.macd': 'MACD',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) ──
   'glossary.howComputedLabel': 'Как вычисляется',

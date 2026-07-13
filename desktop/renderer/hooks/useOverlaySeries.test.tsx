@@ -93,7 +93,14 @@ describe('useOverlaySeries', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
     const { chart, added } = fakeChart()
     const ref: RefObject<Map<string, OverlayEntry>> = { current: new Map() }
-    run(chart, ref, [{ kind: 'rsi', period: 14 } as OverlaySpec], new Set())
+    // A synthetic unregistered kind — rsi/macd became supported oscillator panes
+    // in Plan 0091 phase 9, so a real indicator kind no longer log-and-skips.
+    run(
+      chart,
+      ref,
+      [{ kind: 'unregistered_test_kind', period: 14 } as unknown as OverlaySpec],
+      new Set(),
+    )
     expect(added).toHaveLength(0)
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()

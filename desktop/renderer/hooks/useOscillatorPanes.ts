@@ -22,7 +22,9 @@ import type { IChartApi, ISeriesApi, LineData, LineWidth } from 'lightweight-cha
 
 import {
   computeCci,
+  computeMacdHist,
   computeRoc,
+  computeRsi,
   computeStochastic,
   computeStochasticRsi,
   computeWilliamsR,
@@ -76,6 +78,10 @@ function computeOscillatorLines(kind: OverlayKind, bars: Bar[]): LineData[][] {
       return [computeChaikinMoneyFlow(bars)]
     case 'ad_line':
       return [computeAccumulationDistribution(bars)]
+    case 'rsi':
+      return [computeRsi(bars)]
+    case 'macd':
+      return [computeMacdHist(bars)]
     default:
       return []
   }
