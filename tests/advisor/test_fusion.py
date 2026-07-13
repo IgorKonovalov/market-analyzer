@@ -94,6 +94,7 @@ def make_snapshot(
         nearest_resistance=nearest_resistance,
         recent_patterns=[],
         active_patterns=[],
+        recent_divergences=[],
     )
 
 

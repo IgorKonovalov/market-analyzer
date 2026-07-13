@@ -531,6 +531,7 @@ EXPECTED_FULL_TOOLSET = {
     "delete_watch",
     "derivatives_snapshot",
     "detect_chart_patterns",
+    "detect_divergences",
     "detect_levels",
     "evaluate_signals",
     "find_convergence_opportunities",

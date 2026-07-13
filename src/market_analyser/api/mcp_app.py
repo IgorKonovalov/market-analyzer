@@ -45,6 +45,7 @@ from market_analyser.api.mcp_tools.derivatives_snapshot import (
     register_derivatives_snapshot,
 )
 from market_analyser.api.mcp_tools.detect_chart_patterns import register_detect_chart_patterns
+from market_analyser.api.mcp_tools.detect_divergences import register_detect_divergences
 from market_analyser.api.mcp_tools.detect_levels import register_detect_levels
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.forecast import register_forecast
@@ -218,6 +219,7 @@ def create_mcp_components(
     register_volume_breakout(server, provider=provider)
     register_volume_confirmation(server, provider=provider)
     register_counter_trend_volume(server, provider=provider)
+    register_detect_divergences(server, provider=provider)
     register_smart_volume(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)

@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -20,6 +20,7 @@ The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`delete_watch`](#deletewatch) | Delete a watch by id, including its alert history. |
 | [`derivatives_snapshot`](#derivativessnapshot) | Get the Binance USDS-M derivatives picture for one contract symbol (e.g. |
 | [`detect_chart_patterns`](#detectchartpatterns) | Detect classical chart patterns on the cached bars and draw them on the chart in one call: recognises head & shoulders (+inverse), double top/bottom, ascending/descending/symmetrical triangles, and rising/falling wedges over confirmed swing pivots, returns the typed hits as data (pattern, forming/confirmed state, direction, pivots, defining lines, measured-move target, strength), AND publishes a single `chart.trendlines v1` event carrying one trendline per hit line (dashed = forming, solid = confirmed) onto the chart already showing that symbol/timeframe. |
+| [`detect_divergences`](#detectdivergences) | Detect price↔oscillator divergences on one symbol's cached bars for the chosen oscillator (rsi, macd_hist, obv, or mfi). |
 | [`detect_levels`](#detectlevels) | Detect support/resistance levels on the cached bars and draw them on the chart in one call: clusters confirmed swing pivots into zones, ranks each zone's strength by touch count weighted by the volume traded at that price (volume-by-price), returns the ranked levels as data, AND publishes a single `chart.show v1` event carrying one `price_line` overlay per level (role support/resistance, labels S1/R1/... |
 | [`evaluate_signals`](#evaluatesignals) | Evaluate a strategy against the CURRENT bar of one symbol — a live signal read, not a historical backtest. |
 | [`find_convergence_opportunities`](#findconvergenceopportunities) | Screen prediction markets matching a query for CONVERGENCE opportunities — markets nearing resolution whose top outcome is near-certain, where a price converging to 1.00 leaves a few percent of implied upside. |
@@ -297,6 +298,30 @@ Detect classical chart patterns on the cached bars and draw them on the chart in
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/detect_chart_patterns.py`](../../src/market_analyser/api/mcp_tools/detect_chart_patterns.py)
+
+## `detect_divergences`
+
+Detect price↔oscillator divergences on one symbol's cached bars for the chosen oscillator (rsi, macd_hist, obv, or mfi). Returns {result, partial_reason, scanned_at}: result is the list of divergences — each with its kind (regular/hidden bullish/bearish), the two price anchors, the two matched oscillator anchors, the confirming bar_index, and a 0..1 strength — pairing the two most recent confirmed price swing pivots of a kind against the oscillator's own pivots. Regular bearish = higher price high + lower oscillator high (a rally losing momentum); regular bullish = lower low + higher oscillator low; hidden divergences flag trend continuation. An empty list means the scan ran and found nothing; result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first). Strictly trailing: a divergence at bar i reads only bars up to i. Pass `as_of` for historical replay (no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `oscillator` | enum["rsi", "macd_hist", "obv", "mfi"] | no | `"rsi"` |
+| `lookback` | integer | no | `60` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `DivergencesResponse`
+
+| Field | Type |
+| --- | --- |
+| `result` | array[Divergence] \| null |
+| `partial_reason` | string \| null |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/detect_divergences.py`](../../src/market_analyser/api/mcp_tools/detect_divergences.py)
 
 ## `detect_levels`
 

@@ -25,11 +25,13 @@ from market_analyser.analysis.chart_patterns import (
     BREAKOUT_SCAN_MAX_BARS,
     detect_chart_patterns,
 )
+from market_analyser.analysis.divergence import Oscillator, detect_divergences
 from market_analyser.analysis.levels import support_resistance_levels, swing_pivots
 from market_analyser.analysis.patterns import detect_patterns
 from market_analyser.analysis.types import (
     ChartPatternHit,
     ConditionSnapshot,
+    Divergence,
     Level,
     MomentumStance,
     Trend,
@@ -60,6 +62,10 @@ KELTNER_PERIOD = 20
 KELTNER_ATR_PERIOD = 20
 KELTNER_MULT = 1.5
 RECENT_PATTERN_BARS = 5  # patterns on the last N bars are "recent"
+# Divergences whose confirming bar is within the last N bars are "recent activity"
+# (mirrors RECENT_PATTERN_BARS); detected across this oscillator set (Plan 0091).
+RECENT_DIVERGENCE_BARS = 5
+DIVERGENCE_OSCILLATORS: tuple[Oscillator, ...] = ("rsi", "macd_hist", "obv", "mfi")
 # A classical chart pattern is "active" while its completing/confirming bar is
 # within the detector's breakout scan horizon of the snapshot bar — the window
 # in which a forming pattern can still confirm (Plan 0052, ADR-0048).
@@ -217,6 +223,20 @@ def _active_patterns(bars: Sequence[Bar]) -> list[ChartPatternHit]:
         # so the last hit per formation is its latest state.
         latest[key] = hit
     return [latest[key] for key in order]
+
+
+def _recent_divergences(bars: Sequence[Bar]) -> list[Divergence]:
+    """Price↔oscillator divergences confirmed within the trailing recent-activity
+    window, across the oscillator set (Plan 0091). Each `detect_divergences` run is
+    trailing; keeping only hits whose confirming `bar_index` is recent mirrors
+    `recent_patterns`' recency filter. Ordered by `(bar_index, oscillator, kind)`."""
+
+    cutoff = len(bars) - RECENT_DIVERGENCE_BARS
+    hits: list[Divergence] = []
+    for oscillator in DIVERGENCE_OSCILLATORS:
+        hits.extend(d for d in detect_divergences(bars, oscillator) if d.bar_index >= cutoff)
+    hits.sort(key=lambda d: (d.bar_index, d.oscillator, d.kind))
+    return hits
 
 
 def _nearest_levels(levels: Sequence[Level], close: float) -> tuple[Level | None, Level | None]:
@@ -380,6 +400,7 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         nearest_resistance=nearest_resistance,
         recent_patterns=recent_patterns,
         active_patterns=_active_patterns(bars),
+        recent_divergences=_recent_divergences(bars),
     )
 
 

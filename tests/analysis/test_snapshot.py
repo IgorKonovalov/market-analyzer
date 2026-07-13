@@ -8,8 +8,11 @@ from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
 from market_analyser.analysis import indicators as ind
+from market_analyser.analysis.divergence import detect_divergences
 from market_analyser.analysis.snapshot import (
+    DIVERGENCE_OSCILLATORS,
     ICHIMOKU_DISPLACEMENT,
+    RECENT_DIVERGENCE_BARS,
     _classify_trend,
     _ema_adx_trend,
     condition_snapshot,
@@ -396,6 +399,7 @@ def test_no_recommendation_field() -> None:
         "nearest_resistance",
         "recent_patterns",
         "active_patterns",  # Plan 0052: classical chart patterns in play
+        "recent_divergences",  # Plan 0091: price↔oscillator divergences in play
     }
     # The analyst non-negotiable, pinned: no action/buy/sell field ever appears.
     assert not (fields & {"action", "signal", "recommendation", "buy", "sell"})
@@ -596,6 +600,46 @@ def test_snapshot_oscillator_moneyflow_values_match_standalone() -> None:
         "cmf",
     ):
         assert snap.indicators[key] is not None
+
+
+def _accumulation_bars(closes: Sequence[float]) -> list[Bar]:
+    """Bars whose volume is heavy on up-closes and light on down-closes, so OBV
+    climbs even as price makes a lower high (an OBV hidden-bearish divergence)."""
+
+    bars: list[Bar] = []
+    prev: float | None = None
+    for i, c in enumerate(closes):
+        v = 500.0 if prev is None else (1000.0 if c > prev else 100.0 if c < prev else 300.0)
+        bars.append(_bar(i, o=c, h=c + 0.5, low=c - 0.5, c=c))
+        bars[-1] = bars[-1].model_copy(update={"volume": v})
+        prev = c
+    return bars
+
+
+def test_snapshot_recent_divergences_match_detector() -> None:
+    """`recent_divergences` is the divergence detector run across the oscillator set
+    and filtered to the recent-activity window — proven by an independent recompute,
+    with a known OBV hidden-bearish divergence present (Plan 0091 phase 5)."""
+
+    closes = [
+        100.0, 100.0, 100.0, 100.0,
+        104.0, 108.0, 112.0, 116.0, 120.0,  # rally1 -> peak1 = 120
+        116.0, 112.0, 108.0, 105.0,  # pull1
+        108.0, 111.0, 114.0, 115.0,  # rally2 -> peak2 = 115 (lower high)
+        112.0, 109.0, 107.0,  # pull2
+    ]  # fmt: skip
+    bars = _accumulation_bars(closes)
+    snap = condition_snapshot(bars, "1d")
+
+    cutoff = len(bars) - RECENT_DIVERGENCE_BARS
+    expected = []
+    for oscillator in DIVERGENCE_OSCILLATORS:
+        expected.extend(d for d in detect_divergences(bars, oscillator) if d.bar_index >= cutoff)
+    expected.sort(key=lambda d: (d.bar_index, d.oscillator, d.kind))
+    assert snap.recent_divergences == expected
+    assert any(
+        d.oscillator == "obv" and d.kind == "hidden_bearish" for d in snap.recent_divergences
+    )
 
 
 def _flat_wide_range_bars(n: int = 40) -> list[Bar]:

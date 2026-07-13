@@ -310,90 +310,6 @@ class CounterTrendVolume(BaseModel):
     counter_trend_volume_share: float | None  # None iff anchored_to_sideways
 
 
-class ConditionSnapshot(BaseModel):
-    """A composed, point-in-time technical condition read over cached bars.
-
-    Conditions only — no buy/sell/action field, by the analyst non-negotiable.
-    `indicators` carries the latest values keyed by name (e.g. ``rsi``, ``macd``,
-    ``bb_pct_b``, ``atr``, ``adx``, ``supertrend_direction``, the Ichimoku scalars
-    ``ichimoku_tenkan`` / ``ichimoku_kijun`` and the displaced cloud-under-price
-    ``ichimoku_cloud_a`` / ``ichimoku_cloud_b`` (spans computed ``displacement``
-    bars ago, ADR-0067), the squeeze trio ``bb_width`` /  ``bb_width_pct90`` (the
-    canonical compression metric — Bollinger band-width and its trailing percentile,
-    ADR-0083) and ``squeeze_on`` (``1.0``/``0.0``, TTM Bollinger-inside-Keltner on
-    the latest bar, categorical-as-float like ``supertrend_direction``), plus the
-    trailing percentile ranks ``rsi_pct90`` / ``atr_pct90``); a value is ``None``
-    when the indicator is undefined over the
-    available bars. `trend` folds the Ichimoku cloud into the EMA/ADX read as a
-    conjunctive veto (ADR-0067): a divergence between the moving-average stack and
-    the cloud resolves to ``SIDEWAYS`` rather than a directional label. `support_resistance` maps
-    ``"support"`` / ``"resistance"`` to trailing swing levels. `nearest_support`
-    / `nearest_resistance` (Plan 0051 phase 4) are the structured clustered
-    `Level`s nearest the last close — the support at-or-below it and the
-    resistance at-or-above it, each carrying its strength — or ``None`` when no
-    level sits on that side. `volume_stance` is the coarse volume reading
-    (heavy/normal/light); the numeric volume measures (``volume``,
-    ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``, ``obv_slope``,
-    ``vwap``) ride in `indicators` alongside the others, as do the Plan-0091
-    momentum oscillators (``stoch_k`` / ``stoch_d`` / ``stoch_rsi`` / ``cci`` /
-    ``williams_r`` / ``roc``) and money-flow gauges (``mfi`` / ``ad_line`` /
-    ``cmf``) — reported latest values, not a re-vote of the ``momentum`` stance
-    (which stays RSI-zone + MACD, ADR-0023). `active_patterns`
-    (Plan 0052 phase 3) carries the classical chart patterns still in play —
-    the latest-state `ChartPatternHit` per formation whose completing /
-    confirming bar falls inside the trailing activity window (the breakout
-    scan horizon) — empty when nothing is forming or freshly confirmed.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    symbol: str
-    timeframe: str
-    as_of: datetime
-    trend: Trend
-    momentum: MomentumStance
-    volume_stance: VolumeStance
-    indicators: dict[str, float | None]
-    support_resistance: dict[str, list[float]]
-    nearest_support: Level | None
-    nearest_resistance: Level | None
-    recent_patterns: list[PatternHit]
-    active_patterns: list[ChartPatternHit]
-
-
-class TimeframeView(BaseModel):
-    """One timeframe's condition read inside a multi-timeframe alignment (Plan 0021).
-
-    `snapshot` is ``None`` when no bars were available for the timeframe — an
-    honest per-timeframe gap, not a failure of the whole alignment.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    timeframe: str
-    snapshot: ConditionSnapshot | None
-
-
-class MultiTimeframeAlignment(BaseModel):
-    """Whether one symbol's trend agrees across a ladder of timeframes (Plan 0021).
-
-    `timeframes` carries each timeframe's `ConditionSnapshot` (in the order the
-    caller supplied), so a timeframe whose `snapshot.trend` differs from
-    `dominant_trend` is named by the view itself. `dominant_trend` is the trend
-    held by the most timeframes (ties broken deterministically toward up→down→
-    sideways), falling back to `SIDEWAYS` when no timeframe has bars. `agreement`
-    is the fraction of *available* timeframes whose trend equals `dominant_trend`
-    (0..1; `0.0` when none are available). Conditions only — no buy/sell field.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    symbol: str
-    timeframes: list[TimeframeView]
-    dominant_trend: Trend
-    agreement: float  # 0..1 fraction of available timeframes agreeing
-
-
 DivergenceKind = Literal["regular_bullish", "regular_bearish", "hidden_bullish", "hidden_bearish"]
 
 
@@ -433,6 +349,94 @@ class Divergence(BaseModel):
     oscillator_pivots: list[PivotPoint]
     bar_index: int
     strength: float
+
+
+class ConditionSnapshot(BaseModel):
+    """A composed, point-in-time technical condition read over cached bars.
+
+    Conditions only — no buy/sell/action field, by the analyst non-negotiable.
+    `indicators` carries the latest values keyed by name (e.g. ``rsi``, ``macd``,
+    ``bb_pct_b``, ``atr``, ``adx``, ``supertrend_direction``, the Ichimoku scalars
+    ``ichimoku_tenkan`` / ``ichimoku_kijun`` and the displaced cloud-under-price
+    ``ichimoku_cloud_a`` / ``ichimoku_cloud_b`` (spans computed ``displacement``
+    bars ago, ADR-0067), the squeeze trio ``bb_width`` /  ``bb_width_pct90`` (the
+    canonical compression metric — Bollinger band-width and its trailing percentile,
+    ADR-0083) and ``squeeze_on`` (``1.0``/``0.0``, TTM Bollinger-inside-Keltner on
+    the latest bar, categorical-as-float like ``supertrend_direction``), plus the
+    trailing percentile ranks ``rsi_pct90`` / ``atr_pct90``); a value is ``None``
+    when the indicator is undefined over the
+    available bars. `trend` folds the Ichimoku cloud into the EMA/ADX read as a
+    conjunctive veto (ADR-0067): a divergence between the moving-average stack and
+    the cloud resolves to ``SIDEWAYS`` rather than a directional label. `support_resistance` maps
+    ``"support"`` / ``"resistance"`` to trailing swing levels. `nearest_support`
+    / `nearest_resistance` (Plan 0051 phase 4) are the structured clustered
+    `Level`s nearest the last close — the support at-or-below it and the
+    resistance at-or-above it, each carrying its strength — or ``None`` when no
+    level sits on that side. `volume_stance` is the coarse volume reading
+    (heavy/normal/light); the numeric volume measures (``volume``,
+    ``vol_sma20``, ``rel_volume``, ``vol_pct90``, ``obv``, ``obv_slope``,
+    ``vwap``) ride in `indicators` alongside the others, as do the Plan-0091
+    momentum oscillators (``stoch_k`` / ``stoch_d`` / ``stoch_rsi`` / ``cci`` /
+    ``williams_r`` / ``roc``) and money-flow gauges (``mfi`` / ``ad_line`` /
+    ``cmf``) — reported latest values, not a re-vote of the ``momentum`` stance
+    (which stays RSI-zone + MACD, ADR-0023). `active_patterns`
+    (Plan 0052 phase 3) carries the classical chart patterns still in play —
+    the latest-state `ChartPatternHit` per formation whose completing /
+    confirming bar falls inside the trailing activity window (the breakout
+    scan horizon) — empty when nothing is forming or freshly confirmed.
+    `recent_divergences` (Plan 0091) carries the price↔oscillator `Divergence`s
+    whose confirming bar falls inside the trailing recent-activity window, across
+    the oscillator set (RSI / MACD-hist / OBV / MFI) — empty when none are active.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframe: str
+    as_of: datetime
+    trend: Trend
+    momentum: MomentumStance
+    volume_stance: VolumeStance
+    indicators: dict[str, float | None]
+    support_resistance: dict[str, list[float]]
+    nearest_support: Level | None
+    nearest_resistance: Level | None
+    recent_patterns: list[PatternHit]
+    active_patterns: list[ChartPatternHit]
+    recent_divergences: list[Divergence]
+
+
+class TimeframeView(BaseModel):
+    """One timeframe's condition read inside a multi-timeframe alignment (Plan 0021).
+
+    `snapshot` is ``None`` when no bars were available for the timeframe — an
+    honest per-timeframe gap, not a failure of the whole alignment.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    timeframe: str
+    snapshot: ConditionSnapshot | None
+
+
+class MultiTimeframeAlignment(BaseModel):
+    """Whether one symbol's trend agrees across a ladder of timeframes (Plan 0021).
+
+    `timeframes` carries each timeframe's `ConditionSnapshot` (in the order the
+    caller supplied), so a timeframe whose `snapshot.trend` differs from
+    `dominant_trend` is named by the view itself. `dominant_trend` is the trend
+    held by the most timeframes (ties broken deterministically toward up→down→
+    sideways), falling back to `SIDEWAYS` when no timeframe has bars. `agreement`
+    is the fraction of *available* timeframes whose trend equals `dominant_trend`
+    (0..1; `0.0` when none are available). Conditions only — no buy/sell field.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    timeframes: list[TimeframeView]
+    dominant_trend: Trend
+    agreement: float  # 0..1 fraction of available timeframes agreeing
 
 
 __all__ = [
