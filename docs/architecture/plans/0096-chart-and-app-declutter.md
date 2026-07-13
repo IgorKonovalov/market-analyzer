@@ -1,6 +1,6 @@
 # 0096 — Chart & app declutter
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-13
 > **Owner skill(s):** ui-builder, human
 > **Related ADRs:** [0089-chart-display-presets](../adrs/0089-chart-display-presets.md) (paired — accepts at close), [0077-user-originated-display-overlays](../adrs/0077-user-originated-display-overlays.md) (the overlay store presets compose), [0062-user-chart-style-overrides](../adrs/0062-user-chart-style-overrides.md) (chart style / candle-type — left global), [0039-renderer-theming-localstorage](../adrs/0039-renderer-theming-localstorage.md) (`ma.*` persistence), [0063-in-house-i18n-and-reason-codes](../adrs/0063-in-house-i18n-and-reason-codes.md) (en/ru parity for new strings), [0088-lightweight-charts-v5-panes](../adrs/0088-lightweight-charts-v5-panes.md) (v5 render substrate), [0008-electron-shell-conventions](../adrs/0008-electron-shell-conventions.md) (CSP unchanged)

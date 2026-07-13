@@ -14,9 +14,11 @@
  */
 import '@testing-library/jest-dom'
 
+import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { SymbolPicker } from './SymbolPicker'
+import type { Timeframe } from '../lib/timeframes'
 
 const RESULTS = [
   { symbol: 'BTC-USD', name: 'Bitcoin USD', exchange: 'CCC', quote_type: 'Cryptocurrency' },
@@ -228,13 +230,84 @@ it('preserves an in-progress draft across a re-render with an unchanged symbol',
   expect(input).toHaveValue('TSL')
 })
 
-it('renders exactly the backend-supported timeframes (15m/1h/4h/1d/1w/1mo), not 5m/1m', () => {
+// ── Segmented timeframe control (Plan 0096 phase 1) ──
+
+/** A stateful wrapper so keyboard select-on-navigate actually walks the group:
+ * the picker is controlled, so arrow keys only advance if the parent commits. */
+function renderStatefulPicker(initial: Timeframe = '1d'): { onTimeframeChange: jest.Mock } {
+  const onTimeframeChange = jest.fn()
+  function Wrapper(): JSX.Element {
+    const [tf, setTf] = useState<Timeframe>(initial)
+    return (
+      <SymbolPicker
+        symbol="AAPL"
+        timeframe={tf}
+        onSymbolChange={jest.fn()}
+        onTimeframeChange={(value) => {
+          onTimeframeChange(value)
+          setTf(value)
+        }}
+      />
+    )
+  }
+  render(<Wrapper />)
+  return { onTimeframeChange }
+}
+
+it('renders exactly the backend-supported timeframes (15m/1h/4h/1d/1w/1mo) as segments, not 5m/1m', () => {
   renderPicker()
-  const select = screen.getByLabelText('Timeframe')
-  const optionValues = Array.from(select.querySelectorAll('option')).map((o) => o.value)
+  const group = screen.getByRole('group', { name: 'Timeframe' })
+  const labels = within(group)
+    .getAllByRole('button')
+    .map((b) => b.textContent)
   // Canonical set, cadence-ascending — sourced from lib/timeframes.
-  expect(optionValues).toEqual(['15m', '1h', '4h', '1d', '1w', '1mo'])
+  expect(labels).toEqual(['15m', '1h', '4h', '1d', '1w', '1mo'])
   // The previously-offered-but-unfetchable cadences are gone.
-  expect(optionValues).not.toContain('5m')
-  expect(optionValues).not.toContain('1m')
+  expect(labels).not.toContain('5m')
+  expect(labels).not.toContain('1m')
+})
+
+it('pins the active segment and puts only it in the tab order (roving tabindex)', () => {
+  renderPicker() // active timeframe is 1d
+  const active = screen.getByRole('button', { name: '1d' })
+  expect(active).toHaveAttribute('aria-pressed', 'true')
+  expect(active).toHaveAttribute('aria-current', 'true')
+  expect(active).toHaveAttribute('tabindex', '0')
+
+  const inactive = screen.getByRole('button', { name: '1h' })
+  expect(inactive).toHaveAttribute('aria-pressed', 'false')
+  expect(inactive).not.toHaveAttribute('aria-current')
+  expect(inactive).toHaveAttribute('tabindex', '-1')
+})
+
+it('selects a timeframe on click, firing onTimeframeChange with the picked value', () => {
+  const { onTimeframeChange } = renderStatefulPicker()
+  fireEvent.click(screen.getByRole('button', { name: '4h' }))
+  expect(onTimeframeChange).toHaveBeenCalledWith('4h')
+  // Clicking the already-active segment is a no-op (no redundant callback).
+  onTimeframeChange.mockClear()
+  fireEvent.click(screen.getByRole('button', { name: '4h' }))
+  expect(onTimeframeChange).not.toHaveBeenCalled()
+})
+
+it('reaches every timeframe by keyboard: ArrowRight walks (and wraps) the whole set', () => {
+  const { onTimeframeChange } = renderStatefulPicker('1d')
+  const group = screen.getByRole('group', { name: 'Timeframe' })
+  // Six ArrowRights from 1d cycle through the full set and wrap back to 1d.
+  for (let i = 0; i < 6; i++) {
+    fireEvent.keyDown(group, { key: 'ArrowRight' })
+  }
+  const reached = onTimeframeChange.mock.calls.map((c) => c[0])
+  expect(reached).toEqual(['1w', '1mo', '15m', '1h', '4h', '1d'])
+})
+
+it('ArrowLeft moves to the previous segment and Home/End jump to the ends', () => {
+  const { onTimeframeChange } = renderStatefulPicker('1d')
+  const group = screen.getByRole('group', { name: 'Timeframe' })
+  fireEvent.keyDown(group, { key: 'ArrowLeft' })
+  expect(onTimeframeChange).toHaveBeenLastCalledWith('4h')
+  fireEvent.keyDown(group, { key: 'Home' })
+  expect(onTimeframeChange).toHaveBeenLastCalledWith('15m')
+  fireEvent.keyDown(group, { key: 'End' })
+  expect(onTimeframeChange).toHaveBeenLastCalledWith('1mo')
 })

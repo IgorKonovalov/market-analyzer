@@ -48,6 +48,8 @@ export function SymbolPicker({
 
   const rootRef = useRef<HTMLDivElement>(null)
   const listboxId = useId()
+  const tfLabelId = useId()
+  const tfGroupRef = useRef<HTMLDivElement>(null)
 
   const { results } = useSymbolSearch(draft)
   const showDropdown = isOpen && results.length > 0
@@ -128,6 +130,39 @@ export function SymbolPicker({
     }
   }
 
+  // Roving-tabindex keyboard nav for the segmented timeframe group: only the
+  // active segment is in the tab order; arrows/Home/End move between segments
+  // and commit the landed-on one (select-on-navigate, like a radio group).
+  const onTimeframeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const current = TIMEFRAMES.indexOf(timeframe)
+    const last = TIMEFRAMES.length - 1
+    let next: number
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        next = current >= last ? 0 : current + 1
+        break
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        next = current <= 0 ? last : current - 1
+        break
+      case 'Home':
+        next = 0
+        break
+      case 'End':
+        next = last
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    const value = TIMEFRAMES[next]
+    if (value !== timeframe) onTimeframeChange(value)
+    // Move focus with selection; the button order is stable across re-render so
+    // indexing the live DOM is safe.
+    tfGroupRef.current?.querySelectorAll<HTMLButtonElement>(`.${styles.segment}`)?.[next]?.focus()
+  }
+
   return (
     <div className={styles.root} ref={rootRef}>
       <form
@@ -173,22 +208,38 @@ export function SymbolPicker({
           />
         </label>
 
-        <label className={styles.field}>
-          <span className={styles.labelText}>{t('symbolPicker.timeframe')}</span>
-          <select
-            className={styles.select}
-            value={timeframe}
-            onChange={(event) => onTimeframeChange(event.target.value as Timeframe)}
-            disabled={disabled}
-            aria-label={t('symbolPicker.timeframe')}
+        <div className={styles.field}>
+          <span className={styles.labelText} id={tfLabelId}>
+            {t('symbolPicker.timeframe')}
+          </span>
+          <div
+            className={styles.segmented}
+            role="group"
+            aria-labelledby={tfLabelId}
+            ref={tfGroupRef}
+            onKeyDown={disabled ? undefined : onTimeframeKeyDown}
           >
-            {TIMEFRAMES.map((tf) => (
-              <option key={tf} value={tf}>
-                {tf}
-              </option>
-            ))}
-          </select>
-        </label>
+            {TIMEFRAMES.map((tf) => {
+              const active = tf === timeframe
+              return (
+                <button
+                  key={tf}
+                  type="button"
+                  className={`${styles.segment} ${active ? styles.segmentActive : ''}`}
+                  aria-pressed={active}
+                  aria-current={active ? 'true' : undefined}
+                  tabIndex={active ? 0 : -1}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (tf !== timeframe) onTimeframeChange(tf)
+                  }}
+                >
+                  {tf}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </form>
 
       {showDropdown && (

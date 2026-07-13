@@ -36,6 +36,51 @@
   outline-offset: 1px;
 }
 
+/* Segmented timeframe control (Plan 0096 phase 1) — a roving-tabindex button
+   group replacing the native <select>. The active segment is pinned with a
+   raised fill; only it is in the tab order (arrow keys move between segments). */
+.segmented {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+}
+
+.segment {
+  font: inherit;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segment:hover:not(:disabled) {
+  color: var(--color-fg);
+}
+
+.segmentActive {
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  font-weight: 600;
+  box-shadow: var(--shadow-1);
+}
+
+.segment:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.segment:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .dropdown {
   position: absolute;
   top: 100%;
