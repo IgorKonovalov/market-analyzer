@@ -41,8 +41,10 @@ import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import { useBbandsSeries } from '../hooks/useBbandsSeries'
 import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
 import { useOscillatorPanes, type OscillatorPaneEntry } from '../hooks/useOscillatorPanes'
+import { useAnchoredVwapSeries } from '../hooks/useAnchoredVwapSeries'
 import { useOverlaySeries } from '../hooks/useOverlaySeries'
 import { usePriceLines } from '../hooks/usePriceLines'
+import { useStructureLevels } from '../hooks/useStructureLevels'
 import { useSupertrendSeries } from '../hooks/useSupertrendSeries'
 import type { ChartMarker } from '../lib/markers'
 import { candleGroupKeyFromLayerId } from '../lib/candleGroups'
@@ -214,6 +216,15 @@ export function CandlestickChart({
   // Drawn price lines (Plan 0047 phase 9), keyed by `priceLineId`. price_line
   // overlays are horizontal lines on the candlestick series, not line series.
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
+  // Price-structure horizontal lines (Plan 0092 phase 5): `fibonacci` grid ratios
+  // + classic `pivot_points` P/R/S, drawn as price lines on the candlestick series
+  // (a separate map from `priceLinesRef` so the two families never collide). Fed
+  // by `useStructureLevels`.
+  const structureLinesRef = useRef<Map<string, IPriceLine>>(new Map())
+  // Anchored-VWAP overlays (Plan 0092 phase 5) draw one line series each on the
+  // price pane, keyed by overlayKey; a legend toggle removes it. Fed by
+  // `useAnchoredVwapSeries`.
+  const anchoredVwapSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map())
   // Multi-bar pattern span band (Plan 0049 phase 7): one series primitive,
   // attached at mount, fed spans/colors/visibility by the spans effect below.
   const spanPrimitiveRef = useRef<PatternSpanPrimitive | null>(null)
@@ -539,6 +550,8 @@ export function CandlestickChart({
     // run and cleanup invocation; the local capture is the canonical fix).
     const overlayMap = overlaySeriesRef.current
     const priceLineMap = priceLinesRef.current
+    const structureLineMap = structureLinesRef.current
+    const anchoredVwapMap = anchoredVwapSeriesRef.current
     const supertrendMap = supertrendSeriesRef.current
     const bbandsMap = bbandsSeriesRef.current
     const oscillatorPanes = oscillatorPanesRef.current
@@ -564,6 +577,8 @@ export function CandlestickChart({
       overlayMap.clear()
       // The chart owns its price lines (disposed by chart.remove); drop our refs.
       priceLineMap.clear()
+      structureLineMap.clear()
+      anchoredVwapMap.clear()
       supertrendMap.clear()
       bbandsMap.clear()
       syncTestRenderHook()
@@ -784,6 +799,25 @@ export function CandlestickChart({
     hidden,
     effectiveTheme,
     styleVersion,
+    rebuildToken: candleType,
+  })
+
+  // Price-structure horizontal lines (Plan 0092 phase 5): `fibonacci` grid ratios
+  // + classic `pivot_points` P/R/S drawn as price lines on the main series
+  // (client-computed from bars, auto-anchored or from the overlay's explicit
+  // anchor/method). Toggled per overlay from the legend like the other overlays.
+  useStructureLevels(seriesRef, structureLinesRef, {
+    bars,
+    overlays: effectiveOverlays,
+    hidden,
+    rebuildToken: candleType,
+  })
+  // Anchored-VWAP line series (Plan 0092 phase 5): one line per `anchored_vwap`
+  // overlay, accumulated from its anchor (explicit or dominant-swing auto-anchor).
+  useAnchoredVwapSeries(chartRef, anchoredVwapSeriesRef, {
+    bars,
+    overlays: effectiveOverlays,
+    hidden,
     rebuildToken: candleType,
   })
 

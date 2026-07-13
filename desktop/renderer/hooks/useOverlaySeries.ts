@@ -30,6 +30,7 @@ import { resolveChartStyle } from '../lib/chartStyle'
 import {
   computeOverlayData,
   isOscillatorOverlay,
+  isStructureOverlay,
   isSupportedOverlay,
   overlayColorFor,
   overlayLayerId,
@@ -89,6 +90,9 @@ export function useOverlaySeries(
       // Oscillators draw in their own sub-panes (`useOscillatorPanes`), not the
       // price pane — skip the generic single-line path (Plan 0091 phase 6).
       if (isOscillatorOverlay(spec.kind)) continue
+      // Price-structure overlays draw via dedicated hooks (`useStructureLevels`,
+      // `useAnchoredVwapSeries`) — skip the generic single-line path (Plan 0092).
+      if (isStructureOverlay(spec.kind)) continue
       if (!isSupportedOverlay(spec.kind)) {
         console.warn(
           `[CandlestickChart] unsupported overlay kind "${spec.kind}" — ignored (MVP renders ema/sma only)`,

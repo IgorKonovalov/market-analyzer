@@ -230,34 +230,44 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     dumped = dumpPydanticSchemas()
   })
 
-  it('OverlaySpec fields match (price_line adds price/label/role; supertrend adds multiplier; ichimoku adds four periods)', () => {
+  it('OverlaySpec fields match (price_line adds price/label/role; supertrend adds multiplier; ichimoku adds four periods; Plan 0092 adds fib/pivot/anchored-vwap params)', () => {
     expect(propertyNames(dumped.OverlaySpec)).toEqual([
+      'anchor_ts',
       'base',
       'conversion',
       'displacement',
+      'fib_kind',
+      'high_anchor_price',
+      'high_anchor_ts',
       'kind',
       'label',
+      'low_anchor_price',
+      'low_anchor_ts',
+      'method',
       'multiplier',
       'period',
       'price',
       'role',
       'span_b',
     ])
-    // price/label/role/multiplier and the four ichimoku periods default to None →
-    // not required (price_line's price+label are enforced by a cross-field
+    // Every field but `kind` defaults to None → not required (price_line's
+    // price+label and the Plan-0092 kind params are enforced by the cross-field
     // validator, not `required`).
     expect(requiredNames(dumped.OverlaySpec)).toEqual(['kind'])
     expect(literalValues(dumped.OverlaySpec, 'kind')).toEqual(
       [
         'ad_line',
+        'anchored_vwap',
         'bbands',
         'cci',
         'cmf',
         'ema',
+        'fibonacci',
         'ichimoku',
         'macd',
         'mfi',
         'obv',
+        'pivot_points',
         'price_line',
         'roc',
         'rsi',
@@ -268,9 +278,9 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
         'williams_r',
       ].sort(),
     )
-    // `role` is an optional Literal (`| None`), emitted as `anyOf` rather than a
-    // top-level `enum`, so `literalValues` (enum/$ref only) can't read it — the
-    // property-name + required checks above already pin its presence/optionality.
+    // `role`/`fib_kind`/`method` are optional Literals (`| None`), emitted as
+    // `anyOf` rather than a top-level `enum`, so `literalValues` (enum/$ref only)
+    // can't read them — the property-name + required checks pin their optionality.
   })
 
   it('Marker fields match (pattern/span/strength added; neutral_marker kind)', () => {

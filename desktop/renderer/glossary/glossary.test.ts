@@ -210,11 +210,14 @@ it('the indicator-category keys equal exactly the frozen feature-name union', ()
 // FEATURE_NAMES pin.
 const EXPECTED_OVERLAY_KEYS = [
   'ad_line',
+  'anchored_vwap',
   'bbands',
   'cci',
   'cmf',
   'ema',
+  'fibonacci',
   'mfi',
+  'pivot_points',
   'roc',
   'sma',
   'stoch_rsi',

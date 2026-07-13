@@ -37,6 +37,12 @@ export const OVERLAY_FORM_KINDS = [
   // toggleable like the rest. Fieldless in v1 (classic default periods).
   'rsi',
   'macd',
+  // Plan 0092: price-structure geometry overlays. Fieldless in the form — the
+  // renderer auto-anchors (dominant swing / last bar), retracement + floor
+  // defaults; the agent overrides fib_kind / method / anchors via show_chart.
+  'fibonacci',
+  'pivot_points',
+  'anchored_vwap',
 ] as const satisfies readonly OverlayKind[]
 
 export type OverlayFormKind = (typeof OVERLAY_FORM_KINDS)[number]

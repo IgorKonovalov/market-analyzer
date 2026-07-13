@@ -684,6 +684,9 @@ export const en = {
   'layers.kind.ad_line': 'A/D Line',
   'layers.kind.rsi': 'RSI',
   'layers.kind.macd': 'MACD',
+  'layers.kind.fibonacci': 'Fibonacci',
+  'layers.kind.pivot_points': 'Pivot points',
+  'layers.kind.anchored_vwap': 'Anchored VWAP',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) — prose is phase 3 ──
   'glossary.howComputedLabel': "How it's computed",

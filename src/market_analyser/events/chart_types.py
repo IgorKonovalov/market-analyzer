@@ -55,7 +55,19 @@ class OverlaySpec(BaseModel):
     same field `supertrend` reuses for its ATR multiplier. The three bands (SMA
     middle band, plus/minus `k` population standard deviations) are computed
     client-side and drawn on the price pane (phase 2, ui-builder). Like the other
-    indicator kinds it accepts no `price`/`label`/`role`."""
+    indicator kinds it accepts no `price`/`label`/`role`.
+
+    `fibonacci` / `pivot_points` / `anchored_vwap` (Plan 0092) are the price-
+    structure geometry overlays, each drawn on the price pane. They carry their own
+    optional parameters (kept disjoint from the other kinds by the validator):
+    `fibonacci` an optional `fib_kind` (retracement/extension) plus an optional
+    explicit swing anchor (`high_anchor_ts`/`high_anchor_price` +
+    `low_anchor_ts`/`low_anchor_price`, supplied whole or not at all); `pivot_points`
+    an optional `method` (floor/camarilla/woodie); `anchored_vwap` an optional
+    `anchor_ts`. When the anchor/method params are absent the renderer auto-anchors
+    from the bars it holds (dominant swing / last completed bar / dominant-swing
+    start), the ADR-0077 client path; the agent overrides via `show_chart`/
+    `update_chart`. Like the indicator kinds they accept no `price`/`label`/`role`."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -81,6 +93,10 @@ class OverlaySpec(BaseModel):
         "mfi",
         "cmf",
         "ad_line",
+        # Plan 0092: price-structure geometry overlays (price pane).
+        "fibonacci",
+        "pivot_points",
+        "anchored_vwap",
     ]
     period: int | None = None
     multiplier: float | None = None  # supertrend's ATR multiplier; None on other kinds
@@ -93,18 +109,84 @@ class OverlaySpec(BaseModel):
     price: float | None = None
     label: str | None = None
     role: Literal["support", "resistance"] | None = None
+    # Plan 0092 `fibonacci`-only params (None on other kinds); anchors absent ->
+    # the renderer auto-anchors to the dominant swing.
+    fib_kind: Literal["retracement", "extension"] | None = None
+    high_anchor_ts: datetime | None = None
+    high_anchor_price: float | None = None
+    low_anchor_ts: datetime | None = None
+    low_anchor_price: float | None = None
+    # Plan 0092 `pivot_points`-only param (None -> renderer default "floor").
+    method: Literal["floor", "camarilla", "woodie"] | None = None
+    # Plan 0092 `anchored_vwap`-only param (None -> renderer auto-anchors).
+    anchor_ts: datetime | None = None
 
     @model_validator(mode="after")
     def _validate_kind_fields(self) -> OverlaySpec:
-        """Keep the two overlay families disjoint: `price_line` requires both
-        `price` and `label` (a labelless line is useless on the chart); the
-        indicator kinds (`ichimoku` included) accept neither `price`/`label`/
-        `role`."""
+        """Keep the overlay families disjoint: `price_line` requires both `price`
+        and `label`; the indicator kinds accept none of the geometry fields; each
+        Plan-0092 structure kind accepts only its own optional params (a
+        `fibonacci` explicit anchor is all-or-none)."""
+        structure_fields = (
+            "fib_kind",
+            "high_anchor_ts",
+            "high_anchor_price",
+            "low_anchor_ts",
+            "low_anchor_price",
+            "method",
+            "anchor_ts",
+        )
+
+        def _forbid(names: tuple[str, ...]) -> None:
+            offending = [n for n in names if getattr(self, n) is not None]
+            if offending:
+                raise ValueError(f"{self.kind} overlay does not accept {', '.join(offending)}")
+
         if self.kind == "price_line":
             if self.price is None or self.label is None:
                 raise ValueError("price_line overlay requires both 'price' and 'label'")
-        elif self.price is not None or self.label is not None or self.role is not None:
+            _forbid(structure_fields)
+            return self
+
+        if self.price is not None or self.label is not None or self.role is not None:
             raise ValueError(f"{self.kind} overlay does not accept price/label/role")
+
+        if self.kind == "fibonacci":
+            _forbid(("method", "anchor_ts"))
+            anchors = (
+                self.high_anchor_ts,
+                self.high_anchor_price,
+                self.low_anchor_ts,
+                self.low_anchor_price,
+            )
+            if any(a is not None for a in anchors) and any(a is None for a in anchors):
+                raise ValueError(
+                    "fibonacci overlay anchor must be supplied whole (all four) or none"
+                )
+        elif self.kind == "pivot_points":
+            _forbid(
+                (
+                    "fib_kind",
+                    "high_anchor_ts",
+                    "high_anchor_price",
+                    "low_anchor_ts",
+                    "low_anchor_price",
+                    "anchor_ts",
+                )
+            )
+        elif self.kind == "anchored_vwap":
+            _forbid(
+                (
+                    "fib_kind",
+                    "high_anchor_ts",
+                    "high_anchor_price",
+                    "low_anchor_ts",
+                    "low_anchor_price",
+                    "method",
+                )
+            )
+        else:
+            _forbid(structure_fields)
         return self
 
 

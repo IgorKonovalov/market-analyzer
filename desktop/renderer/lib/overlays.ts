@@ -48,6 +48,12 @@ const SUPERTREND_DEFAULT_MULTIPLIER = 3
  * a per-theme token. Shared by the registry entry and `useBbandsSeries`. */
 export const BBANDS_LINE_COLOR = '#8b5cf6'
 
+/** Plan-0092 price-structure overlay colours (static, not user-styleable —
+ * ADR-0062). Shared by the registry legend swatches and the draw hooks. */
+export const FIB_LINE_COLOR = '#c084fc' // fibonacci grid — violet
+export const PIVOT_LINE_COLOR = '#f59e0b' // classic pivots — amber
+export const ANCHORED_VWAP_COLOR = '#14b8a6' // anchored VWAP — teal
+
 /** The single source of truth for supported overlays. `Partial` because the
  * `OverlayKind` union also carries MVP-unsupported kinds (rsi/macd/bbands) that
  * deliberately have no entry yet. */
@@ -121,6 +127,29 @@ export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> =
   // (`compute` returns `[]`); `macd` draws its histogram line.
   rsi: { color: '#4f46e5', compute: () => [] },
   macd: { color: '#0284c7', compute: () => [] },
+  // Price-structure geometry (Plan 0092 phase 5): each is a supported overlay (one
+  // toggleable legend row, no "unsupported" warning). `fibonacci`/`pivot_points`
+  // draw as horizontal price lines via `useStructureLevels`; `anchored_vwap` draws
+  // a line series via `useAnchoredVwapSeries` — none use the generic single-line
+  // path, so like bbands/ichimoku this `compute` returns `[]`. The colour is the
+  // legend swatch (static per-kind, not user-styleable — ADR-0062).
+  fibonacci: { color: FIB_LINE_COLOR, compute: () => [] },
+  pivot_points: { color: PIVOT_LINE_COLOR, compute: () => [] },
+  anchored_vwap: { color: ANCHORED_VWAP_COLOR, compute: () => [] },
+}
+
+/** The Plan-0092 price-structure geometry kinds — drawn on the price pane by their
+ * own dedicated hooks (`useStructureLevels` for fib/pivot lines, `useAnchoredVwapSeries`
+ * for anchored VWAP), so the generic overlay/line reconcile skips them. */
+export const STRUCTURE_KINDS: readonly OverlayKind[] = [
+  'fibonacci',
+  'pivot_points',
+  'anchored_vwap',
+]
+
+/** Whether an overlay kind is a Plan-0092 structure overlay (dedicated draw path). */
+export function isStructureOverlay(kind: OverlayKind): boolean {
+  return (STRUCTURE_KINDS as readonly string[]).includes(kind)
 }
 
 /** The Plan-0091 oscillator + money-flow kinds — drawn in their own v5 sub-panes

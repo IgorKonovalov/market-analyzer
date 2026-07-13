@@ -693,6 +693,9 @@ export const ru = {
   'layers.kind.ad_line': 'Линия A/D',
   'layers.kind.rsi': 'RSI',
   'layers.kind.macd': 'MACD',
+  'layers.kind.fibonacci': 'Фибоначчи',
+  'layers.kind.pivot_points': 'Опорные точки',
+  'layers.kind.anchored_vwap': 'Привязанный VWAP',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) ──
   'glossary.howComputedLabel': 'Как вычисляется',

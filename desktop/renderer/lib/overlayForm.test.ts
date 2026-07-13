@@ -28,6 +28,10 @@ describe('overlay form kinds', () => {
       // Plan 0091 phase 9: RSI + MACD-histogram became addable oscillator panes.
       'rsi',
       'macd',
+      // Plan 0092: price-structure geometry overlays (fieldless auto-anchor adds).
+      'fibonacci',
+      'pivot_points',
+      'anchored_vwap',
     ])
   })
 

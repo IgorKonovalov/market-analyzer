@@ -42,6 +42,11 @@ export const USER_OVERLAY_KINDS: readonly OverlayKind[] = [
   'mfi',
   'cmf',
   'ad_line',
+  // Plan 0092 price-structure geometry — user-addable, fieldless (the renderer
+  // auto-anchors); drawn on the price pane by their dedicated hooks.
+  'fibonacci',
+  'pivot_points',
+  'anchored_vwap',
 ]
 
 const STORAGE_KEY = 'ma.userOverlays'

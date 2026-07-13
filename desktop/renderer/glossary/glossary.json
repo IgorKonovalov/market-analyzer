@@ -901,6 +901,51 @@
       "ru": "Сглаженная линия тренда. Цена выше неё склоняется к бычьему, ниже — к медвежьему; чем короче период, тем плотнее она облегает цену."
     }
   },
+  "fibonacci": {
+    "term": {
+      "en": "Fibonacci retracement",
+      "ru": "Уровни Фибоначчи"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "Horizontal lines at the ratios 0.236 / 0.382 / 0.5 / 0.618 / 0.786 of a swing's high-to-low range (or extension lines beyond it at 1.272 / 1.618 / 2.0 / 2.618), auto-anchored to the dominant recent swing or drawn from an explicit anchor.",
+      "ru": "Горизонтальные линии на уровнях 0.236 / 0.382 / 0.5 / 0.618 / 0.786 размаха свинга от максимума к минимуму (или линии расширения за его пределами 1.272 / 1.618 / 2.0 / 2.618), автоматически привязанные к доминирующему недавнему свингу или к явно заданному якорю."
+    },
+    "whatItMeans": {
+      "en": "Where a pullback within a trend often finds support or resistance; the 0.5 and 0.618 lines are the ones traders watch most. Chart geometry, not a buy/sell signal.",
+      "ru": "Где откат внутри тренда часто находит поддержку или сопротивление; линии 0.5 и 0.618 трейдеры отслеживают чаще всего. Это геометрия графика, а не сигнал на покупку/продажу."
+    }
+  },
+  "pivot_points": {
+    "term": {
+      "en": "Pivot points",
+      "ru": "Опорные точки (пивоты)"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "The central pivot P plus three resistances (R1-R3) and three supports (S1-S3), computed from the prior completed bar's high/low/close by the floor, Camarilla, or Woodie formula set.",
+      "ru": "Центральная опорная точка P плюс три сопротивления (R1-R3) и три поддержки (S1-S3), рассчитанные по максимуму/минимуму/закрытию предыдущего завершённого бара методом floor, Camarilla или Woodie."
+    },
+    "whatItMeans": {
+      "en": "Static support/resistance levels many traders share, so price often reacts near them. Chart geometry, not a buy/sell signal.",
+      "ru": "Статические уровни поддержки/сопротивления, которые отслеживают многие трейдеры, поэтому цена часто реагирует вблизи них. Это геометрия графика, а не сигнал на покупку/продажу."
+    }
+  },
+  "anchored_vwap": {
+    "term": {
+      "en": "Anchored VWAP",
+      "ru": "Привязанный VWAP"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "The volume-weighted average of the typical price (high+low+close)/3 accumulated from a chosen anchor bar to the latest bar — a VWAP with a fixed start, unlike the rolling VWAP.",
+      "ru": "Средневзвешенная по объёму типичная цена (high+low+close)/3, накопленная от выбранного якорного бара до последнего бара — VWAP с фиксированным началом, в отличие от скользящего VWAP."
+    },
+    "whatItMeans": {
+      "en": "Dynamic support/resistance measured from a meaningful event (a swing or high-volume bar); price above it favours buyers since that anchor, below it sellers. Chart geometry, not a buy/sell signal.",
+      "ru": "Динамическая поддержка/сопротивление, измеренная от значимого события (свинга или бара с высоким объёмом); цена выше неё говорит в пользу покупателей с момента якоря, ниже — продавцов. Это геометрия графика, а не сигнал на покупку/продажу."
+    }
+  },
   "sma": {
     "term": {
       "en": "SMA",

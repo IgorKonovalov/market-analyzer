@@ -34,9 +34,19 @@ export type OverlayKind =
   | 'mfi'
   | 'cmf'
   | 'ad_line'
+  // Plan 0092 price-structure geometry overlays — drawn on the price pane.
+  | 'fibonacci'
+  | 'pivot_points'
+  | 'anchored_vwap'
 
 /** Support/resistance role for a `price_line` overlay; absent for plain levels. */
 export type PriceLineRole = 'support' | 'resistance'
+
+/** Fibonacci grid kind for a `fibonacci` overlay (Plan 0092); absent ⇒ retracement. */
+export type FibKind = 'retracement' | 'extension'
+
+/** Pivot-point method for a `pivot_points` overlay (Plan 0092); absent ⇒ floor. */
+export type PivotMethod = 'floor' | 'camarilla' | 'woodie'
 
 /** Mirror of the pydantic `OverlaySpec`. One model carries two disjoint families
  * (the sidecar's `_validate_kind_fields` keeps them so): indicator overlays use
@@ -47,7 +57,12 @@ export type PriceLineRole = 'support' | 'resistance'
  * `ichimoku` (Plan 0073) is another, carrying its own four optional period fields
  * (`conversion`/`base`/`span_b`/`displacement`) — absent ⇒ the renderer applies
  * the classic 9/26/52/26 defaults. `obv` (Plan 0076) is a fieldless indicator kind
- * (OBV is cumulative/unparameterized); it always draws in its own bottom strip. */
+ * (OBV is cumulative/unparameterized); it always draws in its own bottom strip.
+ * Plan 0092 adds the price-structure geometry overlays `fibonacci` /
+ * `pivot_points` / `anchored_vwap`, each carrying its own optional params
+ * (`fib_kind` + the four explicit-anchor fields; `method`; `anchor_ts`) — absent
+ * ⇒ the renderer auto-anchors from the bars it holds (ADR-0077 client path). Kept
+ * disjoint from the other families by the sidecar's `_validate_kind_fields`. */
 export interface OverlaySpec {
   kind: OverlayKind
   period?: number | null
@@ -62,6 +77,20 @@ export interface OverlaySpec {
   price?: number | null
   label?: string | null
   role?: PriceLineRole | null
+  /** `fibonacci`-only params (Plan 0092): the grid kind + an optional explicit
+   * swing anchor (all four supplied together or none). Absent ⇒ auto-anchor. */
+  fib_kind?: FibKind | null
+  /** ISO 8601 UTC timestamp. */
+  high_anchor_ts?: string | null
+  high_anchor_price?: number | null
+  /** ISO 8601 UTC timestamp. */
+  low_anchor_ts?: string | null
+  low_anchor_price?: number | null
+  /** `pivot_points`-only method (Plan 0092); absent ⇒ floor. */
+  method?: PivotMethod | null
+  /** `anchored_vwap`-only anchor (Plan 0092); ISO 8601 UTC timestamp. Absent ⇒
+   * the renderer auto-anchors to the dominant-swing start. */
+  anchor_ts?: string | null
 }
 
 export type MarkerKind = 'bullish_marker' | 'bearish_marker' | 'neutral_marker'

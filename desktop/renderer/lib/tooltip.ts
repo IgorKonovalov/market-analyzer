@@ -104,6 +104,13 @@ export function tooltipPosition(
 
 /** Human label for an overlay series, e.g. `EMA(20)`, `SMA(50)`, `PRICE_LINE`. */
 export function overlayLabel(spec: OverlaySpec): string {
+  // Plan 0092 price-structure overlays get readable labels (the raw kind
+  // upper-cased reads as "PIVOT_POINTS"); the pivot method rides in parentheses.
+  if (spec.kind === 'fibonacci') {
+    return spec.fib_kind === 'extension' ? 'Fibonacci (ext)' : 'Fibonacci'
+  }
+  if (spec.kind === 'pivot_points') return `Pivots (${spec.method ?? 'floor'})`
+  if (spec.kind === 'anchored_vwap') return 'Anchored VWAP'
   const kind = spec.kind.toUpperCase()
   return spec.period != null ? `${kind}(${spec.period})` : kind
 }
