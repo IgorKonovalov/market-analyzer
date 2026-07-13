@@ -35,6 +35,13 @@ export const ru = {
   'app.nav.news': 'Новости',
   'app.nav.alerts': 'Оповещения',
   'app.nav.settings': 'Настройки',
+  // Collapsed nav menu (Plan 0096 phase 5).
+  'app.nav.menu': 'Меню',
+  'app.nav.menuAria': 'Другие разделы',
+  'app.nav.group.analyze': 'Анализ',
+  'app.nav.group.ideas': 'Идеи',
+  'app.nav.group.portfolio': 'Портфель',
+  'app.nav.group.system': 'Система',
   'app.backtest.loading': 'Загрузка результата бэктеста…',
   'app.backtest.loadError': 'Не удалось загрузить результат бэктеста:',
   'app.backtest.backToRecent': 'Назад к недавним бэктестам',

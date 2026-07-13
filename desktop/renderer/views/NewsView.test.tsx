@@ -167,13 +167,15 @@ it('opens a clicked headline in the OS browser via shell.openExternal, not in-ap
   delete window.api
 })
 
-it('exposes a News nav tab that mounts the News view when selected', async () => {
+it('exposes a News menu item that mounts the News view when selected', async () => {
   getNews.mockResolvedValue(response({ items: [], sentiment: null }))
   render(<App />)
 
-  const newsTab = screen.getByRole('button', { name: 'News' })
-  expect(newsTab).toBeInTheDocument()
+  // News folded into the collapsed nav menu (Plan 0096 phase 5) — open it first.
+  fireEvent.click(screen.getByTestId('nav-menu-trigger'))
+  const newsItem = screen.getByRole('menuitem', { name: 'News' })
+  expect(newsItem).toBeInTheDocument()
 
-  fireEvent.click(newsTab)
+  fireEvent.click(newsItem)
   expect(await screen.findByRole('region', { name: 'News' })).toBeInTheDocument()
 })

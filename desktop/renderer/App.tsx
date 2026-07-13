@@ -28,6 +28,7 @@ import { useEventStream } from './hooks/useEventStream'
 import { useLocale } from './hooks/useLocalePref'
 import styles from './App.module.css'
 import { AlertToaster } from './components/AlertToaster'
+import { NavMenu } from './components/NavMenu'
 import { ThemeToggle } from './components/ThemeToggle'
 import { t } from './lib/i18n'
 import type { Timeframe } from './lib/timeframes'
@@ -68,6 +69,50 @@ type View =
   | 'backtest'
   | 'recent-backtests'
   | 'alerts'
+
+/** The non-Chart destinations, folded into the grouped nav menu (Plan 0096
+ * phase 5). Chart stays on the top bar; these eleven live behind the menu
+ * trigger. Grouping is a re-labelable menu, not an architectural fork. */
+const NAV_GROUPS: ReadonlyArray<{
+  labelKey: string
+  items: ReadonlyArray<{ view: View; labelKey: string; testid: string }>
+}> = [
+  {
+    labelKey: 'app.nav.group.analyze',
+    items: [
+      { view: 'technical-read', labelKey: 'app.nav.technicalRead', testid: 'nav-technical-read' },
+      { view: 'forecast', labelKey: 'app.nav.forecast', testid: 'nav-forecast' },
+      { view: 'convergence', labelKey: 'app.nav.convergence', testid: 'nav-convergence' },
+    ],
+  },
+  {
+    labelKey: 'app.nav.group.ideas',
+    items: [
+      { view: 'signals', labelKey: 'app.nav.signals', testid: 'nav-signals' },
+      {
+        view: 'recommendations',
+        labelKey: 'app.nav.recommendations',
+        testid: 'nav-recommendations',
+      },
+      { view: 'recent-backtests', labelKey: 'app.nav.backtests', testid: 'nav-backtests' },
+    ],
+  },
+  {
+    labelKey: 'app.nav.group.portfolio',
+    items: [
+      { view: 'defi', labelKey: 'app.nav.defi', testid: 'nav-defi' },
+      { view: 'track-record', labelKey: 'app.nav.trackRecord', testid: 'nav-track-record' },
+    ],
+  },
+  {
+    labelKey: 'app.nav.group.system',
+    items: [
+      { view: 'news', labelKey: 'app.nav.news', testid: 'nav-news' },
+      { view: 'alerts', labelKey: 'app.nav.alerts', testid: 'nav-alerts' },
+      { view: 'settings', labelKey: 'app.nav.settings', testid: 'nav-settings' },
+    ],
+  },
+]
 
 /**
  * Test-only window-attached snapshot of the chart state. The Playwright
@@ -252,105 +297,23 @@ export function App(): JSX.Element {
           >
             {t('app.nav.chart')}
           </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'recent-backtests' || view === 'backtest' ? 'page' : undefined}
-            onClick={() => setView('recent-backtests')}
-            data-testid="nav-backtests"
-          >
-            {t('app.nav.backtests')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'signals' ? 'page' : undefined}
-            onClick={() => setView('signals')}
-            data-testid="nav-signals"
-          >
-            {t('app.nav.signals')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'recommendations' ? 'page' : undefined}
-            onClick={() => setView('recommendations')}
-            data-testid="nav-recommendations"
-          >
-            {t('app.nav.recommendations')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'technical-read' ? 'page' : undefined}
-            onClick={() => setView('technical-read')}
-            data-testid="nav-technical-read"
-          >
-            {t('app.nav.technicalRead')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'track-record' ? 'page' : undefined}
-            onClick={() => setView('track-record')}
-            data-testid="nav-track-record"
-          >
-            {t('app.nav.trackRecord')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'forecast' ? 'page' : undefined}
-            onClick={() => setView('forecast')}
-            data-testid="nav-forecast"
-          >
-            {t('app.nav.forecast')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'convergence' ? 'page' : undefined}
-            onClick={() => setView('convergence')}
-            data-testid="nav-convergence"
-          >
-            {t('app.nav.convergence')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'defi' ? 'page' : undefined}
-            onClick={() => setView('defi')}
-            data-testid="nav-defi"
-          >
-            {t('app.nav.defi')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'news' ? 'page' : undefined}
-            onClick={() => setView('news')}
-            data-testid="nav-news"
-          >
-            {t('app.nav.news')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'alerts' ? 'page' : undefined}
-            onClick={() => setView('alerts')}
-            data-testid="nav-alerts"
-          >
-            {t('app.nav.alerts')}
-          </button>
-          <button
-            type="button"
-            className={styles.tab}
-            aria-current={view === 'settings' ? 'page' : undefined}
-            onClick={() => setView('settings')}
-            data-testid="nav-settings"
-          >
-            {t('app.nav.settings')}
-          </button>
+          <NavMenu
+            groups={NAV_GROUPS.map((group) => ({
+              label: t(group.labelKey),
+              items: group.items.map((item) => ({
+                view: item.view,
+                label: t(item.labelKey),
+                testid: item.testid,
+                current:
+                  item.view === 'recent-backtests'
+                    ? view === 'recent-backtests' || view === 'backtest'
+                    : view === item.view,
+              })),
+            }))}
+            onNavigate={(next) => setView(next as View)}
+            triggerLabel={t('app.nav.menu')}
+            triggerAria={t('app.nav.menuAria')}
+          />
         </nav>
         <ThemeToggle />
       </header>

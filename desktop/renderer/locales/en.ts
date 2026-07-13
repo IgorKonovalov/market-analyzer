@@ -29,6 +29,13 @@ export const en = {
   'app.nav.news': 'News',
   'app.nav.alerts': 'Alerts',
   'app.nav.settings': 'Settings',
+  // Collapsed nav menu (Plan 0096 phase 5).
+  'app.nav.menu': 'Menu',
+  'app.nav.menuAria': 'More destinations',
+  'app.nav.group.analyze': 'Analyze',
+  'app.nav.group.ideas': 'Ideas',
+  'app.nav.group.portfolio': 'Portfolio',
+  'app.nav.group.system': 'System',
   'app.backtest.loading': 'Loading backtest result…',
   'app.backtest.loadError': 'Failed to load backtest result:',
   'app.backtest.backToRecent': 'Back to Recent backtests',

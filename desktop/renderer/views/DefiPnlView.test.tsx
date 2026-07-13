@@ -245,13 +245,15 @@ it('deep-links the pool contract when the sidecar exposes a pool_address', async
   delete window.api
 })
 
-it('exposes a DeFi nav tab that mounts the Wallet P&L view when selected', async () => {
+it('exposes a DeFi menu item that mounts the Wallet P&L view when selected', async () => {
   getWalletPnl.mockResolvedValue(fixture())
   render(<App />)
 
-  const defiTab = screen.getByRole('button', { name: 'DeFi' })
-  expect(defiTab).toBeInTheDocument()
+  // DeFi folded into the collapsed nav menu (Plan 0096 phase 5) — open it first.
+  fireEvent.click(screen.getByTestId('nav-menu-trigger'))
+  const defiItem = screen.getByRole('menuitem', { name: 'DeFi' })
+  expect(defiItem).toBeInTheDocument()
 
-  fireEvent.click(defiTab)
+  fireEvent.click(defiItem)
   expect(await screen.findByRole('region', { name: 'Wallet P&L' })).toBeInTheDocument()
 })
