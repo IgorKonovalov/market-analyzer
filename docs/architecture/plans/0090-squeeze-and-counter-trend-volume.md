@@ -1,6 +1,6 @@
 # 0090 — Squeeze metric + counter-trend volume decomposition
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-12
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0083-squeeze-and-counter-trend-volume-semantics](../adrs/0083-squeeze-and-counter-trend-volume-semantics.md) (paired; accepts at close), [0023-technical-analysis-surface](../adrs/0023-technical-analysis-surface.md), [0067-ichimoku-in-trend-classification](../adrs/0067-ichimoku-in-trend-classification.md), [0064-generated-sidecar-api-reference](../adrs/0064-generated-sidecar-api-reference.md)

@@ -204,6 +204,54 @@ def test_atr_matches_independent_reference() -> None:
         assert abs(series[i] - ref[i]) < _TOL  # type: ignore[operator]
 
 
+def test_bollinger_bandwidth_matches_independent_stats() -> None:
+    """Band-width = (upper - lower) / middle, computed independently from the
+    fixture's mean / population stdev (ADR-0083 squeeze anchor)."""
+
+    series = ind.bollinger_bandwidth(CLOSES, 20, 2.0)
+    for i in _INDICES:
+        window = CLOSES[i - 19 : i + 1]
+        mean = statistics.fmean(window)
+        sd = statistics.pstdev(window)
+        expected = ((mean + 2.0 * sd) - (mean - 2.0 * sd)) / mean
+        val = series[i]
+        assert val is not None
+        assert abs(val - expected) < _TOL
+
+
+def test_bollinger_bandwidth_none_on_zero_middle() -> None:
+    """A zero-mean window (middle == 0) yields `None`, never a divide-by-zero."""
+
+    closes = [1.0, -1.0] * 10  # 20-bar window mean is exactly 0
+    series = ind.bollinger_bandwidth(closes, 20, 2.0)
+    assert series[19] is None
+
+
+def test_keltner_matches_independent_reference() -> None:
+    """Middle is the EMA(close, 20); the envelope is ± 1.5 * ATR(20), both from the
+    independent references above."""
+
+    series = ind.keltner(BARS, period=20, atr_period=20, multiplier=1.5)
+    mid_ref = _ref_ema(CLOSES, 20)
+    atr_ref = _ref_atr(BARS, 20)
+    for i in _INDICES:
+        val = series[i]
+        assert val is not None and mid_ref[i] is not None and atr_ref[i] is not None
+        assert abs(val.middle - mid_ref[i]) < _TOL  # type: ignore[operator]
+        assert abs(val.upper - (mid_ref[i] + 1.5 * atr_ref[i])) < _TOL  # type: ignore[operator]
+        assert abs(val.lower - (mid_ref[i] - 1.5 * atr_ref[i])) < _TOL  # type: ignore[operator]
+
+
+def test_keltner_rejects_bad_params() -> None:
+    for kwargs, match in (
+        ({"period": 0}, "period must be >= 1"),
+        ({"atr_period": 0}, "atr_period must be >= 1"),
+        ({"multiplier": 0.0}, "multiplier must be > 0"),
+    ):
+        with pytest.raises(ValueError, match=match):
+            ind.keltner(BARS, **kwargs)
+
+
 def test_donchian_matches_independent_window() -> None:
     series = ind.donchian(BARS, 20)
     for i in _INDICES:
@@ -326,6 +374,13 @@ _INDICATORS: list[tuple[str, Callable[[Sequence[Bar]], list[tuple[float, ...] | 
     ("ema12", lambda b: [_floats(v) for v in ind.ema([x.close for x in b], 12)], 11),
     ("rsi14", lambda b: [_floats(v) for v in ind.rsi([x.close for x in b], 14)], 14),
     ("bollinger20", lambda b: [_floats(v) for v in ind.bollinger([x.close for x in b], 20)], 19),
+    (
+        "bb_bandwidth20",
+        lambda b: [_floats(v) for v in ind.bollinger_bandwidth([x.close for x in b], 20)],
+        19,
+    ),
+    # Keltner is first defined once both EMA(20) [idx 19] and ATR(20) [idx 20] exist.
+    ("keltner20", lambda b: [_floats(v) for v in ind.keltner(b, 20, 20)], 20),
     ("macd", lambda b: [_floats(v) for v in ind.macd([x.close for x in b])], 33),
     ("atr14", lambda b: [_floats(v) for v in ind.atr(b, 14)], 14),
     ("supertrend10", lambda b: [_floats(v) for v in ind.supertrend(b, 10)], 10),

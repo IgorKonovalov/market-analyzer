@@ -42,6 +42,18 @@ class BollingerValue:
 
 
 @dataclass(frozen=True)
+class KeltnerValue:
+    """One Keltner reading: the EMA middle line and the ± `multiplier * ATR`
+    envelope. Mirrors `BollingerValue`'s shape; the band is ATR-based rather than
+    standard-deviation-based, which is what makes the TTM squeeze (Bollinger inside
+    Keltner) meaningful (ADR-0083)."""
+
+    upper: float
+    middle: float
+    lower: float
+
+
+@dataclass(frozen=True)
 class MacdValue:
     """One MACD reading: the MACD line, its signal EMA, and their difference."""
 
@@ -295,6 +307,57 @@ def bollinger(
     return out
 
 
+def bollinger_bandwidth(
+    closes: Sequence[float], period: int = 20, num_std: float = 2.0
+) -> list[float | None]:
+    """Bollinger band-width `(upper - lower) / middle` — the canonical squeeze /
+    expansion measure (ADR-0083). Derived from the same `bollinger()` values, so it
+    is trailing and length-aligned identically. `None` for `i < period - 1` (band
+    undefined) and `None` where `middle == 0` (no divide-by-zero on a zero-mean
+    window)."""
+
+    out: list[float | None] = []
+    for band in bollinger(closes, period, num_std):
+        if band is None or band.middle == 0.0:
+            out.append(None)
+        else:
+            out.append((band.upper - band.lower) / band.middle)
+    return out
+
+
+def keltner(
+    bars: Sequence[Bar],
+    period: int = 20,
+    atr_period: int = 20,
+    multiplier: float = 1.5,
+) -> list[KeltnerValue | None]:
+    """Keltner channel: EMA middle band ± `multiplier * ATR` envelope.
+
+    `middle = ema(close, period)`, `upper/lower = middle ± multiplier * atr(bars,
+    atr_period)` — reusing the module's `ema` and Wilder `atr`. The value object is
+    emitted only once *both* the EMA and the ATR are defined (from index
+    `max(period - 1, atr_period)`), so it never holds a `None` field. Trailing by
+    construction — `result[i]` reads only `bars[0..=i]`. The 20 / 20 / 1.5 defaults
+    are the TTM-squeeze convention (ADR-0083); `multiplier` must be > 0.
+    """
+
+    if period < 1:
+        raise ValueError(f"period must be >= 1, got {period}")
+    if atr_period < 1:
+        raise ValueError(f"atr_period must be >= 1, got {atr_period}")
+    if multiplier <= 0:
+        raise ValueError(f"multiplier must be > 0, got {multiplier}")
+    closes = [b.close for b in bars]
+    ema_series = ema(closes, period)
+    atr_series = atr(bars, atr_period)
+    out: list[KeltnerValue | None] = [None] * len(bars)
+    for i, (mid, a) in enumerate(zip(ema_series, atr_series, strict=True)):
+        if mid is None or a is None:
+            continue
+        out[i] = KeltnerValue(upper=mid + multiplier * a, middle=mid, lower=mid - multiplier * a)
+    return out
+
+
 def macd(
     closes: Sequence[float],
     fast: int = 12,
@@ -527,14 +590,17 @@ __all__ = [
     "BollingerValue",
     "DonchianValue",
     "IchimokuValue",
+    "KeltnerValue",
     "MacdValue",
     "SupertrendValue",
     "adx",
     "atr",
     "bollinger",
+    "bollinger_bandwidth",
     "donchian",
     "ema",
     "ichimoku",
+    "keltner",
     "macd",
     "rsi",
     "sma",
