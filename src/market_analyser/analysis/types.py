@@ -351,6 +351,32 @@ class Divergence(BaseModel):
     strength: float
 
 
+class FibonacciLevels(BaseModel):
+    """A Fibonacci retracement or extension grid over one confirmed swing (Plan 0092).
+
+    Chart geometry — the canonical "where does a pullback-in-trend find support /
+    where does the move extend" grid, drawn between two swing anchors. `kind` is
+    ``retracement`` (levels *inside* the swing, `high_anchor`↔`low_anchor`) or
+    ``extension`` (levels *beyond* the swing, projected from a pullback). The
+    `direction` is the swing's own direction, inferred from the anchors' temporal
+    order: ``bullish`` when the low printed before the high (an up-swing, retracing
+    down from the high), ``bearish`` when the high printed first (a down-swing,
+    retracing up from the low). `levels` maps each ratio (as a string key, e.g.
+    ``"0.618"``) to its price; the mapping is oriented by `direction` so ratio 0
+    sits at the swing's end and ratio 1 at its start. Trailing by construction —
+    the anchors come from confirmed `swing_pivots`, so no future bar is read
+    (ADR-0023). Conditions only — a fib grid is geometry, never a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["retracement", "extension"]
+    high_anchor: PivotPoint
+    low_anchor: PivotPoint
+    direction: Direction  # swing direction the grid is drawn for
+    levels: dict[str, float]  # {"0.382": ..., "0.5": ..., "0.618": ...}
+
+
 class ConditionSnapshot(BaseModel):
     """A composed, point-in-time technical condition read over cached bars.
 
@@ -447,6 +473,7 @@ __all__ = [
     "Direction",
     "Divergence",
     "DivergenceKind",
+    "FibonacciLevels",
     "Level",
     "LineSeg",
     "MomentumStance",

@@ -1,6 +1,6 @@
 # 0092 — Price-structure & levels: Fibonacci, market structure, pivots, anchored VWAP
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-12
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0084-market-structure-as-distinct-trend-read](../adrs/0084-market-structure-as-distinct-trend-read.md) (paired; accepts at close), [0023-technical-analysis-surface](../adrs/0023-technical-analysis-surface.md), [0067-ichimoku-in-trend-classification](../adrs/0067-ichimoku-in-trend-classification.md) (the existing `trend` this sits beside), [0049-chart-trendline-overlay-primitive](../adrs/0049-chart-trendline-overlay-primitive.md) / [0061-trendline-pattern-identity-and-colour](../adrs/0061-trendline-pattern-identity-and-colour.md) (structure/level rendering), [0077-user-originated-display-overlays](../adrs/0077-user-originated-display-overlays.md) (overlays), [0060-glossary-tooltip-interaction-posture](../adrs/0060-glossary-tooltip-interaction-posture.md) (glossary), [0064-generated-sidecar-api-reference](../adrs/0064-generated-sidecar-api-reference.md) (tool surface)
