@@ -26,14 +26,17 @@ from market_analyser.analysis.chart_patterns import (
     detect_chart_patterns,
 )
 from market_analyser.analysis.divergence import Oscillator, detect_divergences
+from market_analyser.analysis.fibonacci import dominant_swing, fibonacci_retracement
 from market_analyser.analysis.levels import support_resistance_levels, swing_pivots
 from market_analyser.analysis.patterns import detect_patterns
+from market_analyser.analysis.structure import market_structure as compute_market_structure
 from market_analyser.analysis.types import (
     ChartPatternHit,
     ConditionSnapshot,
     Divergence,
     Level,
     MomentumStance,
+    NearestFibLevel,
     Trend,
 )
 from market_analyser.analysis.volume import (
@@ -239,6 +242,21 @@ def _recent_divergences(bars: Sequence[Bar]) -> list[Divergence]:
     return hits
 
 
+def _nearest_fib_level(bars: Sequence[Bar], close: float) -> NearestFibLevel | None:
+    """The dominant-swing retracement level nearest the last close, or ``None`` when
+    there is no dominant swing to anchor to (Plan 0092). Auto-anchors via
+    `dominant_swing` (confirmed pivots only, so trailing) and picks the level with
+    the smallest absolute distance to `close` — ties break toward the lower ratio
+    (dict insertion order)."""
+
+    swing = dominant_swing(bars)
+    if swing is None:
+        return None
+    grid = fibonacci_retracement(*swing)
+    ratio, price = min(grid.levels.items(), key=lambda kv: abs(kv[1] - close))
+    return NearestFibLevel(ratio=ratio, price=price, direction=grid.direction)
+
+
 def _nearest_levels(levels: Sequence[Level], close: float) -> tuple[Level | None, Level | None]:
     """The clustered level framing the last close on each side (Plan 0051 phase 4):
     nearest support at-or-below `close` and nearest resistance at-or-above it.
@@ -401,6 +419,10 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         recent_patterns=recent_patterns,
         active_patterns=_active_patterns(bars),
         recent_divergences=_recent_divergences(bars),
+        # ADR-0084: a second, distinct trend read reported BESIDE `trend`, never
+        # merged into it — the `trend` field above is computed exactly as before.
+        market_structure=compute_market_structure(bars),
+        nearest_fib_level=_nearest_fib_level(bars, closes[-1]),
     )
 
 

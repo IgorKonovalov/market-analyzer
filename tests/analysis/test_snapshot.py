@@ -21,6 +21,7 @@ from market_analyser.analysis.types import (
     ConditionSnapshot,
     Divergence,
     MomentumStance,
+    NearestFibLevel,
     Trend,
     VolumeStance,
 )
@@ -406,9 +407,52 @@ def test_no_recommendation_field() -> None:
         "recent_patterns",
         "active_patterns",  # Plan 0052: classical chart patterns in play
         "recent_divergences",  # Plan 0091: price↔oscillator divergences in play
+        "market_structure",  # Plan 0092 / ADR-0084: distinct price-action trend read
+        "nearest_fib_level",  # Plan 0092: nearest dominant-swing retracement level
     }
     # The analyst non-negotiable, pinned: no action/buy/sell field ever appears.
     assert not (fields & {"action", "signal", "recommendation", "buy", "sell"})
+
+
+# --------------------------------------------------------------------------- #
+# Market structure + Fibonacci (Plan 0092, ADR-0084)                           #
+# --------------------------------------------------------------------------- #
+
+
+def _swing_snapshot_fixture() -> list[Bar]:
+    """A V-then-pullback path: descend to a swing low (bar 5), rally to a swing high
+    (bar 10), then pull back — one dominant swing to auto-anchor the fib grid to."""
+
+    vals = [120, 114, 108, 102, 96, 90, 98, 106, 114, 122, 130, 125, 120, 115, 110, 105, 100]
+    return [_bar(i, o=v, h=v + 0.5, low=v - 0.5, c=float(v)) for i, v in enumerate(vals)]
+
+
+def test_trend_unchanged_and_structure_is_a_separate_read() -> None:
+    """ADR-0084: `market_structure` is a SECOND, distinct trend read reported beside
+    `trend`; it never redefines it. On a smooth monotonic fixture the indicator
+    trend is directional (its pre-plan value) while the price-action structure has
+    no confirmed swings — the two are visibly different values on the same bars."""
+
+    up = condition_snapshot(_rising(80), "1d")
+    assert up.trend is Trend.UP  # byte-identical to the ADR-0067 pre-plan value
+    assert up.market_structure.structural_trend == "range"  # a separate, differing read
+
+    down = condition_snapshot(_falling(80), "1d")
+    assert down.trend is Trend.DOWN
+    assert down.market_structure.structural_trend == "range"
+
+
+def test_nearest_fib_level_from_dominant_swing() -> None:
+    """With a clear dominant swing the snapshot reports the retracement level nearest
+    the last close; a monotonic series (no swing) leaves it None (honest, not
+    fabricated)."""
+
+    snap = condition_snapshot(_swing_snapshot_fixture(), "1d")
+    fib = snap.nearest_fib_level
+    assert isinstance(fib, NearestFibLevel)
+    assert fib.ratio in {"0.236", "0.382", "0.5", "0.618", "0.786"}
+    assert fib.direction == "bullish"  # low (bar 5) printed before high (bar 10)
+    assert condition_snapshot(_rising(80), "1d").nearest_fib_level is None
 
 
 # --------------------------------------------------------------------------- #

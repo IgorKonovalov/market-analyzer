@@ -30,6 +30,7 @@ from market_analyser.advisor.models import Recommendation
 from market_analyser.analysis.types import (
     ConditionSnapshot,
     Level,
+    MarketStructure,
     MomentumStance,
     PatternHit,
     Trend,
@@ -95,6 +96,8 @@ def make_snapshot(
         recent_patterns=[],
         active_patterns=[],
         recent_divergences=[],
+        market_structure=MarketStructure(structural_trend="range", labeled_pivots=[], events=[]),
+        nearest_fib_level=None,
     )
 
 

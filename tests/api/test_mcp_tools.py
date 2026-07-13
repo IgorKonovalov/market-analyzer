@@ -520,6 +520,7 @@ def test_detect_chart_patterns_tool_is_registered(live_server: str, mcp_secret: 
 
 EXPECTED_FULL_TOOLSET = {
     "analyze_symbol",
+    "anchored_vwap",
     "backfill_ohlcv",
     "bitcoin_market_pulse",
     "btc_cycle_snapshot",
@@ -534,6 +535,7 @@ EXPECTED_FULL_TOOLSET = {
     "detect_divergences",
     "detect_levels",
     "evaluate_signals",
+    "fibonacci_levels",
     "find_convergence_opportunities",
     "forecast",
     "forecast_regime",
@@ -548,8 +550,10 @@ EXPECTED_FULL_TOOLSET = {
     "list_annotations",
     "list_watches",
     "market_snapshot",
+    "market_structure",
     "multi_timeframe_analysis",
     "news_for",
+    "pivot_points",
     "portfolio_summary",
     "prediction_market_odds",
     "quote_for",

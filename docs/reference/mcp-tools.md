@@ -4,11 +4,12 @@
 
 # MCP tools
 
-The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 56 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
 | [`analyze_symbol`](#analyzesymbol) | Compute a full technical-condition snapshot for one symbol over cached bars: trend (up/down/sideways), momentum stance, latest indicator values (RSI, MACD, Bollinger, ATR, ADX, Supertrend, plus trailing RSI/ATR percentiles), trailing support/resistance levels, any candlestick patterns on the most recent bars, and the active classical chart patterns (head & shoulders, doubles, triangles, wedges — forming or freshly confirmed) still in play. |
+| [`anchored_vwap`](#anchoredvwap) | Compute the anchored VWAP on one symbol's cached bars: the volume-weighted average of the typical price accumulated from a chosen anchor bar to the last bar (dynamic support/resistance with a fixed start, unlike the rolling vwap). |
 | [`backfill_ohlcv`](#backfillohlcv) | Pre-warm the local cache for a symbol/timeframe over [start, end] by fetching any missing bars from the upstream in the background. |
 | [`bitcoin_market_pulse`](#bitcoinmarketpulse) | Get the current crypto macro picture in one call (CoinGecko, free public API): BTC price and 24h change, BTC dominance %, total crypto market cap and its 24h change, plus a neutral `regime` label describing market STRUCTURE (btc_led / alt_structure / risk_off_structure / neutral). |
 | [`btc_cycle_snapshot`](#btccyclesnapshot) | Get the current BTC cycle picture in one call: days since the 2024-04-19 halving, ESTIMATED days to the next (the next-halving date is an estimate, hence the _est suffix), the cycle phase fraction (0.0 just after a halving, 1.0 at the estimated next), Mayer Multiple (close / 200-day SMA) and distance to the 200-week MA (close / SMA1400 - 1) from cached daily BTC-USD bars, plus the latest Fear & Greed and BTC dominance with 7/30-day deltas from the stored metric series, plus on-chain MVRV (market value / realized value) with its trailing full-history percentile. |
@@ -23,6 +24,7 @@ The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`detect_divergences`](#detectdivergences) | Detect price↔oscillator divergences on one symbol's cached bars for the chosen oscillator (rsi, macd_hist, obv, or mfi). |
 | [`detect_levels`](#detectlevels) | Detect support/resistance levels on the cached bars and draw them on the chart in one call: clusters confirmed swing pivots into zones, ranks each zone's strength by touch count weighted by the volume traded at that price (volume-by-price), returns the ranked levels as data, AND publishes a single `chart.show v1` event carrying one `price_line` overlay per level (role support/resistance, labels S1/R1/... |
 | [`evaluate_signals`](#evaluatesignals) | Evaluate a strategy against the CURRENT bar of one symbol — a live signal read, not a historical backtest. |
+| [`fibonacci_levels`](#fibonaccilevels) | Compute a Fibonacci grid on one symbol's cached bars, auto-anchored to the dominant recent swing. |
 | [`find_convergence_opportunities`](#findconvergenceopportunities) | Screen prediction markets matching a query for CONVERGENCE opportunities — markets nearing resolution whose top outcome is near-certain, where a price converging to 1.00 leaves a few percent of implied upside. |
 | [`forecast`](#forecast) | Forecast the price DIRECTION of a cached symbol over one or more horizons, each as a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. |
 | [`forecast_regime`](#forecastregime) | Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. |
@@ -37,8 +39,10 @@ The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`list_annotations`](#listannotations) | List annotations for a symbol/timeframe over a [start, end] window. |
 | [`list_watches`](#listwatches) | List the persisted watches (id, symbol, timeframe, kind, params, interval_seconds, enabled, last_state, created_at), ordered by id. |
 | [`market_snapshot`](#marketsnapshot) | Get a point-in-time global market snapshot: live quotes for a fixed basket — S&P 500 (^GSPC), NASDAQ (^IXIC), VIX (^VIX), Bitcoin (BTC-USD), Ethereum (ETH-USD), EUR/USD (EURUSD=X), SPY, and GLD. |
+| [`market_structure`](#marketstructure) | Read the price-action market structure on one symbol's cached bars: labels the confirmed swing sequence HH/HL/LH/LL, derives structural_trend (up = HH+HL, down = LH+LL, else range), and detects BOS (in-trend break) and CHoCH (first counter-trend break) events. |
 | [`multi_timeframe_analysis`](#multitimeframeanalysis) | Report whether one symbol's trend is aligned across a ladder of timeframes. |
 | [`news_for`](#newsfor) | Fetch recent news headlines for a symbol (or across all feeds when `symbol` is null) from a curated set of free RSS feeds (CoinDesk, CoinTelegraph, Yahoo Finance, MarketWatch, CNBC). |
+| [`pivot_points`](#pivotpoints) | Compute classic pivot levels on one symbol's cached bars from the last completed bar's high/low/close (the prior-completed-period default). |
 | [`portfolio_summary`](#portfoliosummary) | Aggregate cross-venue holdings into one read-only view (facts only, no recommendation of any kind): the Binance account leg (spot balances + USDS-M futures positions, read via the read-only API key), the DeFi leg (wallet discovery across Ethereum/Base/Arbitrum/Optimism when a 0x wallet address is given, with average-cost basis joined from the reconstructed on-chain history), and the manual positions file (positions/portfolio.json). |
 | [`prediction_market_odds`](#predictionmarketodds) | Get one prediction market's current outcomes and implied probabilities by market_id (from search_prediction_markets). |
 | [`quote_for`](#quotefor) | Get a live quote for one symbol: price, change_pct, previous_close, day high/low, 52-week high/low, currency, market_state (REGULAR/PRE/POST/CLOSED) and volume. |
@@ -86,6 +90,29 @@ Compute a full technical-condition snapshot for one symbol over cached bars: tre
 | `analyzed_at` | string (date-time) |
 
 **Source:** [`src/market_analyser/api/mcp_tools/analyze_symbol.py`](../../src/market_analyser/api/mcp_tools/analyze_symbol.py)
+
+## `anchored_vwap`
+
+Compute the anchored VWAP on one symbol's cached bars: the volume-weighted average of the typical price accumulated from a chosen anchor bar to the last bar (dynamic support/resistance with a fixed start, unlike the rolling vwap). Returns {result, partial_reason, scanned_at}: result is an AnchoredVwapValue with the anchor_index, anchor_ts, and the latest value (null if the volume accumulated from the anchor is zero). Omit `anchor_index` to auto-anchor to the start of the dominant recent swing (first bar when there is no swing), or pass an explicit 0-based `anchor_index`. result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first). Trailing — the value at bar i reads only anchor..i. Pass `as_of` for historical replay (no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `anchor_index` | integer \| null | no | `None` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `AnchoredVwapResponse`
+
+| Field | Type |
+| --- | --- |
+| `result` | AnchoredVwapValue \| null |
+| `partial_reason` | string \| null |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/anchored_vwap.py`](../../src/market_analyser/api/mcp_tools/anchored_vwap.py)
 
 ## `backfill_ohlcv`
 
@@ -371,6 +398,29 @@ Evaluate a strategy against the CURRENT bar of one symbol — a live signal read
 | `fresh_signal` | boolean |
 
 **Source:** [`src/market_analyser/api/mcp_tools/evaluate_signals.py`](../../src/market_analyser/api/mcp_tools/evaluate_signals.py)
+
+## `fibonacci_levels`
+
+Compute a Fibonacci grid on one symbol's cached bars, auto-anchored to the dominant recent swing. Returns {result, partial_reason, scanned_at}: result is a FibonacciLevels — its kind (retracement or extension), the high/low swing anchors, the swing direction, and the levels map (ratio string -> price, e.g. '0.618'). kind='retracement' (default) draws the levels inside the swing; kind='extension' projects the levels beyond it, off the last close. result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first), or 'no_swing' when the bars hold no dominant swing to anchor to. Strictly trailing: the auto-anchor reads only confirmed pivots. Pass `as_of` for historical replay (no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `kind` | enum["retracement", "extension"] | no | `"retracement"` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `FibonacciLevelsResponse`
+
+| Field | Type |
+| --- | --- |
+| `result` | FibonacciLevels \| null |
+| `partial_reason` | enum["no_bars", "no_swing"] \| null |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/fibonacci_levels.py`](../../src/market_analyser/api/mcp_tools/fibonacci_levels.py)
 
 ## `find_convergence_opportunities`
 
@@ -717,6 +767,28 @@ Get a point-in-time global market snapshot: live quotes for a fixed basket — S
 
 **Source:** [`src/market_analyser/api/mcp_tools/market_snapshot.py`](../../src/market_analyser/api/mcp_tools/market_snapshot.py)
 
+## `market_structure`
+
+Read the price-action market structure on one symbol's cached bars: labels the confirmed swing sequence HH/HL/LH/LL, derives structural_trend (up = HH+HL, down = LH+LL, else range), and detects BOS (in-trend break) and CHoCH (first counter-trend break) events. Returns {result, partial_reason, scanned_at}: result is a MarketStructure with structural_trend, labeled_pivots, and events (each with kind, direction, the first-knowable bar_index, and the broken price). This is a SECOND, distinct trend read reported ALONGSIDE the indicator trend from analyze_symbol — the two may legitimately disagree, and that disagreement is itself the signal (never merged). result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first). Strictly trailing: a label/event at bar i reads only bars up to i. Pass `as_of` for historical replay (no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `MarketStructureResponse`
+
+| Field | Type |
+| --- | --- |
+| `result` | MarketStructure \| null |
+| `partial_reason` | string \| null |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/market_structure.py`](../../src/market_analyser/api/mcp_tools/market_structure.py)
+
 ## `multi_timeframe_analysis`
 
 Report whether one symbol's trend is aligned across a ladder of timeframes. Runs the full condition snapshot per timeframe and returns {alignment, analyzed_at}: alignment.timeframes carries each timeframe's snapshot (null when nothing is cached for that timeframe — backfill via get_ohlcv first), alignment.dominant_trend is the trend held by the most timeframes, and alignment.agreement is the 0..1 fraction of available timeframes that agree with it. Default ladder is weekly/daily/4h/1h/15m; pass `timeframes` to override. Pass `as_of` (ISO datetime) for historical replay — each per-timeframe read is trailing, so no future bar leaks in. Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
@@ -751,6 +823,29 @@ Fetch recent news headlines for a symbol (or across all feeds when `symbol` is n
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/news_for.py`](../../src/market_analyser/api/mcp_tools/news_for.py)
+
+## `pivot_points`
+
+Compute classic pivot levels on one symbol's cached bars from the last completed bar's high/low/close (the prior-completed-period default). Returns {result, partial_reason, scanned_at}: result is a PivotPoints with the method, the central pivot, resistances [R1, R2, R3], and supports [S1, S2, S3]. method='floor' (default), 'camarilla', or 'woodie' selects the formula set. result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first). Trailing — reads only the last completed bar. Pass `as_of` for historical replay (the prior completed period as of that time). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `timeframe` | string | yes | — |
+| `method` | enum["floor", "camarilla", "woodie"] | no | `"floor"` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `PivotPointsResponse`
+
+| Field | Type |
+| --- | --- |
+| `result` | PivotPoints \| null |
+| `partial_reason` | string \| null |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/pivot_points.py`](../../src/market_analyser/api/mcp_tools/pivot_points.py)
 
 ## `portfolio_summary`
 

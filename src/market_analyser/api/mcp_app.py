@@ -33,6 +33,7 @@ from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from market_analyser.api.mcp_tools.analyze_symbol import register_analyze_symbol
+from market_analyser.api.mcp_tools.anchored_vwap import register_anchored_vwap
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
@@ -48,6 +49,7 @@ from market_analyser.api.mcp_tools.detect_chart_patterns import register_detect_
 from market_analyser.api.mcp_tools.detect_divergences import register_detect_divergences
 from market_analyser.api.mcp_tools.detect_levels import register_detect_levels
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
+from market_analyser.api.mcp_tools.fibonacci_levels import register_fibonacci_levels
 from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.forecast_regime import register_forecast_regime
 from market_analyser.api.mcp_tools.forecast_volatility import register_forecast_volatility
@@ -57,11 +59,13 @@ from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pen
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
 from market_analyser.api.mcp_tools.list_annotations import register_list_annotations
 from market_analyser.api.mcp_tools.market_snapshot import register_market_snapshot
+from market_analyser.api.mcp_tools.market_structure import register_market_structure
 from market_analyser.api.mcp_tools.metric_series import register_get_metric_series
 from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     register_multi_timeframe_analysis,
 )
 from market_analyser.api.mcp_tools.news_for import register_news_for
+from market_analyser.api.mcp_tools.pivot_points import register_pivot_points
 from market_analyser.api.mcp_tools.pool_discrepancies import register_pool_discrepancies
 from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
 from market_analyser.api.mcp_tools.prediction_markets import register_prediction_market_tools
@@ -220,6 +224,13 @@ def create_mcp_components(
     register_volume_confirmation(server, provider=provider)
     register_counter_trend_volume(server, provider=provider)
     register_detect_divergences(server, provider=provider, event_bus=event_bus)
+    # Price-structure & levels (Plan 0092): Fibonacci grid, market structure
+    # (ADR-0084 second trend read), classic pivots, anchored VWAP. All read cached
+    # bars through the provider (no extra deps) and report conditions only.
+    register_fibonacci_levels(server, provider=provider)
+    register_market_structure(server, provider=provider)
+    register_pivot_points(server, provider=provider)
+    register_anchored_vwap(server, provider=provider)
     register_smart_volume(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)

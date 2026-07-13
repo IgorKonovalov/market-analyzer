@@ -468,6 +468,23 @@ class AnchoredVwapValue(BaseModel):
     value: float | None
 
 
+class NearestFibLevel(BaseModel):
+    """The single Fibonacci retracement level nearest the last close (Plan 0092).
+
+    A compact condition summary drawn from the dominant-swing auto-anchored
+    retracement grid — "price is sitting near the 0.618". `ratio` is the level's
+    ratio key (e.g. ``"0.618"``), `price` its price, `direction` the anchoring
+    swing's direction. ``None`` on the snapshot when there is no dominant swing to
+    anchor to. Conditions only — geometry, never a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ratio: str
+    price: float
+    direction: Direction
+
+
 class ConditionSnapshot(BaseModel):
     """A composed, point-in-time technical condition read over cached bars.
 
@@ -504,6 +521,11 @@ class ConditionSnapshot(BaseModel):
     `recent_divergences` (Plan 0091) carries the price↔oscillator `Divergence`s
     whose confirming bar falls inside the trailing recent-activity window, across
     the oscillator set (RSI / MACD-hist / OBV / MFI) — empty when none are active.
+    `market_structure` (Plan 0092, ADR-0084) is the price-action HH/HL/LH/LL read —
+    a *second, distinct* trend lens reported **alongside** the untouched `trend`,
+    never merged into it (the two may legitimately disagree). `nearest_fib_level`
+    (Plan 0092) is the retracement level nearest the last close from the
+    dominant-swing grid, or ``None`` when there is no dominant swing to anchor to.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -521,6 +543,8 @@ class ConditionSnapshot(BaseModel):
     recent_patterns: list[PatternHit]
     active_patterns: list[ChartPatternHit]
     recent_divergences: list[Divergence]
+    market_structure: MarketStructure  # ADR-0084: a distinct trend read beside `trend`
+    nearest_fib_level: NearestFibLevel | None
 
 
 class TimeframeView(BaseModel):
@@ -571,6 +595,7 @@ __all__ = [
     "MarketStructure",
     "MomentumStance",
     "MultiTimeframeAlignment",
+    "NearestFibLevel",
     "PatternHit",
     "PatternState",
     "Pivot",
