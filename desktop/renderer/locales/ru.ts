@@ -229,6 +229,11 @@ export const ru = {
   'chart.noPatternsInView': 'Нет паттернов в области',
   'chart.noChartPatternsInView': 'Нет графических паттернов в области',
   'chart.ariaLabel': 'Свечной график, {count} баров',
+  // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
+  'chart.structure.label': 'Структура',
+  'chart.structure.trend.up': 'Вверх',
+  'chart.structure.trend.down': 'Вниз',
+  'chart.structure.trend.range': 'Диапазон',
 
   // ── Forecast view (ForecastView.tsx) chrome ──
   'forecast.panelLabel': 'Прогнозы',

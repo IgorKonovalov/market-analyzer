@@ -216,6 +216,11 @@ export const en = {
   'chart.noPatternsInView': 'No patterns in view',
   'chart.noChartPatternsInView': 'No chart patterns in view',
   'chart.ariaLabel': 'Candlestick chart, {count} bars',
+  // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
+  'chart.structure.label': 'Structure',
+  'chart.structure.trend.up': 'Up',
+  'chart.structure.trend.down': 'Down',
+  'chart.structure.trend.range': 'Range',
 
   // ── Forecast view (ForecastView.tsx) — chrome only; sidecar prose is phase 5 ──
   'forecast.panelLabel': 'Forecasts',

@@ -1,0 +1,49 @@
+.badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  border-radius: 4px;
+  background: var(--chart-badge-bg, rgba(0, 0, 0, 0.55));
+  color: var(--chart-badge-fg, #e6e6e6);
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.title {
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.trend {
+  font-weight: 600;
+}
+
+.up {
+  color: var(--marker-bullish, #16a34a);
+}
+
+.down {
+  color: var(--marker-bearish, #dc2626);
+}
+
+.range {
+  color: var(--chart-badge-fg, #e6e6e6);
+}
+
+.terms {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.term {
+  opacity: 0.85;
+  border-bottom: 1px dotted currentColor;
+  cursor: help;
+}

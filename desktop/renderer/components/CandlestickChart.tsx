@@ -42,6 +42,7 @@ import { useBbandsSeries } from '../hooks/useBbandsSeries'
 import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
 import { useOscillatorPanes, type OscillatorPaneEntry } from '../hooks/useOscillatorPanes'
 import { useAnchoredVwapSeries } from '../hooks/useAnchoredVwapSeries'
+import { useMarketStructureMarkers } from '../hooks/useMarketStructureMarkers'
 import { useOverlaySeries } from '../hooks/useOverlaySeries'
 import { usePriceLines } from '../hooks/usePriceLines'
 import { useStructureLevels } from '../hooks/useStructureLevels'
@@ -51,6 +52,8 @@ import { candleGroupKeyFromLayerId } from '../lib/candleGroups'
 import { ChartToolbar } from './ChartToolbar'
 import { ChartTooltip } from './ChartTooltip'
 import { LayersPanel } from './LayersPanel'
+import { MarketStructureBadge } from './MarketStructureBadge'
+import { marketStructure } from '../lib/marketStructure'
 import {
   OBV_LAYER_ID,
   OBV_PANE_HEIGHT,
@@ -305,6 +308,13 @@ export function CandlestickChart({
   // in phase 4 to branch remove-vs-hide; phase 3 draws the union.
   const merged = useMemo(() => mergeOverlays(overlays, userOverlays), [overlays, userOverlays])
   const effectiveOverlays = merged.overlays
+
+  // Price-action market structure (Plan 0092 phase 6, ADR-0084): computed client-
+  // side from the bars the chart holds (the same posture as the fib/pivot overlays),
+  // feeding the HH/HL/LH/LL + BOS/CHoCH markers and the structural-trend badge. A
+  // second, distinct trend read — reported beside the price, never merged into any
+  // indicator trend.
+  const marketStructureResult = useMemo(() => marketStructure(bars), [bars])
   // Add / remove a user overlay (Plan 0082 phase 4). Only available when the chart
   // carries a (symbol, timeframe) to key the store by. Remove maps the legend row
   // id back to the stored spec via its overlayLayerId.
@@ -779,6 +789,19 @@ export function CandlestickChart({
     rebuildToken: candleType,
   })
 
+  // Market-structure markers (Plan 0092 phase 6, ADR-0084): HH/HL/LH/LL labels at
+  // the confirmed swing pivots + BOS/CHoCH glyphs at their events, on their own
+  // markers plugin. Called before `useChartMarkers` so the candlestick-pattern
+  // markers own the last write to the shared series-markers capture.
+  useMarketStructureMarkers(seriesRef, containerRef, {
+    structure: marketStructureResult,
+    bars,
+    hidden,
+    effectiveTheme,
+    styleVersion,
+    rebuildToken: candleType,
+  })
+
   // Candlestick markers + pattern-span band (Plan 0049 phases 7 & 10 / Plan 0071
   // phase 2): draw only the enabled groups' markers + spans, themed, with the
   // clicked-bar affordance and hover emphasis (Plan 0072 phase 8: `useChartMarkers`).
@@ -897,6 +920,7 @@ export function CandlestickChart({
           role="img"
           aria-label={ariaLabel ?? t('chart.ariaLabel', { count: bars.length })}
         />
+        <MarketStructureBadge structure={marketStructureResult} />
         {selection && (
           <div
             className={styles.selectionOverlay}

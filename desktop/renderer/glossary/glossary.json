@@ -946,6 +946,96 @@
       "ru": "Динамическая поддержка/сопротивление, измеренная от значимого события (свинга или бара с высоким объёмом); цена выше неё говорит в пользу покупателей с момента якоря, ниже — продавцов. Это геометрия графика, а не сигнал на покупку/продажу."
     }
   },
+  "hh": {
+    "term": {
+      "en": "Higher high (HH)",
+      "ru": "Более высокий максимум (HH)"
+    },
+    "category": "condition",
+    "howComputed": {
+      "en": "A confirmed swing high that prints above the previous confirmed swing high.",
+      "ru": "Подтверждённый свинговый максимум, который формируется выше предыдущего подтверждённого свингового максимума."
+    },
+    "whatItMeans": {
+      "en": "One leg of an uptrend's structure. HH together with HL is the price-action definition of an uptrend. A fact about the swing sequence, not a signal.",
+      "ru": "Одна из составляющих структуры восходящего тренда. HH вместе с HL — определение восходящего тренда по ценовому действию. Это факт о последовательности свингов, а не сигнал."
+    }
+  },
+  "hl": {
+    "term": {
+      "en": "Higher low (HL)",
+      "ru": "Более высокий минимум (HL)"
+    },
+    "category": "condition",
+    "howComputed": {
+      "en": "A confirmed swing low that prints above the previous confirmed swing low.",
+      "ru": "Подтверждённый свинговый минимум, который формируется выше предыдущего подтверждённого свингового минимума."
+    },
+    "whatItMeans": {
+      "en": "The pullbacks are getting shallower — buyers step in earlier. HL together with HH defines an uptrend. A fact about the swing sequence, not a signal.",
+      "ru": "Откаты становятся мельче — покупатели входят раньше. HL вместе с HH определяет восходящий тренд. Это факт о последовательности свингов, а не сигнал."
+    }
+  },
+  "lh": {
+    "term": {
+      "en": "Lower high (LH)",
+      "ru": "Более низкий максимум (LH)"
+    },
+    "category": "condition",
+    "howComputed": {
+      "en": "A confirmed swing high that prints below the previous confirmed swing high.",
+      "ru": "Подтверждённый свинговый максимум, который формируется ниже предыдущего подтверждённого свингового максимума."
+    },
+    "whatItMeans": {
+      "en": "Rallies are failing sooner — sellers step in earlier. LH together with LL defines a downtrend. A fact about the swing sequence, not a signal.",
+      "ru": "Ралли выдыхаются раньше — продавцы входят раньше. LH вместе с LL определяет нисходящий тренд. Это факт о последовательности свингов, а не сигнал."
+    }
+  },
+  "ll": {
+    "term": {
+      "en": "Lower low (LL)",
+      "ru": "Более низкий минимум (LL)"
+    },
+    "category": "condition",
+    "howComputed": {
+      "en": "A confirmed swing low that prints below the previous confirmed swing low.",
+      "ru": "Подтверждённый свинговый минимум, который формируется ниже предыдущего подтверждённого свингового минимума."
+    },
+    "whatItMeans": {
+      "en": "One leg of a downtrend's structure. LL together with LH is the price-action definition of a downtrend. A fact about the swing sequence, not a signal.",
+      "ru": "Одна из составляющих структуры нисходящего тренда. LL вместе с LH — определение нисходящего тренда по ценовому действию. Это факт о последовательности свингов, а не сигнал."
+    }
+  },
+  "bos": {
+    "term": {
+      "en": "Break of structure (BOS)",
+      "ru": "Слом структуры (BOS)"
+    },
+    "category": "condition",
+    "howComputed": {
+      "en": "A close that takes out the prior confirmed swing extreme in the direction of the current structural trend (by a small ATR-scaled margin).",
+      "ru": "Закрытие, которое пробивает предыдущий подтверждённый свинговый экстремум в направлении текущего структурного тренда (на небольшую величину, масштабируемую по ATR)."
+    },
+    "whatItMeans": {
+      "en": "Continuation — the trend just extended its structure. A fact about the swing sequence, not a buy/sell call.",
+      "ru": "Продолжение — тренд только что расширил свою структуру. Это факт о последовательности свингов, а не сигнал на покупку/продажу."
+    }
+  },
+  "choch": {
+    "term": {
+      "en": "Change of character (CHoCH)",
+      "ru": "Смена характера (CHoCH)"
+    },
+    "category": "condition",
+    "howComputed": {
+      "en": "The first close that takes out a prior confirmed swing extreme against the current structural trend — the earliest structural counter-move.",
+      "ru": "Первое закрытие, которое пробивает предыдущий подтверждённый свинговый экстремум против текущего структурного тренда — самый ранний структурный контр-разворот."
+    },
+    "whatItMeans": {
+      "en": "The first sign the trend's character may be changing — up-structure printing a lower low, or vice versa. A warning about the swing sequence, not a buy/sell call.",
+      "ru": "Первый признак того, что характер тренда может меняться — восходящая структура печатает более низкий минимум, или наоборот. Это предупреждение о последовательности свингов, а не сигнал на покупку/продажу."
+    }
+  },
   "sma": {
     "term": {
       "en": "SMA",
