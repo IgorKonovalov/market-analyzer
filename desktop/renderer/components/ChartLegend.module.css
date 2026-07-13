@@ -1,0 +1,190 @@
+/* Inline chart legend (Plan 0096 phase 2). An absolutely-positioned top-left
+ * overlay inside `.chartArea` (a positioning context), floating over the
+ * lightweight-charts canvas. Kept compact and translucent so it informs without
+ * dominating; it scrolls internally if the layer list grows tall. */
+.legend {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  max-width: 260px;
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-elev) 88%, transparent);
+  backdrop-filter: blur(2px);
+  font-size: 0.75rem;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.addToggle {
+  align-self: flex-start;
+  font: inherit;
+  padding: 1px var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elev);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.addToggle:hover {
+  color: var(--color-fg);
+}
+
+.addToggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.row {
+  border-radius: var(--radius-sm);
+}
+
+/* A hidden layer stays listed (so it can be re-enabled) but reads as muted. */
+.row[data-hidden='true'] {
+  opacity: 0.5;
+}
+
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px 2px;
+}
+
+/* The swatch button is the visibility toggle (click to hide/show). */
+.visToggle {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.visToggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.label {
+  color: var(--color-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value {
+  margin-left: auto;
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.count {
+  color: var(--color-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Push actions to the right when there's no live value taking the margin. */
+.value + .actions,
+.count + .actions {
+  margin-left: var(--space-1);
+}
+
+.actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+}
+
+.row:hover .actions,
+.row:focus-within .actions {
+  opacity: 1;
+}
+
+.actionButton {
+  font: inherit;
+  line-height: 1;
+  padding: 1px 3px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  color: var(--color-fg);
+  background: var(--color-bg-sunken);
+}
+
+.actionButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+/* Inline per-row style editor (colour + width). */
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-1) 2px var(--space-1) 22px;
+}
+
+.settingsField {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.settingsLabel {
+  color: var(--color-fg-muted);
+}
+
+.colorInput {
+  width: 24px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.widthSelect {
+  font: inherit;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+}

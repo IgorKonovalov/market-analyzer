@@ -659,7 +659,12 @@ export const en = {
   'chartStyle.editingPre': 'Editing ',
   'chartStyle.editingPost': ' theme — switch theme in Appearance to edit the other set.',
   'chartStyle.widthLabel': 'Width',
+  'chartStyle.colorLabel': 'Color',
   'chartStyle.resetButton': 'Reset chart style',
+
+  // ── Chart legend (ChartLegend.tsx) — Plan 0096 phase 2 ──
+  'chartLegend.ariaLabel': 'Chart layers legend',
+  'chartLegend.settingsAria': 'Style {layerName}',
 
   // ── Layers panel (LayersPanel.tsx) ──
   'layers.panelAriaLabel': 'Chart layers',

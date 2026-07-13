@@ -49,10 +49,12 @@ import { useStructureLevels } from '../hooks/useStructureLevels'
 import { useSupertrendSeries } from '../hooks/useSupertrendSeries'
 import type { ChartMarker } from '../lib/markers'
 import { candleGroupKeyFromLayerId } from '../lib/candleGroups'
+import { ChartLegend } from './ChartLegend'
 import { ChartToolbar } from './ChartToolbar'
 import { ChartTooltip } from './ChartTooltip'
 import { LayersPanel } from './LayersPanel'
 import { MarketStructureBadge } from './MarketStructureBadge'
+import { buildLegendValues } from '../lib/legendValues'
 import { marketStructure } from '../lib/marketStructure'
 import {
   OBV_LAYER_ID,
@@ -860,6 +862,14 @@ export function CandlestickChart({
     styleVersion,
   })
 
+  // Live last-bar values for the inline legend (Plan 0096 phase 2): each
+  // indicator overlay + the OBV strip, computed client-side from the same bars
+  // the chart draws with. Pure + memoised on the bars/overlays that feed it.
+  const legendValues = useMemo(
+    () => buildLegendValues(bars, effectiveOverlays, bars.length > 0),
+    [bars, effectiveOverlays],
+  )
+
   // Hover tooltip (Plan 0047 phase 8 / Plan 0067 phase 2): crosshair-driven
   // marker/overlay/trendline read-out + pattern-bar outline (Plan 0072 phase 8:
   // `useChartTooltip` owns the state and returns it).
@@ -921,6 +931,14 @@ export function CandlestickChart({
           aria-label={ariaLabel ?? t('chart.ariaLabel', { count: bars.length })}
         />
         <MarketStructureBadge structure={marketStructureResult} />
+        <ChartLegend
+          layers={layers}
+          values={legendValues}
+          onToggle={onLayerToggle}
+          onHighlight={onLayerHighlight}
+          onAddOverlay={canAddOverlay ? handleAddOverlay : undefined}
+          onRemove={handleRemoveOverlay}
+        />
         {selection && (
           <div
             className={styles.selectionOverlay}
@@ -950,11 +968,13 @@ export function CandlestickChart({
             containerHeight={containerRef.current?.clientHeight ?? 0}
           />
         )}
+        {/* The add-control moved to the inline legend (Plan 0096 phase 2); the
+            panel keeps only its (demoted) checklist role until phase 4 repurposes
+            its container. */}
         <LayersPanel
           layers={layers}
           onToggle={onLayerToggle}
           onHighlight={onLayerHighlight}
-          onAddOverlay={canAddOverlay ? handleAddOverlay : undefined}
           onRemove={handleRemoveOverlay}
         />
       </div>

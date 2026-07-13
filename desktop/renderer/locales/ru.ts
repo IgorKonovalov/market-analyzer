@@ -668,7 +668,12 @@ export const ru = {
   'chartStyle.editingPost':
     ' тема — смените тему во «Внешнем виде», чтобы редактировать другой набор.',
   'chartStyle.widthLabel': 'Толщина',
+  'chartStyle.colorLabel': 'Цвет',
   'chartStyle.resetButton': 'Сбросить стиль графика',
+
+  // ── Chart legend (ChartLegend.tsx) — Plan 0096 phase 2 ──
+  'chartLegend.ariaLabel': 'Легенда слоёв графика',
+  'chartLegend.settingsAria': 'Стиль {layerName}',
 
   // ── Layers panel (LayersPanel.tsx) ──
   'layers.panelAriaLabel': 'Слои графика',
