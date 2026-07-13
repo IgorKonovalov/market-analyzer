@@ -39,6 +39,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { api, subscribeToConfigChanges } from '../api/client'
 import { parseAlertTriggered } from '../schemas/alertTriggered'
+import { chartDivergencesPayloadSchema } from '../schemas/chartDivergences'
 import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
 import { predictionScreenCompletedPayloadSchema } from '../schemas/predictionScreenCompleted'
 import { recommendationCompletedPayloadSchema } from '../schemas/recommendation'
@@ -48,6 +49,7 @@ import { technicalReadCompletedPayloadSchema } from '../schemas/technicalReadCom
 import { volatilityForecastCompletedPayloadSchema } from '../schemas/volatilityForecastCompleted'
 import type {
   AlertTriggeredPayloadV1,
+  ChartDivergencesPayloadV1,
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
   ChartTrendlinesPayloadV1,
@@ -74,6 +76,7 @@ export interface EventStreamHandlers {
   onChartUpdate?: (payload: ChartUpdatePayloadV1) => void
   onChartHighlight?: (payload: ChartHighlightPayloadV1) => void
   onChartTrendlines?: (payload: ChartTrendlinesPayloadV1) => void
+  onChartDivergences?: (payload: ChartDivergencesPayloadV1) => void
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
   onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
   onRecommendationCompleted?: (payload: RecommendationCompletedPayloadV1) => void
@@ -102,6 +105,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'chart.update': 1,
   'chart.highlight': 1,
   'chart.trendlines': 1,
+  'chart.divergences': 1,
   'run.completed': 1,
   'signal.evaluated': 1,
   'recommendation.completed': 1,
@@ -316,6 +320,21 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
     case 'chart.trendlines':
       handlers.onChartTrendlines?.(envelope.payload as ChartTrendlinesPayloadV1)
       return
+    case 'chart.divergences': {
+      // Zod-validated before it reaches any chart state (ADR-0090): a divergence
+      // carries structured cross-pane geometry, so a malformed payload is dropped
+      // loudly, never half-drawn — a step up from `chart.trendlines`'s bare cast.
+      const parsed = chartDivergencesPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed chart.divergences payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onChartDivergences?.(parsed.data)
+      return
+    }
     case 'run.completed':
       handlers.onRunCompleted?.(envelope.payload as RunCompletedPayloadV1)
       return

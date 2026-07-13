@@ -4,6 +4,7 @@
  * logic in isolation so a regression surfaces in seconds, not minutes.
  */
 import {
+  applyChartDivergences,
   applyChartHighlight,
   applyChartShow,
   applyChartTrendlines,
@@ -11,7 +12,7 @@ import {
   chartReducer,
   initialChartState,
 } from './chartHandlers'
-import type { TrendlineSpec } from '../types/events'
+import type { Divergence, TrendlineSpec } from '../types/events'
 
 const NOW_ISO = '2026-05-20T12:00:00.000Z'
 
@@ -23,6 +24,21 @@ const NECKLINE: TrendlineSpec = {
   role: 'neckline',
   style: 'dashed',
   pattern: 'head_shoulders',
+}
+
+const DIVERGENCE: Divergence = {
+  oscillator: 'rsi',
+  kind: 'regular_bearish',
+  price_pivots: [
+    { ts: '2026-05-01T00:00:00Z', price: 120 },
+    { ts: '2026-05-10T00:00:00Z', price: 124 },
+  ],
+  oscillator_pivots: [
+    { ts: '2026-05-01T00:00:00Z', price: 78 },
+    { ts: '2026-05-10T00:00:00Z', price: 71 },
+  ],
+  bar_index: 42,
+  strength: 0.6,
 }
 
 function baseState() {
@@ -343,25 +359,99 @@ describe('applyChartTrendlines (Plan 0064/ADR-0059)', () => {
   })
 })
 
+describe('applyChartDivergences (Plan 0091/ADR-0090)', () => {
+  it('adds the divergences when the payload matches the active chart', () => {
+    const prev = baseState()
+    const next = applyChartDivergences(prev, {
+      symbol: prev.symbol,
+      timeframe: prev.timeframe,
+      divergences: [DIVERGENCE],
+    })
+    expect(next.divergences).toEqual([DIVERGENCE])
+  })
+
+  it('drops divergences for a non-active chart (symbol OR timeframe mismatch)', () => {
+    const prev = { ...baseState(), divergences: [DIVERGENCE] }
+    const symbolMismatch = applyChartDivergences(prev, {
+      symbol: 'MSFT',
+      timeframe: prev.timeframe,
+      divergences: [{ ...DIVERGENCE, kind: 'hidden_bullish' }],
+    })
+    expect(symbolMismatch).toBe(prev) // unchanged reference
+
+    const tfMismatch = applyChartDivergences(prev, {
+      symbol: prev.symbol,
+      timeframe: '1h',
+      divergences: [{ ...DIVERGENCE, kind: 'hidden_bullish' }],
+    })
+    expect(tfMismatch).toBe(prev)
+  })
+
+  it('replaces the current divergences with the payload set (last push wins)', () => {
+    const prev = { ...baseState(), divergences: [DIVERGENCE] }
+    const hiddenBull: Divergence = { ...DIVERGENCE, kind: 'hidden_bullish' }
+    const next = applyChartDivergences(prev, {
+      symbol: prev.symbol,
+      timeframe: prev.timeframe,
+      divergences: [hiddenBull],
+    })
+    expect(next.divergences).toEqual([hiddenBull])
+  })
+
+  it('a same-chart chart.show AFTER divergences preserves them; a switch clears them', () => {
+    let state = applyChartDivergences(baseState(), {
+      symbol: 'AAPL',
+      timeframe: '1d',
+      divergences: [DIVERGENCE],
+    })
+    // Push-only (no recompute-on-load), so a plain same-chart show must not wipe them.
+    state = chartReducer(state, {
+      kind: 'event/chart.show',
+      payload: {
+        symbol: 'AAPL',
+        timeframe: '1d',
+        range_start: '2026-04-20T00:00:00+00:00',
+        range_end: '2026-05-20T00:00:00+00:00',
+      },
+    })
+    expect(state.divergences).toEqual([DIVERGENCE])
+
+    // A symbol switch clears (geometry belongs to its chart).
+    state = chartReducer(state, {
+      kind: 'event/chart.show',
+      payload: {
+        symbol: 'MSFT',
+        timeframe: '1d',
+        range_start: '2026-04-20T00:00:00+00:00',
+        range_end: '2026-05-20T00:00:00+00:00',
+      },
+    })
+    expect(state.divergences).toEqual([])
+  })
+})
+
 describe('chartReducer ui actions', () => {
-  it('ui/set-symbol clears the live-highlights buffer and the trendlines', () => {
+  it('ui/set-symbol clears the live-highlights buffer, the trendlines, and the divergences', () => {
     const prev = {
       ...baseState(),
       liveHighlights: [{ event_ts: '2026-05-15T00:00:00Z', kind: 'bullish_marker' as const }],
       trendlines: [NECKLINE],
+      divergences: [DIVERGENCE],
     }
     const next = chartReducer(prev, { kind: 'ui/set-symbol', symbol: 'MSFT' })
     expect(next.symbol).toBe('MSFT')
     expect(next.liveHighlights).toEqual([])
-    // Trendline geometry belongs to the chart it was computed for.
+    // Trendline + divergence geometry belongs to the chart it was computed for.
     expect(next.trendlines).toEqual([])
+    expect(next.divergences).toEqual([])
   })
 
-  it('ui/set-timeframe clears the trendlines (geometry is per symbol+timeframe)', () => {
-    const prev = { ...baseState(), trendlines: [NECKLINE] }
+  it('ui/set-timeframe clears the trendlines and divergences (geometry is per symbol+timeframe)', () => {
+    const prev = { ...baseState(), trendlines: [NECKLINE], divergences: [DIVERGENCE] }
     const next = chartReducer(prev, { kind: 'ui/set-timeframe', timeframe: '1h' })
     expect(next.timeframe).toBe('1h')
     expect(next.trendlines).toEqual([])
+    expect(next.divergences).toEqual([])
   })
 
   it('ui/refresh recomputes range_start = nowIso - lookbackDays', () => {

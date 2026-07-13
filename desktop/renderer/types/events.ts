@@ -153,6 +153,48 @@ export interface ChartTrendlinesPayloadV1 {
   trendlines: TrendlineSpec[]
 }
 
+/** Mirror of the pydantic `PivotPoint` (Plan 0052): a pure `(time, price)` anchor.
+ * Shared geometry shape the divergence segments consume — on an oscillator pivot,
+ * `price` carries the oscillator VALUE at that pivot (its y on the oscillator pane). */
+export interface PivotPoint {
+  ts: string
+  price: number
+}
+
+/** Mirror of the pydantic `DivergenceKind` literal (Plan 0091): the four
+ * price↔oscillator divergence classes (regular/hidden × bullish/bearish). */
+export type DivergenceKind =
+  | 'regular_bullish'
+  | 'regular_bearish'
+  | 'hidden_bullish'
+  | 'hidden_bearish'
+
+/** Mirror of the pydantic `Divergence` (Plan 0091, ADR-0090): a price↔oscillator
+ * divergence over confirmed swing pivots. `oscillator` is the pane-routing key
+ * (which oscillator pane the second segment draws on); `price_pivots` /
+ * `oscillator_pivots` are the two anchors each (older first); `bar_index` is the
+ * confirming bar (trailing knowability); `strength` is a detector 0..1 magnitude,
+ * not a probability. Conditions-only geometry — never a buy/sell call. */
+export interface Divergence {
+  oscillator: 'rsi' | 'macd_hist' | 'obv' | 'mfi'
+  kind: DivergenceKind
+  price_pivots: PivotPoint[]
+  oscillator_pivots: PivotPoint[]
+  bar_index: number
+  strength: number
+}
+
+/** Mirror of the pydantic `ChartDivergencesPayloadV1` (ADR-0090 / Plan 0091):
+ * price↔oscillator divergences on their OWN cross-pane channel — each drawn as
+ * two segments (price pivots on pane 0, oscillator pivots on that oscillator's own
+ * v5 pane). Active-chart-gated in the reducer like `chart.trendlines`; derived,
+ * never persisted. Carries the `Divergence` model inline. */
+export interface ChartDivergencesPayloadV1 {
+  symbol: string
+  timeframe: string
+  divergences: Divergence[]
+}
+
 export interface RunCompletedPayloadV1 {
   kind: 'backtest' | 'analysis' | 'defi'
   run_id: string
@@ -755,6 +797,7 @@ export type EnvelopeType =
   | 'chart.update'
   | 'chart.highlight'
   | 'chart.trendlines'
+  | 'chart.divergences'
   | 'run.completed'
   | 'signal.evaluated'
   | 'recommendation.completed'
@@ -788,6 +831,10 @@ export type ChartHighlightEnvelope = Envelope<ChartHighlightPayloadV1> & {
 }
 export type ChartTrendlinesEnvelope = Envelope<ChartTrendlinesPayloadV1> & {
   type: 'chart.trendlines'
+  version: 1
+}
+export type ChartDivergencesEnvelope = Envelope<ChartDivergencesPayloadV1> & {
+  type: 'chart.divergences'
   version: 1
 }
 export type RunCompletedEnvelope = Envelope<RunCompletedPayloadV1> & {

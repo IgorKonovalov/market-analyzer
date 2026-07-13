@@ -39,6 +39,9 @@ interface DumpedSchemas {
   ChartUpdatePayloadV1: JsonSchema
   ChartHighlightPayloadV1: JsonSchema
   ChartTrendlinesPayloadV1: JsonSchema
+  PivotPoint: JsonSchema
+  Divergence: JsonSchema
+  ChartDivergencesPayloadV1: JsonSchema
   RunCompletedPayloadV1: JsonSchema
   GapWindow: JsonSchema
   OhlcvBackfillStartedPayloadV1: JsonSchema
@@ -91,6 +94,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    TrendPoint, TrendlineSpec,',
     '    ChartShowPayloadV1, ChartUpdatePayloadV1,',
     '    ChartHighlightPayloadV1, ChartTrendlinesPayloadV1,',
+    '    ChartDivergencesPayloadV1,',
     '    RunCompletedPayloadV1,',
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
@@ -100,6 +104,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    VolatilityForecastCompletedPayloadV1, RegimeForecastCompletedPayloadV1,',
     '    TechnicalReadCompletedPayloadV1, PredictionScreenCompletedPayloadV1,',
     ')',
+    'from market_analyser.analysis.types import Divergence, PivotPoint',
     'from market_analyser.prediction import ConvergenceOpportunity, ResolutionRisk',
     'from market_analyser.backtest import SignalEvaluation, EvaluatedSignal',
     'from market_analyser.advisor.models import (',
@@ -127,6 +132,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "ChartUpdatePayloadV1": ChartUpdatePayloadV1.model_json_schema(),',
     '    "ChartHighlightPayloadV1": ChartHighlightPayloadV1.model_json_schema(),',
     '    "ChartTrendlinesPayloadV1": ChartTrendlinesPayloadV1.model_json_schema(),',
+    '    "PivotPoint": PivotPoint.model_json_schema(),',
+    '    "Divergence": Divergence.model_json_schema(),',
+    '    "ChartDivergencesPayloadV1": ChartDivergencesPayloadV1.model_json_schema(),',
     '    "RunCompletedPayloadV1": RunCompletedPayloadV1.model_json_schema(),',
     '    "GapWindow": GapWindow.model_json_schema(),',
     '    "OhlcvBackfillStartedPayloadV1": OhlcvBackfillStartedPayloadV1.model_json_schema(),',
@@ -355,6 +363,50 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       'symbol',
       'timeframe',
       'trendlines',
+    ])
+  })
+
+  it('PivotPoint fields match (both anchors required — Plan 0091 / ADR-0090)', () => {
+    expect(propertyNames(dumped.PivotPoint)).toEqual(['price', 'ts'])
+    expect(requiredNames(dumped.PivotPoint)).toEqual(['price', 'ts'])
+  })
+
+  it('Divergence fields match (all required; oscillator + kind closed sets — ADR-0090)', () => {
+    expect(propertyNames(dumped.Divergence)).toEqual([
+      'bar_index',
+      'kind',
+      'oscillator',
+      'oscillator_pivots',
+      'price_pivots',
+      'strength',
+    ])
+    // No pydantic defaults, nothing nullable → every field is schema-required.
+    expect(requiredNames(dumped.Divergence)).toEqual([
+      'bar_index',
+      'kind',
+      'oscillator',
+      'oscillator_pivots',
+      'price_pivots',
+      'strength',
+    ])
+    expect(literalValues(dumped.Divergence, 'oscillator')).toEqual(
+      ['macd_hist', 'mfi', 'obv', 'rsi'].sort(),
+    )
+    expect(literalValues(dumped.Divergence, 'kind')).toEqual(
+      ['hidden_bearish', 'hidden_bullish', 'regular_bearish', 'regular_bullish'].sort(),
+    )
+  })
+
+  it('ChartDivergencesPayloadV1 fields match (dedicated cross-pane channel, ADR-0090)', () => {
+    expect(propertyNames(dumped.ChartDivergencesPayloadV1)).toEqual([
+      'divergences',
+      'symbol',
+      'timeframe',
+    ])
+    expect(requiredNames(dumped.ChartDivergencesPayloadV1)).toEqual([
+      'divergences',
+      'symbol',
+      'timeframe',
     ])
   })
 

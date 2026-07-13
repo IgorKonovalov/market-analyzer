@@ -22,10 +22,12 @@
  */
 import { DEFAULT_TIMEFRAME, KNOWN_TIMEFRAMES, type Timeframe } from '../lib/timeframes'
 import type {
+  ChartDivergencesPayloadV1,
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
   ChartTrendlinesPayloadV1,
   ChartUpdatePayloadV1,
+  Divergence,
   Marker,
   OverlaySpec,
   TrendlineSpec,
@@ -45,6 +47,13 @@ export interface ChartState {
    * symbol/timeframe switch clears them (the geometry belongs to the chart it
    * was computed for). */
   trendlines: TrendlineSpec[]
+  /** Price↔oscillator divergences from the dedicated `chart.divergences` event
+   * (ADR-0090, Plan 0091). Each draws as two segments — price pivots on pane 0,
+   * oscillator pivots on that oscillator's own pane. Active-chart-gated and cleared
+   * on a symbol/timeframe switch, exactly like `trendlines`; push-only (no
+   * recompute-on-load yet — ADR-0090's deferred followup), so a same-chart
+   * `chart.show` preserves them. */
+  divergences: Divergence[]
   /** Live markers from `chart.highlight` envelopes. Deduplicated by
    * `(event_ts, pattern, kind)` (Plan 0049) so distinct same-bar patterns
    * survive. Merged with the polled annotation list at render time — duplicates
@@ -57,6 +66,7 @@ export type ChartAction =
   | { kind: 'event/chart.update'; payload: ChartUpdatePayloadV1 }
   | { kind: 'event/chart.highlight'; payload: ChartHighlightPayloadV1 }
   | { kind: 'event/chart.trendlines'; payload: ChartTrendlinesPayloadV1 }
+  | { kind: 'event/chart.divergences'; payload: ChartDivergencesPayloadV1 }
   | { kind: 'ui/set-symbol'; symbol: string }
   | { kind: 'ui/set-timeframe'; timeframe: Timeframe }
   | { kind: 'ui/refresh'; nowIso: string; lookbackDays: number }
@@ -100,6 +110,9 @@ export function applyChartShow(prev: ChartState, payload: ChartShowPayloadV1): C
     range_end: payload.range_end,
     overlays: payload.overlays ?? [],
     trendlines: sameChart ? prev.trendlines : [],
+    // Divergences follow trendlines: preserved on a same-chart show, dropped on a
+    // real symbol/timeframe switch (the geometry belongs to its chart).
+    divergences: sameChart ? prev.divergences : [],
     liveHighlights: [],
   }
 }
@@ -121,6 +134,7 @@ export function applyChartUpdate(prev: ChartState, payload: ChartUpdatePayloadV1
       // A different chart: drop the prior geometry (`chart.update` no longer
       // carries trendlines — the recompute path re-derives them for the new chart).
       trendlines: [],
+      divergences: [],
       liveHighlights: [],
     }
   }
@@ -160,6 +174,19 @@ export function applyChartTrendlines(
   return { ...prev, trendlines: payload.trendlines }
 }
 
+export function applyChartDivergences(
+  prev: ChartState,
+  payload: ChartDivergencesPayloadV1,
+): ChartState {
+  if (prev.symbol !== payload.symbol || prev.timeframe !== payload.timeframe) {
+    // Divergences are for a non-active chart — drop (ADR-0090, mirroring
+    // `applyChartTrendlines`/`applyChartHighlight`). The active chart is the only
+    // one the renderer draws divergence segments onto.
+    return prev
+  }
+  return { ...prev, divergences: payload.divergences }
+}
+
 export function chartReducer(state: ChartState, action: ChartAction): ChartState {
   switch (action.kind) {
     case 'event/chart.show':
@@ -170,12 +197,26 @@ export function chartReducer(state: ChartState, action: ChartAction): ChartState
       return applyChartHighlight(state, action.payload)
     case 'event/chart.trendlines':
       return applyChartTrendlines(state, action.payload)
+    case 'event/chart.divergences':
+      return applyChartDivergences(state, action.payload)
     case 'ui/set-symbol':
       if (state.symbol === action.symbol) return state
-      return { ...state, symbol: action.symbol, liveHighlights: [], trendlines: [] }
+      return {
+        ...state,
+        symbol: action.symbol,
+        liveHighlights: [],
+        trendlines: [],
+        divergences: [],
+      }
     case 'ui/set-timeframe':
       if (state.timeframe === action.timeframe) return state
-      return { ...state, timeframe: action.timeframe, liveHighlights: [], trendlines: [] }
+      return {
+        ...state,
+        timeframe: action.timeframe,
+        liveHighlights: [],
+        trendlines: [],
+        divergences: [],
+      }
     case 'ui/refresh': {
       const endMs = Date.parse(action.nowIso)
       const startMs = endMs - action.lookbackDays * 24 * 60 * 60 * 1000
@@ -200,6 +241,7 @@ export function initialChartState(nowIso: string = new Date().toISOString()): Ch
     range_end: nowIso,
     overlays: [],
     trendlines: [],
+    divergences: [],
     liveHighlights: [],
   }
 }

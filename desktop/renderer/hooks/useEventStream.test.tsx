@@ -269,6 +269,83 @@ describe('useEventStream', () => {
     warnSpy.mockRestore()
   })
 
+  it('dispatches chart.divergences v1 to the handler with the Zod-parsed payload', async () => {
+    const onChartDivergences = jest.fn()
+    render(<Harness handlers={{ onChartDivergences }} />)
+    const es = await waitForStream()
+
+    const payload = {
+      symbol: 'AAPL',
+      timeframe: '1d',
+      divergences: [
+        {
+          oscillator: 'rsi',
+          kind: 'regular_bearish',
+          price_pivots: [
+            { ts: '2026-05-01T00:00:00Z', price: 120 },
+            { ts: '2026-05-10T00:00:00Z', price: 124 },
+          ],
+          oscillator_pivots: [
+            { ts: '2026-05-01T00:00:00Z', price: 78 },
+            { ts: '2026-05-10T00:00:00Z', price: 71 },
+          ],
+          bar_index: 42,
+          strength: 0.6,
+        },
+      ],
+    }
+    await act(async () => {
+      es._fireMessage({
+        type: 'chart.divergences',
+        version: 1,
+        ts: '2026-05-20T14:00:02Z',
+        payload,
+      })
+    })
+
+    expect(onChartDivergences).toHaveBeenCalledTimes(1)
+    expect(onChartDivergences).toHaveBeenCalledWith(payload)
+  })
+
+  it('drops a malformed chart.divergences payload loudly (Zod safeParse)', async () => {
+    const onChartDivergences = jest.fn()
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+    render(<Harness handlers={{ onChartDivergences }} />)
+    const es = await waitForStream()
+
+    // `oscillator: 'volume'` is not in the divergence oscillator set — the schema
+    // rejects it, so the payload is dropped and never drawn.
+    const bad = {
+      symbol: 'AAPL',
+      timeframe: '1d',
+      divergences: [
+        {
+          oscillator: 'volume',
+          kind: 'regular_bearish',
+          price_pivots: [{ ts: '2026-05-01T00:00:00Z', price: 120 }],
+          oscillator_pivots: [{ ts: '2026-05-01T00:00:00Z', price: 78 }],
+          bar_index: 42,
+          strength: 0.6,
+        },
+      ],
+    }
+    await act(async () => {
+      es._fireMessage({
+        type: 'chart.divergences',
+        version: 1,
+        ts: '2026-05-20T14:00:03Z',
+        payload: bad,
+      })
+    })
+
+    expect(onChartDivergences).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('chart.divergences'),
+      expect.anything(),
+    )
+    warnSpy.mockRestore()
+  })
+
   it('forward-compat: dispatches chart.show v2 to the v1 handler with a warning', async () => {
     const onChartShow = jest.fn()
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)

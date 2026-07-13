@@ -172,6 +172,7 @@ export function App(): JSX.Element {
     onChartUpdate: (payload) => dispatch({ kind: 'event/chart.update', payload }),
     onChartHighlight: (payload) => dispatch({ kind: 'event/chart.highlight', payload }),
     onChartTrendlines: (payload) => dispatch({ kind: 'event/chart.trendlines', payload }),
+    onChartDivergences: (payload) => dispatch({ kind: 'event/chart.divergences', payload }),
     onRunCompleted: handleRunCompleted,
     onSignalEvaluated: (payload) => setLatestEvaluation(payload.evaluation),
     onRecommendationCompleted: (payload) => setLatestRecommendation(payload.recommendation),
