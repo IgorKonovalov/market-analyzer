@@ -271,8 +271,12 @@ class ConditionSnapshot(BaseModel):
     ``bb_pct_b``, ``atr``, ``adx``, ``supertrend_direction``, the Ichimoku scalars
     ``ichimoku_tenkan`` / ``ichimoku_kijun`` and the displaced cloud-under-price
     ``ichimoku_cloud_a`` / ``ichimoku_cloud_b`` (spans computed ``displacement``
-    bars ago, ADR-0067), plus the trailing percentile ranks ``rsi_pct90`` /
-    ``atr_pct90``); a value is ``None`` when the indicator is undefined over the
+    bars ago, ADR-0067), the squeeze trio ``bb_width`` /  ``bb_width_pct90`` (the
+    canonical compression metric — Bollinger band-width and its trailing percentile,
+    ADR-0083) and ``squeeze_on`` (``1.0``/``0.0``, TTM Bollinger-inside-Keltner on
+    the latest bar, categorical-as-float like ``supertrend_direction``), plus the
+    trailing percentile ranks ``rsi_pct90`` / ``atr_pct90``); a value is ``None``
+    when the indicator is undefined over the
     available bars. `trend` folds the Ichimoku cloud into the EMA/ADX read as a
     conjunctive veto (ADR-0067): a divergence between the moving-average stack and
     the cloud resolves to ``SIDEWAYS`` rather than a directional label. `support_resistance` maps

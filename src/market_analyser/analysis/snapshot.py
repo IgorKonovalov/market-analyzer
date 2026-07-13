@@ -47,6 +47,13 @@ ADX_TREND_MIN = 20.0  # ADX below this -> no decisive trend (sideways)
 ICHIMOKU_DISPLACEMENT = 26
 RSI_OVERBOUGHT = 70.0
 RSI_OVERSOLD = 30.0
+# Squeeze (ADR-0083). Band-width uses the same Bollinger config as the snapshot's
+# bb_* fields (20, 2.0); the Keltner constants are the TTM convention (20-EMA,
+# 20-ATR, 1.5x) — a convention we own and may re-tune, not a law.
+BOLLINGER_PERIOD = 20
+KELTNER_PERIOD = 20
+KELTNER_ATR_PERIOD = 20
+KELTNER_MULT = 1.5
 RECENT_PATTERN_BARS = 5  # patterns on the last N bars are "recent"
 # A classical chart pattern is "active" while its completing/confirming bar is
 # within the detector's breakout scan horizon of the snapshot bar — the window
@@ -233,7 +240,9 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
 
     rsi_series = ind.rsi(closes, 14)
     macd_series = ind.macd(closes)
-    boll_series = ind.bollinger(closes, 20)
+    boll_series = ind.bollinger(closes, BOLLINGER_PERIOD)
+    bandwidth_series = ind.bollinger_bandwidth(closes, BOLLINGER_PERIOD)
+    kc_series = ind.keltner(bars, KELTNER_PERIOD, KELTNER_ATR_PERIOD, KELTNER_MULT)
     atr_series = ind.atr(bars, 14)
     adx_series = ind.adx(bars, 14)
     st_series = ind.supertrend(bars, 10)
@@ -253,9 +262,21 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
     _cloud_idx = len(bars) - 1 - ICHIMOKU_DISPLACEMENT
     cloud_ichi = ichimoku_series[_cloud_idx] if _cloud_idx >= 0 else None
 
+    last_kc = next((v for v in reversed(kc_series) if v is not None), None)
+
     bb_pct_b: float | None = None
     if last_boll is not None and last_boll.upper != last_boll.lower:
         bb_pct_b = (closes[-1] - last_boll.lower) / (last_boll.upper - last_boll.lower)
+
+    # TTM squeeze: the Bollinger band sitting *inside* the Keltner channel on the
+    # latest bar (ADR-0083). Both indicators are gap-free to the series end, so
+    # `last_boll`/`last_kc` are the current bar's values (or None on too-few bars,
+    # yielding an honest None rather than a forced 0.0). Categorical-as-float,
+    # matching the `supertrend_direction` precedent.
+    squeeze_on: float | None = None
+    if last_boll is not None and last_kc is not None:
+        inside = last_boll.upper <= last_kc.upper and last_boll.lower >= last_kc.lower
+        squeeze_on = 1.0 if inside else 0.0
 
     indicator_values: dict[str, float | None] = {
         "rsi": rsi_val,
@@ -267,6 +288,9 @@ def condition_snapshot(bars: Sequence[Bar], timeframe: str) -> ConditionSnapshot
         "bb_middle": last_boll.middle if last_boll else None,
         "bb_lower": last_boll.lower if last_boll else None,
         "bb_pct_b": bb_pct_b,
+        "bb_width": _last(bandwidth_series),
+        "bb_width_pct90": _percentile_rank(bandwidth_series, PERCENTILE_WINDOW),
+        "squeeze_on": squeeze_on,
         "atr": atr_val,
         "atr_pct90": _percentile_rank(atr_series, PERCENTILE_WINDOW),
         "adx": last_adx.adx if last_adx else None,

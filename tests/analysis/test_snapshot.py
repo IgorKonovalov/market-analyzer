@@ -491,3 +491,122 @@ def test_snapshot_volume_anti_lookahead_replay() -> None:
     assert full.volume_stance == VolumeStance.HEAVY
     assert mid.volume_stance != VolumeStance.HEAVY
     assert set(volume_keys) <= set(full.indicators)
+
+
+# --------------------------------------------------------------------------- #
+# Squeeze fields (Plan 0090 phase 2, ADR-0083)                                 #
+# --------------------------------------------------------------------------- #
+
+# The exact `indicators` key-set — frozen so a dropped or stray key fails loudly.
+_EXPECTED_INDICATOR_KEYS = {
+    "rsi",
+    "rsi_pct90",
+    "macd",
+    "macd_signal",
+    "macd_hist",
+    "bb_upper",
+    "bb_middle",
+    "bb_lower",
+    "bb_pct_b",
+    "bb_width",
+    "bb_width_pct90",
+    "squeeze_on",
+    "atr",
+    "atr_pct90",
+    "adx",
+    "plus_di",
+    "minus_di",
+    "supertrend",
+    "supertrend_direction",
+    "ichimoku_tenkan",
+    "ichimoku_kijun",
+    "ichimoku_cloud_a",
+    "ichimoku_cloud_b",
+    "volume",
+    "vol_sma20",
+    "rel_volume",
+    "vol_pct90",
+    "obv",
+    "obv_slope",
+    "vwap",
+}
+
+
+def test_snapshot_indicator_keys_frozen() -> None:
+    """The `indicators` dict carries exactly the pinned key-set — the squeeze trio
+    `bb_width` / `bb_width_pct90` / `squeeze_on` is present, and no key is dropped
+    or added silently (additive-schema guard, ADR-0083)."""
+
+    snap = condition_snapshot(_rising(60), "1d")
+    assert set(snap.indicators) == _EXPECTED_INDICATOR_KEYS
+    for key in ("bb_width", "bb_width_pct90", "squeeze_on"):
+        assert key in snap.indicators
+
+
+def _flat_wide_range_bars(n: int = 40) -> list[Bar]:
+    """Flat closes (band-width -> ~0) inside a wide intrabar range (ATR ~ 10), so
+    the Bollinger band collapses well inside the Keltner channel: a squeeze."""
+
+    return [_bar(i, o=100.0, h=105.0, low=95.0, c=100.0) for i in range(n)]
+
+
+def _dispersed_tight_range_bars(n: int = 40) -> list[Bar]:
+    """A strong close-to-close trend (large stdev -> wide Bollinger band) with a
+    tight intrabar range (small ATR -> narrow Keltner channel): the band pokes
+    outside the channel, so no squeeze."""
+
+    return [
+        _bar(i, o=100.0 + 3.0 * i, h=100.1 + 3.0 * i, low=99.9 + 3.0 * i, c=100.0 + 3.0 * i)
+        for i in range(n)
+    ]
+
+
+def test_squeeze_on_when_bollinger_inside_keltner() -> None:
+    snap = condition_snapshot(_flat_wide_range_bars(), "1d")
+    assert snap.indicators["squeeze_on"] == 1.0
+    # Sanity: the band really is inside the channel.
+    boll = ind.bollinger([b.close for b in _flat_wide_range_bars()], 20)[-1]
+    kc = ind.keltner(_flat_wide_range_bars(), 20, 20, 1.5)[-1]
+    assert boll is not None and kc is not None
+    assert boll.upper <= kc.upper and boll.lower >= kc.lower
+
+
+def test_squeeze_off_when_band_wide() -> None:
+    snap = condition_snapshot(_dispersed_tight_range_bars(), "1d")
+    assert snap.indicators["squeeze_on"] == 0.0
+
+
+def test_squeeze_on_none_when_undefined() -> None:
+    """Too few bars for the Keltner channel -> squeeze_on is an honest None, not a
+    forced 0.0."""
+
+    snap = condition_snapshot(_rising(10), "1d")  # < 21 bars -> Keltner undefined
+    assert snap.indicators["squeeze_on"] is None
+
+
+def test_bb_width_pct90_matches_independent_percentile() -> None:
+    """`bb_width` is the latest band-width and `bb_width_pct90` its trailing
+    percentile rank, both matching an independent computation off the same bars."""
+
+    bars = _choppy(120)
+    closes = [b.close for b in bars]
+    # Independent band-width series: (upper - lower) / middle via mean / pstdev.
+    bandwidth: list[float | None] = [None] * len(closes)
+    for i in range(19, len(closes)):
+        window = closes[i - 19 : i + 1]
+        mean = math.fsum(window) / len(window)
+        var = math.fsum((x - mean) ** 2 for x in window) / len(window)
+        sd = math.sqrt(var)
+        if mean != 0.0:
+            bandwidth[i] = ((mean + 2.0 * sd) - (mean - 2.0 * sd)) / mean
+    defined = [v for v in bandwidth if v is not None]
+    sample = defined[-90:]
+    latest = sample[-1]
+    expected_pct = 100.0 * sum(1 for v in sample if v <= latest) / len(sample)
+
+    snap = condition_snapshot(bars, "1d")
+    bb_width = snap.indicators["bb_width"]
+    bb_width_pct90 = snap.indicators["bb_width_pct90"]
+    assert bb_width is not None and bb_width_pct90 is not None
+    assert abs(bb_width - latest) < _TOL
+    assert abs(bb_width_pct90 - expected_pct) < _TOL
