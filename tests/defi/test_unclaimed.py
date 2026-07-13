@@ -39,6 +39,7 @@ def _position(position_id: str, *, kind: str = "lp", pool: str | None = "0xpool"
 def _pnl(position_id: str) -> PositionPnl:
     return PositionPnl(
         position_id=position_id,
+        chain="base",
         is_lp=True,  # gauge-stakeable LP positions (the unclaimed-rewards context)
         realized_usd=10.0,
         unrealized_usd=20.0,

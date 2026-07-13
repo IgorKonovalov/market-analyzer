@@ -194,6 +194,35 @@ def test_lp_position_reports_vs_hodl_delta() -> None:
     assert position.vs_hodl_usd == 50.0
 
 
+def test_position_carries_chain_and_pool_address_for_explorer_links() -> None:
+    # The renderer deep-links a position to its pool on the chain's block explorer,
+    # so the per-position P&L must carry the source position's chain + on-chain pool
+    # address through the replay (the position_id's trailing segment is a Zerion
+    # group id, NOT an address, so it can't be linked).
+    complete = _lp_pnl().positions[0]
+    assert complete.incomplete is False
+    assert complete.chain == "base"
+    assert complete.pool_address == _LP.pool_address
+
+    # An incomplete (unpriceable) position carries them too — the link does not
+    # depend on the figures being reconstructable.
+    events = [
+        *_LP_EVENTS,
+        _event("fee_claim", _LP, _TS3, 400, [_leg("in", "GHST", _GHST, 5.0)]),
+    ]
+    incomplete = compute_wallet_pnl(
+        wallet=_WALLET,
+        positions=[_LP],
+        events=events,
+        price_source=_PRICES,
+        as_of=_AS_OF,
+        now=_AS_OF,
+    ).positions[0]
+    assert incomplete.incomplete is True
+    assert incomplete.chain == "base"
+    assert incomplete.pool_address == _LP.pool_address
+
+
 def test_wallet_is_masked_in_the_result() -> None:
     result = _lp_pnl()
     assert result.wallet != _WALLET

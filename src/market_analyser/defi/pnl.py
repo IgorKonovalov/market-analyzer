@@ -134,6 +134,14 @@ class PositionPnl(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     position_id: str = Field(min_length=1)
+    # Position identity carried through from the source `DefiPosition` so a
+    # consumer can deep-link the position to its chain's block explorer (the
+    # renderer's Wallet-P&L pool link). `pool_address` is the on-chain pool/pair
+    # contract (`0x…`), `None` for positions whose source does not expose it
+    # (single-asset staking, loose tokens); `position_id`'s trailing segment is
+    # Zerion's internal group id, NOT an address, so it is never itself linkable.
+    chain: Chain
+    pool_address: str | None = None
     # Headline (LP) vs muted (non-LP), derived from `position.kind == "lp"` (Plan
     # 0088 / ADR-0082). LP positions are the report's headline and sort first; a
     # non-LP position (lending, loose tokens, unpriceable exotics) is reported but
@@ -395,6 +403,8 @@ def _replay_position(
         ]
         return PositionPnl(
             position_id=position.position_id,
+            chain=position.chain,
+            pool_address=position.pool_address,
             is_lp=position.kind == "lp",
             realized_usd=realized,
             unrealized_usd=unrealized,
@@ -486,6 +496,8 @@ def _mark_holdings(
 def _incomplete(position: DefiPosition, notes: list[str]) -> PositionPnl:
     return PositionPnl(
         position_id=position.position_id,
+        chain=position.chain,
+        pool_address=position.pool_address,
         is_lp=position.kind == "lp",
         realized_usd=None,
         unrealized_usd=None,
