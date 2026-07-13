@@ -47,6 +47,13 @@
   box-shadow: var(--shadow-3);
 }
 
+/* The `display: flex` above overrides the UA `[hidden] { display: none }` (class
+   specificity wins), so the closed panel would stay visible. Re-hide it with a
+   rule that outspecifies `.panel`. */
+.panel[hidden] {
+  display: none;
+}
+
 .group {
   display: flex;
   flex-direction: column;
