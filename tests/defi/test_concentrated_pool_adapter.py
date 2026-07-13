@@ -7,9 +7,11 @@ Phase-2 done-when claims pinned here:
     slot0 and the fee tier in bps;
 (b) fee-tier enumeration yields one quote per configured tier that has a pool — a
     tier whose `getPool` returns the zero address is skipped, not errored;
-(c) a Quoter revert / malformed result raises the typed `ConcentratedPoolError`,
-    and a zero Quoter output raises at the `ExecutableQuote` boundary — never a
-    zeroed / NaN quote;
+(c) revert taxonomy by call site (ADR-0086): a **quote-leg** revert omits the pool
+    (a thin tier no longer aborts the scan), while a **structural-read** revert
+    (getPool / slot0 / decimals / fee) and a malformed / too-short *successful* result
+    still raise the typed `ConcentratedPoolError`, and a zero Quoter output raises at
+    the `ExecutableQuote` boundary — never a zeroed / NaN quote, never silently omitted;
 (d) the adapter satisfies `ExecutableQuoteSource` and is registry-reachable;
 (e) config / caller-bug taxonomy (missing RPC URL, unsupported chain, unconfigured
     pair, non-positive trade_size);
@@ -153,6 +155,7 @@ _WETH = "0x4200000000000000000000000000000000000006"  # token0 (lower address)
 _USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"  # token1
 _FACTORY = "0xffff000000000000000000000000000000000001"
 _QUOTER = "0xffff000000000000000000000000000000000002"
+_POOL_500 = "0xeeee000000000000000000000000000000000500"
 _POOL_3000 = "0xaaaa000000000000000000000000000000003000"
 _POOL_10000 = "0xbbbb000000000000000000000000000000010000"
 _ZERO_ADDRESS = "0x" + "00" * 20
@@ -406,15 +409,133 @@ def test_fee_tier_enumeration_one_quote_per_pool_that_exists(
     assert quotes[1].buy_cost == pytest.approx(3040.0)
 
 
-# -- (c) revert / zero / malformed never fabricate -------------------------------
+# -- (c) revert taxonomy by call site: omit quote-leg, raise structural (ADR-0086) --
 
 
-def test_quoter_revert_raises_typed_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_quote_leg_revert_omits_pool_not_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    # slot0 + getPool succeed, but the Quoter legs revert (no Quoter entries) — the
+    # pool has no executable price at the size, so it is omitted, not raised. This is
+    # the behaviour flip from the old raise-on-any-revert (Plan 0086 phase-4 finding).
     responses = {
         **_decimals_responses(),
         (_FACTORY, _SEL_GETPOOL_UNIV3, 3000): _hex(_addr_word(_POOL_3000)),
         (_POOL_3000, _SEL_SLOT0, None): _slot0_result(_SQRT_3000),
-        # No Quoter entries -> the exact-input call reverts.
+        # No Quoter entries -> the exact-input (sell) call reverts.
+    }
+    adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(_univ3_venue(),))
+    assert adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0) == []
+
+
+def test_buy_leg_revert_also_omits_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The sell (exact-input) leg succeeds but the buy (exact-output) leg reverts — a
+    # round trip needs both legs, so the pool is still omitted (ADR-0086).
+    responses = {
+        **_decimals_responses(),
+        (_FACTORY, _SEL_GETPOOL_UNIV3, 3000): _hex(_addr_word(_POOL_3000)),
+        (_POOL_3000, _SEL_SLOT0, None): _slot0_result(_SQRT_3000),
+        (_QUOTER, _SEL_QIN_UNIV3, 3000): _quoter_result(2994_000000),  # sell ok
+        # No exact-output entry -> the buy leg reverts.
+    }
+    adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(_univ3_venue(),))
+    assert adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0) == []
+
+
+def test_dust_tier_omitted_deep_tiers_still_priced(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The mixed-venue case: the 500 tier's quote legs revert (dust — it has a pool and
+    # slot0 but no routable size), while 3000 and 10000 price fine. The scan returns
+    # exactly the two deep-tier quotes — one dust tier no longer aborts the whole scan.
+    responses = {
+        **_decimals_responses(),
+        (_FACTORY, _SEL_GETPOOL_UNIV3, 500): _hex(_addr_word(_POOL_500)),
+        (_FACTORY, _SEL_GETPOOL_UNIV3, 3000): _hex(_addr_word(_POOL_3000)),
+        (_FACTORY, _SEL_GETPOOL_UNIV3, 10000): _hex(_addr_word(_POOL_10000)),
+        (_POOL_500, _SEL_SLOT0, None): _slot0_result(_SQRT_3000),
+        (_POOL_3000, _SEL_SLOT0, None): _slot0_result(_SQRT_3000),
+        (_POOL_10000, _SEL_SLOT0, None): _slot0_result(_SQRT_3000),
+        # 500 has a pool + slot0 but NO Quoter entries -> both legs revert (dust).
+        (_QUOTER, _SEL_QIN_UNIV3, 3000): _quoter_result(2994_000000),
+        (_QUOTER, _SEL_QOUT_UNIV3, 3000): _quoter_result(3006_000000),
+        (_QUOTER, _SEL_QIN_UNIV3, 10000): _quoter_result(2960_000000),
+        (_QUOTER, _SEL_QOUT_UNIV3, 10000): _quoter_result(3040_000000),
+    }
+    venue = _univ3_venue(tiers=(500, 3000, 10000))
+    adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(venue,))
+
+    quotes = adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
+
+    assert [q.pool_id for q in quotes] == [_POOL_3000, _POOL_10000]
+    assert [q.fee_tier for q in quotes] == [30, 100]
+    assert quotes[0].buy_cost == pytest.approx(3006.0)
+
+
+def test_getpool_revert_raises_not_omitted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A structural factory read (`getPool`) that reverts is an operator-visible
+    # misconfig, not a thin pool — it raises, it does not omit the venue silently.
+    responses = {**_decimals_responses()}  # no getPool entry -> the factory read reverts
+    adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(_univ3_venue(),))
+    with pytest.raises(ConcentratedPoolError):
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
+
+
+def test_slot0_revert_raises_not_omitted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # slot0 is a structural read — a revert raises, never omits.
+    responses = {
+        **_decimals_responses(),
+        (_FACTORY, _SEL_GETPOOL_UNIV3, 3000): _hex(_addr_word(_POOL_3000)),
+        # No slot0 entry -> the structural pool read reverts.
+    }
+    adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(_univ3_venue(),))
+    with pytest.raises(ConcentratedPoolError):
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
+
+
+def test_decimals_revert_raises_not_omitted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # decimals() is a structural read (shared across a venue's tiers) — a revert raises.
+    responses: dict[tuple[str, str, int | None], str] = {}  # no decimals -> first read reverts
+    adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(_univ3_venue(),))
+    with pytest.raises(ConcentratedPoolError):
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
+
+
+def test_slipstream_fee_revert_raises_not_omitted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Even when both quote legs succeed, a revert on the Slipstream structural `fee()`
+    # read raises — the omit path is narrowly the quote legs, never a structural read.
+    slip_factory = "0xcccc000000000000000000000000000000000001"
+    slip_quoter = "0xcccc000000000000000000000000000000000002"
+    slip_pool = "0xdddd000000000000000000000000000000000100"
+    venue = ConcentratedVenueConfig(
+        dex="aerodrome-slipstream",
+        chain="base",
+        pair="WETH/USDC",
+        base_token=_WETH,
+        quote_token=_USDC,
+        factory=slip_factory,
+        quoter=slip_quoter,
+        quoter_kind="slipstream",
+        tiers=(100,),
+    )
+    responses = {
+        **_decimals_responses(),
+        (slip_factory, _SEL_GETPOOL_SLIP, 100): _hex(_addr_word(slip_pool)),
+        (slip_pool, _SEL_SLOT0, None): _slot0_result(_SQRT_3000),
+        (slip_quoter, _SEL_QIN_SLIP, 100): _quoter_result(2998_000000),
+        (slip_quoter, _SEL_QOUT_SLIP, 100): _quoter_result(3002_000000),
+        # No fee() entry -> the structural fee read reverts AFTER the quote legs succeed.
+    }
+    adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(venue,))
+    with pytest.raises(ConcentratedPoolError):
+        adapter.fetch_executable_quotes("WETH/USDC", trade_size=1.0)
+
+
+def test_truncated_quote_result_raises_not_omitted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A *successful* (2xx) but too-short quote result is a decode failure / shape drift,
+    # NOT an execution-revert — it must raise, never be swallowed by the omit path.
+    responses = {
+        **_decimals_responses(),
+        (_FACTORY, _SEL_GETPOOL_UNIV3, 3000): _hex(_addr_word(_POOL_3000)),
+        (_POOL_3000, _SEL_SLOT0, None): _slot0_result(_SQRT_3000),
+        (_QUOTER, _SEL_QIN_UNIV3, 3000): "0x1234",  # 2xx but too short for word0
+        (_QUOTER, _SEL_QOUT_UNIV3, 3000): _quoter_result(3006_000000),
     }
     adapter = _adapter(monkeypatch, transport=_FakeRpc(responses), venues=(_univ3_venue(),))
     with pytest.raises(ConcentratedPoolError):

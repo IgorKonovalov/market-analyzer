@@ -187,8 +187,11 @@ class ExecutableQuoteSource(Protocol):
     `buy_cost`, `sell_proceeds`, and the `marginal_price` zero-size reference the
     screener reconstructs the fee/slippage breakdown from. An unknown or unconfigured
     pair returns `[]` (not an error); a pool that cannot source the size is omitted
-    rather than fabricating a number; a shape-broken on-chain read or Quoter revert
-    raises the source's typed error taxonomy, never a fabricated/zeroed quote.
+    rather than fabricating a number — for the CL Quoter this is a quote-leg revert
+    (ADR-0086), the same "cannot source the size → omit" the constant-product adapter
+    applies when the trade exceeds reserve depth; a shape-broken on-chain read or a
+    structural-read revert raises the source's typed error taxonomy, never a
+    fabricated/zeroed quote.
 
     Members of the executable-quote selector registry, keyed by source name
     ("onchain" for constant-product, "concentrated" for CL), built in the

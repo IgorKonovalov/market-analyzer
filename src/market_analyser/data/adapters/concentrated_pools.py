@@ -23,8 +23,10 @@ is exactly `{"eth_call"}`.
 the venue's tiers (Uniswap-v3 fee tiers in PPM — 500/3000/10000 — or the Slipstream
 tick spacings) and asks `factory.getPool(base, quote, tier)` for the pool at each;
 a zero-address answer means no pool at that tier and is skipped (not an error). An
-existing pool that then reverts the Quoter (e.g. a size with no routable liquidity)
-raises the typed error — a revert is surfaced, never coerced to a zero quote.
+existing pool whose **quote leg** reverts (a thin tier with no routable liquidity at
+the size) is **omitted** — one dust tier no longer aborts the whole scan (ADR-0086) —
+mirroring how the constant-product adapter omits a depth-exceeded pool; the pool is
+dropped, never coerced to a zero quote.
 
 **Per pool, per size**, the reads are: `slot0()` (the `sqrtPriceX96` marginal
 reference), `quoteExactInputSingle` (the sell leg → `sell_proceeds`),
@@ -37,13 +39,16 @@ carries the fee in the tier itself (PPM), so no extra `fee()` read is needed the
 Plan 0079 live run hit this), so the adapter defaults to a browser-like UA and lets
 the caller override it — the resilient-client seam the risks section calls for.
 
-Errors are typed: a missing RPC URL / unsupported chain raises
-`ConcentratedPoolConfigError`; a 429 / 5xx / transport exhaustion raises the shared
-`RateLimitedError` / `UpstreamUnavailableError`; a JSON-RPC error object (a Quoter
-revert) or a shape-broken result raises `ConcentratedPoolError` — never a silently
-zeroed quote. An out-of-range decoded measurement surfaces as
+Errors are typed and classified by **which call reverted**, not by the revert string
+(ADR-0086): a missing RPC URL / unsupported chain raises `ConcentratedPoolConfigError`;
+a 429 / 5xx / transport exhaustion raises the shared `RateLimitedError` /
+`UpstreamUnavailableError`; a **structural-read** revert (`getPool` / `slot0` /
+`decimals` / `fee`) or a shape-broken result raises `ConcentratedPoolError`; a
+**quote-leg** revert (`quoteExactInputSingle` / `quoteExactOutputSingle`) omits the
+pool (thin liquidity) rather than raising. A revert is never coerced to a zero quote,
+and an out-of-range decoded measurement on a *successful* response surfaces as
 `pydantic.ValidationError` from the `ExecutableQuote` boundary (e.g. a zero Quoter
-output → `gt=0` rejection, not a fabricated quote).
+output → `gt=0` rejection, not a fabricated quote — never silently omitted).
 """
 
 from __future__ import annotations
@@ -118,9 +123,23 @@ _PPM_PER_BPS = 100
 
 
 class ConcentratedPoolError(ValueError):
-    """A JSON-RPC error object (e.g. a Quoter revert), or a 2xx result whose
-    shape/length the decode required but the payload lacked — raised at the adapter
-    boundary before model construction. Never a silently zeroed quote."""
+    """A structural on-chain read failed in a way the scan cannot proceed past: an
+    execution-revert on a *structural* read (`getPool` / `slot0` / `decimals` /
+    `fee` — an operator-visible misconfig), or a 2xx result whose shape/length the
+    decode required but the payload lacked. Raised at the adapter boundary before
+    model construction, never a silently zeroed quote. A revert on a *quote leg*
+    omits the pool instead (ADR-0086) — see `_ExecutionReverted`."""
+
+
+class _ExecutionReverted(ConcentratedPoolError):
+    """Internal signal: the node reported a JSON-RPC execution-revert (`error`
+    object) on an `eth_call`. Which call reverted decides the handling (ADR-0086):
+    a **quote-leg** revert (`quoteExactInputSingle` / `quoteExactOutputSingle`) is
+    caught at the call site and omits the pool — no executable price at the size,
+    mirroring the CP adapter's depth-exceeded omit; a **structural-read** revert
+    (`getPool` / `slot0` / `decimals` / `fee`) is not caught and propagates as the
+    public `ConcentratedPoolError` base (an operator-visible misconfig). Classified
+    by call site, never by the revert string — robust across Quoter forks."""
 
 
 class ConcentratedPoolConfigError(UpstreamDataError):
@@ -200,13 +219,15 @@ class ConcentratedPoolPriceAdapter:
         (sell → `sell_proceeds`) and `quoteExactOutputSingle` (buy → `buy_cost`),
         both already net of the pool's fee and its measured tick-crossing slippage;
         `slot0()` supplies the marginal reference. A tier with no pool is skipped; a
-        Quoter revert raises `ConcentratedPoolError`, never a zeroed quote.
+        tier whose **quote leg** reverts (thin pool, no executable price at the size)
+        is omitted, so one dust tier does not abort the scan (ADR-0086); a revert is
+        never coerced to a zeroed quote.
 
         Raises `ValueError` on a non-positive `trade_size`, `ConcentratedPoolConfigError`
         on a missing RPC URL / unsupported chain, the shared `RateLimitedError` /
         `UpstreamUnavailableError` on throttle / outage, and `ConcentratedPoolError`
-        (or `pydantic.ValidationError`) on a shape-broken read. An unconfigured pair
-        returns `[]`.
+        (or `pydantic.ValidationError`) on a **structural-read** revert / shape-broken
+        read. An unconfigured pair returns `[]`.
         """
         if trade_size <= 0:
             raise ValueError("trade_size must be positive")
@@ -234,21 +255,21 @@ class ConcentratedPoolPriceAdapter:
             pool = self._get_pool(rpc_url, venue, tier)
             if pool is None:
                 continue  # no pool at this tier — skip, not an error
-            quotes.append(
-                self._quote_pool(
-                    rpc_url,
-                    venue=venue,
-                    pool=pool,
-                    tier=tier,
-                    base=base,
-                    quote=quote,
-                    base_decimals=base_decimals,
-                    quote_decimals=quote_decimals,
-                    is_base_token0=is_base_token0,
-                    trade_size=trade_size,
-                    as_of=as_of,
-                )
+            priced = self._quote_pool(
+                rpc_url,
+                venue=venue,
+                pool=pool,
+                tier=tier,
+                base=base,
+                quote=quote,
+                base_decimals=base_decimals,
+                quote_decimals=quote_decimals,
+                is_base_token0=is_base_token0,
+                trade_size=trade_size,
+                as_of=as_of,
             )
+            if priced is not None:
+                quotes.append(priced)  # None = a quote-leg revert omitted this pool
         return quotes
 
     def _get_pool(self, rpc_url: str, venue: ConcentratedVenueConfig, tier: int) -> str | None:
@@ -277,7 +298,10 @@ class ConcentratedPoolPriceAdapter:
         is_base_token0: bool,
         trade_size: float,
         as_of: datetime,
-    ) -> ExecutableQuote:
+    ) -> ExecutableQuote | None:
+        """Price one pool as an `ExecutableQuote`, or return `None` to omit it when a
+        quote leg reverts (a thin pool with no executable price at the size, ADR-0086).
+        The structural reads (`slot0`, and Slipstream's `fee()`) still raise."""
         sqrt_price = _decode_uint(self._eth_call(rpc_url, pool, _SEL_SLOT0), word=0)
         if sqrt_price <= 0:
             raise ConcentratedPoolError(
@@ -296,18 +320,21 @@ class ConcentratedPoolPriceAdapter:
                 "concentrated-pool: trade_size rounds to zero base units at this decimals",
             )
 
-        # Sell leg (exact-input, base -> quote): amountOut is quote received.
-        sell_data = _quote_single_data(
+        # Both legs price the round trip; either reverting means the pool cannot
+        # source the size, so it is omitted (ADR-0086), never zeroed. A decode failure
+        # or an out-of-range value on a *successful* response still raises downstream.
+        sell_data = _quote_single_data(  # exact-input, base -> quote: amountOut received
             _SEL_QUOTE_EXACT_IN[venue.quoter_kind], base, quote, size_raw, tier
         )
-        out_raw = _decode_uint(self._eth_call(rpc_url, venue.quoter, sell_data), word=0)
-        sell_proceeds = out_raw / (10**quote_decimals)
-
-        # Buy leg (exact-output, quote -> base): amountIn is quote paid to get size_raw base.
-        buy_data = _quote_single_data(
+        buy_data = _quote_single_data(  # exact-output, quote -> base: amountIn paid
             _SEL_QUOTE_EXACT_OUT[venue.quoter_kind], quote, base, size_raw, tier
         )
-        in_raw = _decode_uint(self._eth_call(rpc_url, venue.quoter, buy_data), word=0)
+        try:
+            out_raw = _decode_uint(self._eth_call(rpc_url, venue.quoter, sell_data), word=0)
+            in_raw = _decode_uint(self._eth_call(rpc_url, venue.quoter, buy_data), word=0)
+        except _ExecutionReverted:
+            return None
+        sell_proceeds = out_raw / (10**quote_decimals)
         buy_cost = in_raw / (10**quote_decimals)
 
         return ExecutableQuote(
@@ -353,8 +380,10 @@ class ConcentratedPoolPriceAdapter:
     def _eth_call(self, rpc_url: str, to: str, data: str) -> bytes:
         """Perform one paced `eth_call` and return the decoded result bytes.
 
-        Raises `ConcentratedPoolError` on a JSON-RPC error object / non-hex result
-        and the shared rate-limit / unavailable errors on transport failure."""
+        Raises `_ExecutionReverted` (a `ConcentratedPoolError` subtype the quote-leg
+        call sites catch to omit a thin pool) on a JSON-RPC error object, the base
+        `ConcentratedPoolError` on a non-hex / short result, and the shared rate-limit
+        / unavailable errors on transport failure."""
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -417,12 +446,15 @@ def _classify_error(err: ResilientHttpError) -> UpstreamDataError:
 def _result_bytes(payload: object) -> bytes:
     """Extract the `result` hex from a JSON-RPC response and decode it to bytes.
 
-    A JSON-RPC `error` object (a Quoter revert) or a missing/non-hex `result` is a
-    typed `ConcentratedPoolError` (the read can't proceed)."""
+    A JSON-RPC `error` object (an execution-revert) raises `_ExecutionReverted` — the
+    internal `ConcentratedPoolError` subtype the quote-leg call sites catch to omit a
+    thin pool (ADR-0086), and every other call site lets propagate as a misconfig. A
+    missing/short/non-hex `result` (a decode failure on a 2xx response) raises the
+    base `ConcentratedPoolError`."""
     if not isinstance(payload, dict):
         raise ConcentratedPoolError("concentrated-pool: JSON-RPC response was not an object")
     if "error" in payload:
-        raise ConcentratedPoolError(f"concentrated-pool: JSON-RPC error {payload['error']!r}")
+        raise _ExecutionReverted(f"concentrated-pool: JSON-RPC error {payload['error']!r}")
     result = payload.get("result")
     if not isinstance(result, str) or not result.startswith("0x"):
         raise ConcentratedPoolError("concentrated-pool: JSON-RPC result missing or not 0x-hex")

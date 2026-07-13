@@ -1,6 +1,6 @@
 # 0094 — CL Quoter revert taxonomy: omit thin pools instead of aborting the scan
 
-> **Status:** approved (2026-07-13)
+> **Status:** in-progress (2026-07-13)
 > **Created:** 2026-07-12
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [ADR-0086](../adrs/0086-cl-quoter-revert-omit-taxonomy.md) (the omit-on-quote-revert decision — **paired; accepts at close**), [ADR-0080](../adrs/0080-executable-quote-pricing-concentrated-liquidity.md) (the taxonomy this refines), [ADR-0031](../adrs/0031-data-source-adapter-contract.md) (the `ExecutableQuoteSource` contract), [ADR-0019](../adrs/0019-external-http-adapter-resilience.md) (transport taxonomy, unchanged), [ADR-0072](../adrs/0072-bounded-autonomy-and-prediction-market-execution.md)/[ADR-0074](../adrs/0074-edge-selection-criteria-for-execution.md) (the BA-7 evidence this unblocks)
