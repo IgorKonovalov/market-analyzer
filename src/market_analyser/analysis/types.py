@@ -377,6 +377,57 @@ class FibonacciLevels(BaseModel):
     levels: dict[str, float]  # {"0.382": ..., "0.5": ..., "0.618": ...}
 
 
+StructureLabel = Literal["HH", "HL", "LH", "LL"]
+StructureEventKind = Literal["BOS", "CHoCH"]
+
+
+class StructureEvent(BaseModel):
+    """A break-of-structure (BOS) or change-of-character (CHoCH) event over the
+    confirmed swing sequence (Plan 0092, ADR-0084).
+
+    A ``BOS`` is a swing extreme taken out *in the trend direction* (continuation);
+    a ``CHoCH`` is the *first counter-trend* break — the earliest sign the trend's
+    character is changing. `direction` is the break's direction (``bullish`` = an
+    upside break of a swing high, ``bearish`` = a downside break of a swing low).
+    `bar_index` is the bar whose close first takes out the referenced level (the
+    bar at which the event is first knowable — the level is a confirmed prior
+    pivot, the close is known at that bar, so no future data is read). `price` is
+    the level that was broken. Conditions only — never a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: StructureEventKind
+    direction: Direction
+    bar_index: int
+    price: float
+
+
+class MarketStructure(BaseModel):
+    """The price-action market-structure read — a second, distinct trend lens
+    reported *alongside* the composed indicator `trend`, never merged into it
+    (Plan 0092, ADR-0084).
+
+    `structural_trend` is derived purely from the labeled swing sequence: ``up``
+    when the latest structure is a higher-high **and** a higher-low, ``down`` when
+    it is a lower-high **and** a lower-low, ``range`` otherwise. It is deliberately
+    a plain string literal (``up``/``down``/``range``), not the indicator `Trend`
+    enum — the two are separate facts and may legitimately disagree (that
+    disagreement is itself the signal, ADR-0084). `labeled_pivots` pairs each
+    confirmed swing pivot that has a same-kind predecessor with its HH/HL/LH/LL
+    label (ordered by bar). `events` are the BOS/CHoCH structural breaks in bar
+    order. Trailing by construction — labels and events read only confirmed pivots
+    and closes at-or-before their bar, so the read at bar ``i`` is byte-identical
+    on ``bars[0..=i]`` (ADR-0023). Conditions only — never a buy/sell call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    structural_trend: Literal["up", "down", "range"]  # ADR-0084: distinct from `trend`
+    labeled_pivots: list[tuple[PivotPoint, StructureLabel]]
+    events: list[StructureEvent]
+
+
 class ConditionSnapshot(BaseModel):
     """A composed, point-in-time technical condition read over cached bars.
 
@@ -476,6 +527,7 @@ __all__ = [
     "FibonacciLevels",
     "Level",
     "LineSeg",
+    "MarketStructure",
     "MomentumStance",
     "MultiTimeframeAlignment",
     "PatternHit",
@@ -483,6 +535,9 @@ __all__ = [
     "Pivot",
     "PivotPoint",
     "SmartVolumeHit",
+    "StructureEvent",
+    "StructureEventKind",
+    "StructureLabel",
     "TimeframeView",
     "Trend",
     "VolumeBreakout",
