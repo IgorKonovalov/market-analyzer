@@ -1,6 +1,6 @@
 # ADR-0084 — Price-action market-structure is a distinct second trend read, reported alongside the composed indicator trend
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0092 close 2026-07-13)
 > **Date:** 2026-07-12
 > **Related plan(s):** [0092-price-structure-and-levels](../plans/0092-price-structure-and-levels.md)
 
