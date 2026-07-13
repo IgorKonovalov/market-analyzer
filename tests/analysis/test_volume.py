@@ -11,8 +11,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
+import pytest
+from pydantic import ValidationError
+
 from market_analyser.analysis import volume as vol
-from market_analyser.analysis.types import VolumeStance
+from market_analyser.analysis.types import (
+    CounterTrendBar,
+    CounterTrendVolume,
+    Trend,
+    VolumeStance,
+)
 from market_analyser.data.types import Bar
 
 _TOL = 1e-9
@@ -407,3 +415,162 @@ def test_scanner_functions_determinism() -> None:
     assert vol.volume_confirmation(conf) == vol.volume_confirmation(conf)
     osc = _oscillating(last_volume=200.0)
     assert vol.smart_volume(osc) == vol.smart_volume(osc)
+
+
+# --------------------------------------------------------------------------- #
+# counter_trend_volume — decomposition anchored to the snapshot trend          #
+# (Plan 0090 phase 3, ADR-0083)                                                #
+# --------------------------------------------------------------------------- #
+
+
+def _dir_bar(i: int, *, o: float, c: float, v: float) -> Bar:
+    """A bar with an explicit open != close so its direction (close-vs-open) is
+    exercised, unlike the module `_bar` which pins open == close (always neutral)."""
+
+    return Bar(
+        symbol="TEST",
+        timeframe="1d",
+        event_ts=datetime(2025, 1, 1, tzinfo=UTC) + timedelta(days=i),
+        open=o,
+        high=max(o, c) + 0.5,
+        low=min(o, c) - 0.5,
+        close=c,
+        volume=v,
+        source="synthetic",
+    )
+
+
+# A hand-built 5-bar window: up(50), down(100), up(50), down(200), doji(999).
+# Anchored UP: supportive = 50 + 50 = 100; opposing = 100 + 200 = 300; the doji is
+# excluded -> share = 300 / 400 = 0.75.
+def _decomp_window() -> list[Bar]:
+    return [
+        _dir_bar(0, o=100.0, c=101.0, v=50.0),  # up-bar
+        _dir_bar(1, o=101.0, c=100.0, v=100.0),  # down-bar
+        _dir_bar(2, o=100.0, c=101.0, v=50.0),  # up-bar
+        _dir_bar(3, o=101.0, c=100.0, v=200.0),  # down-bar
+        _dir_bar(4, o=100.0, c=100.0, v=999.0),  # doji (neutral)
+    ]
+
+
+def test_counter_trend_up_flags_down_bars_and_share() -> None:
+    result = vol.counter_trend_volume(_decomp_window(), Trend.UP, lookback=5)
+    assert result.trend is Trend.UP
+    assert result.lookback == 5
+    assert result.anchored_to_sideways is False
+    assert len(result.bars) == 5
+    # Down-bars oppose an up-trend; up-bars align; the doji is neutral, unflagged.
+    assert [b.direction for b in result.bars] == [
+        "bullish",
+        "bearish",
+        "bullish",
+        "bearish",
+        "neutral",
+    ]
+    assert [b.is_counter_trend for b in result.bars] == [False, True, False, True, False]
+    assert result.counter_trend_volume_share is not None
+    assert abs(result.counter_trend_volume_share - 0.75) < _TOL
+
+
+def test_counter_trend_down_is_the_mirror() -> None:
+    result = vol.counter_trend_volume(_decomp_window(), Trend.DOWN, lookback=5)
+    # Under a down-trend the up-bars are the counter-trend ones.
+    assert [b.is_counter_trend for b in result.bars] == [True, False, True, False, False]
+    assert result.counter_trend_volume_share is not None
+    # opposing = up-bar volume 50 + 50 = 100; supportive = down-bar 100 + 200 = 300.
+    assert abs(result.counter_trend_volume_share - 0.25) < _TOL
+
+
+def test_counter_trend_sideways_is_undefined() -> None:
+    result = vol.counter_trend_volume(_decomp_window(), Trend.SIDEWAYS, lookback=5)
+    assert result.anchored_to_sideways is True
+    assert result.counter_trend_volume_share is None
+    assert all(not b.is_counter_trend for b in result.bars)
+    # Directions are still reported (a fact of each bar) even with no anchor.
+    assert [b.direction for b in result.bars][:2] == ["bullish", "bearish"]
+
+
+def _varied_series(n: int = 41) -> list[Bar]:
+    """Alternating up/down bars with volumes that vary bar-to-bar, long enough for
+    the trailing 20-bar volume MA (so relative_volume is defined mid-series)."""
+
+    bars: list[Bar] = []
+    for i in range(n):
+        up = i % 2 == 0
+        o, c = (100.0, 101.0) if up else (101.0, 100.0)
+        bars.append(_dir_bar(i, o=o, c=c, v=100.0 + (i % 7) * 30.0))
+    return bars
+
+
+def test_counter_trend_truncation_invariance() -> None:
+    """A bar already inside the trailing window is read identically whether or not
+    later bars are appended — no future leak into direction, relative volume, or the
+    counter-trend flag (the ADR-0023 anti-lookahead guarantee)."""
+
+    bars = _varied_series(41)
+    short = vol.counter_trend_volume(bars[:31], Trend.UP, lookback=20)  # window: idx 11..30
+    long = vol.counter_trend_volume(bars[:41], Trend.UP, lookback=20)  # window: idx 21..40
+    short_by_ts = {b.ts: b for b in short.bars}
+    long_by_ts = {b.ts: b for b in long.bars}
+    overlap = short_by_ts.keys() & long_by_ts.keys()
+    assert overlap  # bars 21..30 sit in both windows
+    for ts in overlap:
+        assert short_by_ts[ts] == long_by_ts[ts]
+
+
+def test_counter_trend_determinism() -> None:
+    bars = _varied_series(41)
+    assert vol.counter_trend_volume(bars, Trend.UP) == vol.counter_trend_volume(bars, Trend.UP)
+
+
+def test_counter_trend_models_forbid_extra_fields() -> None:
+    ts = datetime(2025, 1, 1, tzinfo=UTC)
+    with pytest.raises(ValidationError):
+        CounterTrendBar(
+            ts=ts,
+            direction="bullish",
+            relative_volume=1.0,
+            is_counter_trend=False,
+            bogus=1,  # type: ignore[call-arg]
+        )
+    with pytest.raises(ValidationError):
+        CounterTrendVolume(
+            symbol="X",
+            trend=Trend.UP,
+            lookback=20,
+            anchored_to_sideways=False,
+            bars=[],
+            counter_trend_volume_share=0.0,
+            bogus=1,  # type: ignore[call-arg]
+        )
+
+
+def test_counter_trend_reproduces_btc_probe_shape() -> None:
+    """The BTC-probe divergence: recent down-bars carry heavy (>= 1.0 rel-vol)
+    counter-trend volume while the rallies are thin (< 1.0), given trend=UP."""
+
+    bars: list[Bar] = []
+    # 20 flat baseline up-bars at volume 100 to seed the trailing MA near 100.
+    for i in range(20):
+        bars.append(_dir_bar(i, o=100.0, c=101.0, v=100.0))
+    # Two heavy down-bars (counter-trend), then thin rallies.
+    bars.append(_dir_bar(20, o=101.0, c=100.0, v=130.0))  # heavy down
+    bars.append(_dir_bar(21, o=100.0, c=99.0, v=140.0))  # heavy down
+    bars.append(_dir_bar(22, o=99.0, c=100.0, v=40.0))  # thin rally
+    bars.append(_dir_bar(23, o=100.0, c=101.0, v=45.0))  # thin rally
+    bars.append(_dir_bar(24, o=101.0, c=102.0, v=50.0))  # thin rally
+
+    result = vol.counter_trend_volume(bars, Trend.UP, lookback=5)  # the 5 recent bars
+    by_ts = {b.ts: b for b in result.bars}
+    heavy_downs = [by_ts[bars[i].event_ts] for i in (20, 21)]
+    thin_ups = [by_ts[bars[i].event_ts] for i in (22, 23, 24)]
+    for b in heavy_downs:
+        assert b.direction == "bearish" and b.is_counter_trend
+        assert b.relative_volume is not None and b.relative_volume >= 1.0
+    for b in thin_ups:
+        assert b.direction == "bullish" and not b.is_counter_trend
+        assert b.relative_volume is not None and b.relative_volume < 1.0
+    # Over the recent divergence window the heavy down-bars dominate the split —
+    # the shape the single aggregate score (volume_confirmation) would have hidden.
+    assert result.counter_trend_volume_share is not None
+    assert result.counter_trend_volume_share > 0.5

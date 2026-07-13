@@ -32,7 +32,11 @@ from itertools import pairwise
 
 from market_analyser.analysis import indicators as ind
 from market_analyser.analysis.types import (
+    CounterTrendBar,
+    CounterTrendVolume,
+    Direction,
     SmartVolumeHit,
+    Trend,
     VolumeBreakout,
     VolumeConfirmation,
     VolumeStance,
@@ -58,6 +62,7 @@ SMART_VOL_MULTIPLE = 1.5  # relative volume at/above this is a surge for smart_v
 SMART_RSI_LOW = 40.0  # smart_volume RSI band lower bound (inclusive)
 SMART_RSI_HIGH = 60.0  # smart_volume RSI band upper bound (inclusive)
 RSI_PERIOD = 14  # RSI window for smart_volume (matches the snapshot's RSI)
+COUNTER_TREND_LOOKBACK = 20  # trailing bars decomposed for counter-trend volume
 
 
 def _last(series: Sequence[float | None]) -> float | None:
@@ -365,11 +370,113 @@ def smart_volume(
     )
 
 
+def _bar_direction(bar: Bar) -> Direction:
+    """The bar's own up/down/flat read by close-vs-open (Plan 0090 pins this basis,
+    ADR-0083): `bullish` when it closes above its open, `bearish` below, `neutral`
+    on a doji. Purely a property of the single bar — trailing by construction."""
+
+    if bar.close > bar.open:
+        return "bullish"
+    if bar.close < bar.open:
+        return "bearish"
+    return "neutral"
+
+
+def _opposes(direction: Direction, trend: Trend) -> bool:
+    """Whether a bar's `direction` runs counter to the anchor `trend` — a down-bar
+    under `UP`, an up-bar under `DOWN`. `SIDEWAYS` has no trend to oppose."""
+
+    if trend is Trend.UP:
+        return direction == "bearish"
+    if trend is Trend.DOWN:
+        return direction == "bullish"
+    return False
+
+
+def _aligns(direction: Direction, trend: Trend) -> bool:
+    """Whether a bar's `direction` moves with the anchor `trend` (the mirror of
+    `_opposes`; neutral bars align with neither)."""
+
+    if trend is Trend.UP:
+        return direction == "bullish"
+    if trend is Trend.DOWN:
+        return direction == "bearish"
+    return False
+
+
+def counter_trend_volume(
+    bars: Sequence[Bar], trend: Trend, lookback: int = COUNTER_TREND_LOOKBACK
+) -> CounterTrendVolume:
+    """Decompose the trailing `lookback` bars into with-trend vs counter-trend,
+    anchored to the supplied `trend` (the snapshot's canonical label, ADR-0083).
+
+    Each bar carries its own direction (close-vs-open), its trailing relative volume
+    (bar volume ÷ the trailing `VOLUME_SMA_PERIOD` volume MA at that bar, ``None``
+    when the MA is undefined or zero), and a counter-trend flag. The aggregate
+    `counter_trend_volume_share` is the share of *directional* volume (neutral bars
+    excluded) sitting on the counter-trend bars — mirroring
+    `volume_confirmation`'s supportive/opposing split, but its opposing side and
+    anchored to the snapshot trend rather than the net move.
+
+    When `trend is SIDEWAYS` there is no trend to run counter to: every bar is
+    flagged with-trend-neutral (`is_counter_trend=False`) and the share is ``None``
+    (undefined, honest — never forced onto a net-move sign). Trailing: each bar's
+    read uses only `bars[0..=that bar]`, so appending future bars never changes a
+    bar already in the window. Reads full `bars` (not just the window) so the
+    trailing volume MA has the history before the window.
+    """
+
+    symbol = bars[-1].symbol if bars else ""
+    anchored_to_sideways = trend is Trend.SIDEWAYS
+    sma_series = volume_sma(bars, VOLUME_SMA_PERIOD)
+    n = len(bars)
+    start = max(0, n - lookback)
+
+    decomposed: list[CounterTrendBar] = []
+    supportive = 0.0
+    opposing = 0.0
+    for i in range(start, n):
+        bar = bars[i]
+        direction = _bar_direction(bar)
+        ma = sma_series[i]
+        rel = bar.volume / ma if (ma is not None and ma != 0.0) else None
+        is_counter = (not anchored_to_sideways) and _opposes(direction, trend)
+        decomposed.append(
+            CounterTrendBar(
+                ts=bar.event_ts,
+                direction=direction,
+                relative_volume=rel,
+                is_counter_trend=is_counter,
+            )
+        )
+        if not anchored_to_sideways:
+            if _opposes(direction, trend):
+                opposing += bar.volume
+            elif _aligns(direction, trend):
+                supportive += bar.volume
+
+    if anchored_to_sideways:
+        share: float | None = None
+    else:
+        total = supportive + opposing
+        share = opposing / total if total > 0.0 else 0.0
+
+    return CounterTrendVolume(
+        symbol=symbol,
+        trend=trend,
+        lookback=lookback,
+        anchored_to_sideways=anchored_to_sideways,
+        bars=decomposed,
+        counter_trend_volume_share=share,
+    )
+
+
 __all__ = [
     "BREAKOUT_PRICE_LOOKBACK",
     "BREAKOUT_VOL_MULTIPLE",
     "CONFIRMATION_LOOKBACK",
     "CONFIRMATION_MIN",
+    "COUNTER_TREND_LOOKBACK",
     "HEAVY_MULT",
     "LIGHT_MULT",
     "OBV_SLOPE_LOOKBACK",
@@ -381,6 +488,7 @@ __all__ = [
     "VOLUME_PERCENTILE_WINDOW",
     "VOLUME_SMA_PERIOD",
     "VWAP_PERIOD",
+    "counter_trend_volume",
     "obv",
     "obv_slope",
     "relative_volume",

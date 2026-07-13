@@ -263,6 +263,53 @@ class SmartVolumeHit(BaseModel):
     rsi: float | None
 
 
+class CounterTrendBar(BaseModel):
+    """One bar's contribution to the counter-trend volume decomposition
+    (Plan 0090, ADR-0083).
+
+    `direction` is the bar's own up/down/flat read (`bullish` = close above open,
+    `bearish` = close below open, `neutral` = doji), a purely trailing per-bar
+    fact. `relative_volume` is the bar's volume ÷ its trailing volume MA (``None``
+    when the MA is undefined over the available history, or zero).
+    `is_counter_trend` is true when the bar's direction opposes the *anchor* trend
+    (a down-bar under an ``up`` trend, an up-bar under a ``down`` trend) — always
+    false when the anchor is ``sideways`` (there is no trend to run counter to).
+    Conditions only — never a buy/sell call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ts: datetime
+    direction: Direction
+    relative_volume: float | None
+    is_counter_trend: bool
+
+
+class CounterTrendVolume(BaseModel):
+    """A per-bar counter-trend volume decomposition anchored to the snapshot's
+    canonical `trend` (Plan 0090, ADR-0083).
+
+    Over the trailing `lookback` bars, each bar is classified with-trend or
+    counter-trend **relative to the supplied `trend`** — the same EMA/ADX +
+    Ichimoku-veto label the snapshot reports, so "counter-trend" has one definition
+    across the surface (unlike `VolumeConfirmation`'s net-move anchor, which is left
+    unchanged). `counter_trend_volume_share` is the share of *directional* volume
+    (neutral bars excluded) sitting on the counter-trend bars — high when the move
+    is fought by heavy opposing volume (a divergence). When the anchor `trend` is
+    ``sideways`` there is nothing to run counter to: `anchored_to_sideways` is true,
+    every bar's `is_counter_trend` is false, and `counter_trend_volume_share` is
+    ``None`` (undefined, never forced onto a net-move sign). Conditions only — never
+    a buy/sell call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    trend: Trend  # the anchor — the snapshot's canonical trend
+    lookback: int
+    anchored_to_sideways: bool
+    bars: list[CounterTrendBar]
+    counter_trend_volume_share: float | None  # None iff anchored_to_sideways
+
+
 class ConditionSnapshot(BaseModel):
     """A composed, point-in-time technical condition read over cached bars.
 
@@ -346,6 +393,8 @@ class MultiTimeframeAlignment(BaseModel):
 __all__ = [
     "ChartPatternHit",
     "ConditionSnapshot",
+    "CounterTrendBar",
+    "CounterTrendVolume",
     "Direction",
     "Level",
     "LineSeg",
