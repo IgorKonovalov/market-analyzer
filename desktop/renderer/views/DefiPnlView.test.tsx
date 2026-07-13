@@ -73,7 +73,7 @@ const WANDERERS: PositionPnl = {
 
 function fixture(overrides: Partial<WalletPnlResponse> = {}): WalletPnlResponse {
   return {
-    wallet: '0xae5b…9790',
+    wallet: '0xdead…beef',
     positions: [LP, WANDERERS],
     position_count: 2,
     incomplete: true,

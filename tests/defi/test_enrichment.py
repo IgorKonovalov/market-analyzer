@@ -21,7 +21,7 @@ from market_analyser.data.errors import UpstreamUnavailableError
 from market_analyser.defi.enrichment import enrich_lp_positions
 from market_analyser.defi.models import Chain, DefiPosition, LpPositionDetail, PositionToken
 
-_OWNER = "0xae5b…9790"
+_OWNER = "0xdead00000000000000000000000000000000beef"
 _STAKED_CL_GAUGE = "0xe3800a58b5535935850a10e082952ec3577d8dcc"  # Zerion gives the gauge
 _UNSTAKED_CL_POOL = "0xc6962004f452be9203591991d15f6b388e09e8d0"
 _V2_POOL = "0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59"  # constant-product, no ticks
