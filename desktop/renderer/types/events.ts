@@ -24,6 +24,12 @@ export type OverlayKind =
   | 'supertrend'
   | 'ichimoku'
   | 'obv'
+  // Plan 0091 momentum oscillators — each drawn in its own v5 sub-pane.
+  | 'stochastic'
+  | 'stoch_rsi'
+  | 'cci'
+  | 'williams_r'
+  | 'roc'
 
 /** Support/resistance role for a `price_line` overlay; absent for plain levels. */
 export type PriceLineRole = 'support' | 'resistance'

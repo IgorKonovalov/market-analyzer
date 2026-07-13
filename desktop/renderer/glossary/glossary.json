@@ -946,6 +946,81 @@
       "ru": "Оболочка волатильности. Полосы расширяются при росте волатильности и сужаются при её падении; цена у полосы показывает, насколько движение растянуто относительно недавнего диапазона."
     }
   },
+  "stochastic": {
+    "term": {
+      "en": "Stochastic Oscillator",
+      "ru": "Стохастический осциллятор"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "%K places the close within the high-low range of the last k bars (default 14) as 0-100; %D is a short SMA of %K (default 3). Both are drawn in their own 0-100 sub-pane.",
+      "ru": "%K показывает положение цены закрытия в диапазоне максимум-минимум за последние k баров (по умолчанию 14) по шкале 0-100; %D — короткая SMA от %K (по умолчанию 3). Обе линии рисуются в отдельной подпанели 0-100."
+    },
+    "whatItMeans": {
+      "en": "A range-momentum gauge. High (>80) is overbought, low (<20) oversold; a %K/%D cross can flag a momentum turn, most useful in a sideways market.",
+      "ru": "Индикатор моментума в диапазоне. Высокие значения (>80) — перекупленность, низкие (<20) — перепроданность; пересечение %K/%D может сигналить о развороте моментума, особенно в боковике."
+    }
+  },
+  "stoch_rsi": {
+    "term": {
+      "en": "Stochastic RSI",
+      "ru": "Стохастический RSI"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "The Stochastic formula applied to the RSI series instead of price: where the current RSI sits within its own high-low range over the lookback, scaled 0-100.",
+      "ru": "Формула стохастика, применённая к ряду RSI вместо цены: положение текущего RSI в его собственном диапазоне максимум-минимум за период, по шкале 0-100."
+    },
+    "whatItMeans": {
+      "en": "A more sensitive overbought/oversold read than RSI alone — it reaches its extremes more often, so it turns earlier but gives more false signals.",
+      "ru": "Более чувствительный индикатор перекупленности/перепроданности, чем сам RSI — чаще достигает крайних значений, поэтому разворачивается раньше, но даёт больше ложных сигналов."
+    }
+  },
+  "cci": {
+    "term": {
+      "en": "CCI",
+      "ru": "CCI"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "Commodity Channel Index: the typical price (high+low+close)/3 minus its SMA over the period (default 20), divided by 0.015 times the mean absolute deviation.",
+      "ru": "Commodity Channel Index: типичная цена (максимум+минимум+закрытие)/3 минус её SMA за период (по умолчанию 20), делённая на 0.015, умноженное на среднее абсолютное отклонение."
+    },
+    "whatItMeans": {
+      "en": "An unbounded momentum oscillator centred on zero. Readings above +100 / below -100 mark strong up/down momentum or overextension; the zero line is a trend divider.",
+      "ru": "Неограниченный осциллятор моментума с центром в нуле. Значения выше +100 / ниже -100 отмечают сильный моментум вверх/вниз или перерастянутость; нулевая линия разделяет тренды."
+    }
+  },
+  "williams_r": {
+    "term": {
+      "en": "Williams %R",
+      "ru": "Williams %R"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "Where the close sits within the high-low range of the last period bars (default 14), scaled -100 (at the low) to 0 (at the high). The inverse framing of fast Stochastic %K.",
+      "ru": "Положение цены закрытия в диапазоне максимум-минимум за последние period баров (по умолчанию 14), по шкале от -100 (у минимума) до 0 (у максимума). Обратная формулировка быстрого %K стохастика."
+    },
+    "whatItMeans": {
+      "en": "An overbought/oversold gauge. Above -20 is overbought, below -80 oversold; like Stochastic it reads best in a range, not a strong trend.",
+      "ru": "Индикатор перекупленности/перепроданности. Выше -20 — перекупленность, ниже -80 — перепроданность; как и стохастик, лучше работает в диапазоне, а не в сильном тренде."
+    }
+  },
+  "roc": {
+    "term": {
+      "en": "Rate of Change",
+      "ru": "Скорость изменения"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "The percent change of the close from period bars ago (default 12): 100 * (close - close[-period]) / close[-period]. Drawn in its own zero-centred sub-pane.",
+      "ru": "Процентное изменение цены закрытия относительно period баров назад (по умолчанию 12): 100 * (закрытие - закрытие[-period]) / закрытие[-period]. Рисуется в отдельной подпанели с центром в нуле."
+    },
+    "whatItMeans": {
+      "en": "A pure momentum measure. Positive means price is higher than period bars ago and rising momentum; zero-line crosses and divergences from price flag momentum shifts.",
+      "ru": "Чистый показатель моментума. Положительное значение означает, что цена выше, чем period баров назад, и моментум растёт; пересечения нуля и расхождения с ценой отмечают смену моментума."
+    }
+  },
   "doji": {
     "term": {
       "en": "Doji"

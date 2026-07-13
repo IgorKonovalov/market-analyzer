@@ -29,6 +29,7 @@ import {
 import { resolveChartStyle } from '../lib/chartStyle'
 import {
   computeOverlayData,
+  isOscillatorOverlay,
   isSupportedOverlay,
   overlayColorFor,
   overlayLayerId,
@@ -85,6 +86,9 @@ export function useOverlaySeries(
       // ichimoku draws its five lines + cloud as a dedicated primitive
       // (`useIchimokuSeries`), not a generic line series — skip it here too.
       if (spec.kind === 'ichimoku') continue
+      // Oscillators draw in their own sub-panes (`useOscillatorPanes`), not the
+      // price pane — skip the generic single-line path (Plan 0091 phase 6).
+      if (isOscillatorOverlay(spec.kind)) continue
       if (!isSupportedOverlay(spec.kind)) {
         console.warn(
           `[CandlestickChart] unsupported overlay kind "${spec.kind}" — ignored (MVP renders ema/sma only)`,

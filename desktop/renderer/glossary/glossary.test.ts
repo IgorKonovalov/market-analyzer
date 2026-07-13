@@ -207,7 +207,17 @@ it('the indicator-category keys equal exactly the frozen feature-name union', ()
 // when they render. A DISTINCT category from `indicator` on purpose: chart-legend
 // copy, not a forecast feature, so it is deliberately excluded from the phase-3
 // FEATURE_NAMES pin.
-const EXPECTED_OVERLAY_KEYS = ['bbands', 'ema', 'sma', 'supertrend']
+const EXPECTED_OVERLAY_KEYS = [
+  'bbands',
+  'cci',
+  'ema',
+  'roc',
+  'sma',
+  'stoch_rsi',
+  'stochastic',
+  'supertrend',
+  'williams_r',
+]
 
 it('the overlay-category keys equal exactly the chart overlay-kind vocabulary', () => {
   const overlayKeys = glossaryKeys()

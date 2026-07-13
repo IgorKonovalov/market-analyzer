@@ -674,6 +674,11 @@ export const en = {
   'layers.kind.bbands': 'Bollinger Bands',
   'layers.kind.supertrend': 'Supertrend',
   'layers.kind.ichimoku': 'Ichimoku',
+  'layers.kind.stochastic': 'Stochastic',
+  'layers.kind.stoch_rsi': 'Stochastic RSI',
+  'layers.kind.cci': 'CCI',
+  'layers.kind.williams_r': 'Williams %R',
+  'layers.kind.roc': 'Rate of Change',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) — prose is phase 3 ──
   'glossary.howComputedLabel': "How it's computed",

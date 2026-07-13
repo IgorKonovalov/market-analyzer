@@ -683,6 +683,11 @@ export const ru = {
   'layers.kind.bbands': 'Полосы Боллинджера',
   'layers.kind.supertrend': 'Supertrend',
   'layers.kind.ichimoku': 'Ишимоку',
+  'layers.kind.stochastic': 'Стохастик',
+  'layers.kind.stoch_rsi': 'Стохастический RSI',
+  'layers.kind.cci': 'CCI',
+  'layers.kind.williams_r': 'Williams %R',
+  'layers.kind.roc': 'Скорость изменения',
 
   // ── Glossary tooltip chrome (GlossaryTerm.tsx) ──
   'glossary.howComputedLabel': 'Как вычисляется',

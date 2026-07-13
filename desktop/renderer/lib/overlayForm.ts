@@ -22,6 +22,13 @@ export const OVERLAY_FORM_KINDS = [
   'bbands',
   'supertrend',
   'ichimoku',
+  // Plan 0091 momentum oscillators — each drawn in its own sub-pane, fieldless in
+  // v1 (classic default periods applied by the renderer, like ichimoku).
+  'stochastic',
+  'stoch_rsi',
+  'cci',
+  'williams_r',
+  'roc',
 ] as const satisfies readonly OverlayKind[]
 
 export type OverlayFormKind = (typeof OVERLAY_FORM_KINDS)[number]

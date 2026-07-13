@@ -240,7 +240,22 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     // validator, not `required`).
     expect(requiredNames(dumped.OverlaySpec)).toEqual(['kind'])
     expect(literalValues(dumped.OverlaySpec, 'kind')).toEqual(
-      ['bbands', 'ema', 'ichimoku', 'macd', 'obv', 'price_line', 'rsi', 'sma', 'supertrend'].sort(),
+      [
+        'bbands',
+        'cci',
+        'ema',
+        'ichimoku',
+        'macd',
+        'obv',
+        'price_line',
+        'roc',
+        'rsi',
+        'sma',
+        'stoch_rsi',
+        'stochastic',
+        'supertrend',
+        'williams_r',
+      ].sort(),
     )
     // `role` is an optional Literal (`| None`), emitted as `anyOf` rather than a
     // top-level `enum`, so `literalValues` (enum/$ref only) can't read it — the

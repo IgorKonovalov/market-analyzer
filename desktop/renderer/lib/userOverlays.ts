@@ -32,6 +32,12 @@ export const USER_OVERLAY_KINDS: readonly OverlayKind[] = [
   'bbands',
   'supertrend',
   'ichimoku',
+  // Plan 0091 momentum oscillators — user-addable, each in its own sub-pane.
+  'stochastic',
+  'stoch_rsi',
+  'cci',
+  'williams_r',
+  'roc',
 ]
 
 const STORAGE_KEY = 'ma.userOverlays'

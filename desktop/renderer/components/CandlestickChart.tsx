@@ -40,6 +40,7 @@ import { useLayersLegend } from '../hooks/useLayersLegend'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import { useBbandsSeries } from '../hooks/useBbandsSeries'
 import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
+import { useOscillatorPanes, type OscillatorPaneEntry } from '../hooks/useOscillatorPanes'
 import { useOverlaySeries } from '../hooks/useOverlaySeries'
 import { usePriceLines } from '../hooks/usePriceLines'
 import { useSupertrendSeries } from '../hooks/useSupertrendSeries'
@@ -222,6 +223,10 @@ export function CandlestickChart({
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  // Oscillator sub-panes (Plan 0091 phase 6): the pane registry (shared with OBV so
+  // OBV stays pane 1) and the active-oscillator-pane map `useOscillatorPanes` owns.
+  const paneRegistryRef = useRef<PaneRegistry | null>(null)
+  const oscillatorPanesRef = useRef<Map<string, OscillatorPaneEntry>>(new Map())
   // Bar count currently drawn on the candlestick, updated by the bars effect.
   // Held in a ref (not read from `bars` in syncTestRenderHook) so the hook can be
   // a stable useCallback — otherwise listing it in the mount effect's deps would
@@ -449,6 +454,7 @@ export function CandlestickChart({
     // `addPane()` via the pane registry) — no longer a `scaleMargins` band sharing
     // the price axis. Volume/VWAP stay on the price pane (pane 0).
     const paneRegistry = new PaneRegistry(chart)
+    paneRegistryRef.current = paneRegistry // shared with the oscillator sub-panes (Plan 0091)
     const obvPaneIndex = paneRegistry.ensure(OBV_PANE_ID)
     const obvSeries = chart.addSeries(
       LineSeries,
@@ -505,6 +511,7 @@ export function CandlestickChart({
     const priceLineMap = priceLinesRef.current
     const supertrendMap = supertrendSeriesRef.current
     const bbandsMap = bbandsSeriesRef.current
+    const oscillatorPanes = oscillatorPanesRef.current
     syncTestRenderHook()
 
     return () => {
@@ -518,6 +525,10 @@ export function CandlestickChart({
       volumeMaSeriesRef.current = null
       vwapSeriesRef.current = null
       obvSeriesRef.current = null
+      // `chart.remove()` disposes the panes + their series; drop our bookkeeping so
+      // the oscillator hook rebuilds them on the fresh chart (Plan 0091).
+      paneRegistryRef.current = null
+      oscillatorPanes.clear()
       overlayMap.clear()
       // The chart owns its price lines (disposed by chart.remove); drop our refs.
       priceLineMap.clear()
@@ -625,6 +636,16 @@ export function CandlestickChart({
     hidden,
     effectiveTheme,
     rebuildToken: candleType,
+  })
+  // Oscillator sub-panes (Plan 0091 phase 6): each active oscillator overlay draws
+  // in its own real v5 pane (via the shared PaneRegistry), toggleable from the
+  // layers legend. Reconciles create / reuse / teardown by stable pane id.
+  useOscillatorPanes(chartRef, paneRegistryRef, oscillatorPanesRef, {
+    bars,
+    overlays: effectiveOverlays,
+    hidden,
+    rebuildToken: candleType,
+    syncTestRenderHook,
   })
 
   // Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`

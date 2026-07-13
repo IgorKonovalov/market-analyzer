@@ -99,6 +99,32 @@ export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> =
     color: BBANDS_LINE_COLOR,
     compute: () => [],
   },
+  // Momentum oscillators (Plan 0091 phase 6): each is a supported overlay (one
+  // toggleable legend row, no "unsupported" warning) drawn in its OWN v5 sub-pane
+  // by `useOscillatorPanes` (from `lib/oscillators`), never the generic single-line
+  // price-pane path — so like bbands/ichimoku this `compute` returns `[]`. The
+  // colour is the legend swatch (a static per-oscillator hue, not user-styleable).
+  stochastic: { color: '#0891b2', compute: () => [] },
+  stoch_rsi: { color: '#0ea5e9', compute: () => [] },
+  cci: { color: '#a855f7', compute: () => [] },
+  williams_r: { color: '#e11d48', compute: () => [] },
+  roc: { color: '#ca8a04', compute: () => [] },
+}
+
+/** The Plan-0091 oscillator kinds — drawn in their own v5 sub-panes (not on the
+ * price pane), so the generic overlay/line reconcile skips them and
+ * `useOscillatorPanes` owns their draw. */
+export const OSCILLATOR_KINDS: readonly OverlayKind[] = [
+  'stochastic',
+  'stoch_rsi',
+  'cci',
+  'williams_r',
+  'roc',
+]
+
+/** Whether an overlay kind draws in its own oscillator sub-pane (Plan 0091). */
+export function isOscillatorOverlay(kind: OverlayKind): boolean {
+  return (OSCILLATOR_KINDS as readonly string[]).includes(kind)
 }
 
 const FALLBACK_COLOR = '#888888'

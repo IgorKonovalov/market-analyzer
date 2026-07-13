@@ -60,7 +60,23 @@ class OverlaySpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal[
-        "ema", "sma", "rsi", "macd", "bbands", "price_line", "supertrend", "ichimoku", "obv"
+        "ema",
+        "sma",
+        "rsi",
+        "macd",
+        "bbands",
+        "price_line",
+        "supertrend",
+        "ichimoku",
+        "obv",
+        # Plan 0091: momentum oscillators, each drawn in its own v5 sub-pane by the
+        # renderer (client-computed from bars). Fieldless like `obv` — the renderer
+        # applies the classic default periods; they accept no price/label/role.
+        "stochastic",
+        "stoch_rsi",
+        "cci",
+        "williams_r",
+        "roc",
     ]
     period: int | None = None
     multiplier: float | None = None  # supertrend's ATR multiplier; None on other kinds

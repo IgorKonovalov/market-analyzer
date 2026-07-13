@@ -11,7 +11,18 @@ import {
 
 describe('overlay form kinds', () => {
   it('offers only the client-computable overlay-path kinds (no price_line/rsi/macd/vwap/obv)', () => {
-    expect([...OVERLAY_FORM_KINDS]).toEqual(['ema', 'sma', 'bbands', 'supertrend', 'ichimoku'])
+    expect([...OVERLAY_FORM_KINDS]).toEqual([
+      'ema',
+      'sma',
+      'bbands',
+      'supertrend',
+      'ichimoku',
+      'stochastic',
+      'stoch_rsi',
+      'cci',
+      'williams_r',
+      'roc',
+    ])
   })
 
   it('takes a period for ema/sma/bbands/supertrend, none for ichimoku', () => {
