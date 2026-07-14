@@ -18,15 +18,18 @@ import { useEffect, useState } from 'react'
 import type { RefObject } from 'react'
 import type { LineData, IChartApi, MouseEventParams, UTCTimestamp } from 'lightweight-charts'
 
-import type { OverlayEntry } from '../lib/chartSeries'
+import type { MainSeries, OverlayEntry } from '../lib/chartSeries'
 import type { ChartMarker } from '../lib/markers'
 import { PatternSpanPrimitive, markerHighlightSpan } from '../lib/spans'
 import { TrendlinePrimitive } from '../lib/trendlines'
 import { DivergencePrimitive } from '../lib/divergences'
 import {
+  type HoverableLevel,
   type OverlayReading,
   type TooltipContent,
   divergenceTooltipText,
+  levelTooltipText,
+  nearestLevelAtY,
   overlayLabel,
   tooltipAtTime,
   trendlineTooltipText,
@@ -41,6 +44,12 @@ export interface TooltipState {
 
 export interface UseChartTooltipParams {
   drawnMarkers: ChartMarker[]
+  /** The drawn fib/pivot structure levels for the nearest-level-by-Y hover
+   * (Plan 0105 phase 6 / ADR-0100 rule 3) — with the main-series ref that maps
+   * a level price to its pane pixel. Both optional: a chart without structure
+   * overlays passes nothing and skips the lookup. */
+  structureLevels?: ReadonlyArray<HoverableLevel>
+  seriesRef?: RefObject<MainSeries | null>
   rebuildToken: unknown
 }
 
@@ -50,7 +59,7 @@ export function useChartTooltip(
   spanPrimitiveRef: RefObject<PatternSpanPrimitive | null>,
   trendlinePrimitiveRef: RefObject<TrendlinePrimitive | null>,
   divergencePricePrimitiveRef: RefObject<DivergencePrimitive | null>,
-  { drawnMarkers, rebuildToken }: UseChartTooltipParams,
+  { drawnMarkers, structureLevels, seriesRef, rebuildToken }: UseChartTooltipParams,
 ): TooltipState | null {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   // The hovered candlestick's meaning line is localizable glossary content (Plan
@@ -104,6 +113,19 @@ export function useChartTooltip(
       const divergences = hoveredDivergence
         ? [divergenceTooltipText(hoveredDivergence, locale)]
         : []
+      // Nearest drawn fib/pivot level by crosshair-Y (Plan 0105 phase 6 /
+      // ADR-0100 rule 3): reuse the price lines already drawn — no per-level
+      // hit-test primitives. `priceToCoordinate` maps in the price pane, the
+      // pane every structure level lives on.
+      const mainSeries = seriesRef?.current ?? null
+      const hoveredLevel =
+        mainSeries !== null && structureLevels !== undefined && structureLevels.length > 0
+          ? nearestLevelAtY(param.point.y, structureLevels, (price) => {
+              const coordinate = mainSeries.priceToCoordinate?.(price)
+              return coordinate == null ? null : coordinate
+            })
+          : null
+      const levels = hoveredLevel ? [levelTooltipText(hoveredLevel)] : []
       const markers = timeContent?.markers ?? []
       const overlays = timeContent?.overlays ?? []
       const markerMeaning = timeContent?.markerMeaning
@@ -111,13 +133,14 @@ export function useChartTooltip(
         markers.length === 0 &&
         overlays.length === 0 &&
         trendlines.length === 0 &&
-        divergences.length === 0
+        divergences.length === 0 &&
+        levels.length === 0
       ) {
         setTooltip(null)
         return
       }
       setTooltip({
-        content: { markers, overlays, trendlines, divergences, markerMeaning },
+        content: { markers, overlays, trendlines, divergences, levels, markerMeaning },
         x: param.point.x,
         y: param.point.y,
       })
@@ -132,6 +155,8 @@ export function useChartTooltip(
     trendlinePrimitiveRef,
     divergencePricePrimitiveRef,
     drawnMarkers,
+    structureLevels,
+    seriesRef,
     rebuildToken,
     locale,
   ])

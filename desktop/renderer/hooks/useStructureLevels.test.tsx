@@ -124,6 +124,56 @@ describe('useStructureLevels', () => {
     expect(titles).toEqual(['P', 'R1', 'R2', 'R3', 'S1', 'S2', 'S3'])
   })
 
+  // Plan 0105 phase 6 (ADR-0100 rule 2): per-level pivot colours.
+  it('colours each pivot level distinctly — R warm ramp, S cool ramp, P neutral', () => {
+    const { series, created } = fakeSeries()
+    const ref: RefObject<Map<string, IPriceLine>> = { current: new Map() }
+    renderHook(() =>
+      useStructureLevels({ current: series }, ref, {
+        bars: swingBars(),
+        overlays: [PIVOT],
+        hidden: new Set(),
+        rebuildToken: 'candles',
+      }),
+    )
+    const byTitle = Object.fromEntries(created.map((c) => [c.title, c.color]))
+    // All seven levels carry distinct hues.
+    expect(new Set(Object.values(byTitle)).size).toBe(7)
+    // R and S families never share a colour; P is its own neutral.
+    const rColors = [byTitle.R1, byTitle.R2, byTitle.R3]
+    const sColors = [byTitle.S1, byTitle.S2, byTitle.S3]
+    expect(rColors.some((c) => sColors.includes(c))).toBe(false)
+    expect(rColors).not.toContain(byTitle.P)
+    expect(sColors).not.toContain(byTitle.P)
+  })
+
+  // Plan 0105 phase 6: the hook returns the drawn levels for the hover lookup.
+  it('returns the drawn levels, and empties them when the overlay is hidden', () => {
+    const { series } = fakeSeries()
+    const ref: RefObject<Map<string, IPriceLine>> = { current: new Map() }
+    const props = {
+      bars: swingBars(),
+      overlays: [PIVOT] as OverlaySpec[],
+      hidden: new Set<string>(),
+      rebuildToken: 'candles',
+    }
+    const { result, rerender } = renderHook(
+      (p: typeof props) => useStructureLevels({ current: series }, ref, p),
+      { initialProps: props },
+    )
+    expect(result.current.map((l) => l.title).sort()).toEqual([
+      'P',
+      'R1',
+      'R2',
+      'R3',
+      'S1',
+      'S2',
+      'S3',
+    ])
+    rerender({ ...props, hidden: new Set(['overlay:pivot_points:na']) })
+    expect(result.current).toEqual([])
+  })
+
   it('removes the grid when its legend row is toggled off, and re-creates on re-check', () => {
     const { series, created, removed } = fakeSeries()
     const ref: RefObject<Map<string, IPriceLine>> = { current: new Map() }

@@ -42,6 +42,54 @@ export interface TooltipContent {
   /** Hovered divergence read-outs — kind name + glossary meaning (Plan 0091
    * phase 9 / ADR-0090). Absent when the cursor isn't over a divergence line. */
   divergences?: string[]
+  /** Hovered structure-level read-out — the nearest drawn fib/pivot line's
+   * identity + price (Plan 0105 phase 6 / ADR-0100 rule 3, the crosshair-Y
+   * proximity reuse). Absent when no level is within the pixel threshold. */
+  levels?: string[]
+}
+
+/** A drawn horizontal structure level (fib ratio / pivot / fib anchor) exposed
+ * for the nearest-level-on-hover lookup (Plan 0105 phase 6). */
+export interface HoverableLevel {
+  title: string
+  price: number
+}
+
+/** Vertical hover tolerance (px) for the nearest-level lookup — matches the
+ * trendline/divergence hit tolerance so all three hovers feel alike. */
+export const LEVEL_HOVER_THRESHOLD_PX = 5
+
+/**
+ * The drawn level nearest the crosshair's Y, within `thresholdPx` — or `null`
+ * when none is close enough. `priceToY` maps a level price to its pane pixel
+ * (the series' `priceToCoordinate`); a level that maps off-scale (`null`) is
+ * skipped. Pure, so the proximity heuristic is unit-tested without a chart —
+ * ADR-0100 keeps per-level hit-test primitives as the fallback if this proves
+ * imprecise on tightly-packed grids.
+ */
+export function nearestLevelAtY(
+  y: number,
+  levels: ReadonlyArray<HoverableLevel>,
+  priceToY: (price: number) => number | null,
+  thresholdPx: number = LEVEL_HOVER_THRESHOLD_PX,
+): HoverableLevel | null {
+  let best: HoverableLevel | null = null
+  let bestDistance = Infinity
+  for (const level of levels) {
+    const levelY = priceToY(level.price)
+    if (levelY === null) continue
+    const distance = Math.abs(levelY - y)
+    if (distance <= thresholdPx && distance < bestDistance) {
+      best = level
+      bestDistance = distance
+    }
+  }
+  return best
+}
+
+/** Hovered-level read-out: identity + price, e.g. `R1 · 130.00`. */
+export function levelTooltipText(level: HoverableLevel): string {
+  return `${level.title} · ${level.price.toFixed(2)}`
 }
 
 /**

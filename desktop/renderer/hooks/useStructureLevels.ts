@@ -15,15 +15,16 @@
  * MUST be called after the chart-creation effect so `seriesRef` is populated.
  * `rebuildToken` (candleType) re-creates the lines on the fresh series.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { RefObject } from 'react'
 import { LineStyle } from 'lightweight-charts'
 import type { IPriceLine } from 'lightweight-charts'
 
 import type { MainSeries } from '../lib/chartSeries'
 import { fibAnchorLines, fibonacciGrid } from '../lib/fibonacci'
-import { FIB_ANCHOR_COLOR, PIVOT_LINE_COLOR, fibLevelColor, overlayLayerId } from '../lib/overlays'
+import { FIB_ANCHOR_COLOR, fibLevelColor, overlayLayerId, pivotLevelColor } from '../lib/overlays'
 import { pivotLevelLines, pivotPoints } from '../lib/pivots'
+import type { HoverableLevel } from '../lib/tooltip'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
 
@@ -47,7 +48,11 @@ export function useStructureLevels(
   seriesRef: RefObject<MainSeries | null>,
   structureLinesRef: RefObject<Map<string, IPriceLine>>,
   { bars, overlays, hidden, rebuildToken }: UseStructureLevelsParams,
-): void {
+): HoverableLevel[] {
+  // The currently-drawn levels, exposed for the nearest-level-on-hover lookup
+  // (Plan 0105 phase 6): a toggled-off overlay's levels leave this list, so a
+  // hidden grid shows no hover.
+  const [drawnLevels, setDrawnLevels] = useState<HoverableLevel[]>([])
   useEffect(() => {
     const series = seriesRef.current
     const structureLines = structureLinesRef.current
@@ -85,7 +90,8 @@ export function useStructureLevels(
         for (const line of pivotLevelLines(pivots)) {
           desired.set(`${layer}:${line.label}`, {
             price: line.price,
-            color: PIVOT_LINE_COLOR,
+            // Per-level colour: R warm / S cool / P neutral (Plan 0105 phase 6).
+            color: pivotLevelColor(line.label),
             title: line.label,
           })
         }
@@ -116,5 +122,16 @@ export function useStructureLevels(
         existing.applyOptions({ price: spec.price, color: spec.color, title: spec.title })
       }
     }
+
+    // Publish the drawn set for the hover lookup — only when it actually moved,
+    // so a no-op reconcile doesn't re-render the chart component.
+    const nextLevels = [...desired.values()].map(({ title, price }) => ({ title, price }))
+    setDrawnLevels((prev) =>
+      prev.length === nextLevels.length &&
+      prev.every((l, i) => l.title === nextLevels[i].title && l.price === nextLevels[i].price)
+        ? prev
+        : nextLevels,
+    )
   }, [seriesRef, structureLinesRef, bars, overlays, hidden, rebuildToken])
+  return drawnLevels
 }

@@ -81,6 +81,26 @@ export function fibLevelColor(ratio: string): string {
   return FIB_LEVEL_COLORS[ratio] ?? FIB_LINE_COLOR
 }
 
+/** Per-level pivot colours (Plan 0105 phase 6, ADR-0100 rule 2): a fixed
+ * `level→colour` map — R-levels warm (ramping hotter with distance), S-levels
+ * cool (deepening with distance), the central pivot neutral. Static
+ * per-element, never a `chartStyle` override; legible on both themes. */
+export const PIVOT_LEVEL_COLORS: Record<string, string> = {
+  R1: '#f59e0b',
+  R2: '#f97316',
+  R3: '#ef4444',
+  P: '#a3a3a3',
+  S1: '#0ea5e9',
+  S2: '#2563eb',
+  S3: '#7c3aed',
+}
+
+/** The drawn colour for a pivot level, falling back to the legend amber for a
+ * label outside the canonical set. */
+export function pivotLevelColor(label: string): string {
+  return PIVOT_LEVEL_COLORS[label] ?? PIVOT_LINE_COLOR
+}
+
 /** The single source of truth for supported overlays. `Partial` because the
  * `OverlayKind` union also carries MVP-unsupported kinds (rsi/macd/bbands) that
  * deliberately have no entry yet. */

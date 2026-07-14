@@ -7,7 +7,14 @@ import type { UTCTimestamp } from 'lightweight-charts'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { OverlaySpec, TrendlineSpec } from '../types/events'
 import { localize, term } from '../glossary/types'
-import { overlayLabel, tooltipAtTime, tooltipPosition, trendlineTooltipText } from './tooltip'
+import {
+  levelTooltipText,
+  nearestLevelAtY,
+  overlayLabel,
+  tooltipAtTime,
+  tooltipPosition,
+  trendlineTooltipText,
+} from './tooltip'
 
 function annotation(overrides: Partial<Annotation> = {}): Annotation {
   return {
@@ -194,5 +201,53 @@ describe('tooltipPosition (edge-aware placement, Plan 0049 phase 13)', () => {
     expect(top).toBeGreaterThanOrEqual(0)
     expect(left + SIZE.width).toBeLessThanOrEqual(CONTAINER.containerWidth)
     expect(top + SIZE.height).toBeLessThanOrEqual(CONTAINER.containerHeight)
+  })
+})
+
+// Plan 0105 phase 6 (ADR-0100 rule 3): the nearest-level-by-Y proximity lookup
+// the pivot/fib hover reuses instead of per-level hit-test primitives.
+describe('nearestLevelAtY', () => {
+  const LEVELS = [
+    { title: 'R1', price: 130 },
+    { title: 'P', price: 110 },
+    { title: 'S1', price: 80 },
+  ]
+  // A linear price->pixel map: y = 400 - price (higher price = higher on pane).
+  const priceToY = (price: number): number | null => 400 - price
+
+  it('returns the nearest level within the threshold', () => {
+    // y=272 -> R1 at y=270 (2px away), P at y=290 (18px away).
+    expect(nearestLevelAtY(272, LEVELS, priceToY)).toEqual({ title: 'R1', price: 130 })
+  })
+
+  it('returns null when no level is within the threshold', () => {
+    // y=280 sits 10px from R1 and 10px from P - both beyond the 5px default.
+    expect(nearestLevelAtY(280, LEVELS, priceToY)).toBeNull()
+  })
+
+  it('picks the closer of two levels inside the threshold', () => {
+    const tight = [
+      { title: 'Fib 0.5', price: 100 },
+      { title: 'Fib 0.618', price: 96 },
+    ]
+    // y=301: Fib 0.5 at y=300 (1px), Fib 0.618 at y=304 (3px).
+    expect(nearestLevelAtY(301, tight, priceToY, 5)?.title).toBe('Fib 0.5')
+  })
+
+  it('skips a level whose price maps off-scale (null)', () => {
+    const partial = (price: number): number | null => (price === 130 ? null : 400 - price)
+    // R1 would be nearest but maps off-scale; nothing else within 5px of y=271.
+    expect(nearestLevelAtY(271, LEVELS, partial)).toBeNull()
+  })
+
+  it('honours a custom pixel threshold', () => {
+    expect(nearestLevelAtY(280, LEVELS, priceToY, 12)?.title).toBe('R1')
+  })
+})
+
+describe('levelTooltipText', () => {
+  it('reads identity + price', () => {
+    expect(levelTooltipText({ title: 'R1', price: 130 })).toBe('R1 · 130.00')
+    expect(levelTooltipText({ title: 'Fib 0.618', price: 88.2 })).toBe('Fib 0.618 · 88.20')
   })
 })

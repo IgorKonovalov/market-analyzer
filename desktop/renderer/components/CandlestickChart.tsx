@@ -885,7 +885,9 @@ export function CandlestickChart({
   // + classic `pivot_points` P/R/S drawn as price lines on the main series
   // (client-computed from bars, auto-anchored or from the overlay's explicit
   // anchor/method). Toggled per overlay from the legend like the other overlays.
-  useStructureLevels(seriesRef, structureLinesRef, {
+  // Returns the drawn levels for the nearest-level-on-hover tooltip lookup
+  // (Plan 0105 phase 6).
+  const structureLevels = useStructureLevels(seriesRef, structureLinesRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -971,7 +973,7 @@ export function CandlestickChart({
     spanPrimitiveRef,
     trendlinePrimitiveRef,
     divergencePricePrimitiveRef,
-    { drawnMarkers, rebuildToken: candleType },
+    { drawnMarkers, structureLevels, seriesRef, rebuildToken: candleType },
   )
 
   // Re-apply the EXISTING chart's colours + line widths on a theme flip or a
