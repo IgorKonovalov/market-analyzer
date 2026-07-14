@@ -9,15 +9,15 @@ import type { OverlaySpec } from '../types/events'
 
 function fakeSeries(): {
   series: MainSeries
-  created: Array<{ price: number; title: string; line: IPriceLine }>
+  created: Array<{ price: number; title: string; color: string; line: IPriceLine }>
   removed: IPriceLine[]
 } {
-  const created: Array<{ price: number; title: string; line: IPriceLine }> = []
+  const created: Array<{ price: number; title: string; color: string; line: IPriceLine }> = []
   const removed: IPriceLine[] = []
   const series = {
-    createPriceLine: (opts: { price: number; title: string }) => {
+    createPriceLine: (opts: { price: number; title: string; color: string }) => {
       const line = { applyOptions: jest.fn() } as unknown as IPriceLine
-      created.push({ price: opts.price, title: opts.title, line })
+      created.push({ price: opts.price, title: opts.title, color: opts.color, line })
       return line
     },
     removePriceLine: (line: IPriceLine) => removed.push(line),
@@ -75,12 +75,38 @@ describe('useStructureLevels', () => {
         rebuildToken: 'candles',
       }),
     )
-    // Five retracement lines, labeled, at the hand-computed prices (high 150, low 50).
-    expect(created).toHaveLength(5)
+    // Five retracement lines + the two 0/1 anchor boundaries (Plan 0105 ph5),
+    // labeled, at the hand-computed prices (high 150, low 50).
+    expect(created).toHaveLength(7)
     const byTitle = Object.fromEntries(created.map((c) => [c.title, c.price]))
     expect(byTitle['Fib 0.5']).toBeCloseTo(100, 6)
     expect(byTitle['Fib 0.618']).toBeCloseTo(88.2, 6)
     expect(byTitle['Fib 0.786']).toBeCloseTo(71.4, 6)
+    // The anchors sit at the swing endpoints and disclose the anchoring leg.
+    expect(byTitle['Fib 0 — bullish leg high']).toBeCloseTo(150, 6)
+    expect(byTitle['Fib 1 — bullish leg low']).toBeCloseTo(50, 6)
+  })
+
+  // Plan 0105 phase 5 (ADR-0100 rule 2): per-ratio colours, anchors neutral.
+  it('draws each fib level in its own colour, distinct from the anchors', () => {
+    const { series, created } = fakeSeries()
+    const ref: RefObject<Map<string, IPriceLine>> = { current: new Map() }
+    renderHook(() =>
+      useStructureLevels({ current: series }, ref, {
+        bars: swingBars(),
+        overlays: [FIB],
+        hidden: new Set(),
+        rebuildToken: 'candles',
+      }),
+    )
+    const levelColors = created.filter((c) => c.title.startsWith('Fib 0.')).map((c) => c.color)
+    // Every level has its own hue — no two levels share a colour.
+    expect(new Set(levelColors).size).toBe(levelColors.length)
+    const anchorColors = created.filter((c) => c.title.includes('leg')).map((c) => c.color)
+    expect(anchorColors).toHaveLength(2)
+    // Both anchors share the neutral frame colour, unused by any level.
+    expect(new Set(anchorColors).size).toBe(1)
+    expect(levelColors).not.toContain(anchorColors[0])
   })
 
   it('draws seven classic pivot lines and ignores non-structure kinds', () => {
@@ -113,14 +139,14 @@ describe('useStructureLevels', () => {
         initialProps: props,
       },
     )
-    expect(created).toHaveLength(5)
+    expect(created).toHaveLength(7)
 
     rerender({ ...props, hidden: new Set(['overlay:fibonacci:na']) })
-    expect(removed).toHaveLength(5)
+    expect(removed).toHaveLength(7)
     expect(ref.current?.size).toBe(0)
 
     rerender({ ...props, hidden: new Set() })
-    expect(created).toHaveLength(10)
-    expect(ref.current?.size).toBe(5)
+    expect(created).toHaveLength(14)
+    expect(ref.current?.size).toBe(7)
   })
 })

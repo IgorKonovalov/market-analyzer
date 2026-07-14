@@ -8,19 +8,21 @@
  * the chart holds (auto-anchored, or from the overlay's explicit anchor/method),
  * so a bars change recomputes the prices in place. A legend toggle
  * (`overlayLayerId` in `hidden`) removes all of that overlay's lines; re-checking
- * re-creates them. Static colours (fib violet, pivot amber) — not user-styleable
- * (ADR-0062), so no theme read.
+ * re-creates them. Static colours — per-ratio for fib levels plus the dashed
+ * neutral 0/1 anchor boundaries (Plan 0105 phase 5, ADR-0100 rule 2), pivot
+ * amber — not user-styleable (ADR-0062), so no theme read.
  *
  * MUST be called after the chart-creation effect so `seriesRef` is populated.
  * `rebuildToken` (candleType) re-creates the lines on the fresh series.
  */
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
+import { LineStyle } from 'lightweight-charts'
 import type { IPriceLine } from 'lightweight-charts'
 
 import type { MainSeries } from '../lib/chartSeries'
-import { fibonacciGrid } from '../lib/fibonacci'
-import { FIB_LINE_COLOR, PIVOT_LINE_COLOR, overlayLayerId } from '../lib/overlays'
+import { fibAnchorLines, fibonacciGrid } from '../lib/fibonacci'
+import { FIB_ANCHOR_COLOR, PIVOT_LINE_COLOR, fibLevelColor, overlayLayerId } from '../lib/overlays'
 import { pivotLevelLines, pivotPoints } from '../lib/pivots'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlaySpec } from '../types/events'
@@ -29,6 +31,9 @@ interface DesiredLine {
   price: number
   color: string
   title: string
+  /** Solid (default) for levels; the fib 0/1 anchor boundaries draw dashed so
+   * they read as the grid's frame (Plan 0105 phase 5). */
+  lineStyle?: LineStyle
 }
 
 export interface UseStructureLevelsParams {
@@ -59,8 +64,19 @@ export function useStructureLevels(
         for (const level of grid.levels) {
           desired.set(`${layer}:${level.ratio}`, {
             price: level.price,
-            color: FIB_LINE_COLOR,
+            // Per-ratio colour (Plan 0105 phase 5, ADR-0100 rule 2).
+            color: fibLevelColor(level.ratio),
             title: `Fib ${level.ratio}`,
+          })
+        }
+        // The 0/1 swing-anchor boundaries, dashed + neutral, titles disclosing
+        // the anchoring leg (Plan 0105 phase 5).
+        for (const anchor of fibAnchorLines(grid)) {
+          desired.set(`${layer}:${anchor.key}`, {
+            price: anchor.price,
+            color: FIB_ANCHOR_COLOR,
+            title: anchor.title,
+            lineStyle: LineStyle.Dashed,
           })
         }
       } else {
@@ -92,6 +108,7 @@ export function useStructureLevels(
             color: spec.color,
             axisLabelVisible: true,
             title: spec.title,
+            ...(spec.lineStyle !== undefined ? { lineStyle: spec.lineStyle } : {}),
           }),
         )
       } else {

@@ -6,7 +6,7 @@
  * agent-drawn overlay would.
  */
 import { anchoredVwapSeries, resolveAnchorIndex } from './anchoredVwap'
-import { fibonacciGrid } from './fibonacci'
+import { fibAnchorLines, fibonacciGrid } from './fibonacci'
 import { pivotPoints } from './pivots'
 import { dominantSwing, swingPivots } from './swings'
 import type { Bar } from '../types/sidecar/bar'
@@ -119,6 +119,63 @@ describe('fibonacciGrid', () => {
   it('returns null when there is no dominant swing (flat series)', () => {
     const flat = Array.from({ length: 20 }, (_, i) => mkBar(i, 101, 99, 100))
     expect(fibonacciGrid(flat, { kind: 'fibonacci' })).toBeNull()
+  })
+
+  // Plan 0105 phase 5: the grid exposes its resolved anchors (display-only —
+  // the level-price pins above are untouched by the addition).
+  it('exposes the resolved swing anchors on the grid', () => {
+    const grid = fibonacciGrid(swingFixture(), { kind: 'fibonacci' })!
+    expect(grid.anchors.highPrice).toBeCloseTo(150, 9)
+    expect(grid.anchors.lowPrice).toBeCloseTo(50, 9)
+    expect(grid.anchors.highTs).toBe(iso(14))
+    expect(grid.anchors.lowTs).toBe(iso(6))
+  })
+
+  it('exposes an explicit anchor verbatim', () => {
+    const grid = fibonacciGrid(swingFixture(), {
+      kind: 'fibonacci',
+      high_anchor_ts: iso(1),
+      high_anchor_price: 150,
+      low_anchor_ts: iso(9),
+      low_anchor_price: 50,
+    })!
+    expect(grid.anchors).toEqual({
+      highTs: iso(1),
+      highPrice: 150,
+      lowTs: iso(9),
+      lowPrice: 50,
+    })
+  })
+})
+
+describe('fibAnchorLines', () => {
+  it('titles the 0/1 endpoints for a bullish retracement (0 at the leg high)', () => {
+    const grid = fibonacciGrid(swingFixture(), { kind: 'fibonacci' })!
+    expect(fibAnchorLines(grid)).toEqual([
+      { key: 'anchor0', price: 150, title: 'Fib 0 — bullish leg high' },
+      { key: 'anchor1', price: 50, title: 'Fib 1 — bullish leg low' },
+    ])
+  })
+
+  it('flips the endpoints for a bearish leg (0 at the leg low)', () => {
+    const grid = fibonacciGrid(swingFixture(), {
+      kind: 'fibonacci',
+      high_anchor_ts: iso(1),
+      high_anchor_price: 150,
+      low_anchor_ts: iso(9),
+      low_anchor_price: 50,
+    })!
+    expect(grid.direction).toBe('bearish')
+    expect(fibAnchorLines(grid)).toEqual([
+      { key: 'anchor0', price: 50, title: 'Fib 0 — bearish leg low' },
+      { key: 'anchor1', price: 150, title: 'Fib 1 — bearish leg high' },
+    ])
+  })
+
+  it('titles an extension grid as the source swing, not 0/1', () => {
+    const grid = fibonacciGrid(swingFixture(), { kind: 'fibonacci', fib_kind: 'extension' })!
+    const titles = fibAnchorLines(grid).map((a) => a.title)
+    expect(titles).toEqual(['Fib anchor — bullish leg high', 'Fib anchor — bullish leg low'])
   })
 })
 

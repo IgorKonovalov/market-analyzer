@@ -50,9 +50,36 @@ export const BBANDS_LINE_COLOR = '#8b5cf6'
 
 /** Plan-0092 price-structure overlay colours (static, not user-styleable —
  * ADR-0062). Shared by the registry legend swatches and the draw hooks. */
-export const FIB_LINE_COLOR = '#c084fc' // fibonacci grid — violet
-export const PIVOT_LINE_COLOR = '#f59e0b' // classic pivots — amber
+export const FIB_LINE_COLOR = '#c084fc' // fibonacci grid — violet (legend swatch + unknown-ratio fallback)
+export const PIVOT_LINE_COLOR = '#f59e0b' // classic pivots — amber (legend swatch + unknown-level fallback)
 export const ANCHORED_VWAP_COLOR = '#14b8a6' // anchored VWAP — teal
+
+/** Per-level Fibonacci colours (Plan 0105 phase 5, ADR-0100 rule 2): a fixed
+ * `ratio→colour` map — semantically graded shallow→deep (warm shallow pullbacks,
+ * green/teal at the watched 0.5/0.618 pair, cool deep), extensions in the
+ * violet→magenta family. Static per-element, never a `chartStyle` override;
+ * mid-saturation hues stay legible on both themes. */
+export const FIB_LEVEL_COLORS: Record<string, string> = {
+  '0.236': '#ef5350',
+  '0.382': '#f59e0b',
+  '0.5': '#16a34a',
+  '0.618': '#0d9488',
+  '0.786': '#3b82f6',
+  '1.272': '#a855f7',
+  '1.618': '#7c3aed',
+  '2.0': '#c026d3',
+  '2.618': '#e11d48',
+}
+
+/** The 0/1 swing-anchor boundary lines — neutral slate, distinct from every
+ * level hue so the anchors read as the grid's frame, not another level. */
+export const FIB_ANCHOR_COLOR = '#94a3b8'
+
+/** The drawn colour for a fib level, falling back to the legend violet for a
+ * ratio outside the canonical set. */
+export function fibLevelColor(ratio: string): string {
+  return FIB_LEVEL_COLORS[ratio] ?? FIB_LINE_COLOR
+}
 
 /** The single source of truth for supported overlays. `Partial` because the
  * `OverlayKind` union also carries MVP-unsupported kinds (rsi/macd/bbands) that

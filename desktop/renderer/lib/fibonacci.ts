@@ -20,10 +20,21 @@ export interface FibLevel {
   price: number
 }
 
+/** The resolved swing the grid is anchored to (Plan 0105 phase 5, ADR-0100 rule
+ * 1) — display-only: the render draws the 0/1 anchor boundaries and states the
+ * anchoring leg from these; the level *prices* never read them post-compute. */
+export interface FibAnchors {
+  highTs: string
+  highPrice: number
+  lowTs: string
+  lowPrice: number
+}
+
 export interface FibGrid {
   kind: 'retracement' | 'extension'
   direction: 'bullish' | 'bearish'
   levels: FibLevel[]
+  anchors: FibAnchors
 }
 
 /** The ratio's dict key, matching the Python `str(ratio)` (`2.0` ⇒ `"2.0"`, not the
@@ -33,8 +44,7 @@ function ratioKey(ratio: number): string {
 }
 
 interface ResolvedAnchors {
-  highPrice: number
-  lowPrice: number
+  anchors: FibAnchors
   direction: 'bullish' | 'bearish'
 }
 
@@ -46,8 +56,12 @@ function resolveAnchors(bars: Bar[], spec: OverlaySpec): ResolvedAnchors | null 
     spec.low_anchor_price != null
   ) {
     return {
-      highPrice: spec.high_anchor_price,
-      lowPrice: spec.low_anchor_price,
+      anchors: {
+        highTs: spec.high_anchor_ts,
+        highPrice: spec.high_anchor_price,
+        lowTs: spec.low_anchor_ts,
+        lowPrice: spec.low_anchor_price,
+      },
       // bullish = the low printed at-or-before the high (ISO strings compare
       // chronologically), matching the Python `_direction`.
       direction: spec.low_anchor_ts <= spec.high_anchor_ts ? 'bullish' : 'bearish',
@@ -56,8 +70,12 @@ function resolveAnchors(bars: Bar[], spec: OverlaySpec): ResolvedAnchors | null 
   const swing = dominantSwing(bars)
   if (swing === null) return null
   return {
-    highPrice: swing.high.price,
-    lowPrice: swing.low.price,
+    anchors: {
+      highTs: swing.high.ts,
+      highPrice: swing.high.price,
+      lowTs: swing.low.ts,
+      lowPrice: swing.low.price,
+    },
     direction: swing.low.ts <= swing.high.ts ? 'bullish' : 'bearish',
   }
 }
@@ -66,9 +84,10 @@ function resolveAnchors(bars: Bar[], spec: OverlaySpec): ResolvedAnchors | null 
  * to anchor to. `retracement` (default) draws levels inside the swing; `extension`
  * projects them off the last close (mirroring the tool's pullback anchor). */
 export function fibonacciGrid(bars: Bar[], spec: OverlaySpec): FibGrid | null {
-  const anchors = resolveAnchors(bars, spec)
-  if (anchors === null) return null
-  const { highPrice, lowPrice, direction } = anchors
+  const resolved = resolveAnchors(bars, spec)
+  if (resolved === null) return null
+  const { anchors, direction } = resolved
+  const { highPrice, lowPrice } = anchors
   const span = highPrice - lowPrice
   const kind = spec.fib_kind ?? 'retracement'
   const levels: FibLevel[] = []
@@ -88,5 +107,43 @@ export function fibonacciGrid(bars: Bar[], spec: OverlaySpec): FibGrid | null {
       })
     }
   }
-  return { kind, direction, levels }
+  return { kind, direction, levels, anchors }
+}
+
+/** One drawn 0/1 anchor boundary (Plan 0105 phase 5): a labeled horizontal line
+ * at the swing endpoint, disclosing the anchoring leg. */
+export interface FibAnchorLine {
+  key: 'anchor0' | 'anchor1'
+  price: number
+  title: string
+}
+
+/**
+ * The two swing-anchor boundary lines for a grid. Ratio 0 sits where the leg
+ * ENDS (the retracement measures from there): the high of a bullish leg, the
+ * low of a bearish one; ratio 1 is the leg's origin. An extension grid projects
+ * its levels off the last close instead, so its anchors are titled as the
+ * source swing rather than 0/1 endpoints. Pure — display labels only.
+ */
+export function fibAnchorLines(grid: FibGrid): FibAnchorLine[] {
+  const { anchors, direction, kind } = grid
+  const leg = `${direction} leg`
+  const end =
+    direction === 'bullish'
+      ? { price: anchors.highPrice, side: 'high' }
+      : { price: anchors.lowPrice, side: 'low' }
+  const origin =
+    direction === 'bullish'
+      ? { price: anchors.lowPrice, side: 'low' }
+      : { price: anchors.highPrice, side: 'high' }
+  if (kind === 'extension') {
+    return [
+      { key: 'anchor0', price: end.price, title: `Fib anchor — ${leg} ${end.side}` },
+      { key: 'anchor1', price: origin.price, title: `Fib anchor — ${leg} ${origin.side}` },
+    ]
+  }
+  return [
+    { key: 'anchor0', price: end.price, title: `Fib 0 — ${leg} ${end.side}` },
+    { key: 'anchor1', price: origin.price, title: `Fib 1 — ${leg} ${origin.side}` },
+  ]
 }
