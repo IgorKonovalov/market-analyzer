@@ -12,6 +12,7 @@ import type { SeriesAttachedParameter, Time, UTCTimestamp } from 'lightweight-ch
 
 import type { DrawingSpec, TimePricePoint } from '../types/events'
 import { DrawingPrimitive, computeDrawingGeometry, computeRayFarPoint } from './drawings'
+import { FIB_ANCHOR_COLOR, fibLevelColor } from './overlays'
 
 const T1 = '2026-05-13T00:00:00Z'
 const T2 = '2026-05-15T00:00:00Z'
@@ -139,15 +140,61 @@ describe('computeDrawingGeometry — phase-3 kinds', () => {
     ])
   })
 
-  it('fib renders the six standard ratio lines between the anchor prices', () => {
+  it('fib renders the six standard ratio lines, each in its palette colour', () => {
     const g = computeDrawingGeometry(spec('fib'), timeToX, priceToY, 400, 300)
     expect(g!.segments).toHaveLength(6)
     // a.y=200 (0%), b.y=180 (100%); lines span from the left anchor x to the edge.
-    expect(g!.segments[0]).toEqual({ x1: 100, y1: 200, x2: 400, y2: 200, label: '0.0%' })
-    expect(g!.segments[5]).toEqual({ x1: 100, y1: 180, x2: 400, y2: 180, label: '100.0%' })
-    // 50% line sits midway (y=190) and is captioned.
+    // The 0 / 100% endpoints are the swing-anchor boundaries → neutral slate.
+    expect(g!.segments[0]).toEqual({
+      x1: 100,
+      y1: 200,
+      x2: 400,
+      y2: 200,
+      label: '0.0%',
+      color: FIB_ANCHOR_COLOR,
+    })
+    expect(g!.segments[5]).toEqual({
+      x1: 100,
+      y1: 180,
+      x2: 400,
+      y2: 180,
+      label: '100.0%',
+      color: FIB_ANCHOR_COLOR,
+    })
+    // 50% line sits midway (y=190), captioned, in its own golden-pocket hue.
     const mid = g!.segments.find((s) => s.label === '50.0%')
-    expect(mid).toEqual({ x1: 100, y1: 190, x2: 400, y2: 190, label: '50.0%' })
+    expect(mid).toEqual({
+      x1: 100,
+      y1: 190,
+      x2: 400,
+      y2: 190,
+      label: '50.0%',
+      color: fibLevelColor('0.5'),
+    })
+  })
+
+  it('fib colours the six levels distinctly (0/100 slate, interior graded)', () => {
+    const g = computeDrawingGeometry(spec('fib'), timeToX, priceToY, 400, 300)
+    const colors = g!.segments.map((s) => s.color)
+    // 0 and 100% share the neutral anchor slate; the four interior ratios each
+    // differ from it and from each other → a legible grid, not one colour.
+    expect(colors[0]).toBe(FIB_ANCHOR_COLOR)
+    expect(colors[5]).toBe(FIB_ANCHOR_COLOR)
+    const interior = colors.slice(1, 5)
+    expect(new Set(interior).size).toBe(4)
+    for (const c of interior) expect(c).not.toBe(FIB_ANCHOR_COLOR)
+    // The 50 / 61.8 golden pocket lands on the shared palette's watched pair.
+    expect(colors[3]).toBe(fibLevelColor('0.5'))
+    expect(colors[4]).toBe(fibLevelColor('0.618'))
+  })
+
+  it('a user style.color collapses the fib grid back to one colour', () => {
+    const styled: DrawingSpec = { ...spec('fib'), style: { color: '#ff0000' } }
+    const g = computeDrawingGeometry(styled, timeToX, priceToY, 400, 300)
+    // Per-level palette is the unstyled default; an explicit colour wins, so no
+    // segment carries its own colour — all fall back to the drawing's g.color.
+    for (const s of g!.segments) expect(s.color).toBeUndefined()
+    expect(g!.color).toBe('#ff0000')
   })
 })
 

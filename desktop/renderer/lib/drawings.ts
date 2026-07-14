@@ -28,6 +28,7 @@ import type {
 } from 'lightweight-charts'
 
 import type { DrawingKind, DrawingSpec } from '../types/events'
+import { FIB_ANCHOR_COLOR, fibLevelColor } from './overlays'
 import { pointSegmentDistance, resolveTimeX } from './trendlines'
 
 /** Default stroke colour for a user drawing when its `style.color` is unset. A
@@ -66,13 +67,16 @@ function toUtcSeconds(iso: string): UTCTimestamp {
 }
 
 /** A stroked line segment in media (pixel) coordinates. An optional `label`
- * (the fib-ratio caption) is drawn at the segment's left end. */
+ * (the fib-ratio caption) is drawn at the segment's left end. An optional
+ * `color` overrides the drawing's stroke for THIS segment (the per-level fib
+ * palette uses it); segments without it fall back to the drawing's `color`. */
 export interface DrawingSegment {
   x1: number
   y1: number
   x2: number
   y2: number
   label?: string
+  color?: string
 }
 
 /** An endpoint handle position in media (pixel) coordinates. */
@@ -98,6 +102,19 @@ export interface DrawingGeometry {
 /** The standard Fibonacci retracement ratios (Plan 0097 phase 3): 0 / 23.6 /
  * 38.2 / 50 / 61.8 / 100 %, drawn between the two anchor prices. */
 export const FIB_LEVELS: ReadonlyArray<number> = [0, 0.236, 0.382, 0.5, 0.618, 1.0]
+
+/** The per-level colour a fib retracement line draws in — reusing the
+ * analysis-side palette (`FIB_LEVEL_COLORS` / `FIB_ANCHOR_COLOR`, Plan 0105 /
+ * ADR-0100 rule 2) so the drawing-dock fib and the `fibonacci` overlay read
+ * alike. The 0 / 1.0 endpoints are the swing-anchor boundaries → neutral slate
+ * (the grid's frame); the interior ratios get the graded palette, with the
+ * watched 0.5 / 0.618 golden pocket landing on its distinct green/teal pair.
+ * `String(r)` matches the map's keys for the non-integer interior ratios
+ * (`0.236`/`0.382`/`0.5`/`0.618`). */
+function fibSegmentColor(ratio: number): string {
+  if (ratio === 0 || ratio === 1) return FIB_ANCHOR_COLOR
+  return fibLevelColor(String(ratio))
+}
 
 /** Fill opacity for a `rect` zone — low enough the candles stay legible. */
 export const RECT_FILL_ALPHA = 0.12
@@ -224,10 +241,21 @@ export function computeDrawingGeometry(
   }
   // fib: horizontal lines at the standard ratios between the two anchor PRICES,
   // spanning from the left anchor to the right edge, each captioned with its ratio.
+  // Unstyled, each level draws in its own palette colour (legible grid); an
+  // explicit user `style.color` wins and collapses the grid back to one colour.
   const xLeft = Math.min(a.x, b.x)
+  const perLevel = spec.style?.color == null
   const segments: DrawingSegment[] = FIB_LEVELS.map((r) => {
     const y = a.y + r * (b.y - a.y)
-    return { x1: xLeft, y1: y, x2: mediaWidth, y2: y, label: `${(r * 100).toFixed(1)}%` }
+    const seg: DrawingSegment = {
+      x1: xLeft,
+      y1: y,
+      x2: mediaWidth,
+      y2: y,
+      label: `${(r * 100).toFixed(1)}%`,
+    }
+    if (perLevel) seg.color = fibSegmentColor(r)
+    return seg
   })
   return { ...style, handles, segments }
 }
@@ -270,18 +298,21 @@ function strokeGeometry(
     ctx.restore()
   }
   ctx.save()
-  ctx.strokeStyle = g.color
   ctx.lineWidth = selected ? g.width + 1 : g.width
   ctx.setLineDash([])
   for (const seg of g.segments) {
+    // A per-segment colour (the fib palette) overrides the drawing's stroke;
+    // every other kind leaves it unset and draws in `g.color`.
+    const segColor = seg.color ?? g.color
+    ctx.strokeStyle = segColor
     ctx.beginPath()
     ctx.moveTo(seg.x1, seg.y1)
     ctx.lineTo(seg.x2, seg.y2)
     ctx.stroke()
-    // A fib line's ratio caption, above its left end.
+    // A fib line's ratio caption, above its left end, in its own line colour.
     if (seg.label !== undefined) {
       ctx.save()
-      ctx.fillStyle = g.color
+      ctx.fillStyle = segColor
       ctx.font = '10px sans-serif'
       ctx.textBaseline = 'bottom'
       ctx.fillText(seg.label, seg.x1 + 2, seg.y1 - 1)
