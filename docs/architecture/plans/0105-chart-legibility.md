@@ -1,6 +1,6 @@
 # 0105 — Chart legibility (per-pane labels, level colours/labels, primitive tooltips, glossary completeness, zoom-clip)
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-07-14
 > **Owner skill(s):** market-analyst, ui-builder, human
 > **Related ADRs:** [ADR-0100](../adrs/0100-on-chart-legibility-labels-and-primitive-hover.md) (paired — accepts at close), [ADR-0060](../adrs/0060-glossary-tooltip-interaction-posture.md), [ADR-0023](../adrs/0023-technical-analysis-surface.md), [ADR-0062](../adrs/0062-user-chart-style-overrides.md), [ADR-0088](../adrs/0088-lightweight-charts-v5-panes.md), [ADR-0077](../adrs/0077-user-originated-display-overlays.md)
