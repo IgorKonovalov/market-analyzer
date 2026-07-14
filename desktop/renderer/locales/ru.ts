@@ -127,12 +127,6 @@ export const ru = {
   'symbolPicker.symbolSuggestions': 'Подсказки символов',
   'symbolPicker.deepUsdHint': 'глубокий USD',
 
-  // ── Agent-mode toggle (AgentModeToggle.tsx) ──
-  'agentMode.toggle': 'Переключить режим агента',
-  'agentMode.label': 'Режим агента',
-  'agentMode.on': 'ВКЛ',
-  'agentMode.off': 'ВЫКЛ',
-
   // ── Recent backtests list (RecentBacktestsView.tsx) ──
   'recent.title': 'Недавние бэктесты',
   'recent.lede':
@@ -201,7 +195,6 @@ export const ru = {
   'defi.incompleteGeneric': 'неполные данные — не удалось оценить',
   'defi.error.setKeyHint':
     'Источник данных не настроен — укажите ключ Zerion API в Настройках, чтобы анализировать кошельки.',
-  'defi.error.agentModeOff': 'Режим агента выключен — включите его в Настройках.',
 
   // ── Live-signal view (LiveSignalView.tsx) ──
   'signals.liveSignalEvaluation': 'Оценка сигнала в реальном времени',
@@ -608,7 +601,6 @@ export const ru = {
   'enum.fear_greed.extreme_greed': 'Крайняя жадность',
 
   // ── Fixed sidecar error details (client.ts localizeErrorDetail) ──
-  'error.detail.agentModeOff': 'режим агента выключен',
   'error.detail.noWalletSource': 'источник позиций кошелька не настроен',
   'error.detail.noHistoricalPriceSource': 'источник исторических цен не настроен',
   'error.detail.noSecretsStore': 'хранилище секретов не настроено',

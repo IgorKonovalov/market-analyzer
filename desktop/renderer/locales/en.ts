@@ -118,12 +118,6 @@ export const en = {
   'symbolPicker.symbolSuggestions': 'Symbol suggestions',
   'symbolPicker.deepUsdHint': 'deep USD',
 
-  // ── Agent-mode toggle (AgentModeToggle.tsx) ──
-  'agentMode.toggle': 'Toggle agent mode',
-  'agentMode.label': 'Agent mode',
-  'agentMode.on': 'ON',
-  'agentMode.off': 'OFF',
-
   // ── Recent backtests list (RecentBacktestsView.tsx) ──
   'recent.title': 'Recent backtests',
   'recent.lede': 'Persisted runs from `runs/`. Click a row to open the full result view.',
@@ -190,7 +184,6 @@ export const en = {
   'defi.incompleteGeneric': 'incomplete — could not be priced',
   'defi.error.setKeyHint':
     'No data source configured — set your Zerion API key in Settings to analyze wallets.',
-  'defi.error.agentModeOff': 'Agent mode is off — enable it in Settings.',
 
   // ── Live-signal view (LiveSignalView.tsx) ──
   'signals.liveSignalEvaluation': 'Live signal evaluation',
@@ -601,7 +594,6 @@ export const en = {
   // ── Fixed sidecar error details (client.ts localizeErrorDetail) ──
   // Only the FIXED HTTP `detail=` constants are mapped; dynamic `str(exc)`
   // passthrough renders its upstream English text unchanged (ADR-0063 seam).
-  'error.detail.agentModeOff': 'agent mode is off',
   'error.detail.noWalletSource': 'no wallet-positions source configured',
   'error.detail.noHistoricalPriceSource': 'no historical price source configured',
   'error.detail.noSecretsStore': 'secrets store not configured',

@@ -37,7 +37,6 @@ import type { ScanPatternsRequest } from '../types/sidecar/scan-patterns-request
 import type { ScanPatternsResponse } from '../types/sidecar/scan-patterns-response'
 import type { SseTicketResponse } from '../types/sidecar/sse-ticket-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
-import type { AgentModeState } from '../types/ui-events'
 import type { AlertsPage } from '../types/sidecar/alerts-page'
 import type { WatchOut } from '../types/sidecar/watch-out'
 import type { WalletPnlResponse } from '../types/defiPnl'
@@ -131,7 +130,6 @@ export class ApiError extends Error {
  * lookup on the sanitized detail.
  */
 const FIXED_ERROR_DETAIL_KEYS: Record<string, string> = {
-  'agent mode is off': 'error.detail.agentModeOff',
   'no wallet-positions source configured': 'error.detail.noWalletSource',
   'no historical price source configured': 'error.detail.noHistoricalPriceSource',
   'secrets store not configured': 'error.detail.noSecretsStore',
@@ -353,18 +351,6 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, refresh }),
-    })
-  },
-  /** Read the persisted agent-mode toggle (Plan 0014). Renderer-bearer-gated. */
-  getAgentMode(): Promise<AgentModeState> {
-    return callJson<AgentModeState>('/agent_mode')
-  },
-  /** Persist the agent-mode toggle. Returns the new state. */
-  setAgentMode(enabled: boolean): Promise<AgentModeState> {
-    return callJson<AgentModeState>('/agent_mode', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
     })
   },
   /**

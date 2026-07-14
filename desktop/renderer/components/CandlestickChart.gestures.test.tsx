@@ -1,13 +1,13 @@
 /**
  * Plan 0014 phase 3 done-when: CandlestickChart UI gestures (range-select +
- * bar-click), gated on agent mode.
+ * bar-click). Forwarding is unconditional per ADR-0101 — no agent-mode gate.
  *
  * Defends the POST/no-POST matrix:
- *   - agent OFF: neither a drag nor a click POSTs.
- *   - agent ON, select-range INACTIVE (default): a drag does NOT POST (pan/zoom),
- *     but a bar click POSTs ui.bar_clicked.
- *   - agent ON, select-range ACTIVE: a drag POSTs ui.range_selected with the
- *     dragged bars' times; Escape mid-drag cancels (no POST).
+ *   - select-range INACTIVE (default): a drag does NOT POST (pan/zoom),
+ *     but a bar click POSTs ui.bar_clicked — no mode precondition.
+ *   - select-range ACTIVE: a drag POSTs ui.range_selected with the dragged
+ *     bars' times; Escape mid-drag cancels (no POST).
+ *   - missing symbol/timeframe: nothing POSTs (the only remaining guard).
  *
  * jsdom has no canvas; we mock `lightweight-charts`. The mock captures the
  * subscribeClick handler and exposes a controllable `coordinateToTime` so the
@@ -112,13 +112,12 @@ const FIXTURE_BARS: Bar[] = Array.from({ length: 10 }, (_, i) => {
   return bar(d.toISOString(), 100 + i)
 })
 
-function renderChart(props: { agentModeEnabled?: boolean }): void {
+function renderChart(props: { symbol?: string; timeframe?: string } = {}): void {
   render(
     <CandlestickChart
       bars={FIXTURE_BARS}
-      symbol="AAPL"
-      timeframe="1d"
-      agentModeEnabled={props.agentModeEnabled ?? false}
+      symbol={'symbol' in props ? props.symbol : 'AAPL'}
+      timeframe={'timeframe' in props ? props.timeframe : '1d'}
     />,
   )
 }
@@ -170,27 +169,24 @@ function barTime(bar: Bar): number {
 // ---------- specs --------------------------------------------------------- //
 
 describe('CandlestickChart gestures (Plan 0014)', () => {
-  it('agent OFF: a drag does not POST', () => {
-    renderChart({ agentModeEnabled: false })
-    dragChart(40, 120)
-    expect(mockPostRange).not.toHaveBeenCalled()
-  })
-
-  it('agent OFF: a bar click does not POST', () => {
-    renderChart({ agentModeEnabled: false })
-    clickBar(1_714_000_500, { o: 1, h: 2, l: 0, c: 1.5 })
-    expect(mockPostBar).not.toHaveBeenCalled()
-  })
-
-  it('agent ON, select-range INACTIVE: a drag does not POST (pan/zoom preserved)', () => {
-    renderChart({ agentModeEnabled: true })
+  it('select-range INACTIVE: a drag does not POST (pan/zoom preserved)', () => {
+    renderChart()
     // Default mode is pan/zoom — no select-range button pressed.
     dragChart(40, 120)
     expect(mockPostRange).not.toHaveBeenCalled()
   })
 
-  it('agent ON, select-range ACTIVE: a drag POSTs ui.range_selected with the dragged bar times', () => {
-    renderChart({ agentModeEnabled: true })
+  it('missing symbol/timeframe: neither a drag nor a click POSTs', () => {
+    renderChart({ symbol: undefined, timeframe: undefined })
+    fireEvent.click(screen.getByTestId('select-range-toggle'))
+    dragChart(40, 120)
+    clickBar(1_714_000_500, { o: 1, h: 2, l: 0, c: 1.5 })
+    expect(mockPostRange).not.toHaveBeenCalled()
+    expect(mockPostBar).not.toHaveBeenCalled()
+  })
+
+  it('select-range ACTIVE: a drag POSTs ui.range_selected with the dragged bar times', () => {
+    renderChart()
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
     dragChart(40, 120)
@@ -205,7 +201,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
   })
 
   it('range-select normalises a right-to-left drag (start <= end)', () => {
-    renderChart({ agentModeEnabled: true })
+    renderChart()
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
     dragChart(120, 40) // dragged leftwards
@@ -218,8 +214,8 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
     })
   })
 
-  it('agent ON: a bar click POSTs ui.bar_clicked with the bar OHLC', () => {
-    renderChart({ agentModeEnabled: true })
+  it('a bar click POSTs ui.bar_clicked with the bar OHLC — no mode precondition', () => {
+    renderChart()
     clickBar(1_714_000_500, { o: 10, h: 12, l: 9, c: 11 })
 
     expect(mockPostBar).toHaveBeenCalledTimes(1)
@@ -235,7 +231,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
   })
 
   it('bar click works while select-range mode is ACTIVE (a click is not a drag)', () => {
-    renderChart({ agentModeEnabled: true })
+    renderChart()
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
     clickBar(1_714_000_500, { o: 10, h: 12, l: 9, c: 11 })
@@ -244,7 +240,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
   })
 
   it('a real range drag does not also fire a bar-click', () => {
-    renderChart({ agentModeEnabled: true })
+    renderChart()
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
     dragChart(40, 120) // the pointerup sets the suppress flag
@@ -257,7 +253,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
   })
 
   it('resolves bar OHLC from the bars prop when seriesData is empty', () => {
-    renderChart({ agentModeEnabled: true })
+    renderChart()
     const bar = FIXTURE_BARS[3]
 
     clickEmptyAt(barTime(bar))
@@ -275,7 +271,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
   })
 
   it('Escape during a range-select cancels the in-progress selection (no POST)', () => {
-    renderChart({ agentModeEnabled: true })
+    renderChart()
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
     firePointer('pointerDown', 40)
@@ -286,7 +282,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
   })
 
   it('keeps the selection overlay + a range label after release; Escape clears both', () => {
-    renderChart({ agentModeEnabled: true })
+    renderChart()
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
     firePointer('pointerDown', 40)
@@ -306,7 +302,7 @@ describe('CandlestickChart gestures (Plan 0014)', () => {
   })
 
   it('discards a click-sized drag (no range marker, no POST)', () => {
-    renderChart({ agentModeEnabled: true })
+    renderChart()
     fireEvent.click(screen.getByTestId('select-range-toggle'))
 
     firePointer('pointerDown', 50)

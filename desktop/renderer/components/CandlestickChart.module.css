@@ -68,9 +68,9 @@
   cursor: crosshair;
 }
 
-/* Small control above the chart, shown only in agent mode. Kept in normal flow
- * (not overlaying the canvas) so it stays clickable — the chart canvas would
- * otherwise intercept pointer events on an absolutely-positioned overlay. */
+/* Small control above the chart. Kept in normal flow (not overlaying the
+ * canvas) so it stays clickable — the chart canvas would otherwise intercept
+ * pointer events on an absolutely-positioned overlay. */
 .selectRangeButton {
   align-self: flex-start;
   font: inherit;

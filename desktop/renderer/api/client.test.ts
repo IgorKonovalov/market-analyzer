@@ -59,9 +59,11 @@ describe('sanitizeApiErrorBody', () => {
 // but through `t()`, which is what makes the Russian flip work in phase 6.
 describe('localizeErrorDetail / localizeApiErrorBody', () => {
   it('maps a known fixed detail through the catalog', () => {
-    expect(localizeErrorDetail('agent mode is off')).toBe(en['error.detail.agentModeOff'])
-    expect(localizeApiErrorBody('{"detail": "agent mode is off"}')).toBe(
-      en['error.detail.agentModeOff'],
+    expect(localizeErrorDetail('no wallet-positions source configured')).toBe(
+      en['error.detail.noWalletSource'],
+    )
+    expect(localizeApiErrorBody('{"detail": "no wallet-positions source configured"}')).toBe(
+      en['error.detail.noWalletSource'],
     )
   })
 

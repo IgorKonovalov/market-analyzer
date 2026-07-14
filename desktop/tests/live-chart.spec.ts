@@ -450,7 +450,8 @@ test('backfill_ohlcv shows the header spinner while filling, then clears with ba
 })
 
 // --------------------------------------------------------------------------- //
-// Plan 0014 — agent-mode toggle + range-select gesture → get_pending_ui_events  //
+// Plan 0014 — range-select gesture → get_pending_ui_events (always-on           //
+// forwarding per ADR-0101 / Plan 0106 — no agent-mode toggle)                    //
 // --------------------------------------------------------------------------- //
 
 interface UiEventEnvelope {
@@ -467,21 +468,6 @@ function drainUiEvents(): UiEventEnvelope[] {
   expect(result.isError).toBe(false)
   const list = (result.structured?.result ?? []) as UiEventEnvelope[]
   return list
-}
-
-async function setAgentMode(window: import('@playwright/test').Page, on: boolean): Promise<void> {
-  const toggle = window.locator('[data-testid="agent-mode-toggle"]')
-  await expect.poll(() => toggle.count(), { timeout: 10_000, intervals: [100] }).toBeGreaterThan(0)
-  const checked = (await toggle.getAttribute('aria-checked')) === 'true'
-  if (checked !== on) {
-    await toggle.click()
-    await expect
-      .poll(async () => (await toggle.getAttribute('aria-checked')) === 'true', {
-        timeout: 3_000,
-        intervals: [50],
-      })
-      .toBe(on)
-  }
 }
 
 async function dragAcrossChart(window: import('@playwright/test').Page): Promise<void> {
@@ -527,16 +513,18 @@ async function showAaplAndWaitForBars(window: import('@playwright/test').Page): 
     .toBeGreaterThanOrEqual(1)
 }
 
-test('agent mode ON: a range-select drag surfaces one ui.range_selected to get_pending_ui_events', async () => {
+test('a range-select drag surfaces one ui.range_selected to get_pending_ui_events — no setup step', async () => {
   const app = await launchApp()
   const window = await app.firstWindow()
   await showAaplAndWaitForBars(window)
 
-  await setAgentMode(window, true)
-  // Drain the toggle event the PUT synthesised so only the gesture remains.
+  // Start from an empty buffer so only this test's gesture remains.
   drainUiEvents()
 
-  // Enter select-range cursor mode (only rendered while agent mode is ON).
+  // No agent-mode toggle exists (ADR-0101); the ex-toggle's testid must be gone.
+  expect(await window.locator('[data-testid="agent-mode-toggle"]').count()).toBe(0)
+
+  // Enter select-range cursor mode (always rendered in the chart toolbar).
   await window.locator('[data-testid="select-range-toggle"]').click()
   await dragAcrossChart(window)
 
@@ -563,21 +551,22 @@ test('agent mode ON: a range-select drag surfaces one ui.range_selected to get_p
   await app.close()
 })
 
-test('agent mode OFF: the same drag buffers no UI events', async () => {
+test('with select-range mode off, the same drag pans and buffers no ui.range_selected', async () => {
   const app = await launchApp()
   const window = await app.firstWindow()
   await showAaplAndWaitForBars(window)
 
-  await setAgentMode(window, false)
-  // Drain anything (incl. the toggle-OFF event) so the buffer starts empty.
+  // Drain anything left over so the buffer starts empty.
   drainUiEvents()
 
-  // With agent mode OFF there is no select-range control; a drag just pans.
+  // Select-range mode is off by default; a drag just pans.
   await dragAcrossChart(window)
 
-  // Give any (incorrect) POST time to land, then confirm nothing was buffered.
+  // Give any (incorrect) POST time to land, then confirm no range event was
+  // buffered. (A bar click WOULD forward now — ADR-0101 — but a pan drag is
+  // not a click; assert specifically that no range selection leaked.)
   await window.waitForTimeout(750)
-  expect(drainUiEvents()).toEqual([])
+  expect(drainUiEvents().filter((e) => e.type === 'ui.range_selected')).toEqual([])
 
   await app.close()
 })

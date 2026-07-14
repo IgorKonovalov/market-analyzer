@@ -15,8 +15,6 @@ import { t } from '../lib/i18n'
 import styles from './CandlestickChart.module.css'
 
 interface ChartToolbarProps {
-  /** When true, the agent-mode range-select toggle is shown. */
-  agentModeEnabled: boolean
   selectRangeMode: boolean
   toggleSelectRange: () => void
   scanStatus: ScanStatus
@@ -29,7 +27,6 @@ interface ChartToolbarProps {
 }
 
 export function ChartToolbar({
-  agentModeEnabled,
   selectRangeMode,
   toggleSelectRange,
   scanStatus,
@@ -41,17 +38,15 @@ export function ChartToolbar({
 }: ChartToolbarProps): JSX.Element {
   return (
     <div className={styles.controls}>
-      {agentModeEnabled && (
-        <button
-          type="button"
-          data-testid="select-range-toggle"
-          aria-pressed={selectRangeMode}
-          className={styles.selectRangeButton}
-          onClick={toggleSelectRange}
-        >
-          {selectRangeMode ? t('chart.selectingRange') : t('chart.selectRange')}
-        </button>
-      )}
+      <button
+        type="button"
+        data-testid="select-range-toggle"
+        aria-pressed={selectRangeMode}
+        className={styles.selectRangeButton}
+        onClick={toggleSelectRange}
+      >
+        {selectRangeMode ? t('chart.selectingRange') : t('chart.selectRange')}
+      </button>
       <button
         type="button"
         data-testid="scan-patterns-button"

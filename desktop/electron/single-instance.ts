@@ -1,8 +1,8 @@
 /**
- * Single-instance enforcement (Plan 0014, ADR-0021). Agent mode is sidecar-
- * resident state — a single toggle applies to every viewer — so two viewers
- * would create write contention and ambiguous UX. This reverses Plan 0007's
- * "two viewers OK" allowance.
+ * Single-instance enforcement (Plan 0014; rationale relocated by ADR-0101).
+ * One live viewer is assumed by the sticky display stores and the UI-event
+ * semantics — two viewers would create write contention and ambiguous UX.
+ * This reverses Plan 0007's "two viewers OK" allowance.
  *
  * Extracted from `main.ts` (which has top-level side effects and isn't unit-
  * testable) into a function with an injectable `app`, mirroring how

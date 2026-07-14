@@ -1,12 +1,13 @@
 /**
  * Plan 0029 phase 1 done-when: the pointer-gesture FSM, asserted directly on
  * the hook (the component-level matrix still lives in
- * `CandlestickChart.gestures.test.tsx`). Defends:
+ * `CandlestickChart.gestures.test.tsx`). Defends (forwarding is unconditional
+ * per ADR-0101 — no agent-mode gate):
  *   - a real drag in range mode emits exactly one `postRangeSelected` with the
  *     correct [from, to];
- *   - a click without a drag (agent ON) emits `postBarClicked`;
+ *   - a click without a drag emits `postBarClicked`;
  *   - Escape mid-drag cancels with no POST;
- *   - agent mode OFF emits nothing for either gesture.
+ *   - missing symbol/timeframe emits nothing for either gesture.
  *
  * The hook owns no chart — it receives the chart/series refs. The harness wires
  * a real container div plus a fake `IChartApi`/series (jsdom has no canvas), so
@@ -82,15 +83,14 @@ const FIXTURE_BARS: Bar[] = Array.from({ length: 10 }, (_, i) => {
   return bar(d.toISOString(), 100 + i)
 })
 
-function Harness({ agentMode }: { agentMode: boolean }): JSX.Element {
+function Harness({ symbol, timeframe }: HarnessProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(fakeChart)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(fakeSeries)
   const { selectRangeMode, toggleSelectRange, selection, rangeLabel, clickedBarTs } =
     useChartGestures(containerRef, chartRef, seriesRef, {
-      agentMode,
-      symbol: 'AAPL',
-      timeframe: '1d',
+      symbol,
+      timeframe,
       bars: FIXTURE_BARS,
     })
   return (
@@ -106,8 +106,21 @@ function Harness({ agentMode }: { agentMode: boolean }): JSX.Element {
   )
 }
 
-function renderHarness(agentMode: boolean): void {
-  render(<Harness agentMode={agentMode} />)
+interface HarnessProps {
+  symbol?: string
+  timeframe?: string
+}
+
+// Explicit-undefined must survive (the no-symbol guard test), so default via
+// `in`-checks rather than destructuring defaults, which an explicit undefined
+// would re-trigger.
+function renderHarness(props: HarnessProps = {}): void {
+  render(
+    <Harness
+      symbol={'symbol' in props ? props.symbol : 'AAPL'}
+      timeframe={'timeframe' in props ? props.timeframe : '1d'}
+    />,
+  )
 }
 
 function enterRangeMode(): void {
@@ -146,13 +159,13 @@ function clickBar(timeSeconds: number, ohlc: { o: number; h: number; l: number; 
 
 describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
   it('subscribes to clicks on mount once the chart ref is populated', () => {
-    renderHarness(true)
+    renderHarness()
     expect(fakeChart.subscribeClick).toHaveBeenCalledTimes(1)
     expect(clickHandler).not.toBeNull()
   })
 
-  it('agent ON + range mode: a drag emits one postRangeSelected with the dragged bar times', () => {
-    renderHarness(true)
+  it('range mode: a drag emits one postRangeSelected with the dragged bar times', () => {
+    renderHarness()
     enterRangeMode()
 
     dragChart(40, 120)
@@ -167,7 +180,7 @@ describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
   })
 
   it('normalises a right-to-left drag (start <= end)', () => {
-    renderHarness(true)
+    renderHarness()
     enterRangeMode()
 
     dragChart(120, 40)
@@ -180,8 +193,8 @@ describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
     })
   })
 
-  it('agent ON: a click without a drag emits postBarClicked with the bar OHLC', () => {
-    renderHarness(true)
+  it('a click without a drag emits postBarClicked with the bar OHLC — no mode precondition', () => {
+    renderHarness()
 
     clickBar(1_714_000_500, { o: 10, h: 12, l: 9, c: 11 })
 
@@ -199,7 +212,7 @@ describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
   })
 
   it('a real range drag suppresses the trailing bar-click', () => {
-    renderHarness(true)
+    renderHarness()
     enterRangeMode()
 
     dragChart(40, 120) // pointerup sets the suppress flag
@@ -210,7 +223,7 @@ describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
   })
 
   it('Escape mid-drag cancels the selection with no POST', () => {
-    renderHarness(true)
+    renderHarness()
     enterRangeMode()
 
     firePointer('pointerDown', 40)
@@ -224,7 +237,7 @@ describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
   })
 
   it('keeps the selection + range label after a real drag releases', () => {
-    renderHarness(true)
+    renderHarness()
     enterRangeMode()
 
     firePointer('pointerDown', 40)
@@ -237,7 +250,7 @@ describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
   })
 
   it('discards a click-sized drag (no selection, no POST)', () => {
-    renderHarness(true)
+    renderHarness()
     enterRangeMode()
 
     firePointer('pointerDown', 50)
@@ -247,9 +260,9 @@ describe('useChartGestures FSM (Plan 0029 phase 1)', () => {
     expect(screen.queryByTestId('selection')).not.toBeInTheDocument()
   })
 
-  it('agent OFF: neither a drag nor a click POSTs', () => {
-    renderHarness(false)
-    enterRangeMode() // toggles local mode, but agent is off
+  it('missing symbol/timeframe: neither a drag nor a click POSTs', () => {
+    renderHarness({ symbol: undefined, timeframe: undefined })
+    enterRangeMode()
 
     dragChart(40, 120)
     clickBar(1_714_000_500, { o: 1, h: 2, l: 0, c: 1.5 })

@@ -39,9 +39,10 @@ if (process.platform === 'win32') {
 // Track the main window so `second-instance` can focus it (Plan 0014).
 let mainWindow: BrowserWindow | null = null
 
-// Single-instance: agent mode is sidecar-resident state, so only one viewer
-// may own it. A second launch focuses the existing window and quits. Must run
-// before `whenReady` so we never spawn/attach for a duplicate instance.
+// Single-instance: one live viewer is assumed by the sticky display stores and
+// the UI-event semantics (ADR-0101). A second launch focuses the existing
+// window and quits. Must run before `whenReady` so we never spawn/attach for a
+// duplicate instance.
 const isPrimaryInstance = enforceSingleInstance(app, () => mainWindow)
 
 const supervisor = new SidecarSupervisor(resolveSharedDataDir())

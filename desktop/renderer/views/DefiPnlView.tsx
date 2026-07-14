@@ -583,7 +583,6 @@ function errorMessage(error: Error): string {
     ) {
       return t('defi.error.setKeyHint')
     }
-    if (detail === 'agent mode is off') return t('defi.error.agentModeOff')
   }
   return error.message
 }

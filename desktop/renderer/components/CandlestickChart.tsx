@@ -172,11 +172,8 @@ interface Props {
    * pivots on pane 0, oscillator pivots on that oscillator's own pane. */
   divergences?: ReadonlyArray<Divergence>
   ariaLabel?: string
-  /** Plan 0014: when true, chart gestures (range-select, bar-click) are
-   * forwarded to the agent via `POST /ui_events`. Default false — the
-   * `AgentModeToggle` owns this state and threads it down. */
-  agentModeEnabled?: boolean
-  /** Carried in the gesture payloads so the agent knows which chart fired. */
+  /** Carried in the gesture payloads so the agent knows which chart fired
+   * (Plan 0014; gestures forward unconditionally per ADR-0101). */
   symbol?: string
   timeframe?: string
   /** Plan 0049 phase 10: the live quote the parent already polls (`useQuotePoll`).
@@ -198,7 +195,6 @@ export function CandlestickChart({
   trendlines = NO_TRENDLINES,
   divergences = NO_DIVERGENCES,
   ariaLabel,
-  agentModeEnabled = false,
   symbol,
   timeframe,
   quote,
@@ -806,7 +802,6 @@ export function CandlestickChart({
   // populated `chartRef`/`seriesRef` on mount.
   const { selectRangeMode, toggleSelectRange, selection, rangeLabel, clickedBarTs } =
     useChartGestures(containerRef, chartRef, seriesRef, {
-      agentMode: agentModeEnabled,
       symbol,
       timeframe,
       bars,
@@ -1043,7 +1038,6 @@ export function CandlestickChart({
   return (
     <div className={styles.wrapper}>
       <ChartToolbar
-        agentModeEnabled={agentModeEnabled}
         selectRangeMode={selectRangeMode}
         toggleSelectRange={toggleSelectRange}
         scanStatus={scanStatus}

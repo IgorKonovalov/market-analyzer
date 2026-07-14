@@ -44,11 +44,6 @@ jest.mock('../hooks/useAnnotationsPoll', () => ({
 jest.mock('../hooks/useSymbolSearch', () => ({
   useSymbolSearch: jest.fn(() => ({ results: [], isSearching: false, error: null })),
 }))
-// The chart-header AgentModeToggle mounts useAgentMode, which would otherwise
-// fire a GET /agent_mode on mount. Keep it inert + deterministic (Plan 0014).
-jest.mock('../hooks/useAgentMode', () => ({
-  useAgentMode: jest.fn(() => ({ enabled: false, setEnabled: jest.fn(), error: null })),
-}))
 // The PriceHeader mounts useQuotePoll, which would otherwise fire GET /quote on
 // mount. Keep it inert here (no quote) and drive it explicitly in the price-
 // header tests below (Plan 0047 phase 6).

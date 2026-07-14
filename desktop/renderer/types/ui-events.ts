@@ -33,8 +33,3 @@ export interface BarClickedPayloadV1 {
   low: number
   close: number
 }
-
-/** The agent-mode toggle wire shape (`GET`/`PUT /agent_mode`). */
-export interface AgentModeState {
-  enabled: boolean
-}

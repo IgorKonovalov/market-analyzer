@@ -2,7 +2,8 @@
  * Plan 0029 phase 1: the CandlestickChart pointer-gesture state machine,
  * lifted out of the component.
  *
- * Owns the agent-mode chart gestures (Plan 0014, ADR-0021):
+ * Owns the renderer→agent chart gestures (Plan 0014, ADR-0021; forwarding is
+ * unconditional per ADR-0101 — no agent-mode gate):
  *   - select-range drag → `postRangeSelected`, with a kept selection rectangle,
  *   - bar click → `postBarClicked`, with a click marker,
  *   - click-vs-drag suppression so a real drag doesn't double as a bar-click,
@@ -10,12 +11,11 @@
  *
  * Why a hook instead of inline effects: the old component jammed all of this
  * into a mount-once effect, which forced eight `useRef`s mirroring live props
- * (agentMode/symbol/timeframe/bars/selectRangeMode) so the frozen handlers
- * could read current values. Here the gesture effect simply depends on the
- * props it reads, so the handlers close over current values directly — no
- * prop-mirror refs. The only refs left are genuine FSM state (`dragStartX`,
- * the post-drag click-suppression flag) that must survive listener
- * re-registration.
+ * (symbol/timeframe/bars/selectRangeMode) so the frozen handlers could read
+ * current values. Here the gesture effect simply depends on the props it
+ * reads, so the handlers close over current values directly — no prop-mirror
+ * refs. The only refs left are genuine FSM state (`dragStartX`, the post-drag
+ * click-suppression flag) that must survive listener re-registration.
  *
  * The chart and candlestick series are owned by the component (lifecycle +
  * dispose stay there per ADR-0008); this hook receives their refs. It MUST be
@@ -49,9 +49,8 @@ export interface ChartRangeLabel {
 }
 
 export interface UseChartGesturesParams {
-  /** When true, gestures are forwarded to the agent via `POST /ui_events`. */
-  agentMode: boolean
-  /** Carried in the gesture payloads so the agent knows which chart fired. */
+  /** Carried in the gesture payloads so the agent knows which chart fired.
+   * Gestures forward whenever both are present (ADR-0101 — always on). */
   symbol?: string
   timeframe?: string
   /** Used for the bar-click OHLC fallback when the click misses a data point. */
@@ -103,7 +102,7 @@ export function useChartGestures(
   // The main series is any of the four render types (Plan 0068 phase 4); a click
   // still resolves OHLC (from `seriesData` for candles/bars, else the `bars` prop).
   seriesRef: RefObject<ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area'> | null>,
-  { agentMode, symbol, timeframe, bars }: UseChartGesturesParams,
+  { symbol, timeframe, bars }: UseChartGesturesParams,
 ): UseChartGesturesResult {
   const [selectRangeMode, setSelectRangeMode] = useState(false)
   // The selection rectangle, in px. Set on pointerdown, updated through the
@@ -136,15 +135,15 @@ export function useChartGestures(
     const series = seriesRef.current
     if (!container || !chart || !series) return
 
-    // Bar-click: fires whenever agent mode is ON (independent of select-range
-    // mode — a click is not a drag). OHLC comes from the click's seriesData
-    // when available, else a lookup in the bars prop by timestamp.
+    // Bar-click: fires whenever symbol/timeframe are known (independent of
+    // select-range mode — a click is not a drag). OHLC comes from the click's
+    // seriesData when available, else a lookup in the bars prop by timestamp.
     const handleClick = (param: MouseEventParams): void => {
       if (suppressClickRef.current) {
         suppressClickRef.current = false // consume the click that trailed a drag
         return
       }
-      if (!agentMode || !symbol || !timeframe) return
+      if (!symbol || !timeframe) return
       if (param.time === undefined) return
       const eventTs = timeToIso(param.time)
       if (eventTs === null) return
@@ -177,7 +176,7 @@ export function useChartGestures(
       // Every fresh interaction clears a stale drag-suppression flag, so a
       // never-consumed suppression can't swallow a later genuine bar-click.
       suppressClickRef.current = false
-      if (!agentMode || !selectRangeMode) return
+      if (!selectRangeMode) return
       const startX = xInContainer(e.clientX)
       dragStartXRef.current = startX
       // Starting a new selection clears any previous one (and the click marker).
@@ -215,7 +214,7 @@ export function useChartGestures(
       suppressClickRef.current = true
       // Keep the rectangle + label after release so the user sees the selection.
       setSelection({ startX, endX })
-      if (!agentMode || !selectRangeMode) return
+      if (!selectRangeMode) return
       const range = rangeFromX(startX, endX)
       if (range === null || !symbol || !timeframe) return
       setRangeLabel(range)
@@ -246,7 +245,7 @@ export function useChartGestures(
       container.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [containerRef, chartRef, seriesRef, agentMode, selectRangeMode, symbol, timeframe, bars])
+  }, [containerRef, chartRef, seriesRef, selectRangeMode, symbol, timeframe, bars])
 
   // Disable the chart's built-in pan/zoom while range-selecting so a drag
   // defines a selection instead of scrolling; restore it otherwise. Without
@@ -254,7 +253,7 @@ export function useChartGestures(
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
-    const interactive = !(agentMode && selectRangeMode)
+    const interactive = !selectRangeMode
     chart.applyOptions({ handleScroll: interactive, handleScale: interactive })
     if (interactive) {
       // Left select-range mode: drop the marker — once panning is re-enabled the
@@ -262,12 +261,7 @@ export function useChartGestures(
       setSelection(null)
       setRangeLabel(null)
     }
-  }, [chartRef, agentMode, selectRangeMode])
-
-  // Agent mode off → the click marker's affordance is gone; clear it.
-  useEffect(() => {
-    if (!agentMode) setClickedBarTs(null)
-  }, [agentMode])
+  }, [chartRef, selectRangeMode])
 
   return { selectRangeMode, toggleSelectRange, selection, rangeLabel, clickedBarTs }
 }

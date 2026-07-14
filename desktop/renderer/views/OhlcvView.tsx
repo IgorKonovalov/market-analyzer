@@ -13,14 +13,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { AgentModeToggle } from '../components/AgentModeToggle'
 import { CandlestickChart } from '../components/CandlestickChart'
 import { SymbolPicker } from '../components/SymbolPicker'
 import { Toast } from '../components/Toast'
 import { t } from '../lib/i18n'
 import type { ChartMarker } from '../lib/markers'
 import type { Timeframe } from '../lib/timeframes'
-import { useAgentMode } from '../hooks/useAgentMode'
 import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useBackfillState } from '../hooks/useBackfillState'
 import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
@@ -90,7 +88,6 @@ export function OhlcvView({
   )
   const { annotations } = useAnnotationsPoll({ symbol, timeframe, start: annStart, end })
   const { isBackfilling, error: backfillError } = useBackfillState({ symbol, timeframe, refetch })
-  const { enabled: agentModeEnabled, setEnabled: setAgentMode } = useAgentMode()
   // Live, symbol-level price — keyed on symbol only, so it is independent of the
   // selected timeframe and never derives from the last bar's close (Plan 0047).
   // `quoteError` is set while the latest poll is failing (the hook keeps the
@@ -181,11 +178,6 @@ export function OhlcvView({
             {t('ohlcv.backfilling')}
           </span>
         )}
-        <AgentModeToggle
-          enabled={agentModeEnabled}
-          setEnabled={setAgentMode}
-          disabled={isLoading}
-        />
       </header>
 
       <div className={styles.body}>
@@ -222,7 +214,6 @@ export function OhlcvView({
             overlays={overlays}
             trendlines={trendlines}
             divergences={divergences}
-            agentModeEnabled={agentModeEnabled}
             symbol={symbol}
             timeframe={timeframe}
             quote={quote}
