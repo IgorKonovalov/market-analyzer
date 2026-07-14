@@ -216,6 +216,12 @@ export const en = {
   'chart.noPatternsInView': 'No patterns in view',
   'chart.noChartPatternsInView': 'No chart patterns in view',
   'chart.ariaLabel': 'Candlestick chart, {count} bars',
+  // Drawing dock (DrawingRail.tsx, Plan 0097 / ADR-0091).
+  'chart.draw.railLabel': 'Drawing tools',
+  'chart.draw.select': 'Select / edit',
+  'chart.draw.trendline': 'Trendline',
+  'chart.draw.ray': 'Ray',
+  'chart.draw.delete': 'Delete selected drawing',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Structure',
   'chart.structure.trend.up': 'Up',

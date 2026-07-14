@@ -14,12 +14,10 @@
   min-height: 360px;
 }
 
-/* Reserved slot for the future left-edge drawing dock (Plan 0096 phase 4). Zero
-   width today — a future plan gives it a rail width; it holds the flex order so
-   the dock lands left of the chart without shifting anything. */
+/* Left-edge drawing dock slot (reserved by Plan 0096, filled by Plan 0097). Sizes
+   to the tool rail's content and holds the flex order left of the chart. */
 .leftRail {
   flex: 0 0 auto;
-  width: 0;
 }
 
 .chartContainer {

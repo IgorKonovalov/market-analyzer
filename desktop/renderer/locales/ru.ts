@@ -229,6 +229,12 @@ export const ru = {
   'chart.noPatternsInView': 'Нет паттернов в области',
   'chart.noChartPatternsInView': 'Нет графических паттернов в области',
   'chart.ariaLabel': 'Свечной график, {count} баров',
+  // Drawing dock (DrawingRail.tsx, Plan 0097 / ADR-0091).
+  'chart.draw.railLabel': 'Инструменты рисования',
+  'chart.draw.select': 'Выбрать / изменить',
+  'chart.draw.trendline': 'Линия тренда',
+  'chart.draw.ray': 'Луч',
+  'chart.draw.delete': 'Удалить выбранный рисунок',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Структура',
   'chart.structure.trend.up': 'Вверх',

@@ -85,6 +85,9 @@ import {
 import { useTrendlines } from '../hooks/useTrendlines'
 import { DivergencePrimitive, readDivergenceColors } from '../lib/divergences'
 import { useDivergences, requiredOscillatorKindsFor } from '../hooks/useDivergences'
+import { DrawingPrimitive } from '../lib/drawings'
+import { useDrawingTools } from '../hooks/useDrawingTools'
+import { DrawingRail } from './DrawingRail'
 import {
   getStoredTheme,
   resolveEffective,
@@ -128,7 +131,7 @@ import {
   computeVwap,
 } from '../lib/volume'
 import type { Bar } from '../types/sidecar/bar'
-import type { Divergence, OverlaySpec, TrendlineSpec } from '../types/events'
+import type { Divergence, DrawingKind, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
 import styles from './CandlestickChart.module.css'
 
@@ -263,6 +266,10 @@ export function CandlestickChart({
   // `useDivergences` below, same lifecycle discipline as the trendline primitive.
   const divergencePricePrimitiveRef = useRef<DivergencePrimitive | null>(null)
   const obvDivergencePrimitiveRef = useRef<DivergencePrimitive | null>(null)
+  // User/agent freeform-drawing primitive (Plan 0097 phase 2, ADR-0091): attached
+  // at mount like the trendline/span primitives so it rides the live series and is
+  // disposed by `chart.remove()`. Fed drawings/selection/preview by `useDrawingTools`.
+  const drawingPrimitiveRef = useRef<DrawingPrimitive | null>(null)
   // Always-on volume series (Plan 0027 phase 3).
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
@@ -597,6 +604,13 @@ export function CandlestickChart({
     series.attachPrimitive(divergencePricePrimitive)
     divergencePricePrimitiveRef.current = divergencePricePrimitive
 
+    // User/agent drawing primitive (Plan 0097 phase 2): attached once here so it
+    // rides the live series; `useDrawingTools` feeds it. Drawn on the price pane,
+    // above the candles (its own top z-order). `chart.remove()` detaches it.
+    const drawingPrimitive = new DrawingPrimitive()
+    series.attachPrimitive(drawingPrimitive)
+    drawingPrimitiveRef.current = drawingPrimitive
+
     chartRef.current = chart
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
@@ -623,6 +637,7 @@ export function CandlestickChart({
       ichimokuPrimitiveRef.current = null
       divergencePricePrimitiveRef.current = null
       obvDivergencePrimitiveRef.current = null
+      drawingPrimitiveRef.current = null
       volumeSeriesRef.current = null
       volumeMaSeriesRef.current = null
       vwapSeriesRef.current = null
@@ -797,6 +812,12 @@ export function CandlestickChart({
     // Re-apply on a rebuild (Plan 0068 ph4) — the fresh chart needs the formatter.
   }, [timeframe, candleType])
 
+  // Freeform-drawing tool mode (Plan 0097 phase 2, ADR-0091). The component owns
+  // `activeTool` so it can coordinate the two pointer machines: `useChartGestures`
+  // parks while a tool is armed (`suspended`), and the drawing machine parks (no
+  // active tool) while range-select is on.
+  const [activeTool, setActiveTool] = useState<DrawingKind | null>(null)
+
   // Pointer-gesture state machine + agent-mode POSTs (Plan 0029 phase 1).
   // Called AFTER the chart-creation effect so its gesture effect sees a
   // populated `chartRef`/`seriesRef` on mount.
@@ -805,7 +826,37 @@ export function CandlestickChart({
       symbol,
       timeframe,
       bars,
+      suspended: activeTool !== null,
     })
+
+  // Drawing tool machine + edit engine (Plan 0097 phase 2). Feeds the drawing
+  // primitive; called after the chart-creation effect so the refs are populated.
+  const {
+    setActiveTool: setDrawingTool,
+    selectedId: selectedDrawingId,
+    deleteSelected: deleteSelectedDrawing,
+  } = useDrawingTools(containerRef, chartRef, seriesRef, drawingPrimitiveRef, {
+    symbol,
+    bars,
+    selectRangeMode,
+    activeTool,
+    onActiveToolChange: setActiveTool,
+    rebuildToken: candleType,
+  })
+
+  // Keep the two pointer machines mutually exclusive: arming a drawing tool exits
+  // range-select, and entering range-select disarms the drawing tool.
+  const handleSelectTool = useCallback(
+    (tool: DrawingKind | null): void => {
+      if (tool !== null && selectRangeMode) toggleSelectRange()
+      setDrawingTool(tool)
+    },
+    [selectRangeMode, toggleSelectRange, setDrawingTool],
+  )
+  const handleToggleSelectRange = useCallback((): void => {
+    if (!selectRangeMode) setDrawingTool(null)
+    toggleSelectRange()
+  }, [selectRangeMode, toggleSelectRange, setDrawingTool])
 
   // Lazy backward paging (Plan 0030): ask the parent for older bars when the
   // user scrolls near the left edge. A sibling concern to the pointer gestures
@@ -1039,7 +1090,7 @@ export function CandlestickChart({
     <div className={styles.wrapper}>
       <ChartToolbar
         selectRangeMode={selectRangeMode}
-        toggleSelectRange={toggleSelectRange}
+        toggleSelectRange={handleToggleSelectRange}
         scanStatus={scanStatus}
         chartScanStatus={chartScanStatus}
         onScanPatterns={scanVisibleRange}
@@ -1048,10 +1099,18 @@ export function CandlestickChart({
         timeframe={timeframe}
       />
       <div className={styles.chartArea}>
-        {/* Reserved slot for the future left-edge drawing dock (Plan 0096 defers
-            the tools; this only holds the layout position so it lands without
-            shifting the chart). No drawing tools built here. */}
-        <div className={styles.leftRail} aria-hidden="true" data-testid="chart-left-rail" />
+        {/* Left-edge drawing dock (Plan 0097 phase 2, ADR-0091), filling the slot
+            Plan 0096 reserved. The rail arms tools; the drawing layer + edit
+            engine live on the chart via `useDrawingTools`. */}
+        <div className={styles.leftRail} data-testid="chart-left-rail">
+          <DrawingRail
+            activeTool={activeTool}
+            onSelectTool={handleSelectTool}
+            onDelete={deleteSelectedDrawing}
+            hasSelection={selectedDrawingId !== null}
+            disabled={symbol === undefined}
+          />
+        </div>
         <div
           ref={containerRef}
           className={`${styles.chartContainer} ${selectRangeMode ? styles.selectRangeActive : ''}`.trim()}

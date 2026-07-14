@@ -1,0 +1,57 @@
+/* Left-edge drawing tool rail (Plan 0097 phase 2). A narrow vertical column of
+   square tool buttons, filling the slot Plan 0096 reserved left of the chart. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 3px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+}
+
+.toolButton,
+.deleteButton {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toolButton:hover:not(:disabled),
+.deleteButton:hover:not(:disabled) {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+}
+
+/* Armed tool — the accent highlight so the active mode is legible. */
+.toolButton[aria-pressed='true'] {
+  background: var(--color-accent, #2962ff);
+  border-color: var(--color-accent, #2962ff);
+  color: #ffffff;
+}
+
+.toolButton:disabled,
+.deleteButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Separate the destructive delete from the tool cluster. */
+.deleteButton {
+  margin-top: 6px;
+}
+
+.toolButton:focus-visible,
+.deleteButton:focus-visible {
+  outline: 2px solid var(--color-accent, #2962ff);
+  outline-offset: 1px;
+}

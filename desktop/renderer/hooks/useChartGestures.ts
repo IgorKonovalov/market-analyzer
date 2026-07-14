@@ -55,6 +55,10 @@ export interface UseChartGesturesParams {
   timeframe?: string
   /** Used for the bar-click OHLC fallback when the click misses a data point. */
   bars: Bar[]
+  /** When true, a drawing tool owns the pointer (Plan 0097 / ADR-0091): this
+   * machine parks — no range-select drag, no bar-click subscription — and leaves
+   * pan control to `useDrawingTools`, so the two pointer machines never fight. */
+  suspended?: boolean
 }
 
 export interface UseChartGesturesResult {
@@ -102,7 +106,7 @@ export function useChartGestures(
   // The main series is any of the four render types (Plan 0068 phase 4); a click
   // still resolves OHLC (from `seriesData` for candles/bars, else the `bars` prop).
   seriesRef: RefObject<ISeriesApi<'Candlestick' | 'Bar' | 'Line' | 'Area'> | null>,
-  { symbol, timeframe, bars }: UseChartGesturesParams,
+  { symbol, timeframe, bars, suspended = false }: UseChartGesturesParams,
 ): UseChartGesturesResult {
   const [selectRangeMode, setSelectRangeMode] = useState(false)
   // The selection rectangle, in px. Set on pointerdown, updated through the
@@ -134,6 +138,9 @@ export function useChartGestures(
     const chart = chartRef.current
     const series = seriesRef.current
     if (!container || !chart || !series) return
+    // A drawing tool owns the pointer — park this machine entirely (no listeners,
+    // no click subscription) so a placement click can't also fire a bar-click.
+    if (suspended) return
 
     // Bar-click: fires whenever symbol/timeframe are known (independent of
     // select-range mode — a click is not a drag). OHLC comes from the click's
@@ -245,14 +252,21 @@ export function useChartGestures(
       container.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [containerRef, chartRef, seriesRef, selectRangeMode, symbol, timeframe, bars])
+  }, [containerRef, chartRef, seriesRef, selectRangeMode, symbol, timeframe, bars, suspended])
 
   // Disable the chart's built-in pan/zoom while range-selecting so a drag
   // defines a selection instead of scrolling; restore it otherwise. Without
-  // this, lightweight-charts' pointer-driven pan eats the drag.
+  // this, lightweight-charts' pointer-driven pan eats the drag. While suspended
+  // (a drawing tool is armed), `useDrawingTools` owns pan — don't touch it here,
+  // just drop any stale selection rectangle.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
+    if (suspended) {
+      setSelection(null)
+      setRangeLabel(null)
+      return
+    }
     const interactive = !selectRangeMode
     chart.applyOptions({ handleScroll: interactive, handleScale: interactive })
     if (interactive) {
@@ -261,7 +275,7 @@ export function useChartGestures(
       setSelection(null)
       setRangeLabel(null)
     }
-  }, [chartRef, selectRangeMode])
+  }, [chartRef, selectRangeMode, suspended])
 
   return { selectRangeMode, toggleSelectRange, selection, rangeLabel, clickedBarTs }
 }

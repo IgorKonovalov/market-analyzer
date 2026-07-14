@@ -35,6 +35,9 @@ interface DumpedSchemas {
   Marker: JsonSchema
   TrendPoint: JsonSchema
   TrendlineSpec: JsonSchema
+  TimePricePoint: JsonSchema
+  DrawingStyle: JsonSchema
+  DrawingSpec: JsonSchema
   ChartShowPayloadV1: JsonSchema
   ChartUpdatePayloadV1: JsonSchema
   ChartHighlightPayloadV1: JsonSchema
@@ -92,6 +95,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     'from market_analyser.events import (',
     '    OverlaySpec, Marker,',
     '    TrendPoint, TrendlineSpec,',
+    '    TimePricePoint, DrawingStyle, DrawingSpec,',
     '    ChartShowPayloadV1, ChartUpdatePayloadV1,',
     '    ChartHighlightPayloadV1, ChartTrendlinesPayloadV1,',
     '    ChartDivergencesPayloadV1,',
@@ -128,6 +132,9 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "Marker": Marker.model_json_schema(),',
     '    "TrendPoint": TrendPoint.model_json_schema(),',
     '    "TrendlineSpec": TrendlineSpec.model_json_schema(),',
+    '    "TimePricePoint": TimePricePoint.model_json_schema(),',
+    '    "DrawingStyle": DrawingStyle.model_json_schema(),',
+    '    "DrawingSpec": DrawingSpec.model_json_schema(),',
     '    "ChartShowPayloadV1": ChartShowPayloadV1.model_json_schema(),',
     '    "ChartUpdatePayloadV1": ChartUpdatePayloadV1.model_json_schema(),',
     '    "ChartHighlightPayloadV1": ChartHighlightPayloadV1.model_json_schema(),',
@@ -320,6 +327,34 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     // `role` is an optional Literal (`| None`), emitted as `anyOf` rather than a
     // top-level `enum` (same shape as OverlaySpec.role) — presence/optionality
     // are pinned by the property-name + required checks above.
+  })
+
+  it('TimePricePoint fields match (both anchors required; Plan 0097)', () => {
+    expect(propertyNames(dumped.TimePricePoint)).toEqual(['price', 'ts'])
+    expect(requiredNames(dumped.TimePricePoint)).toEqual(['price', 'ts'])
+  })
+
+  it('DrawingStyle fields match (both optional; Plan 0097)', () => {
+    expect(propertyNames(dumped.DrawingStyle)).toEqual(['color', 'width'])
+    expect(requiredNames(dumped.DrawingStyle)).toEqual([])
+  })
+
+  it('DrawingSpec fields match (six kinds; id always on the wire; Plan 0097 / ADR-0091)', () => {
+    expect(propertyNames(dumped.DrawingSpec)).toEqual([
+      'id',
+      'kind',
+      'points',
+      'provenance',
+      'style',
+    ])
+    // `id` has a default_factory → NOT in pydantic `required`, but it is always
+    // present on the wire (generated when omitted), so the TS marks it required.
+    // `style` defaults to None → optional both sides.
+    expect(requiredNames(dumped.DrawingSpec)).toEqual(['kind', 'points', 'provenance'])
+    expect(literalValues(dumped.DrawingSpec, 'kind')).toEqual(
+      ['fib', 'hline', 'ray', 'rect', 'trendline', 'vline'].sort(),
+    )
+    expect(literalValues(dumped.DrawingSpec, 'provenance')).toEqual(['agent', 'user'])
   })
 
   it('ChartShowPayloadV1 fields match (trendlines REMOVED, Plan 0064/ADR-0059)', () => {

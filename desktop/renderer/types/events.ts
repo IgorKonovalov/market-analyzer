@@ -149,6 +149,48 @@ export interface TrendlineSpec {
   pattern?: string | null
 }
 
+/** Mirror of the pydantic `TimePricePoint` (Plan 0097 / ADR-0091): one
+ * `(time, price)` anchor of a freeform drawing. `ts` is an ISO timestamp (not a
+ * bar index), so a drawing survives timeframe switches. Both fields required.
+ * For an `hline` only `price` is meaningful; for a `vline` only `ts`. */
+export interface TimePricePoint {
+  ts: string
+  price: number
+}
+
+/** Mirror of the pydantic `DrawingStyle` (Plan 0097): optional per-drawing style;
+ * absent fields fall to the renderer defaults. Both are `| None` in pydantic and
+ * `exclude_none`-stripped from the wire — hence optional here. */
+export interface DrawingStyle {
+  color?: string | null
+  width?: number | null
+}
+
+/** The six freeform-drawing geometry kinds (Plan 0097 / ADR-0091). */
+export type DrawingKind = 'trendline' | 'ray' | 'hline' | 'vline' | 'rect' | 'fib'
+
+/** Who authored a drawing — the merge + edit-affordance discriminator (ADR-0091):
+ * `user` drawings are editable and renderer-local; `agent` drawings are hide-only
+ * and arrive over the `chart.annotations` wire. */
+export type DrawingProvenance = 'agent' | 'user'
+
+/** Mirror of the pydantic `DrawingSpec` (Plan 0097 / ADR-0091): one freeform chart
+ * drawing — the shared shape for both the agent wire source (`chart.annotations`)
+ * and the renderer's user-local persistence (`ma.userDrawings`). Anchored to
+ * `(time, price)`, so it renders across every timeframe (per-symbol, no timeframe
+ * field anywhere). `points` count is fixed per kind (1 for hline/vline, 2 for the
+ * rest — validated sidecar-side). `id` has a pydantic default-factory (uuid4 hex)
+ * so it is NOT in the schema's `required` set but is ALWAYS present on the wire —
+ * hence required here (the `TrendlineSpec.style` precedent). `style` defaults to
+ * None and is `exclude_none`-stripped — hence optional. */
+export interface DrawingSpec {
+  kind: DrawingKind
+  points: TimePricePoint[]
+  provenance: DrawingProvenance
+  style?: DrawingStyle | null
+  id: string
+}
+
 export interface ChartShowPayloadV1 {
   symbol: string
   timeframe: string
