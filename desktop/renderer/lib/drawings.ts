@@ -65,12 +65,14 @@ function toUtcSeconds(iso: string): UTCTimestamp {
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp
 }
 
-/** A stroked line segment in media (pixel) coordinates. */
+/** A stroked line segment in media (pixel) coordinates. An optional `label`
+ * (the fib-ratio caption) is drawn at the segment's left end. */
 export interface DrawingSegment {
   x1: number
   y1: number
   x2: number
   y2: number
+  label?: string
 }
 
 /** An endpoint handle position in media (pixel) coordinates. */
@@ -80,8 +82,9 @@ export interface DrawingHandle {
 }
 
 /** The pixel geometry of one drawing: the stroked line(s), the anchor handles a
- * drag grabs, and the resolved stroke style. `segments` is empty when an anchor
- * maps off-screen (a converter returns `null`). */
+ * drag grabs, the resolved stroke style, and (for a `rect` zone) an optional
+ * fill polygon drawn semi-transparent beneath the strokes. `segments` is empty
+ * when an anchor maps off-screen (a converter returns `null`). */
 export interface DrawingGeometry {
   id: string
   kind: DrawingKind
@@ -89,7 +92,15 @@ export interface DrawingGeometry {
   handles: DrawingHandle[]
   color: string
   width: number
+  fillPolygon?: ReadonlyArray<{ x: number; y: number }>
 }
+
+/** The standard Fibonacci retracement ratios (Plan 0097 phase 3): 0 / 23.6 /
+ * 38.2 / 50 / 61.8 / 100 %, drawn between the two anchor prices. */
+export const FIB_LEVELS: ReadonlyArray<number> = [0, 0.236, 0.382, 0.5, 0.618, 1.0]
+
+/** Fill opacity for a `rect` zone — low enough the candles stay legible. */
+export const RECT_FILL_ALPHA = 0.12
 
 /**
  * Pure: the far endpoint of a ray from `(x1,y1)` through `(x2,y2)`, extended in
@@ -126,13 +137,21 @@ function styleWidth(spec: DrawingSpec): number {
   return typeof w === 'number' && w > 0 ? w : DEFAULT_DRAWING_WIDTH
 }
 
+/** A visible fallback coordinate for the off-axis handle of an hline/vline whose
+ * anchor's other coordinate maps off-screen — kept inside the pane so the handle
+ * stays grabbable. */
+function clampVisible(extent: number): number {
+  return Math.min(Math.max(8, extent * 0.15), Math.max(8, extent - 8))
+}
+
 /**
  * Pure: map one `DrawingSpec` to its pixel geometry via a time→x converter (with
- * the off-grid `resolveTimeX` fallback) and a price→y converter. Phase 2 handles
- * `trendline` (segment between the two anchors) and `ray` (from anchor 0 through
- * anchor 1, extended to the chart edge). Other kinds resolve their handles but
- * draw no segment yet (phase 3). Returns `null` when a defining anchor maps
- * off-screen. `mediaWidth`/`mediaHeight` bound the ray extension.
+ * the off-grid `resolveTimeX` fallback) and a price→y converter. Covers all six
+ * kinds: `trendline` (segment), `ray` (extended to the edge), `hline`/`vline`
+ * (full-axis line, only the relevant coordinate must map), `rect` (four edges +
+ * a fill zone), `fib` (the standard retracement grid, extended right). Returns
+ * `null` only when a *defining* anchor coordinate maps off-screen.
+ * `mediaWidth`/`mediaHeight` bound the extend-to-edge kinds.
  */
 export function computeDrawingGeometry(
   spec: DrawingSpec,
@@ -144,43 +163,77 @@ export function computeDrawingGeometry(
 ): DrawingGeometry | null {
   const color = styleColor(spec, defaultColor)
   const width = styleWidth(spec)
-  const px = spec.points.map((p) => {
-    const x = timeToX(toUtcSeconds(p.ts))
-    const y = priceToY(p.price)
-    return x === null || y === null ? null : { x, y }
-  })
-  if (px.some((p) => p === null)) return null
-  const handles = px as DrawingHandle[]
+  const style = { id: spec.id, kind: spec.kind, color, width }
 
-  const base: Omit<DrawingGeometry, 'segments'> = {
-    id: spec.id,
-    kind: spec.kind,
-    handles,
-    color,
-    width,
-  }
-
-  if (spec.kind === 'trendline') {
-    if (handles.length < 2) return null
+  // hline / vline anchor by a SINGLE coordinate; the line spans the full axis, so
+  // the off-axis coordinate need not map (the handle falls back into view).
+  if (spec.kind === 'hline') {
+    const y = priceToY(spec.points[0].price)
+    if (y === null) return null
+    const xa = timeToX(toUtcSeconds(spec.points[0].ts))
+    const hx = xa ?? clampVisible(mediaWidth)
     return {
-      ...base,
-      segments: [{ x1: handles[0].x, y1: handles[0].y, x2: handles[1].x, y2: handles[1].y }],
+      ...style,
+      handles: [{ x: hx, y }],
+      segments: [{ x1: 0, y1: y, x2: mediaWidth, y2: y }],
     }
   }
-  if (spec.kind === 'ray') {
-    if (handles.length < 2) return null
-    const far = computeRayFarPoint(
-      handles[0].x,
-      handles[0].y,
-      handles[1].x,
-      handles[1].y,
-      mediaWidth,
-      mediaHeight,
-    )
-    return { ...base, segments: [{ x1: handles[0].x, y1: handles[0].y, x2: far.x, y2: far.y }] }
+  if (spec.kind === 'vline') {
+    const x = timeToX(toUtcSeconds(spec.points[0].ts))
+    if (x === null) return null
+    const ya = priceToY(spec.points[0].price)
+    const hy = ya ?? clampVisible(mediaHeight)
+    return {
+      ...style,
+      handles: [{ x, y: hy }],
+      segments: [{ x1: x, y1: 0, x2: x, y2: mediaHeight }],
+    }
   }
-  // hline / vline / rect / fib: handles resolve now; segments land in phase 3.
-  return { ...base, segments: [] }
+
+  // The remaining kinds are two-anchor; both anchors must map fully.
+  const a = mapPoint(spec.points[0], timeToX, priceToY)
+  const b = mapPoint(spec.points[1], timeToX, priceToY)
+  if (a === null || b === null) return null
+  const handles = [a, b]
+
+  if (spec.kind === 'trendline') {
+    return { ...style, handles, segments: [{ x1: a.x, y1: a.y, x2: b.x, y2: b.y }] }
+  }
+  if (spec.kind === 'ray') {
+    const far = computeRayFarPoint(a.x, a.y, b.x, b.y, mediaWidth, mediaHeight)
+    return { ...style, handles, segments: [{ x1: a.x, y1: a.y, x2: far.x, y2: far.y }] }
+  }
+  if (spec.kind === 'rect') {
+    const corners = [
+      { x: a.x, y: a.y },
+      { x: b.x, y: a.y },
+      { x: b.x, y: b.y },
+      { x: a.x, y: b.y },
+    ]
+    const segments: DrawingSegment[] = corners.map((c, i) => {
+      const n = corners[(i + 1) % corners.length]
+      return { x1: c.x, y1: c.y, x2: n.x, y2: n.y }
+    })
+    return { ...style, handles, segments, fillPolygon: corners }
+  }
+  // fib: horizontal lines at the standard ratios between the two anchor PRICES,
+  // spanning from the left anchor to the right edge, each captioned with its ratio.
+  const xLeft = Math.min(a.x, b.x)
+  const segments: DrawingSegment[] = FIB_LEVELS.map((r) => {
+    const y = a.y + r * (b.y - a.y)
+    return { x1: xLeft, y1: y, x2: mediaWidth, y2: y, label: `${(r * 100).toFixed(1)}%` }
+  })
+  return { ...style, handles, segments }
+}
+
+function mapPoint(
+  p: { ts: string; price: number },
+  timeToX: (t: UTCTimestamp) => number | null,
+  priceToY: (price: number) => number | null,
+): DrawingHandle | null {
+  const x = timeToX(toUtcSeconds(p.ts))
+  const y = priceToY(p.price)
+  return x === null || y === null ? null : { x, y }
 }
 
 // The renderer's canvas target — the minimal slice of fancy-canvas'
@@ -198,6 +251,18 @@ function strokeGeometry(
   g: DrawingGeometry,
   selected: boolean,
 ): void {
+  // A rect zone's fill sits beneath every stroke, low-alpha so candles read through.
+  if (g.fillPolygon !== undefined && g.fillPolygon.length >= 3) {
+    ctx.save()
+    ctx.globalAlpha = RECT_FILL_ALPHA
+    ctx.fillStyle = g.color
+    ctx.beginPath()
+    ctx.moveTo(g.fillPolygon[0].x, g.fillPolygon[0].y)
+    for (const p of g.fillPolygon.slice(1)) ctx.lineTo(p.x, p.y)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+  }
   ctx.save()
   ctx.strokeStyle = g.color
   ctx.lineWidth = selected ? g.width + 1 : g.width
@@ -207,6 +272,15 @@ function strokeGeometry(
     ctx.moveTo(seg.x1, seg.y1)
     ctx.lineTo(seg.x2, seg.y2)
     ctx.stroke()
+    // A fib line's ratio caption, above its left end.
+    if (seg.label !== undefined) {
+      ctx.save()
+      ctx.fillStyle = g.color
+      ctx.font = '10px sans-serif'
+      ctx.textBaseline = 'bottom'
+      ctx.fillText(seg.label, seg.x1 + 2, seg.y1 - 1)
+      ctx.restore()
+    }
   }
   ctx.restore()
   // Endpoint handles on the selected drawing (a filled square with a white

@@ -221,6 +221,10 @@ export const en = {
   'chart.draw.select': 'Select / edit',
   'chart.draw.trendline': 'Trendline',
   'chart.draw.ray': 'Ray',
+  'chart.draw.hline': 'Horizontal line',
+  'chart.draw.vline': 'Vertical line',
+  'chart.draw.rect': 'Rectangle / zone',
+  'chart.draw.fib': 'Fibonacci retracement',
   'chart.draw.delete': 'Delete selected drawing',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Structure',

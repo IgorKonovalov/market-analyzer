@@ -122,6 +122,40 @@ describe('userDrawings store', () => {
     expect(m.loadUserDrawings('AAPL')).toHaveLength(0)
   })
 
+  it('round-trips a single-anchor kind (hline) through persistence', async () => {
+    const hline: DrawingSpec = {
+      kind: 'hline',
+      points: [tp('2026-05-02T00:00:00Z', 118)],
+      provenance: 'user',
+      id: 'h1',
+    }
+    const m1 = await freshStore()
+    m1.addUserDrawing('AAPL', hline)
+    const m2 = await freshStore()
+    const restored = m2.loadUserDrawings('AAPL')
+    expect(restored).toHaveLength(1)
+    expect(restored[0].kind).toBe('hline')
+    expect(restored[0].points).toEqual([tp('2026-05-02T00:00:00Z', 118)])
+  })
+
+  it('drops a two-anchor kind (rect) persisted with only one point', async () => {
+    window.localStorage.setItem(
+      'ma.userDrawings',
+      JSON.stringify({
+        AAPL: [
+          {
+            kind: 'rect',
+            points: [tp('2026-05-01T00:00:00Z', 100)],
+            provenance: 'user',
+            id: 'bad',
+          },
+        ],
+      }),
+    )
+    const m = await freshStore()
+    expect(m.loadUserDrawings('AAPL')).toHaveLength(0)
+  })
+
   it('forces stored provenance to user even if the record claims agent', async () => {
     window.localStorage.setItem(
       'ma.userDrawings',

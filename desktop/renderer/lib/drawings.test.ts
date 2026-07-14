@@ -86,6 +86,71 @@ describe('computeDrawingGeometry', () => {
   })
 })
 
+describe('computeDrawingGeometry — phase-3 kinds', () => {
+  const oneAnchor = (kind: 'hline' | 'vline', ts: string, price: number): DrawingSpec => ({
+    kind,
+    points: [tp(ts, price)],
+    provenance: 'user',
+    id: 'k1',
+  })
+
+  it('hline spans the full width at the price y, handle at the anchor', () => {
+    const g = computeDrawingGeometry(oneAnchor('hline', T1, 100), timeToX, priceToY, 400, 300)
+    expect(g!.segments).toEqual([{ x1: 0, y1: 200, x2: 400, y2: 200 }])
+    expect(g!.handles).toEqual([{ x: 100, y: 200 }])
+  })
+
+  it('hline still renders when its anchor ts is off-grid (no logical mis-render)', () => {
+    // ts maps to null → the line still spans the axis; the handle falls into view.
+    const g = computeDrawingGeometry(
+      oneAnchor('hline', '2026-06-01T00:00:00Z', 100),
+      timeToX,
+      priceToY,
+      400,
+      300,
+    )
+    expect(g).not.toBeNull()
+    expect(g!.segments).toEqual([{ x1: 0, y1: 200, x2: 400, y2: 200 }])
+    expect(g!.handles[0].y).toBe(200)
+    // Handle x clamped into the visible pane, not dropped.
+    expect(g!.handles[0].x).toBeGreaterThan(0)
+    expect(g!.handles[0].x).toBeLessThan(400)
+  })
+
+  it('vline spans the full height at the anchor x', () => {
+    const g = computeDrawingGeometry(oneAnchor('vline', T1, 100), timeToX, priceToY, 400, 300)
+    expect(g!.segments).toEqual([{ x1: 100, y1: 0, x2: 100, y2: 300 }])
+    expect(g!.handles).toEqual([{ x: 100, y: 200 }])
+  })
+
+  it('rect renders four edges and a fill polygon of the four corners', () => {
+    const g = computeDrawingGeometry(spec('rect'), timeToX, priceToY, 400, 300)
+    // Corners a=(100,200) b=(200,180): the four edges of the box.
+    expect(g!.segments).toEqual([
+      { x1: 100, y1: 200, x2: 200, y2: 200 },
+      { x1: 200, y1: 200, x2: 200, y2: 180 },
+      { x1: 200, y1: 180, x2: 100, y2: 180 },
+      { x1: 100, y1: 180, x2: 100, y2: 200 },
+    ])
+    expect(g!.fillPolygon).toHaveLength(4)
+    expect(g!.handles).toEqual([
+      { x: 100, y: 200 },
+      { x: 200, y: 180 },
+    ])
+  })
+
+  it('fib renders the six standard ratio lines between the anchor prices', () => {
+    const g = computeDrawingGeometry(spec('fib'), timeToX, priceToY, 400, 300)
+    expect(g!.segments).toHaveLength(6)
+    // a.y=200 (0%), b.y=180 (100%); lines span from the left anchor x to the edge.
+    expect(g!.segments[0]).toEqual({ x1: 100, y1: 200, x2: 400, y2: 200, label: '0.0%' })
+    expect(g!.segments[5]).toEqual({ x1: 100, y1: 180, x2: 400, y2: 180, label: '100.0%' })
+    // 50% line sits midway (y=190) and is captioned.
+    const mid = g!.segments.find((s) => s.label === '50.0%')
+    expect(mid).toEqual({ x1: 100, y1: 190, x2: 400, y2: 190, label: '50.0%' })
+  })
+})
+
 /** Attach the primitive to a fake chart whose time/price scales use our stubs, so
  * `renderGeometry` populates the hit-test cache without a real chart. */
 function attach(primitive: DrawingPrimitive): void {
@@ -138,5 +203,27 @@ describe('DrawingPrimitive hit-testing', () => {
     primitive.renderGeometry(400, 300)
     primitive.setVisible(false)
     expect(primitive.hitTestDrawingId(150, 190)).toBeNull()
+  })
+
+  it('selects a rect by clicking near any of its edges', () => {
+    const primitive = new DrawingPrimitive()
+    attach(primitive)
+    primitive.setDrawings([spec('rect', 'box-1')])
+    primitive.renderGeometry(400, 300)
+    // Near the top edge y=200 between x=100..200.
+    expect(primitive.hitTestDrawingId(150, 201)).toBe('box-1')
+    // Inside the box but away from every edge → no hit (edges, not fill, select).
+    expect(primitive.hitTestDrawingId(150, 190)).toBeNull()
+  })
+
+  it('selects a fib grid by clicking near one of its ratio lines', () => {
+    const primitive = new DrawingPrimitive()
+    attach(primitive)
+    primitive.setDrawings([spec('fib', 'fib-1')])
+    primitive.renderGeometry(400, 300)
+    // Near the 50% line (y=190).
+    expect(primitive.hitTestDrawingId(250, 191)).toBe('fib-1')
+    // Between ratio lines → no hit.
+    expect(primitive.hitTestDrawingId(250, 250)).toBeNull()
   })
 })

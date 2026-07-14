@@ -234,6 +234,10 @@ export const ru = {
   'chart.draw.select': 'Выбрать / изменить',
   'chart.draw.trendline': 'Линия тренда',
   'chart.draw.ray': 'Луч',
+  'chart.draw.hline': 'Горизонтальная линия',
+  'chart.draw.vline': 'Вертикальная линия',
+  'chart.draw.rect': 'Прямоугольник / зона',
+  'chart.draw.fib': 'Коррекция Фибоначчи',
   'chart.draw.delete': 'Удалить выбранный рисунок',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Структура',

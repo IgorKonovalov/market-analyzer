@@ -26,10 +26,13 @@ interface ToolButton {
   labelKey: string
 }
 
-// Phase 2 tools; phase 3 appends hline / vline / rect / fib.
 const TOOL_BUTTONS: ToolButton[] = [
   { tool: 'trendline', glyph: '╱', labelKey: 'chart.draw.trendline' },
   { tool: 'ray', glyph: '⟶', labelKey: 'chart.draw.ray' },
+  { tool: 'hline', glyph: '─', labelKey: 'chart.draw.hline' },
+  { tool: 'vline', glyph: '│', labelKey: 'chart.draw.vline' },
+  { tool: 'rect', glyph: '▭', labelKey: 'chart.draw.rect' },
+  { tool: 'fib', glyph: '≣', labelKey: 'chart.draw.fib' },
 ]
 
 export function DrawingRail({
