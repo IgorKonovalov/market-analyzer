@@ -34,11 +34,23 @@ export class PaneRegistry {
    * NOT auto-remove it the moment its last series is removed
    * (`_cleanupIfPaneIsEmpty`). This keeps the registry's explicit `remove()` the
    * sole authority over pane teardown — otherwise `removeSeries` frees the pane,
-   * then our `removePane(index)` asserts "Invalid pane index" on the stale index. */
-  ensure(id: string): number {
-    const at = this.order.indexOf(id)
-    if (at !== -1) return this.basePane + at
-    this.chart.addPane(true)
+   * then our `removePane(index)` asserts "Invalid pane index" on the stale index.
+   *
+   * `at` (Plan 0105 phase 3) is an optional slot in the MANAGED order: a newly
+   * created pane is moved to `basePane + at` (v5 `IPaneApi.moveTo`), shifting the
+   * panes below it down — how the lazily re-created OBV pane reclaims the first
+   * sub-pane slot ahead of existing oscillator panes. Ignored when the id already
+   * exists (a registered pane never moves) or when it points at/after the end
+   * (plain append). */
+  ensure(id: string, at?: number): number {
+    const existing = this.order.indexOf(id)
+    if (existing !== -1) return this.basePane + existing
+    const pane = this.chart.addPane(true)
+    if (at !== undefined && at >= 0 && at < this.order.length) {
+      pane.moveTo(this.basePane + at)
+      this.order.splice(at, 0, id)
+      return this.basePane + at
+    }
     this.order.push(id)
     return this.basePane + this.order.length - 1
   }

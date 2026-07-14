@@ -3,11 +3,12 @@
  *
  * FEEDS the already-attached `DivergencePrimitive`s their divergences + theme-
  * resolved colours on every change. It does NOT attach the primitives: the
- * price-pane and OBV-pane primitives are created + `attachPrimitive`'d in the
- * component's chart-creation effect (mirroring the trendline primitive), and each
- * oscillator pane's primitive is attached by `useOscillatorPanes` at pane creation
- * — so every primitive's lifecycle is tied to its series and disposed by
- * `chart.remove()` / pane removal (the Plan 0064 stranding-bug fix, reused here).
+ * price-pane primitive is created + `attachPrimitive`'d in the component's
+ * chart-creation effect (mirroring the trendline primitive), the OBV pane's by
+ * `useObvPane` (Plan 0105 phase 3), and each oscillator pane's by
+ * `useOscillatorPanes` at pane creation — so every primitive's lifecycle is tied
+ * to its series and disposed by `chart.remove()` / pane removal (the Plan 0064
+ * stranding-bug fix, reused here).
  *
  * A divergence draws as two segments: the price primitive draws every divergence's
  * `price_pivots` (on pane 0); each oscillator/OBV primitive draws only the
@@ -85,9 +86,10 @@ export function useDivergences(
 }
 
 /** The oscillator kinds a divergence set needs a pane for (Plan 0091 phase 9):
- * every referenced oscillator EXCEPT `obv` (which uses the always-on OBV base pane,
- * not a `useOscillatorPanes` pane). Fed to `useOscillatorPanes`' `requiredKinds` so
- * the panes are ensured before `useDivergences` feeds them. */
+ * every referenced oscillator EXCEPT `obv` (whose pane `useObvPane` reconciles —
+ * and keeps alive for an obv divergence — Plan 0105 phase 3). Fed to
+ * `useOscillatorPanes`' `requiredKinds` so the panes are ensured before
+ * `useDivergences` feeds them. */
 export function requiredOscillatorKindsFor(
   divergences: ReadonlyArray<Divergence>,
 ): Set<'rsi' | 'macd' | 'mfi'> {

@@ -125,8 +125,9 @@ export interface UseOscillatorPanesParams {
   /** Oscillator kinds a divergence needs a pane for (Plan 0091 phase 9): these
    * panes are ensured (created if absent) even when the user has not added — or has
    * toggled off — that oscillator overlay, so the divergence's oscillator segment
-   * always has a pane to draw on. `obv` divergences use the always-on OBV base pane
-   * and are NOT included here. */
+   * always has a pane to draw on. `obv` divergences are NOT included here — the
+   * OBV pane is reconciled by `useObvPane`, which applies the same required-pane
+   * rule (Plan 0105 phase 3). */
   requiredKinds: ReadonlySet<OverlayKind>
   rebuildToken: unknown
   syncTestRenderHook: () => void

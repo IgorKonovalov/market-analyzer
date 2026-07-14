@@ -40,6 +40,7 @@ import { useLayersLegend } from '../hooks/useLayersLegend'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import { useBbandsSeries } from '../hooks/useBbandsSeries'
 import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
+import { useObvPane } from '../hooks/useObvPane'
 import { useOscillatorPanes, type OscillatorPaneEntry } from '../hooks/useOscillatorPanes'
 import { useAnchoredVwapSeries } from '../hooks/useAnchoredVwapSeries'
 import { useMarketStructureMarkers } from '../hooks/useMarketStructureMarkers'
@@ -58,10 +59,6 @@ import { buildLegendValues } from '../lib/legendValues'
 import { marketStructure } from '../lib/marketStructure'
 import {
   MARKET_STRUCTURE_LAYER_ID,
-  OBV_LAYER_ID,
-  OBV_PANE_HEIGHT,
-  OBV_PANE_ID,
-  OBV_SCALE_ID,
   PRICE_SCALE_ID,
   PRICE_SCALE_MARGINS,
   VOLUME_SCALE_ID,
@@ -126,7 +123,6 @@ import { overlayLayerId } from '../lib/overlays'
 import {
   VOLUME_MA_PERIOD,
   VWAP_PERIOD,
-  computeObv,
   computeVolumeBars,
   computeVolumeMa,
   computeVwap,
@@ -276,8 +272,9 @@ export function CandlestickChart({
   const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-  // Oscillator sub-panes (Plan 0091 phase 6): the pane registry (shared with OBV so
-  // OBV stays pane 1) and the active-oscillator-pane map `useOscillatorPanes` owns.
+  // Oscillator sub-panes (Plan 0091 phase 6): the pane registry (shared with the
+  // lazily-reconciled OBV pane, which claims slot 0 so it stays the first
+  // sub-pane — Plan 0105 phase 3) and the pane map `useOscillatorPanes` owns.
   const paneRegistryRef = useRef<PaneRegistry | null>(null)
   const oscillatorPanesRef = useRef<Map<string, OscillatorPaneEntry>>(new Map())
   // Bar count currently drawn on the candlestick, updated by the bars effect.
@@ -560,26 +557,12 @@ export function CandlestickChart({
       priceLineVisible: false,
       lastValueVisible: false,
     })
-    // OBV lives on its own REAL pane below the price pane (Plan 0095 phase 2, v5
-    // `addPane()` via the pane registry) — no longer a `scaleMargins` band sharing
-    // the price axis. Volume/VWAP stay on the price pane (pane 0).
+    // The pane registry owns every sub-pane below the price pane (Plan 0095
+    // phase 2, v5 `addPane()`): the OBV pane is lazily reconciled by `useObvPane`
+    // (Plan 0105 phase 3 — no empty pane when OBV is off) at slot 0, and the
+    // oscillator panes (Plan 0091) follow it. Volume/VWAP stay on pane 0.
     const paneRegistry = new PaneRegistry(chart)
-    paneRegistryRef.current = paneRegistry // shared with the oscillator sub-panes (Plan 0091)
-    const obvPaneIndex = paneRegistry.ensure(OBV_PANE_ID)
-    const obvSeries = chart.addSeries(
-      LineSeries,
-      {
-        // OBV's own (per-pane) overlay scale — keeps it a distinguishable always-on
-        // series, not an agent overlay. No scaleMargins now: it owns the pane.
-        priceScaleId: OBV_SCALE_ID,
-        color: colors.obv,
-        lineWidth: style.widths.obv as LineWidth,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      },
-      obvPaneIndex,
-    )
-    paneRegistry.pane(OBV_PANE_ID)?.setHeight(OBV_PANE_HEIGHT)
+    paneRegistryRef.current = paneRegistry
     // Candles occupy the upper band of the price pane; volume hugs its bottom.
     chart.priceScale(PRICE_SCALE_ID).applyOptions({ scaleMargins: PRICE_SCALE_MARGINS })
     chart.priceScale(VOLUME_SCALE_ID).applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS })
@@ -608,25 +591,21 @@ export function CandlestickChart({
     series.attachPrimitive(ichimokuPrimitive)
     ichimokuPrimitiveRef.current = ichimokuPrimitive
 
-    // Divergence primitives (Plan 0091 phase 9, ADR-0090): the price-pane one on the
-    // candle series (draws every divergence's price-pivot segment), the OBV one on
-    // the OBV series (draws obv oscillator-pivot segments). Each oscillator pane's
-    // own primitive is attached by `useOscillatorPanes`. All fed by `useDivergences`;
-    // `chart.remove()` detaches these two.
+    // Divergence primitives (Plan 0091 phase 9, ADR-0090): the price-pane one on
+    // the candle series (draws every divergence's price-pivot segment). The OBV
+    // pane's primitive is attached by `useObvPane` (Plan 0105 phase 3) and each
+    // oscillator pane's by `useOscillatorPanes`. All fed by `useDivergences`;
+    // `chart.remove()` detaches this one.
     const divergenceColors = readDivergenceColors(container)
     const divergencePricePrimitive = new DivergencePrimitive('price', divergenceColors)
     series.attachPrimitive(divergencePricePrimitive)
     divergencePricePrimitiveRef.current = divergencePricePrimitive
-    const obvDivergencePrimitive = new DivergencePrimitive('oscillator', divergenceColors)
-    obvSeries.attachPrimitive(obvDivergencePrimitive)
-    obvDivergencePrimitiveRef.current = obvDivergencePrimitive
 
     chartRef.current = chart
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
     volumeMaSeriesRef.current = volumeMaSeries
     vwapSeriesRef.current = vwapSeries
-    obvSeriesRef.current = obvSeries
     // Capture the Map reference into a local for the cleanup closure
     // (react-hooks/exhaustive-deps: ref.current may change between effect
     // run and cleanup invocation; the local capture is the canonical fix).
@@ -694,7 +673,6 @@ export function CandlestickChart({
     volumeSeriesRef.current?.setData(computeVolumeBars(bars))
     volumeMaSeriesRef.current?.setData(computeVolumeMa(bars, VOLUME_MA_PERIOD))
     vwapSeriesRef.current?.setData(computeVwap(bars, VWAP_PERIOD))
-    obvSeriesRef.current?.setData(computeObv(bars))
 
     const barsChanged = prevBarsRef.current !== bars
     if (grewOnLeft && rangeBeforePrepend && prevFirstMs !== null) {
@@ -719,14 +697,6 @@ export function CandlestickChart({
     // data pushed (Plan 0068 ph4). Overlay/supertrend reconcile lives in its own
     // hook now (Plan 0072 phase 8), so this effect no longer keys on overlays/hidden.
   }, [bars, syncTestRenderHook, candleType])
-
-  // OBV visibility (Plan 0076 phase 2): the always-on OBV series (Plan 0027, now on
-  // its own real pane — Plan 0095 ph2) is toggleable from the layers legend. Hiding
-  // it blanks the series in place; its pane is retained.
-  // Keyed on `candleType` so a rebuild's fresh series re-applies the current toggle.
-  useEffect(() => {
-    obvSeriesRef.current?.applyOptions({ visible: !hidden.has(OBV_LAYER_ID) })
-  }, [hidden, candleType])
 
   // Agent-overlay line series + supertrend two-series reconcile (Plan 0007 ph4.5 /
   // Plan 0049 ph9), split out of the bars effect (Plan 0072 phase 8). Defined
@@ -766,9 +736,23 @@ export function CandlestickChart({
     effectiveTheme,
     rebuildToken: candleType,
   })
+  // OBV pane lifecycle (Plan 0105 phase 3): lazy create/remove like the oscillator
+  // panes — toggling OBV off removes its pane (no empty ~30px band; a Clean chart
+  // is born without one), toggling on re-creates it as the FIRST sub-pane with its
+  // divergence primitive re-attached. An obv divergence keeps the pane (series
+  // hidden) so its oscillator segment always has a pane to draw on. Runs before
+  // `useOscillatorPanes`/`useDivergences` so the pane + primitive exist first.
+  useObvPane(chartRef, containerRef, paneRegistryRef, obvSeriesRef, obvDivergencePrimitiveRef, {
+    bars,
+    hidden,
+    divergences,
+    effectiveThemeRef,
+    rebuildToken: candleType,
+    syncTestRenderHook,
+  })
   // Oscillator panes a divergence needs (Plan 0091 phase 9): ensured below even if
   // the user hasn't added — or has toggled off — that oscillator, so the divergence's
-  // oscillator segment always has a pane. `obv` uses the always-on OBV base pane.
+  // oscillator segment always has a pane. `obv` uses the OBV pane `useObvPane` owns.
   const requiredOscillatorKinds = useMemo(
     () => requiredOscillatorKindsFor(divergences),
     [divergences],

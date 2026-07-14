@@ -158,19 +158,24 @@ it('renders one row per layer: overlays + OBV + candlestick master/group + price
   expect(screen.getByTestId('legend-row:pline:R1')).toBeInTheDocument()
 })
 
-// Plan 0076 phase 2: the always-on OBV strip is toggleable. Toggling the row off
-// hides the OBV series in place (applyOptions visible:false); on shows it. (No
-// symbol → the legacy ephemeral, all-visible default, so OBV starts visible.)
-it('toggling the OBV row hides and re-shows the OBV series', () => {
+// Plan 0076 phase 2 made the OBV row toggleable; Plan 0105 phase 3 made the
+// toggle a pane-lifecycle event: off REMOVES the OBV series (+ its pane, so no
+// empty band remains), on re-creates it. (No symbol → the legacy ephemeral,
+// all-visible default, so OBV starts visible.)
+it('toggling the OBV row removes and re-creates the OBV series', () => {
   renderChart()
   const obv = lineSeries.find((s) => s._opts.priceScaleId === 'obv')
   expect(obv).toBeDefined()
 
   toggle('series:obv')
-  expect(obv?.applyOptions).toHaveBeenCalledWith({ visible: false })
+  expect(removedSeries).toContain(obv)
 
   toggle('series:obv')
-  expect(obv?.applyOptions).toHaveBeenLastCalledWith({ visible: true })
+  const recreated = lineSeries.filter(
+    (s) => s._opts.priceScaleId === 'obv' && !removedSeries.includes(s),
+  )
+  expect(recreated).toHaveLength(1)
+  expect(recreated[0]).not.toBe(obv)
 })
 
 it('each swatch colour equals the colour the layer was drawn with', () => {
