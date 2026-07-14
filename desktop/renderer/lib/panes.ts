@@ -28,11 +28,17 @@ export class PaneRegistry {
     private readonly basePane = 1,
   ) {}
 
-  /** Create the pane for `id` if absent (reuse if present); return its pane index. */
+  /** Create the pane for `id` if absent (reuse if present); return its pane index.
+   *
+   * The pane is created with `preserveEmptyPane: true` so lightweight-charts does
+   * NOT auto-remove it the moment its last series is removed
+   * (`_cleanupIfPaneIsEmpty`). This keeps the registry's explicit `remove()` the
+   * sole authority over pane teardown — otherwise `removeSeries` frees the pane,
+   * then our `removePane(index)` asserts "Invalid pane index" on the stale index. */
   ensure(id: string): number {
     const at = this.order.indexOf(id)
     if (at !== -1) return this.basePane + at
-    this.chart.addPane()
+    this.chart.addPane(true)
     this.order.push(id)
     return this.basePane + this.order.length - 1
   }

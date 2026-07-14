@@ -34,6 +34,19 @@ describe('PaneRegistry', () => {
     expect(addPane).toHaveBeenCalledTimes(1)
   })
 
+  // Regression guard: panes MUST be created with preserveEmptyPane so removing a
+  // pane's last series doesn't auto-free it out from under our explicit removePane
+  // (`_cleanupIfPaneIsEmpty` → "Invalid pane index"). The mock can't model the
+  // auto-cleanup, so we pin the flag at the creation boundary instead.
+  it('creates panes with preserveEmptyPane (addPane(true))', () => {
+    const { chart, addPane } = fakeChart()
+    const reg = new PaneRegistry(chart)
+    reg.ensure('obv')
+    reg.ensure('cci')
+    expect(addPane).toHaveBeenNthCalledWith(1, true)
+    expect(addPane).toHaveBeenNthCalledWith(2, true)
+  })
+
   it('reuses the same pane on a repeated ensure (no new pane)', () => {
     const { chart, addPane } = fakeChart()
     const reg = new PaneRegistry(chart)
