@@ -226,6 +226,7 @@ export const en = {
   'chart.draw.rect': 'Rectangle / zone',
   'chart.draw.fib': 'Fibonacci retracement',
   'chart.draw.delete': 'Delete selected drawing',
+  'chart.draw.hide': 'Hide agent drawing',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Structure',
   'chart.structure.trend.up': 'Up',

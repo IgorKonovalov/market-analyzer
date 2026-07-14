@@ -218,6 +218,7 @@ export function App(): JSX.Element {
     onChartHighlight: (payload) => dispatch({ kind: 'event/chart.highlight', payload }),
     onChartTrendlines: (payload) => dispatch({ kind: 'event/chart.trendlines', payload }),
     onChartDivergences: (payload) => dispatch({ kind: 'event/chart.divergences', payload }),
+    onChartAnnotations: (payload) => dispatch({ kind: 'event/chart.annotations', payload }),
     onRunCompleted: handleRunCompleted,
     onSignalEvaluated: (payload) => setLatestEvaluation(payload.evaluation),
     onRecommendationCompleted: (payload) => setLatestRecommendation(payload.recommendation),
@@ -327,6 +328,7 @@ export function App(): JSX.Element {
           overlays={chartState.overlays}
           trendlines={chartState.trendlines}
           divergences={chartState.divergences}
+          agentDrawings={chartState.agentDrawings}
           onSymbolChange={onSymbolChange}
           onTimeframeChange={onTimeframeChange}
           onRefresh={onRefresh}

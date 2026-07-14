@@ -22,12 +22,14 @@
  */
 import { DEFAULT_TIMEFRAME, KNOWN_TIMEFRAMES, type Timeframe } from '../lib/timeframes'
 import type {
+  ChartAnnotationsPayloadV1,
   ChartDivergencesPayloadV1,
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
   ChartTrendlinesPayloadV1,
   ChartUpdatePayloadV1,
   Divergence,
+  DrawingSpec,
   Marker,
   OverlaySpec,
   TrendlineSpec,
@@ -54,6 +56,13 @@ export interface ChartState {
    * recompute-on-load yet — ADR-0090's deferred followup), so a same-chart
    * `chart.show` preserves them. */
   divergences: Divergence[]
+  /** Agent-placed freeform drawings from the `chart.annotations` event (ADR-0091,
+   * Plan 0097). Unlike trendlines/divergences these are per-SYMBOL, not
+   * per-(symbol, timeframe): they survive a timeframe switch and are cleared only
+   * on a symbol switch. Declarative-replace (the latest `chart.annotations` for the
+   * active symbol wins); hide-only + never persisted in the renderer (the agent
+   * re-pushes). Merged with the user's local drawings at the chart layer. */
+  agentDrawings: DrawingSpec[]
   /** Live markers from `chart.highlight` envelopes. Deduplicated by
    * `(event_ts, pattern, kind)` (Plan 0049) so distinct same-bar patterns
    * survive. Merged with the polled annotation list at render time — duplicates
@@ -67,6 +76,7 @@ export type ChartAction =
   | { kind: 'event/chart.highlight'; payload: ChartHighlightPayloadV1 }
   | { kind: 'event/chart.trendlines'; payload: ChartTrendlinesPayloadV1 }
   | { kind: 'event/chart.divergences'; payload: ChartDivergencesPayloadV1 }
+  | { kind: 'event/chart.annotations'; payload: ChartAnnotationsPayloadV1 }
   | { kind: 'ui/set-symbol'; symbol: string }
   | { kind: 'ui/set-timeframe'; timeframe: Timeframe }
   | { kind: 'ui/refresh'; nowIso: string; lookbackDays: number }
@@ -113,6 +123,9 @@ export function applyChartShow(prev: ChartState, payload: ChartShowPayloadV1): C
     // Divergences follow trendlines: preserved on a same-chart show, dropped on a
     // real symbol/timeframe switch (the geometry belongs to its chart).
     divergences: sameChart ? prev.divergences : [],
+    // Agent drawings are per-SYMBOL: preserved whenever the symbol is unchanged
+    // (even across a timeframe switch), cleared only on a real symbol change.
+    agentDrawings: prev.symbol === payload.symbol ? prev.agentDrawings : [],
     liveHighlights: [],
   }
 }
@@ -135,6 +148,8 @@ export function applyChartUpdate(prev: ChartState, payload: ChartUpdatePayloadV1
       // carries trendlines — the recompute path re-derives them for the new chart).
       trendlines: [],
       divergences: [],
+      // Per-symbol agent drawings survive a timeframe-only change (same symbol).
+      agentDrawings: prev.symbol === payload.symbol ? prev.agentDrawings : [],
       liveHighlights: [],
     }
   }
@@ -187,6 +202,17 @@ export function applyChartDivergences(
   return { ...prev, divergences: payload.divergences }
 }
 
+export function applyChartAnnotations(
+  prev: ChartState,
+  payload: ChartAnnotationsPayloadV1,
+): ChartState {
+  // Per-symbol channel (no timeframe): apply only when the payload's symbol is the
+  // active one; a drawing set for another symbol is dropped (the active symbol is
+  // the only one the chart draws). Declarative replace of the agent set.
+  if (prev.symbol !== payload.symbol) return prev
+  return { ...prev, agentDrawings: payload.drawings }
+}
+
 export function chartReducer(state: ChartState, action: ChartAction): ChartState {
   switch (action.kind) {
     case 'event/chart.show':
@@ -199,6 +225,8 @@ export function chartReducer(state: ChartState, action: ChartAction): ChartState
       return applyChartTrendlines(state, action.payload)
     case 'event/chart.divergences':
       return applyChartDivergences(state, action.payload)
+    case 'event/chart.annotations':
+      return applyChartAnnotations(state, action.payload)
     case 'ui/set-symbol':
       if (state.symbol === action.symbol) return state
       return {
@@ -207,6 +235,8 @@ export function chartReducer(state: ChartState, action: ChartAction): ChartState
         liveHighlights: [],
         trendlines: [],
         divergences: [],
+        // Agent drawings are per-symbol → cleared on a symbol switch.
+        agentDrawings: [],
       }
     case 'ui/set-timeframe':
       if (state.timeframe === action.timeframe) return state
@@ -216,6 +246,7 @@ export function chartReducer(state: ChartState, action: ChartAction): ChartState
         liveHighlights: [],
         trendlines: [],
         divergences: [],
+        // Agent drawings survive a timeframe switch (per-symbol) — not cleared here.
       }
     case 'ui/refresh': {
       const endMs = Date.parse(action.nowIso)
@@ -242,6 +273,7 @@ export function initialChartState(nowIso: string = new Date().toISOString()): Ch
     overlays: [],
     trendlines: [],
     divergences: [],
+    agentDrawings: [],
     liveHighlights: [],
   }
 }

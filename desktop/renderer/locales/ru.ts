@@ -239,6 +239,7 @@ export const ru = {
   'chart.draw.rect': 'Прямоугольник / зона',
   'chart.draw.fib': 'Коррекция Фибоначчи',
   'chart.draw.delete': 'Удалить выбранный рисунок',
+  'chart.draw.hide': 'Скрыть рисунок агента',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Структура',
   'chart.structure.trend.up': 'Вверх',

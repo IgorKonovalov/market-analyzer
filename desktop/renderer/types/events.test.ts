@@ -38,6 +38,7 @@ interface DumpedSchemas {
   TimePricePoint: JsonSchema
   DrawingStyle: JsonSchema
   DrawingSpec: JsonSchema
+  ChartAnnotationsPayloadV1: JsonSchema
   ChartShowPayloadV1: JsonSchema
   ChartUpdatePayloadV1: JsonSchema
   ChartHighlightPayloadV1: JsonSchema
@@ -98,7 +99,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    TimePricePoint, DrawingStyle, DrawingSpec,',
     '    ChartShowPayloadV1, ChartUpdatePayloadV1,',
     '    ChartHighlightPayloadV1, ChartTrendlinesPayloadV1,',
-    '    ChartDivergencesPayloadV1,',
+    '    ChartDivergencesPayloadV1, ChartAnnotationsPayloadV1,',
     '    RunCompletedPayloadV1,',
     '    GapWindow, OhlcvBackfillStartedPayloadV1,',
     '    OhlcvBackfilledPayloadV1, OhlcvBackfillFailedPayloadV1,',
@@ -135,6 +136,7 @@ function dumpPydanticSchemas(): DumpedSchemas {
     '    "TimePricePoint": TimePricePoint.model_json_schema(),',
     '    "DrawingStyle": DrawingStyle.model_json_schema(),',
     '    "DrawingSpec": DrawingSpec.model_json_schema(),',
+    '    "ChartAnnotationsPayloadV1": ChartAnnotationsPayloadV1.model_json_schema(),',
     '    "ChartShowPayloadV1": ChartShowPayloadV1.model_json_schema(),',
     '    "ChartUpdatePayloadV1": ChartUpdatePayloadV1.model_json_schema(),',
     '    "ChartHighlightPayloadV1": ChartHighlightPayloadV1.model_json_schema(),',
@@ -355,6 +357,13 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
       ['fib', 'hline', 'ray', 'rect', 'trendline', 'vline'].sort(),
     )
     expect(literalValues(dumped.DrawingSpec, 'provenance')).toEqual(['agent', 'user'])
+  })
+
+  it('ChartAnnotationsPayloadV1 fields match (per-symbol, NO timeframe; Plan 0097)', () => {
+    expect(propertyNames(dumped.ChartAnnotationsPayloadV1)).toEqual(['drawings', 'symbol'])
+    expect(requiredNames(dumped.ChartAnnotationsPayloadV1)).toEqual(['drawings', 'symbol'])
+    // The distinguishing invariant: no timeframe on this channel.
+    expect(propertyNames(dumped.ChartAnnotationsPayloadV1)).not.toContain('timeframe')
   })
 
   it('ChartShowPayloadV1 fields match (trendlines REMOVED, Plan 0064/ADR-0059)', () => {

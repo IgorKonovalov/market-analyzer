@@ -131,7 +131,13 @@ import {
   computeVwap,
 } from '../lib/volume'
 import type { Bar } from '../types/sidecar/bar'
-import type { Divergence, DrawingKind, OverlaySpec, TrendlineSpec } from '../types/events'
+import type {
+  Divergence,
+  DrawingKind,
+  DrawingSpec,
+  OverlaySpec,
+  TrendlineSpec,
+} from '../types/events'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
 import styles from './CandlestickChart.module.css'
 
@@ -158,6 +164,9 @@ const NO_TRENDLINES: ReadonlyArray<TrendlineSpec> = []
 // Stable empty divergence list (same re-render-stability rationale as trendlines).
 const NO_DIVERGENCES: ReadonlyArray<Divergence> = []
 
+// Stable empty agent-drawing list (Plan 0097 phase 4) — same re-render stability.
+const NO_AGENT_DRAWINGS: ReadonlyArray<DrawingSpec> = []
+
 // Stable empty user-overlay list for charts with no (symbol, timeframe) — a fresh
 // `[]` per render would re-run the merge memo every time.
 const NO_USER_OVERLAYS: OverlaySpec[] = []
@@ -174,6 +183,10 @@ interface Props {
    * `chart.divergences` channel, drawn by `useDivergences` as two segments — price
    * pivots on pane 0, oscillator pivots on that oscillator's own pane. */
   divergences?: ReadonlyArray<Divergence>
+  /** Plan 0097 phase 4 (ADR-0091): agent-placed freeform drawings from
+   * `chart.annotations`, merged with the user's local drawings by `useDrawingTools`
+   * (agent = hide-only, user = editable). */
+  agentDrawings?: ReadonlyArray<DrawingSpec>
   ariaLabel?: string
   /** Carried in the gesture payloads so the agent knows which chart fired
    * (Plan 0014; gestures forward unconditionally per ADR-0101). */
@@ -197,6 +210,7 @@ export function CandlestickChart({
   overlays,
   trendlines = NO_TRENDLINES,
   divergences = NO_DIVERGENCES,
+  agentDrawings = NO_AGENT_DRAWINGS,
   ariaLabel,
   symbol,
   timeframe,
@@ -834,6 +848,7 @@ export function CandlestickChart({
   const {
     setActiveTool: setDrawingTool,
     selectedId: selectedDrawingId,
+    selectedProvenance: selectedDrawingProvenance,
     deleteSelected: deleteSelectedDrawing,
   } = useDrawingTools(containerRef, chartRef, seriesRef, drawingPrimitiveRef, {
     symbol,
@@ -841,6 +856,7 @@ export function CandlestickChart({
     selectRangeMode,
     activeTool,
     onActiveToolChange: setActiveTool,
+    agentDrawings,
     rebuildToken: candleType,
   })
 
@@ -1108,6 +1124,7 @@ export function CandlestickChart({
             onSelectTool={handleSelectTool}
             onDelete={deleteSelectedDrawing}
             hasSelection={selectedDrawingId !== null}
+            selectedProvenance={selectedDrawingProvenance}
             disabled={symbol === undefined}
           />
         </div>

@@ -4,6 +4,7 @@
  * logic in isolation so a regression surfaces in seconds, not minutes.
  */
 import {
+  applyChartAnnotations,
   applyChartDivergences,
   applyChartHighlight,
   applyChartShow,
@@ -12,7 +13,7 @@ import {
   chartReducer,
   initialChartState,
 } from './chartHandlers'
-import type { Divergence, TrendlineSpec } from '../types/events'
+import type { Divergence, DrawingSpec, TrendlineSpec } from '../types/events'
 
 const NOW_ISO = '2026-05-20T12:00:00.000Z'
 
@@ -39,6 +40,13 @@ const DIVERGENCE: Divergence = {
   ],
   bar_index: 42,
   strength: 0.6,
+}
+
+const AGENT_DRAWING: DrawingSpec = {
+  kind: 'hline',
+  points: [{ ts: '2026-05-05T00:00:00Z', price: 118 }],
+  provenance: 'agent',
+  id: 'agent-1',
 }
 
 function baseState() {
@@ -463,5 +471,64 @@ describe('chartReducer ui actions', () => {
     })
     expect(next.range_end).toBe('2026-06-20T00:00:00.000Z')
     expect(next.range_start).toBe('2026-05-21T00:00:00.000Z')
+  })
+})
+
+describe('applyChartAnnotations (Plan 0097/ADR-0091)', () => {
+  it('sets the agent drawings when the payload matches the active symbol', () => {
+    const next = applyChartAnnotations(baseState(), {
+      symbol: 'AAPL',
+      drawings: [AGENT_DRAWING],
+    })
+    expect(next.agentDrawings).toEqual([AGENT_DRAWING])
+  })
+
+  it('drops annotations for a non-active symbol', () => {
+    const prev = { ...baseState(), agentDrawings: [AGENT_DRAWING] }
+    const next = applyChartAnnotations(prev, {
+      symbol: 'MSFT',
+      drawings: [{ ...AGENT_DRAWING, id: 'other' }],
+    })
+    expect(next).toBe(prev) // unchanged reference
+  })
+
+  it('replaces the agent set (declarative, last push wins); an empty list clears it', () => {
+    const prev = { ...baseState(), agentDrawings: [AGENT_DRAWING] }
+    const replaced = applyChartAnnotations(prev, {
+      symbol: 'AAPL',
+      drawings: [{ ...AGENT_DRAWING, id: 'agent-2' }],
+    })
+    expect(replaced.agentDrawings.map((d) => d.id)).toEqual(['agent-2'])
+    const cleared = applyChartAnnotations(replaced, { symbol: 'AAPL', drawings: [] })
+    expect(cleared.agentDrawings).toEqual([])
+  })
+
+  it('is per-symbol: a timeframe switch PRESERVES agent drawings, a symbol switch CLEARS them', () => {
+    const withAgent = { ...baseState(), agentDrawings: [AGENT_DRAWING] }
+    // Timeframe switch keeps them (a drawing renders across every timeframe).
+    const tfSwitch = chartReducer(withAgent, { kind: 'ui/set-timeframe', timeframe: '1h' })
+    expect(tfSwitch.agentDrawings).toEqual([AGENT_DRAWING])
+    // Symbol switch clears them (they belong to their symbol).
+    const symSwitch = chartReducer(withAgent, { kind: 'ui/set-symbol', symbol: 'MSFT' })
+    expect(symSwitch.agentDrawings).toEqual([])
+  })
+
+  it('a same-symbol chart.show across a timeframe change preserves agent drawings', () => {
+    const withAgent = { ...baseState(), agentDrawings: [AGENT_DRAWING] }
+    const sameSymbolNewTf = applyChartShow(withAgent, {
+      symbol: 'AAPL',
+      timeframe: '1h',
+      range_start: '2026-05-01T00:00:00Z',
+      range_end: '2026-05-20T00:00:00Z',
+    })
+    expect(sameSymbolNewTf.agentDrawings).toEqual([AGENT_DRAWING])
+    // A real symbol switch via chart.show clears them.
+    const newSymbol = applyChartShow(withAgent, {
+      symbol: 'MSFT',
+      timeframe: '1d',
+      range_start: '2026-05-01T00:00:00Z',
+      range_end: '2026-05-20T00:00:00Z',
+    })
+    expect(newSymbol.agentDrawings).toEqual([])
   })
 })

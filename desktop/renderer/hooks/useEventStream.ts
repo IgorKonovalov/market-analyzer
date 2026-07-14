@@ -39,6 +39,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { api, subscribeToConfigChanges } from '../api/client'
 import { parseAlertTriggered } from '../schemas/alertTriggered'
+import { chartAnnotationsPayloadSchema } from '../schemas/chartAnnotations'
 import { chartDivergencesPayloadSchema } from '../schemas/chartDivergences'
 import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
 import { predictionScreenCompletedPayloadSchema } from '../schemas/predictionScreenCompleted'
@@ -49,6 +50,7 @@ import { technicalReadCompletedPayloadSchema } from '../schemas/technicalReadCom
 import { volatilityForecastCompletedPayloadSchema } from '../schemas/volatilityForecastCompleted'
 import type {
   AlertTriggeredPayloadV1,
+  ChartAnnotationsPayloadV1,
   ChartDivergencesPayloadV1,
   ChartHighlightPayloadV1,
   ChartShowPayloadV1,
@@ -77,6 +79,7 @@ export interface EventStreamHandlers {
   onChartHighlight?: (payload: ChartHighlightPayloadV1) => void
   onChartTrendlines?: (payload: ChartTrendlinesPayloadV1) => void
   onChartDivergences?: (payload: ChartDivergencesPayloadV1) => void
+  onChartAnnotations?: (payload: ChartAnnotationsPayloadV1) => void
   onRunCompleted?: (payload: RunCompletedPayloadV1) => void
   onSignalEvaluated?: (payload: SignalEvaluatedPayloadV1) => void
   onRecommendationCompleted?: (payload: RecommendationCompletedPayloadV1) => void
@@ -106,6 +109,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'chart.highlight': 1,
   'chart.trendlines': 1,
   'chart.divergences': 1,
+  'chart.annotations': 1,
   'run.completed': 1,
   'signal.evaluated': 1,
   'recommendation.completed': 1,
@@ -333,6 +337,21 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
         return
       }
       handlers.onChartDivergences?.(parsed.data)
+      return
+    }
+    case 'chart.annotations': {
+      // Zod-validated before it reaches any chart state (ADR-0091, the
+      // chart.divergences precedent): an agent drawing carries geometry the user
+      // may act on, so a malformed payload is dropped loudly, never half-drawn.
+      const parsed = chartAnnotationsPayloadSchema.safeParse(envelope.payload)
+      if (!parsed.success) {
+        console.warn(
+          '[useEventStream] dropping malformed chart.annotations payload',
+          parsed.error.issues,
+        )
+        return
+      }
+      handlers.onChartAnnotations?.(parsed.data)
       return
     }
     case 'run.completed':

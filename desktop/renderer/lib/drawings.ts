@@ -159,9 +159,15 @@ export function computeDrawingGeometry(
   priceToY: (price: number) => number | null,
   mediaWidth: number,
   mediaHeight: number,
-  defaultColor: string = DEFAULT_DRAWING_COLOR,
+  defaultColor?: string,
 ): DrawingGeometry | null {
-  const color = styleColor(spec, defaultColor)
+  // Unstyled drawings colour by provenance: user blue, agent amber (so the two
+  // sources read apart at a glance, ADR-0091). An explicit `defaultColor`
+  // overrides (used by tests).
+  const fallback =
+    defaultColor ??
+    (spec.provenance === 'agent' ? DEFAULT_AGENT_DRAWING_COLOR : DEFAULT_DRAWING_COLOR)
+  const color = styleColor(spec, fallback)
   const width = styleWidth(spec)
   const style = { id: spec.id, kind: spec.kind, color, width }
 
@@ -358,7 +364,6 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
   private previewSpec: DrawingSpec | null = null
   private selectedId: string | null = null
   private visible = true
-  private defaultColor = DEFAULT_DRAWING_COLOR
   private chart: SeriesAttachedParameter<Time>['chart'] | null = null
   private series: SeriesAttachedParameter<Time>['series'] | null = null
   private requestUpdate: (() => void) | null = null
@@ -406,13 +411,6 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.()
   }
 
-  /** Set the fallback stroke colour used when a drawing has no `style.color`
-   * (user vs agent default; Plan 0097 phase 4 feeds the agent hue). */
-  setDefaultColor(color: string): void {
-    this.defaultColor = color
-    this.requestUpdate?.()
-  }
-
   selectedDrawingId(): string | null {
     return this.selectedId
   }
@@ -453,21 +451,12 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
     } else {
       const { timeToX, priceToY } = conv
       this.cachedGeometry = this.specs
-        .map((spec) =>
-          computeDrawingGeometry(spec, timeToX, priceToY, width, height, this.defaultColor),
-        )
+        .map((spec) => computeDrawingGeometry(spec, timeToX, priceToY, width, height))
         .filter((g): g is DrawingGeometry => g !== null)
       this.cachedPreview =
         this.previewSpec === null
           ? null
-          : computeDrawingGeometry(
-              this.previewSpec,
-              timeToX,
-              priceToY,
-              width,
-              height,
-              this.defaultColor,
-            )
+          : computeDrawingGeometry(this.previewSpec, timeToX, priceToY, width, height)
     }
     return {
       geometry: this.cachedGeometry,

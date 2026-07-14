@@ -23,7 +23,7 @@ import { useAnnotationsPoll } from '../hooks/useAnnotationsPoll'
 import { useBackfillState } from '../hooks/useBackfillState'
 import { useOhlcvHistory } from '../hooks/useOhlcvHistory'
 import { useQuotePoll } from '../hooks/useQuotePoll'
-import type { Divergence, Marker, OverlaySpec, TrendlineSpec } from '../types/events'
+import type { Divergence, DrawingSpec, Marker, OverlaySpec, TrendlineSpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { QuoteResponse } from '../types/sidecar/quote-response'
 import styles from './OhlcvView.module.css'
@@ -46,6 +46,10 @@ export interface OhlcvViewProps {
   /** Plan 0091 phase 9 (ADR-0090): price↔oscillator divergences the agent surfaced
    * via `chart.divergences`, drawn as two segments across the price + oscillator panes. */
   divergences?: ReadonlyArray<Divergence>
+  /** Plan 0097 phase 4 (ADR-0091): agent-placed freeform drawings from
+   * `chart.annotations`, merged with the user's local drawings at the chart layer
+   * (agent = hide-only, user = editable). */
+  agentDrawings?: ReadonlyArray<DrawingSpec>
   onSymbolChange: (symbol: string) => void
   onTimeframeChange: (timeframe: Timeframe) => void
   onRefresh: () => void
@@ -60,6 +64,7 @@ export function OhlcvView({
   overlays,
   trendlines,
   divergences,
+  agentDrawings,
   onSymbolChange,
   onTimeframeChange,
   onRefresh,
@@ -214,6 +219,7 @@ export function OhlcvView({
             overlays={overlays}
             trendlines={trendlines}
             divergences={divergences}
+            agentDrawings={agentDrawings}
             symbol={symbol}
             timeframe={timeframe}
             quote={quote}

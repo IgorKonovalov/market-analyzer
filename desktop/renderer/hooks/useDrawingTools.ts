@@ -28,9 +28,11 @@ import type { DrawingKind, DrawingSpec, TimePricePoint } from '../types/events'
 import type { Bar } from '../types/sidecar/bar'
 import type { DrawingPrimitive } from '../lib/drawings'
 import { POINT_COUNT_BY_KIND } from '../lib/drawings'
+import type { DrawingProvenance } from '../types/events'
 import {
   addUserDrawing,
   getUserDrawingsSnapshot,
+  mergeDrawings,
   removeUserDrawing,
   subscribeUserDrawings,
   updateUserDrawing,
@@ -66,6 +68,10 @@ export interface UseDrawingToolsParams {
   /** Raw setter for the armed tool (component state). The hook's own
    * `setActiveTool` wraps this with the placement/selection clean-up. */
   onActiveToolChange: (tool: DrawingKind | null) => void
+  /** Agent-placed drawings for this symbol (Plan 0097 phase 4, ADR-0091), from
+   * the `chart.annotations` wire. Merged with the user layer for rendering +
+   * hit-testing; hide-only (the user can suppress but not edit/delete them). */
+  agentDrawings?: ReadonlyArray<DrawingSpec>
   /** Rebuilt-chart token (candleType): re-feed the fresh primitive after a rebuild. */
   rebuildToken?: unknown
 }
@@ -75,7 +81,12 @@ export interface UseDrawingToolsResult {
    * cancels any in-progress placement and clears the selection. */
   setActiveTool: (tool: DrawingKind | null) => void
   selectedId: string | null
-  /** Delete the selected drawing (no-op when nothing is selected). */
+  /** Provenance of the selected drawing, or `null` when nothing is selected —
+   * lets the rail label the delete affordance "delete" (user) vs "hide" (agent). */
+  selectedProvenance: DrawingProvenance | null
+  /** Delete the selected USER drawing, or hide the selected AGENT drawing (agent
+   * drawings are hide-only — re-pushed by the agent, never mutated). No-op when
+   * nothing is selected. */
   deleteSelected: () => void
   /** Count of the current symbol's user drawings (for the rail / empty states). */
   drawingCount: number
@@ -97,10 +108,19 @@ export function useDrawingTools(
     selectRangeMode,
     activeTool,
     onActiveToolChange,
+    agentDrawings = EMPTY_DRAWINGS,
     rebuildToken,
   }: UseDrawingToolsParams,
 ): UseDrawingToolsResult {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Agent drawing ids the user has hidden this session (ADR-0091 hide-only). Not
+  // persisted — agent drawings vanish on reload anyway; a re-push keeps hidden ids
+  // hidden (identity-keyed). Reset when the symbol changes.
+  const [hiddenAgentIds, setHiddenAgentIds] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => {
+    setHiddenAgentIds(new Set())
+    setSelectedId(null)
+  }, [symbol])
   const { snapPixel } = useDrawingHitTest(chartRef, seriesRef, bars)
 
   const storeSnapshot = useSyncExternalStore(
@@ -108,10 +128,27 @@ export function useDrawingTools(
     getUserDrawingsSnapshot,
     getUserDrawingsSnapshot,
   )
-  const drawings = useMemo<DrawingSpec[]>(
+  const userDrawings = useMemo<DrawingSpec[]>(
     () => (symbol ? (storeSnapshot[symbol] ?? EMPTY_DRAWINGS) : EMPTY_DRAWINGS),
     [storeSnapshot, symbol],
   )
+  // The rendered/hit-tested set: user drawings (editable) + the visible agent
+  // drawings (hide-only), deduped by id + geometry (an identical pair collapses to
+  // the editable user one).
+  const drawings = useMemo<DrawingSpec[]>(
+    () =>
+      mergeDrawings(
+        agentDrawings.filter((d) => !hiddenAgentIds.has(d.id)),
+        userDrawings,
+      ),
+    [agentDrawings, hiddenAgentIds, userDrawings],
+  )
+  const provenanceOf = useCallback(
+    (id: string | null): DrawingProvenance | null =>
+      id === null ? null : (drawings.find((d) => d.id === id)?.provenance ?? null),
+    [drawings],
+  )
+  const selectedProvenance = provenanceOf(selectedId)
 
   // In-flight gesture state (refs so they survive listener re-registration mid-
   // gesture): the first anchor of a multi-point placement, the active endpoint
@@ -132,9 +169,15 @@ export function useDrawingTools(
 
   const deleteSelected = useCallback((): void => {
     if (symbol === undefined || selectedId === null) return
-    removeUserDrawing(symbol, selectedId)
+    if (provenanceOf(selectedId) === 'agent') {
+      // Agent drawings are hide-only (ADR-0091): suppress locally, never remove.
+      const id = selectedId
+      setHiddenAgentIds((prev) => new Set(prev).add(id))
+    } else {
+      removeUserDrawing(symbol, selectedId)
+    }
     setSelectedId(null)
-  }, [symbol, selectedId])
+  }, [symbol, selectedId, provenanceOf])
 
   // Feed the primitive the committed drawings + selection. Re-runs after a chart
   // rebuild (fresh primitive) via `rebuildToken`.
@@ -208,7 +251,11 @@ export function useDrawingTools(
           targetId = null
         }
       }
-      if (targetId !== null && handleIndex !== null) {
+      // Only USER drawings are draggable; agent drawings are hide-only (ADR-0091),
+      // so a handle grab on one selects it (to allow hiding) but starts no drag.
+      const isUserTarget =
+        targetId !== null && drawings.find((d) => d.id === targetId)?.provenance === 'user'
+      if (targetId !== null && handleIndex !== null && isUserTarget) {
         dragRef.current = { id: targetId, handleIndex }
         chart.applyOptions({ handleScroll: false, handleScale: false })
         try {
@@ -287,7 +334,12 @@ export function useDrawingTools(
         activeTool === null &&
         selectedId !== null
       ) {
-        removeUserDrawing(symbol, selectedId)
+        const id = selectedId
+        if (drawings.find((d) => d.id === id)?.provenance === 'agent') {
+          setHiddenAgentIds((prev) => new Set(prev).add(id)) // hide-only (ADR-0091)
+        } else {
+          removeUserDrawing(symbol, id)
+        }
         setSelectedId(null)
       }
     }
@@ -317,7 +369,13 @@ export function useDrawingTools(
     rebuildToken,
   ])
 
-  return { setActiveTool, selectedId, deleteSelected, drawingCount: drawings.length }
+  return {
+    setActiveTool,
+    selectedId,
+    selectedProvenance,
+    deleteSelected,
+    drawingCount: userDrawings.length,
+  }
 }
 
 const EMPTY_DRAWINGS: DrawingSpec[] = []

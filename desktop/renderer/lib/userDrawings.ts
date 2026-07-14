@@ -206,3 +206,35 @@ export function subscribeUserDrawings(callback: Listener): () => void {
     listeners.delete(callback)
   }
 }
+
+/** Geometry identity of a drawing (Plan 0097 phase 4): kind + anchor points. Two
+ * drawings with the same key are the same mark regardless of provenance/id — used
+ * to collapse an identical agent+user pair to one. */
+export function drawingGeometryKey(d: DrawingSpec): string {
+  return `${d.kind}|${d.points.map((p) => `${p.ts}@${p.price}`).join(';')}`
+}
+
+/**
+ * Merge the agent's wire drawings with the user's local drawings for one symbol
+ * (Plan 0097 phase 4, ADR-0091) — the `mergeOverlays` analog. The user layer
+ * comes FIRST and wins: an agent drawing sharing a user drawing's id, or its exact
+ * geometry, is dropped so an identical agent+user pair collapses to the single
+ * editable user one. The rest of the agent set is appended (hide-only, keyed by
+ * provenance on each spec). Never mutates its inputs; user drawings are never
+ * altered, so the store stays the sole owner of the user layer.
+ */
+export function mergeDrawings(
+  agent: ReadonlyArray<DrawingSpec>,
+  user: ReadonlyArray<DrawingSpec>,
+): DrawingSpec[] {
+  const userGeom = new Set(user.map(drawingGeometryKey))
+  const seenIds = new Set(user.map((d) => d.id))
+  const out: DrawingSpec[] = [...user]
+  for (const a of agent) {
+    if (seenIds.has(a.id)) continue // id collision → the user drawing wins
+    if (userGeom.has(drawingGeometryKey(a))) continue // identical geometry → collapse
+    seenIds.add(a.id)
+    out.push(a)
+  }
+  return out
+}

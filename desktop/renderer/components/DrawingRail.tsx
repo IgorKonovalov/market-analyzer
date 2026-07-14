@@ -7,7 +7,7 @@
  * reserved in `CandlestickChart`. Phase 2 ships select + trendline + ray; phase 3
  * adds hline / vline / rect / fib buttons here.
  */
-import type { DrawingKind } from '../types/events'
+import type { DrawingKind, DrawingProvenance } from '../types/events'
 import { t } from '../lib/i18n'
 import styles from './DrawingRail.module.css'
 
@@ -16,6 +16,9 @@ interface DrawingRailProps {
   onSelectTool: (tool: DrawingKind | null) => void
   onDelete: () => void
   hasSelection: boolean
+  /** Provenance of the selection (Plan 0097 phase 4): an agent drawing is
+   * hide-only, so the affordance reads "hide" rather than "delete". */
+  selectedProvenance?: DrawingProvenance | null
   /** Disabled until the chart carries a symbol to key drawings by. */
   disabled?: boolean
 }
@@ -40,8 +43,12 @@ export function DrawingRail({
   onSelectTool,
   onDelete,
   hasSelection,
+  selectedProvenance = null,
   disabled = false,
 }: DrawingRailProps): JSX.Element {
+  // An agent drawing is hide-only; the same button then reads "hide".
+  const isAgentSelected = selectedProvenance === 'agent'
+  const deleteLabel = isAgentSelected ? t('chart.draw.hide') : t('chart.draw.delete')
   return (
     <div
       className={styles.rail}
@@ -80,13 +87,13 @@ export function DrawingRail({
       <button
         type="button"
         className={styles.deleteButton}
-        aria-label={t('chart.draw.delete')}
-        title={t('chart.draw.delete')}
+        aria-label={deleteLabel}
+        title={deleteLabel}
         disabled={disabled || !hasSelection}
         data-testid="drawing-tool-delete"
         onClick={onDelete}
       >
-        <span aria-hidden="true">🗑</span>
+        <span aria-hidden="true">{isAgentSelected ? '🙈' : '🗑'}</span>
       </button>
     </div>
   )

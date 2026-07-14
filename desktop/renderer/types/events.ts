@@ -191,6 +191,17 @@ export interface DrawingSpec {
   id: string
 }
 
+/** Mirror of the pydantic `ChartAnnotationsPayloadV1` (Plan 0097 / ADR-0091): the
+ * AGENT's freeform-drawing set for a symbol — a declarative replace (an empty
+ * list clears it). Per-SYMBOL, so there is deliberately NO `timeframe` field
+ * (unlike every other `chart.*` payload) — a drawing renders across every
+ * timeframe. Every spec carries `provenance: "agent"` (the sidecar enforces it);
+ * user drawings never ride this channel. */
+export interface ChartAnnotationsPayloadV1 {
+  symbol: string
+  drawings: DrawingSpec[]
+}
+
 export interface ChartShowPayloadV1 {
   symbol: string
   timeframe: string
@@ -869,6 +880,7 @@ export type EnvelopeType =
   | 'chart.highlight'
   | 'chart.trendlines'
   | 'chart.divergences'
+  | 'chart.annotations'
   | 'run.completed'
   | 'signal.evaluated'
   | 'recommendation.completed'
@@ -906,6 +918,10 @@ export type ChartTrendlinesEnvelope = Envelope<ChartTrendlinesPayloadV1> & {
 }
 export type ChartDivergencesEnvelope = Envelope<ChartDivergencesPayloadV1> & {
   type: 'chart.divergences'
+  version: 1
+}
+export type ChartAnnotationsEnvelope = Envelope<ChartAnnotationsPayloadV1> & {
+  type: 'chart.annotations'
   version: 1
 }
 export type RunCompletedEnvelope = Envelope<RunCompletedPayloadV1> & {

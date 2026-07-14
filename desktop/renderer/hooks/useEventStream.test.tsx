@@ -346,6 +346,73 @@ describe('useEventStream', () => {
     warnSpy.mockRestore()
   })
 
+  it('dispatches chart.annotations v1 to the handler with the Zod-parsed payload', async () => {
+    const onChartAnnotations = jest.fn()
+    render(<Harness handlers={{ onChartAnnotations }} />)
+    const es = await waitForStream()
+
+    const payload = {
+      symbol: 'AAPL',
+      drawings: [
+        {
+          kind: 'trendline',
+          points: [
+            { ts: '2026-05-01T00:00:00Z', price: 100 },
+            { ts: '2026-05-05T00:00:00Z', price: 110 },
+          ],
+          provenance: 'agent',
+          id: 'agent-1',
+        },
+      ],
+    }
+    await act(async () => {
+      es._fireMessage({
+        type: 'chart.annotations',
+        version: 1,
+        ts: '2026-05-20T14:00:04Z',
+        payload,
+      })
+    })
+
+    expect(onChartAnnotations).toHaveBeenCalledTimes(1)
+    expect(onChartAnnotations).toHaveBeenCalledWith(payload)
+  })
+
+  it('drops a malformed chart.annotations payload loudly (Zod safeParse)', async () => {
+    const onChartAnnotations = jest.fn()
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+    render(<Harness handlers={{ onChartAnnotations }} />)
+    const es = await waitForStream()
+
+    // `kind: 'squiggle'` is not a drawing kind — the schema rejects it.
+    const bad = {
+      symbol: 'AAPL',
+      drawings: [
+        {
+          kind: 'squiggle',
+          points: [{ ts: '2026-05-01T00:00:00Z', price: 100 }],
+          provenance: 'agent',
+          id: 'agent-1',
+        },
+      ],
+    }
+    await act(async () => {
+      es._fireMessage({
+        type: 'chart.annotations',
+        version: 1,
+        ts: '2026-05-20T14:00:05Z',
+        payload: bad,
+      })
+    })
+
+    expect(onChartAnnotations).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('chart.annotations'),
+      expect.anything(),
+    )
+    warnSpy.mockRestore()
+  })
+
   it('forward-compat: dispatches chart.show v2 to the v1 handler with a warning', async () => {
     const onChartShow = jest.fn()
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
