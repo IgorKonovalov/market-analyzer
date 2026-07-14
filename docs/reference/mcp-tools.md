@@ -32,7 +32,7 @@ The 56 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`get_backtest`](#getbacktest) | Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). |
 | [`get_metric_series`](#getmetricseries) | Read a stored metric time series (ADR-0051): points of one registered series_id over an inclusive [start, end] epoch-second window, sorted by ts ascending. |
 | [`get_ohlcv`](#getohlcv) | Read OHLCV bars for one symbol over a [start, end] window. |
-| [`get_pending_ui_events`](#getpendinguievents) | Read recent UI events the user generated in the chart viewer — drag-selected ranges, single bar clicks, and agent-mode toggles. |
+| [`get_pending_ui_events`](#getpendinguievents) | Read recent UI events the user generated in the chart viewer — drag-selected ranges and single bar clicks. |
 | [`get_track_record`](#gettrackrecord) | Read the advisor's own live track record (ADR-0075): how its past recommendations turned out against realized price, scored path-dependently (did the stop or a target hit first). |
 | [`highlight_pattern`](#highlightpattern) | Highlight a pattern on a chart. |
 | [`list_alerts`](#listalerts) | Read fired-alert history, newest first, optionally scoped to one watch_id. |
@@ -627,7 +627,7 @@ Read OHLCV bars for one symbol over a [start, end] window. Reads the local cache
 
 ## `get_pending_ui_events`
 
-Read recent UI events the user generated in the chart viewer — drag-selected ranges, single bar clicks, and agent-mode toggles. Events are buffered ONLY while **agent mode** is ON; when it is OFF this returns an empty list. By default (drain=True) each call drains the events it returns, so consecutive draining reads return disjoint sets — call it when you are ready to act on the user's gestures. Pass drain=False to peek without consuming. `since` returns only events stamped strictly after that timestamp. The same buffer is also exposed (non-draining) as the MCP resource ui-events://recent, which you can subscribe to for update notifications; dedupe across the tool and the resource on each event's `event_id`.
+Read recent UI events the user generated in the chart viewer — drag-selected ranges and single bar clicks. Gestures are always forwarded (no setup or mode required). By default (drain=True) each call drains the events it returns, so consecutive draining reads return disjoint sets — call it when you are ready to act on the user's gestures. Pass drain=False to peek without consuming. `since` returns only events stamped strictly after that timestamp. The same buffer is also exposed (non-draining) as the MCP resource ui-events://recent, which you can subscribe to for update notifications; dedupe across the tool and the resource on each event's `event_id`.
 
 **Parameters**
 

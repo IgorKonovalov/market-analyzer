@@ -151,7 +151,6 @@ def app(
     mcp_secret: str,
     mcp_secret_path: Path,
     annotations_repo: AnnotationsRepository,
-    tmp_path: Path,
 ) -> FastAPI:
     return create_app(
         secret=RENDERER_SECRET,
@@ -159,7 +158,6 @@ def app(
         mcp_secret_path=mcp_secret_path,
         provider=_FakeProvider(),
         annotations_repository=annotations_repo,
-        agent_mode_path=tmp_path / "agent_mode.json",
     )
 
 
@@ -309,7 +307,9 @@ def test_tool_description_sets_agent_mental_model(live_server: str, mcp_secret: 
             return tool.description or ""
 
     description = asyncio.run(_run())
-    assert "agent mode" in description
+    # ADR-0101 removed agent mode; the description must not resurrect the old
+    # "buffered only while agent mode is ON" framing.
+    assert "agent mode" not in description
     assert "draining" in description
     assert UI_EVENTS_RESOURCE_URI in description
 

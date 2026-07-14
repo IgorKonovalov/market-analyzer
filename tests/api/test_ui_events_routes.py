@@ -1,10 +1,10 @@
-"""Plan 0014 phase 1 done-when: the `/agent_mode` + `/ui_events` HTTP routes.
+"""The `POST /ui_events` HTTP route (Plan 0014 phase 1; ungated per Plan 0106).
 
-Asserts the renderer-side contract: the toggle round-trips and is cross-tenant
-isolated (MCP bearer 401s), `POST /ui_events` enforces agent mode server-side
-(403 when OFF, buffer untouched), accepts a valid envelope when ON (202 +
-server-stamped event_id), and rejects unknown types / bad payloads / missing
-bearers at the boundary.
+Asserts the renderer-side contract after ADR-0101 removed the agent-mode gate:
+a valid gesture envelope is accepted with no mode precondition (202 +
+server-stamped event_id), the removed `GET`/`PUT /agent_mode` routes 404, the
+removed `ui.agent_mode_toggled` type is rejected as unknown, and unknown types /
+bad payloads / missing bearers are still rejected at the boundary.
 """
 
 from __future__ import annotations
@@ -44,6 +44,16 @@ _VALID_RANGE_PAYLOAD = {
     "timeframe": "1d",
     "range_start": "2026-05-01T00:00:00+00:00",
     "range_end": "2026-05-15T00:00:00+00:00",
+}
+
+_VALID_BAR_PAYLOAD = {
+    "symbol": "AAPL",
+    "timeframe": "1d",
+    "event_ts": "2026-05-08T00:00:00+00:00",
+    "open": 190.0,
+    "high": 195.5,
+    "low": 189.25,
+    "close": 194.75,
 }
 
 
@@ -125,7 +135,6 @@ def app(
     mcp_secret: str,
     mcp_secret_path: Path,
     annotations_repo: AnnotationsRepository,
-    tmp_path: Path,
 ) -> FastAPI:
     return create_app(
         secret=RENDERER_SECRET,
@@ -133,7 +142,6 @@ def app(
         mcp_secret_path=mcp_secret_path,
         provider=_FakeProvider(),
         annotations_repository=annotations_repo,
-        agent_mode_path=tmp_path / "agent_mode.json",
     )
 
 
@@ -152,47 +160,29 @@ def _mcp_headers(secret: str) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------- #
-# GET / PUT /agent_mode                                                       #
+# /agent_mode is gone (ADR-0101)                                              #
 # --------------------------------------------------------------------------- #
 
 
-def test_get_agent_mode_fresh_is_disabled(client: TestClient) -> None:
-    response = client.get("/agent_mode", headers=_renderer_headers())
-    assert response.status_code == 200, response.text
-    assert response.json() == {"enabled": False}
+def test_get_agent_mode_route_is_gone(client: TestClient) -> None:
+    assert client.get("/agent_mode", headers=_renderer_headers()).status_code == 404
 
 
-def test_get_agent_mode_rejects_missing_bearer(client: TestClient) -> None:
-    assert client.get("/agent_mode").status_code == 401
-
-
-def test_get_agent_mode_rejects_mcp_bearer(client: TestClient, mcp_secret: str) -> None:
-    """Cross-tenant: an agent cannot read the consent gate via the MCP bearer."""
-    assert client.get("/agent_mode", headers=_mcp_headers(mcp_secret)).status_code == 401
-
-
-def test_put_agent_mode_persists_and_synthesises_toggle_event(
-    client: TestClient, app: FastAPI
-) -> None:
+def test_put_agent_mode_route_is_gone(client: TestClient) -> None:
     response = client.put("/agent_mode", json={"enabled": True}, headers=_renderer_headers())
-    assert response.status_code == 200, response.text
-    assert response.json() == {"enabled": True}
-
-    # Subsequent GET reflects the new state.
-    assert client.get("/agent_mode", headers=_renderer_headers()).json() == {"enabled": True}
-
-    # Exactly one synthesised ui.agent_mode_toggled v1 envelope in the buffer.
-    snap = app.state.ui_event_buffer.snapshot()
-    assert len(snap) == 1
-    env = snap[0]
-    assert env.type == "ui.agent_mode_toggled"
-    assert env.version == 1
-    assert env.payload["enabled"] is True
+    assert response.status_code == 404
 
 
-def test_put_agent_mode_rejects_wrong_type(client: TestClient) -> None:
-    response = client.put("/agent_mode", json={"enabled": "yes"}, headers=_renderer_headers())
+def test_agent_mode_toggled_type_left_the_vocabulary(client: TestClient, app: FastAPI) -> None:
+    """The removed `ui.agent_mode_toggled v1` event is now an unknown type: 422,
+    nothing buffered."""
+    response = client.post(
+        "/ui_events",
+        json={"type": "ui.agent_mode_toggled", "version": 1, "payload": {"enabled": True}},
+        headers=_renderer_headers(),
+    )
     assert response.status_code == 422
+    assert app.state.ui_event_buffer.snapshot() == []
 
 
 # --------------------------------------------------------------------------- #
@@ -200,23 +190,11 @@ def test_put_agent_mode_rejects_wrong_type(client: TestClient) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_post_ui_event_403_when_mode_off(client: TestClient, app: FastAPI) -> None:
-    response = client.post(
-        "/ui_events",
-        json={"type": "ui.range_selected", "version": 1, "payload": _VALID_RANGE_PAYLOAD},
-        headers=_renderer_headers(),
-    )
-    assert response.status_code == 403
-    assert response.json() == {"detail": "agent mode is off"}
-    # Buffer untouched.
-    assert app.state.ui_event_buffer.snapshot() == []
-
-
-def test_post_ui_event_202_when_mode_on(client: TestClient, app: FastAPI) -> None:
-    # Flip the store directly so the buffer starts empty (a PUT would itself
-    # buffer a toggle event); we want "exactly that envelope" afterwards.
-    app.state.agent_mode_store.set_enabled(True)
-
+def test_post_range_selected_202_with_no_mode_precondition(
+    client: TestClient, app: FastAPI
+) -> None:
+    """A fresh app buffers a valid ui.range_selected immediately — no toggle,
+    no setup call, no 403 path left (ADR-0101)."""
     response = client.post(
         "/ui_events",
         json={"type": "ui.range_selected", "version": 1, "payload": _VALID_RANGE_PAYLOAD},
@@ -236,12 +214,26 @@ def test_post_ui_event_202_when_mode_on(client: TestClient, app: FastAPI) -> Non
     assert env.payload["symbol"] == "AAPL"
 
 
+def test_post_bar_clicked_202_with_no_mode_precondition(client: TestClient, app: FastAPI) -> None:
+    response = client.post(
+        "/ui_events",
+        json={"type": "ui.bar_clicked", "version": 1, "payload": _VALID_BAR_PAYLOAD},
+        headers=_renderer_headers(),
+    )
+    assert response.status_code == 202, response.text
+
+    snap = app.state.ui_event_buffer.snapshot()
+    assert len(snap) == 1
+    env = snap[0]
+    assert env.type == "ui.bar_clicked"
+    assert env.version == 1
+    assert env.payload["close"] == 194.75
+
+
 def test_post_ui_event_server_stamps_event_id_and_ts(client: TestClient, app: FastAPI) -> None:
     """The renderer supplies neither event_id nor ts; the server generates both.
     Even if the renderer tries to send them, the body model has no such fields,
     so they cannot be injected."""
-    app.state.agent_mode_store.set_enabled(True)
-
     response = client.post(
         "/ui_events",
         json={
@@ -262,7 +254,6 @@ def test_post_ui_event_server_stamps_event_id_and_ts(client: TestClient, app: Fa
 
 
 def test_post_ui_event_rejects_unknown_type(client: TestClient, app: FastAPI) -> None:
-    app.state.agent_mode_store.set_enabled(True)
     response = client.post(
         "/ui_events",
         json={"type": "ui.something_unknown", "version": 1, "payload": {}},
@@ -273,7 +264,6 @@ def test_post_ui_event_rejects_unknown_type(client: TestClient, app: FastAPI) ->
 
 
 def test_post_ui_event_rejects_bad_payload(client: TestClient, app: FastAPI) -> None:
-    app.state.agent_mode_store.set_enabled(True)
     bad = {
         "symbol": "AAPL",
         "timeframe": "1d",

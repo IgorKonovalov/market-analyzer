@@ -7,10 +7,11 @@ buffer live in the top-level `market_analyser.ui_events` core (moved there in
 Plan 0072 phase 1, ADR-0065) so domain producers need not import the api layer;
 `UIEventEnvelope` is imported from there and re-exported here for the transition.
 
-The renderer sends three typed UI-event payloads from the Electron viewer;
+The renderer sends typed UI-event payloads from the Electron viewer;
 `build_ui_event_envelope` validates `(type, payload)` and wraps the result in a
-`UIEventEnvelope`, gated at the route by the agent-mode toggle
-(`agent_mode.AgentModeStore`). The agent reads them back via the MCP surface.
+`UIEventEnvelope`. Forwarding is unconditional (ADR-0101 removed the agent-mode
+gate); the renderer bearer on the route is the boundary. The agent reads the
+events back via the MCP surface.
 
 The envelope adds a server-generated `event_id` so the agent can dedupe across
 the draining tool read and the non-draining resource read (the open question
@@ -69,19 +70,9 @@ class BarClickedPayloadV1(BaseModel):
     close: float
 
 
-class AgentModeToggledPayloadV1(BaseModel):
-    """`ui.agent_mode_toggled v1`: the toggle flipped (synthesised by PUT /agent_mode)."""
-
-    VERSION: ClassVar[int] = 1
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    enabled: bool
-
-
 UI_EVENT_TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "ui.range_selected": RangeSelectedPayloadV1,
     "ui.bar_clicked": BarClickedPayloadV1,
-    "ui.agent_mode_toggled": AgentModeToggledPayloadV1,
 }
 
 

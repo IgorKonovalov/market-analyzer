@@ -4,12 +4,10 @@
 
 # REST API
 
-The 27 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
+The 25 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
 
 | Route | Summary |
 | --- | --- |
-| [`GET /agent_mode`](#get-agentmode) | Get Agent Mode |
-| [`PUT /agent_mode`](#put-agentmode) | Put Agent Mode |
 | [`GET /alerts`](#get-alerts) | List Alerts |
 | [`GET /annotations`](#get-annotations) | Get Annotations |
 | [`DELETE /annotations/{annotation_id}`](#delete-annotationsannotationid) | Delete Annotation |
@@ -37,31 +35,6 @@ The 27 renderer-facing REST operations, from the FastAPI OpenAPI document. Every
 | [`POST /watches/{watch_id}`](#post-watcheswatchid) | Set Watch Enabled |
 
 ---
-
-## `GET /agent_mode`
-
-Get Agent Mode
-
-**Auth:** renderer bearer
-
-**Parameters**
-
-No parameters.
-
-**Response:** `AgentModeState`
-
-## `PUT /agent_mode`
-
-Put Agent Mode
-
-**Auth:** renderer bearer
-
-**Parameters**
-
-No parameters.
-
-**Request body:** `AgentModeState`
-**Response:** `AgentModeState`
 
 ## `GET /alerts`
 

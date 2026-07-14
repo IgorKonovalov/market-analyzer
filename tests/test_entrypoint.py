@@ -103,6 +103,51 @@ def test_serve_constructs_app_and_delegates_to_uvicorn(
     assert "config" in captured
 
 
+def test_serve_removes_stale_agent_mode_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    """ADR-0101 removed agent mode; a leftover `agent_mode.json` pre-seeded in
+    the data dir must be gone after startup."""
+
+    class FakeServer:
+        def __init__(self, config: object) -> None:
+            pass
+
+        async def serve(self, sockets: list[socket.socket]) -> None:
+            pass
+
+    monkeypatch.setattr("market_analyser.api.__main__.uvicorn.Server", FakeServer)
+    monkeypatch.setattr("market_analyser.api.__main__.default_app_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("market_analyser.config.default_app_data_dir", lambda: tmp_path)
+    stale = tmp_path / "agent_mode.json"
+    stale.write_text('{"enabled": true}', encoding="utf-8")
+
+    sock = entry._bind_socket(0)
+    try:
+        asyncio.run(entry._serve(sock, "secret", None, None, tmp_path / "sidecar.lock"))
+    finally:
+        sock.close()
+
+    assert not stale.exists()
+
+
+def test_remove_stale_agent_mode_file_noop_when_absent(tmp_path: Any) -> None:
+    entry._remove_stale_agent_mode_file(tmp_path)  # must not raise
+
+
+def test_remove_stale_agent_mode_file_ignores_errors(tmp_path: Any) -> None:
+    """Best-effort: an undeletable path (here a non-empty directory occupying
+    the filename) must be ignored, never crash startup."""
+    blocker = tmp_path / "agent_mode.json"
+    blocker.mkdir()
+    (blocker / "occupant.txt").write_text("x", encoding="utf-8")
+
+    entry._remove_stale_agent_mode_file(tmp_path)  # must not raise
+
+    assert blocker.exists()
+
+
 def test_main_prints_port_line_and_writes_lockfile(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

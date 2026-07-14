@@ -1,6 +1,6 @@
 # 0106 — Remove agent mode (always-on gesture forwarding)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-14
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0101-remove-agent-mode-gate](../adrs/0101-remove-agent-mode-gate.md) (paired — accepts at close; amends [ADR-0021](../adrs/0021-renderer-to-agent-feedback.md)'s gate and [ADR-0099](../adrs/0099-user-drawing-readback-and-advisory-positions.md)'s push-gate clause), [0065-neutral-ui-event-buffer-core](../adrs/0065-neutral-ui-event-buffer-core.md) (buffer core untouched), [0064-generated-sidecar-api-reference](../adrs/0064-generated-sidecar-api-reference.md) (apiref regen), [0063-in-house-i18n-and-reason-codes](../adrs/0063-in-house-i18n-and-reason-codes.md) (key removal keeps en/ru parity)

@@ -271,13 +271,12 @@ def engine() -> Iterator[Engine]:
 
 
 @pytest.fixture
-def app(mcp_secret: str, engine: Engine, tmp_path: Path) -> FastAPI:
+def app(mcp_secret: str, engine: Engine) -> FastAPI:
     return create_app(
         secret=RENDERER_SECRET,
         mcp_secret=mcp_secret,
         engine=engine,
         provider=_EmptyProvider(),  # type: ignore[arg-type]  # get_ohlcv is all this test exercises
-        agent_mode_path=tmp_path / "agent_mode.json",
     )
 
 

@@ -15,8 +15,7 @@ This package owns the transport-agnostic pieces:
 - `buffer.UIEventBuffer` — the bounded in-memory ring buffer.
 
 The transport-specific pieces stay under `api/`: the `POST /ui_events` route and
-its closed `ui.*` vocabulary (`build_ui_event_envelope`, the payload registry),
-and the persisted agent-mode toggle (`agent_mode.py`).
+its closed `ui.*` vocabulary (`build_ui_event_envelope`, the payload registry).
 """
 
 from __future__ import annotations

@@ -31,22 +31,21 @@ UI_EVENTS_RESOURCE_URI = "ui-events://recent"
 
 GET_PENDING_UI_EVENTS_DESCRIPTION = (
     "Read recent UI events the user generated in the chart viewer — drag-selected "
-    "ranges, single bar clicks, and agent-mode toggles. Events are buffered ONLY "
-    "while **agent mode** is ON; when it is OFF this returns an empty list. By "
-    "default (drain=True) each call drains the events it returns, so consecutive "
-    "draining reads return disjoint sets — call it when you are ready to act on the "
-    "user's gestures. Pass drain=False to peek without consuming. `since` returns "
-    f"only events stamped strictly after that timestamp. The same buffer is also "
-    f"exposed (non-draining) as the MCP resource {UI_EVENTS_RESOURCE_URI}, which "
-    "you can subscribe to for update notifications; dedupe across the tool and the "
-    "resource on each event's `event_id`."
+    "ranges and single bar clicks. Gestures are always forwarded (no setup or "
+    "mode required). By default (drain=True) each call drains the events it "
+    "returns, so consecutive draining reads return disjoint sets — call it when "
+    "you are ready to act on the user's gestures. Pass drain=False to peek "
+    "without consuming. `since` returns only events stamped strictly after that "
+    f"timestamp. The same buffer is also exposed (non-draining) as the MCP "
+    f"resource {UI_EVENTS_RESOURCE_URI}, which you can subscribe to for update "
+    "notifications; dedupe across the tool and the resource on each event's "
+    "`event_id`."
 )
 
 UI_EVENTS_RESOURCE_DESCRIPTION = (
-    "Most recent UI events from the chart viewer (range selections, bar clicks, "
-    "agent-mode toggles), newest last. Reading this resource does NOT drain the "
-    "buffer — use the get_pending_ui_events tool with drain=True to consume. "
-    "Populated only while agent mode is ON; empty otherwise. A "
+    "Most recent UI events from the chart viewer (range selections, bar clicks), "
+    "newest last. Reading this resource does NOT drain the buffer — use the "
+    "get_pending_ui_events tool with drain=True to consume. A "
     "notifications/resources/updated notification fires on every new event."
 )
 

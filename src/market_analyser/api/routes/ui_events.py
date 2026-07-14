@@ -1,11 +1,8 @@
 """`POST /ui_events` — buffer a renderer UI gesture for the agent (Plan 0014 phase 1).
 
 Renderer-bearer-gated by the central middleware (an agent on `/mcp` cannot POST
-here — the cross-tenant guarantee from ADR-0014). Server-side enforcement of the
-agent-mode toggle is the defence-in-depth half of ADR-0021: the route returns
-403 when agent mode is OFF, so a buggy renderer (or a process holding the
-renderer bearer) cannot bypass the user's consent even if it skips the
-renderer-side gating.
+here — the cross-tenant guarantee from ADR-0014). Forwarding is unconditional:
+ADR-0101 removed the agent-mode gate, so the bearer is the only precondition.
 
 The renderer sends `{type, version, payload}`; the server generates `event_id`
 and `ts` and derives the authoritative `version` from the registry. An unknown
@@ -24,7 +21,6 @@ from market_analyser.api.ui_events import (
     UnknownUIEventTypeError,
     build_ui_event_envelope,
 )
-from market_analyser.api.ui_events.agent_mode import AgentModeStore
 from market_analyser.ui_events.buffer import UIEventBuffer
 
 router = APIRouter(tags=["ui-events"])
@@ -42,10 +38,7 @@ class UIEventRequest(BaseModel):
 
 @router.post("/ui_events", status_code=202)
 def post_ui_event(request: Request, body: UIEventRequest) -> dict[str, str]:
-    store: AgentModeStore = request.app.state.agent_mode_store
     buffer: UIEventBuffer = request.app.state.ui_event_buffer
-    if not store.is_enabled():
-        raise HTTPException(status_code=403, detail="agent mode is off")
     try:
         envelope = build_ui_event_envelope(body.type, body.payload)
     except UnknownUIEventTypeError as exc:

@@ -34,7 +34,6 @@ from market_analyser import __version__
 from market_analyser.alerts.scheduler import WatchScheduler
 from market_analyser.api.advice_backfill import backfill_advice_ledger
 from market_analyser.api.mcp_app import create_mcp_components
-from market_analyser.api.routes.agent_mode import router as agent_mode_router
 from market_analyser.api.routes.annotations import router as annotations_router
 from market_analyser.api.routes.backtests import router as backtests_router
 from market_analyser.api.routes.defi import router as defi_router
@@ -51,7 +50,6 @@ from market_analyser.api.routes.track_record import router as track_record_route
 from market_analyser.api.routes.ui_events import router as ui_events_router
 from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.sse_ticket import SseTicketStore
-from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME, AgentModeStore
 from market_analyser.attribution.scoring_job import (
     DEFAULT_INTERVAL_SECONDS as SCORING_DEFAULT_INTERVAL_SECONDS,
 )
@@ -142,7 +140,6 @@ def create_app(
     dev_origin: str | None = None,
     event_bus: EventBus | None = None,
     sse_ticket_store: SseTicketStore | None = None,
-    agent_mode_path: Path | None = None,
     metric_accrual_enabled: bool = False,
     metric_accrual_interval_seconds: int = DEFAULT_INTERVAL_SECONDS,
     metric_accrual_sources: MetricAccrualSources | None = None,
@@ -262,18 +259,11 @@ def create_app(
         )
     effective_provider = provider if provider is not None else DefaultMarketDataProvider()
     effective_event_bus = event_bus if event_bus is not None else EventBus()
-    # The UI-event buffer + agent-mode store (Plan 0014) back the renderer→agent
-    # feedback loop. Always constructed: the `/agent_mode` and `/ui_events`
-    # routes are renderer-side and have no MCP-secret dependency. The buffer is
-    # in-memory (ephemeral by design, ADR-0021); the store persists the toggle
-    # to `<data-dir>/agent_mode.json` — tests pass a tmp path, production wires
-    # the canonical data dir from __main__.
+    # The UI-event buffer (Plan 0014) backs the renderer→agent feedback loop.
+    # Always constructed: the `/ui_events` route is renderer-side and has no
+    # MCP-secret dependency. In-memory, ephemeral by design (ADR-0021);
+    # forwarding is unconditional per ADR-0101 (no agent-mode gate).
     ui_event_buffer = UIEventBuffer()
-    agent_mode_store = AgentModeStore(
-        agent_mode_path
-        if agent_mode_path is not None
-        else default_app_data_dir() / AGENT_MODE_FILENAME,
-    )
     # The backfill coordinator (Plan 0013) needs the narrow SupportsBackfill
     # capability (get_ohlcv + coverage + get_ohlcv_with_status). The production
     # DefaultMarketDataProvider satisfies it; a coverage-less stub yields None and
@@ -605,9 +595,8 @@ def create_app(
         sse_ticket_store if sse_ticket_store is not None else SseTicketStore()
     )
     # Plan 0014: the buffer is the renderer→agent seam (POST /ui_events appends;
-    # the phase-2 MCP tool/resource read it); the store gates the whole flow.
+    # the phase-2 MCP tool/resource read it). Ungated per ADR-0101.
     app.state.ui_event_buffer = ui_event_buffer
-    app.state.agent_mode_store = agent_mode_store
     # The backfill coordinator (Plan 0013) is exposed on app.state so a future
     # phase / route can introspect in-flight backfills; the MCP tools receive it
     # directly via create_mcp_components.
@@ -786,11 +775,9 @@ def create_app(
     # central middleware, `/events` by the ticket check in that middleware.
     app.include_router(events_router)
 
-    # Plan 0014: agent-mode toggle (GET/PUT /agent_mode) + UI-event ingress
-    # (POST /ui_events). Renderer-bearer-gated by the central middleware; no
-    # MCP-secret dependency, so always registered. The MCP-side read surface
-    # lands in phase 2.
-    app.include_router(agent_mode_router)
+    # Plan 0014: UI-event ingress (POST /ui_events). Renderer-bearer-gated by
+    # the central middleware; no MCP-secret dependency, so always registered.
+    # Forwarding is unconditional per ADR-0101 — no agent-mode routes.
     app.include_router(ui_events_router)
 
     if mcp_components is not None:

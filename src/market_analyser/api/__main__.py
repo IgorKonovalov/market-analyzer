@@ -52,7 +52,6 @@ from market_analyser.api.lockfile import (
     write_lockfile,
 )
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
-from market_analyser.api.ui_events.agent_mode import AGENT_MODE_FILENAME
 from market_analyser.config import default_app_data_dir, load_config
 from market_analyser.persistence.engine import make_engine
 from market_analyser.persistence.secrets import SECRETS_FILENAME, SecretsStore
@@ -161,6 +160,17 @@ def _default_lockfile_path() -> Path:
     return default_app_data_dir() / DEFAULT_LOCKFILE_NAME
 
 
+def _remove_stale_agent_mode_file(data_dir: Path) -> None:
+    """Best-effort cleanup of the removed agent-mode toggle's state file.
+
+    ADR-0101 deleted agent mode; a leftover `agent_mode.json` written by a
+    pre-Plan-0106 sidecar is dead state. Errors are ignored — cleanup must
+    never block startup.
+    """
+    with contextlib.suppress(OSError):
+        (data_dir / "agent_mode.json").unlink(missing_ok=True)
+
+
 def _probe_and_prepare_lockfile(lockfile_path: Path) -> None:
     """Refuse to start when a live sidecar already owns the lockfile.
 
@@ -203,7 +213,7 @@ async def _serve(
     mcp_secret = load_or_generate_mcp_secret(mcp_secret_path)
     runs_dir = default_app_data_dir() / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
-    agent_mode_path = default_app_data_dir() / AGENT_MODE_FILENAME
+    _remove_stale_agent_mode_file(default_app_data_dir())
     secrets_store = SecretsStore(default_app_data_dir() / SECRETS_FILENAME)
     app = create_app(
         secret=secret,
@@ -213,7 +223,6 @@ async def _serve(
         engine=engine,
         runs_dir=runs_dir,
         dev_origin=dev_origin,
-        agent_mode_path=agent_mode_path,
         # Metric-store self-warming (Plan 0061, ADR-0056): the config.json
         # off-switch and interval reach the lifespan job here.
         metric_accrual_enabled=config.metric_accrual_enabled,
