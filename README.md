@@ -23,7 +23,7 @@ Everything downstream is shaped by two non-negotiables that come with the tradin
 
 ## What it does
 
-Version **0.8.0**. The surface today, grouped by what you'd ask for:
+Version **0.9.0**. The surface today, grouped by what you'd ask for:
 
 **See a chart.** OHLCV candlesticks for one symbol at a time across `15m`/`1h`/`4h`/`1d`/`1w`/`1mo`. Quotes route per symbol to Yahoo Finance, Binance, or Coinbase (exchange pairs like `BTCUSDT` go to Binance/Coinbase spot); the first fetch backfills, and everything after serves from a local SQLite cache with scroll-left lazy history. The agent can draw on it live — trendlines, level markers, pattern highlights — and those annotations persist across restarts.
 
@@ -336,7 +336,7 @@ These apply to every change (also in [`CLAUDE.md`](CLAUDE.md)):
 
 Conventional commits, enforced by `commitizen` + a `commit-msg` Husky hook. Implementers commit per phase; **pushes are user-driven** and CI runs on push and tag.
 
-Semantic versioning, held in the `0.x` band until the public surface (MCP tools + REST contract) is declared stable. The single source of truth is `pyproject.toml` `[project].version` (currently **0.8.0**); `desktop/package.json` is synced from it. Bumps run **once per shipped plan** in the architect's close ceremony via `uv run cz bump` (`feat` → minor, `fix` → patch), which writes both files and tags `vX.Y.Z`. `major_version_zero = true` keeps a breaking change to a minor bump pre-1.0. See [ADR-0087](docs/architecture/adrs/0087-versioning-and-release-cadence.md).
+Semantic versioning, held in the `0.x` band until the public surface (MCP tools + REST contract) is declared stable. The single source of truth is `pyproject.toml` `[project].version` (currently **0.9.0**); `desktop/package.json` is synced from it. Bumps run **once per shipped plan** in the architect's close ceremony via `uv run cz bump` (`feat` → minor, `fix` → patch), which writes both files and tags `vX.Y.Z`. `major_version_zero = true` keeps a breaking change to a minor bump pre-1.0. See [ADR-0087](docs/architecture/adrs/0087-versioning-and-release-cadence.md).
 
 ---
 
