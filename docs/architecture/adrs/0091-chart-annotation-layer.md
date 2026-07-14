@@ -1,6 +1,6 @@
 # ADR-0091 — Chart annotation layer (agent-wire + user-local, one DrawingSpec)
 
-> **Status:** proposed (Plan 0097 accepts at close)
+> **Status:** accepted (Plan 0097 close 2026-07-14)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0097-chart-drawing-dock](../plans/0097-chart-drawing-dock.md) (accepts this ADR at close)
 > **Sibling channel:** [ADR-0090](0090-cross-pane-divergence-delivery.md) (the `chart.divergences v1` cross-pane channel, Plan 0091) is the other agent→chart geometry event added the same day; `chart.annotations v1` here is the freeform-drawing analog. Both push agent-derived geometry over SSE and reuse the ADR-0049/0061 draw primitive; they are independent events, not a shared channel.
