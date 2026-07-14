@@ -35,6 +35,12 @@
   justify-content: flex-end;
 }
 
+/* The expanded top-bar buttons take their natural height (the fixed 30px is for
+   the collapsed pill's toggle only). */
+.topBar .collapseToggle {
+  height: auto;
+}
+
 .collapseToggle {
   font: inherit;
   line-height: 1;
