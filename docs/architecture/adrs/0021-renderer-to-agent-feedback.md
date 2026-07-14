@@ -1,6 +1,6 @@
 # ADR-0021 — Renderer→agent feedback via MCP resources + notifications, gated by agent-mode toggle
 
-> **Status:** accepted (2026-05-30, at Plan 0014 close)
+> **Status:** accepted (2026-05-30, at Plan 0014 close); **amended by [ADR-0101](0101-remove-agent-mode-gate.md)** (2026-07-14 — the agent-mode toggle + gate are removed, gesture forwarding is always-on; the buffer / `get_pending_ui_events` / `ui-events://recent` transport this ADR decided stands unchanged)
 > **Date:** 2026-05-22
 > **Related plan(s):** [0014-interactive-chart-and-agent-mode](../plans/0014-interactive-chart-and-agent-mode.md)
 > **Related ADRs:** [ADR-0014](0014-mcp-as-second-sidecar-protocol.md) (MCP is the agent surface; Streamable HTTP transport), [ADR-0015](0015-claude-code-primary-control-surface.md) (Claude Code is the primary control surface), [ADR-0017](0017-live-ui-updates-via-sse.md) (sidecar→renderer is SSE — explicitly noted that renderer→agent was *not* designed and would need its own ADR), [ADR-0002](0002-ipc-local-http.md) (renderer ↔ sidecar transport; bearer auth pattern)

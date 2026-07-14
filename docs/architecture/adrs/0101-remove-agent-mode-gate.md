@@ -1,6 +1,6 @@
 # ADR-0101 — Remove the agent-mode gate (always-on renderer→agent gesture forwarding)
 
-> **Status:** proposed (Plan 0106 accepts at close)
+> **Status:** accepted (2026-07-14, at Plan 0106 close — sidecar `63638ef` + renderer `7d6f8bb` landed, human smoke passed)
 > **Date:** 2026-07-14
 > **Related plan(s):** [0106-remove-agent-mode](../plans/0106-remove-agent-mode.md) (accepts this ADR at close)
 > **Related ADRs:** [ADR-0021](0021-renderer-to-agent-feedback.md) (**amended, not superseded** — the agent-mode toggle + gate are removed; the buffer / `get_pending_ui_events` / `ui-events://recent` transport it decided stands unchanged), [ADR-0099](0099-user-drawing-readback-and-advisory-positions.md) (**amended** — its decision 2 "the push event is agent-mode gated" falls with the mode; `ui.drawing_changed` forwards unconditionally), [ADR-0002](0002-ipc-local-http.md) / [ADR-0014](0014-mcp-as-second-sidecar-protocol.md) (the renderer-bearer route auth that remains the real boundary), [ADR-0065](0065-neutral-ui-event-buffer-core.md) (the neutral buffer core, untouched)

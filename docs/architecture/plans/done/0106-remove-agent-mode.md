@@ -1,6 +1,6 @@
 # 0106 — Remove agent mode (always-on gesture forwarding)
 
-> **Status:** in-progress
+> **Status:** done (closed 2026-07-14 — ph1 `63638ef` dev sidecar removal, ph2 `7d6f8bb` ui-builder renderer removal, ph3 human smoke PASS same day; clean Mode 4, no blockers/majors, two sanctioned-residue minors — stale gate references in `ui_events/buffer.py` docstring + `alerts/scheduler.py` comment, both files pinned untouched by this plan; ADR-0101 accepted at close, ADR-0021/0099 marked amended; grep-verified: zero live `agent_mode` in `src/` beyond the sanctioned startup cleanup in `api/__main__.py`, zero identifiers in `desktop/`)
 > **Created:** 2026-07-14
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0101-remove-agent-mode-gate](../adrs/0101-remove-agent-mode-gate.md) (paired — accepts at close; amends [ADR-0021](../adrs/0021-renderer-to-agent-feedback.md)'s gate and [ADR-0099](../adrs/0099-user-drawing-readback-and-advisory-positions.md)'s push-gate clause), [0065-neutral-ui-event-buffer-core](../adrs/0065-neutral-ui-event-buffer-core.md) (buffer core untouched), [0064-generated-sidecar-api-reference](../adrs/0064-generated-sidecar-api-reference.md) (apiref regen), [0063-in-house-i18n-and-reason-codes](../adrs/0063-in-house-i18n-and-reason-codes.md) (key removal keeps en/ru parity)
