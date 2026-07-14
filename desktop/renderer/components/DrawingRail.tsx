@@ -59,7 +59,7 @@ export function DrawingRail({
     >
       <button
         type="button"
-        className={styles.toolButton}
+        className={`${styles.toolButton} ${styles.selectButton}`}
         aria-pressed={activeTool === null}
         aria-label={t('chart.draw.select')}
         title={t('chart.draw.select')}
