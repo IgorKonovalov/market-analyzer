@@ -49,15 +49,19 @@ from market_analyser.data.types import (
     SymbolInfo,
 )
 from market_analyser.events import (
+    ChartAnnotationsPayloadV1,
     ChartDivergencesPayloadV1,
     ChartHighlightPayloadV1,
     ChartShowPayloadV1,
     ChartTrendlinesPayloadV1,
     ChartUpdatePayloadV1,
+    DrawingSpec,
+    DrawingStyle,
     Envelope,
     EventBus,
     Marker,
     OverlaySpec,
+    TimePricePoint,
     TrendlineSpec,
     TrendPoint,
 )
@@ -606,6 +610,45 @@ def test_highlight_pattern_publishes_event_and_persists_annotation(
                 "kind": "bullish_marker",
             },
         ),
+        # annotate_chart rejections (Plan 0097 ph1)
+        (
+            "annotate_chart",
+            {"symbol": "", "drawings": []},  # empty symbol
+        ),
+        (
+            "annotate_chart",
+            {
+                "symbol": "AAPL",
+                "drawings": [{"kind": "unknown", "points": []}],  # not in literal set
+            },
+        ),
+        (
+            "annotate_chart",
+            {
+                "symbol": "AAPL",
+                # malformed geometry: a trendline needs exactly 2 anchors
+                "drawings": [
+                    {
+                        "kind": "trendline",
+                        "points": [{"ts": "2026-05-15T00:00:00+00:00", "price": 100.0}],
+                    }
+                ],
+            },
+        ),
+        (
+            "annotate_chart",
+            {
+                "symbol": "AAPL",
+                # user provenance never crosses the wire (ADR-0091)
+                "drawings": [
+                    {
+                        "kind": "hline",
+                        "points": [{"ts": "2026-05-15T00:00:00+00:00", "price": 100.0}],
+                        "provenance": "user",
+                    }
+                ],
+            },
+        ),
     ],
 )
 def test_tool_rejects_invalid_input_with_mcp_error(
@@ -1045,3 +1088,177 @@ def test_chart_divergences_payload_round_trips() -> None:
     }
     with pytest.raises(ValidationError, match="at least 2 points"):
         TrendlineSpec(points=[])
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0097 ph1: annotate_chart → chart.annotations v1 (ADR-0091)             #
+# --------------------------------------------------------------------------- #
+
+_T0 = "2026-04-25T00:00:00+00:00"
+_T1 = "2026-05-05T00:00:00+00:00"
+
+
+def _pt(ts: str, price: float) -> dict[str, object]:
+    return {"ts": ts, "price": price}
+
+
+def test_annotate_chart_publishes_chart_annotations_v1(
+    live_server: str, mcp_secret: str, event_bus: EventBus
+) -> None:
+    """`annotate_chart` publishes exactly one `chart.annotations v1` envelope
+    carrying the agent's drawing set for the symbol; the payload round-trips
+    through the pydantic model; provenance is stamped `agent` and an omitted
+    `id` is generated (non-empty)."""
+    sub = event_bus.subscribe()
+
+    async def _run() -> dict[str, object]:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "annotate_chart",
+                {
+                    "symbol": "BTC-USD",
+                    "drawings": [
+                        {
+                            "kind": "trendline",
+                            "points": [_pt(_T0, 61000.0), _pt(_T1, 64000.0)],
+                            "id": "support-diag",
+                        },
+                        {
+                            "kind": "hline",
+                            "points": [_pt(_T0, 65000.0)],
+                            "style": {"color": "#ff0000", "width": 2},
+                        },
+                    ],
+                },
+            )
+            assert not result.isError, f"annotate_chart errored: {result.content}"
+            assert result.structuredContent is not None
+            return dict(result.structuredContent)
+
+    ack = asyncio.run(_run())
+    assert ack == {
+        "event_published": True,
+        "type": "chart.annotations",
+        "version": ChartAnnotationsPayloadV1.VERSION,
+    }
+
+    queued = _drain_queue(sub)
+    assert len(queued) == 1, f"expected exactly one envelope, got {len(queued)}"
+    env = queued[0]
+    assert env.type == "chart.annotations"
+    assert env.version == 1
+    # The wire payload round-trips through the pydantic model losslessly.
+    reparsed = ChartAnnotationsPayloadV1.model_validate(env.payload)
+    assert reparsed.symbol == "BTC-USD"
+    assert [d.kind for d in reparsed.drawings] == ["trendline", "hline"]
+    assert all(d.provenance == "agent" for d in reparsed.drawings)
+    assert reparsed.drawings[0].id == "support-diag"
+    assert reparsed.drawings[1].id  # generated when omitted, never empty
+    assert reparsed.drawings[1].style == DrawingStyle(color="#ff0000", width=2)
+    # No timeframe anywhere — drawings are per-symbol (ADR-0091).
+    assert "timeframe" not in env.payload
+
+
+def test_annotate_chart_empty_set_clears(
+    live_server: str, mcp_secret: str, event_bus: EventBus
+) -> None:
+    """An empty `drawings` list is the legitimate declarative 'clear my
+    annotations for this symbol' message — accepted and published."""
+    sub = event_bus.subscribe()
+
+    async def _run() -> None:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool("annotate_chart", {"symbol": "AAPL", "drawings": []})
+            assert not result.isError, f"annotate_chart errored: {result.content}"
+
+    asyncio.run(_run())
+    queued = _drain_queue(sub)
+    assert len(queued) == 1
+    assert queued[0].payload == {"symbol": "AAPL", "drawings": []}
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0097 ph1: DrawingSpec per-kind validation (ADR-0091)                    #
+# Pure-pydantic round-trips — no live server needed.                          #
+# --------------------------------------------------------------------------- #
+
+_P0 = TimePricePoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=99.0)
+_P1 = TimePricePoint(ts=datetime(2026, 5, 5, tzinfo=UTC), price=104.0)
+
+# One valid anchor set per kind (the plan's six geometry kinds).
+_VALID_POINTS_BY_KIND: dict[str, list[TimePricePoint]] = {
+    "trendline": [_P0, _P1],
+    "ray": [_P0, _P1],
+    "hline": [_P0],
+    "vline": [_P0],
+    "rect": [_P0, _P1],
+    "fib": [_P0, _P1],
+}
+
+# One malformed anchor set per kind (wrong point count each time).
+_MALFORMED_POINTS_BY_KIND: dict[str, list[TimePricePoint]] = {
+    "trendline": [_P0],
+    "ray": [_P0, _P1, _P0],
+    "hline": [_P0, _P1],
+    "vline": [],
+    "rect": [_P1],
+    "fib": [_P0],
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_VALID_POINTS_BY_KIND))
+def test_drawing_spec_valid_kind_serializes_and_round_trips(kind: str) -> None:
+    """One valid spec per kind: it validates, round-trips through the model,
+    and serialises to a clean wire (unset `style` dropped by `exclude_none`,
+    the generated `id` always present)."""
+    spec = DrawingSpec(
+        kind=kind,  # type: ignore[arg-type]
+        points=_VALID_POINTS_BY_KIND[kind],
+        provenance="agent",
+        id=f"{kind}-1",
+    )
+    assert DrawingSpec.model_validate(spec.model_dump()) == spec
+    wire = spec.model_dump(mode="json", exclude_none=True)
+    assert wire["kind"] == kind
+    assert wire["provenance"] == "agent"
+    assert wire["id"] == f"{kind}-1"
+    assert "style" not in wire
+    assert len(wire["points"]) == len(_VALID_POINTS_BY_KIND[kind])
+    # And it rides the payload intact.
+    payload = ChartAnnotationsPayloadV1(symbol="AAPL", drawings=[spec])
+    assert ChartAnnotationsPayloadV1.model_validate(payload.model_dump()).drawings[0] == spec
+
+
+@pytest.mark.parametrize("kind", sorted(_MALFORMED_POINTS_BY_KIND))
+def test_drawing_spec_malformed_kind_raises(kind: str) -> None:
+    """One malformed spec per kind: the wrong anchor count raises a typed
+    validation error (never a silent drop or truncation)."""
+    with pytest.raises(ValidationError, match="requires exactly"):
+        DrawingSpec(
+            kind=kind,  # type: ignore[arg-type]
+            points=_MALFORMED_POINTS_BY_KIND[kind],
+            provenance="agent",
+        )
+
+
+def test_chart_annotations_payload_rejects_user_provenance() -> None:
+    """User drawings never cross the wire (ADR-0091): a `provenance="user"`
+    spec inside the payload is rejected structurally."""
+    spec = DrawingSpec(kind="hline", points=[_P0], provenance="user", id="mine")
+    with pytest.raises(ValidationError, match="agent drawings only"):
+        ChartAnnotationsPayloadV1(symbol="AAPL", drawings=[spec])
+
+
+def test_chart_annotations_payload_rejects_duplicate_ids() -> None:
+    """A declarative set with a duplicated drawing id is ambiguous — rejected,
+    never silently deduped."""
+    a = DrawingSpec(kind="hline", points=[_P0], provenance="agent", id="dup")
+    b = DrawingSpec(kind="vline", points=[_P1], provenance="agent", id="dup")
+    with pytest.raises(ValidationError, match="duplicate drawing id"):
+        ChartAnnotationsPayloadV1(symbol="AAPL", drawings=[a, b])
+
+
+def test_drawing_style_rejects_non_positive_width() -> None:
+    """A zero/negative stroke width is undrawable — rejected at the boundary."""
+    with pytest.raises(ValidationError):
+        DrawingStyle(width=0)

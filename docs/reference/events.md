@@ -4,11 +4,12 @@
 
 # SSE events
 
-The 26 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
+The 27 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
 
 | Event | Summary |
 | --- | --- |
 | [`alert.triggered`](#alerttriggered) | `alert.triggered v1` payload (Plan 0060, ADR-0055): a watch's condition transitioned false→true on its latest evaluation. |
+| [`chart.annotations`](#chartannotations) | `chart.annotations v1` payload: the AGENT's freeform-drawing set for a symbol (ADR-0091, Plan 0097) — a declarative replace, mirroring how `chart.update` replaces the agent overlay set. |
 | [`chart.divergences`](#chartdivergences) | `chart.divergences v1` payload: layer price↔oscillator divergence segments onto the chart already showing `symbol`/`timeframe` (ADR-0090, Plan 0091). |
 | [`chart.highlight`](#charthighlight) | `chart.highlight v1` payload: render markers on a chart. |
 | [`chart.show`](#chartshow) | `chart.show v1` payload: render this chart fresh. |
@@ -62,6 +63,34 @@ schema test in `tests/alerts/test_scheduler.py` pin this).
 | `fired_at` | string (date-time) | yes | — |
 | `condition` | string | yes | — |
 | `values` | object | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
+## `chart.annotations`
+
+**Version:** 1
+
+`chart.annotations v1` payload: the AGENT's freeform-drawing set for a
+symbol (ADR-0091, Plan 0097) — a declarative replace, mirroring how
+`chart.update` replaces the agent overlay set. An empty `drawings` list is
+the legitimate "clear my annotations for this symbol" message.
+
+Per-symbol, NOT per-(symbol, timeframe): a drawing is anchored to
+`(time, price)` and renders across every timeframe, so no `timeframe`
+field exists here (unlike every other `chart.*` payload).
+
+Agent-only by construction: user drawings never cross the wire (they live
+in the renderer's `ma.userDrawings`), so every spec on this channel must
+carry `provenance="agent"` — enforced structurally below, the same way
+`Recommendation.label` pins its literal. Not persisted by the renderer;
+the agent re-pushes (the ADR-0077 agent-overlay symmetry).
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `drawings` | array[DrawingSpec] | yes | — |
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 

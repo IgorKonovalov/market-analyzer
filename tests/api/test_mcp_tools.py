@@ -521,6 +521,7 @@ def test_detect_chart_patterns_tool_is_registered(live_server: str, mcp_secret: 
 EXPECTED_FULL_TOOLSET = {
     "analyze_symbol",
     "anchored_vwap",
+    "annotate_chart",
     "backfill_ohlcv",
     "bitcoin_market_pulse",
     "btc_cycle_snapshot",

@@ -1,10 +1,13 @@
 """SSE event bus + typed envelope schemas (ADR-0017, Plan 0007 phase 2).
 
-This package is split into three modules (Plan 0072 phase 2):
+This package is split into four modules (Plan 0072 phase 2; drawings split out
+in Plan 0097):
 
 - `payloads` — the ~20 per-version Pydantic envelope schemas + the `TYPE_REGISTRY`.
 - `chart_types` — the shared chart value-types (`OverlaySpec`, `Marker`,
   `TrendPoint`, `TrendlineSpec`) the `chart.*` schemas compose.
+- `drawing_types` — the two-source freeform-drawing types (`DrawingSpec` et al.,
+  ADR-0091) carried by `chart.annotations` and persisted renderer-side.
 - `bus` — the `EventBus` / `Subscription` pub/sub runtime and the `Envelope`
   wire type.
 
@@ -28,9 +31,15 @@ from market_analyser.events.chart_types import (
     TrendlineSpec,
     TrendPoint,
 )
+from market_analyser.events.drawing_types import (
+    DrawingSpec,
+    DrawingStyle,
+    TimePricePoint,
+)
 from market_analyser.events.payloads import (
     TYPE_REGISTRY,
     AlertTriggeredPayloadV1,
+    ChartAnnotationsPayloadV1,
     ChartDivergencesPayloadV1,
     ChartHighlightPayloadV1,
     ChartShowPayloadV1,
@@ -63,6 +72,7 @@ __all__ = [
     "DEFAULT_QUEUE_CAP",
     "TYPE_REGISTRY",
     "AlertTriggeredPayloadV1",
+    "ChartAnnotationsPayloadV1",
     "ChartDivergencesPayloadV1",
     "ChartHighlightPayloadV1",
     "ChartShowPayloadV1",
@@ -76,6 +86,8 @@ __all__ = [
     "DefiScanFailedPayloadV1",
     "DefiScanProgressPayloadV1",
     "DefiScanStartedPayloadV1",
+    "DrawingSpec",
+    "DrawingStyle",
     "Envelope",
     "EventBus",
     "ForecastCompletedPayloadV1",
@@ -93,6 +105,7 @@ __all__ = [
     "SignalEvaluatedPayloadV1",
     "Subscription",
     "TechnicalReadCompletedPayloadV1",
+    "TimePricePoint",
     "TrendPoint",
     "TrendlineSpec",
     "UnknownEventTypeError",

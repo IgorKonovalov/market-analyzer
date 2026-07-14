@@ -34,6 +34,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from market_analyser.api.mcp_tools.analyze_symbol import register_analyze_symbol
 from market_analyser.api.mcp_tools.anchored_vwap import register_anchored_vwap
+from market_analyser.api.mcp_tools.annotate_chart import register_annotate_chart
 from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
@@ -183,6 +184,10 @@ def create_mcp_components(
 
     register_show_chart(server, event_bus=event_bus)
     register_update_chart(server, event_bus=event_bus)
+    # Freeform agent annotations (Plan 0097, ADR-0091): declarative replace of
+    # the agent drawing set per symbol via `chart.annotations v1`. Display-only,
+    # never persisted sidecar-side — no repo dep.
+    register_annotate_chart(server, event_bus=event_bus)
     register_highlight_pattern(
         server, annotations_repository=annotations_repository, event_bus=event_bus
     )

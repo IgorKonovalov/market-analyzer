@@ -16,12 +16,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from market_analyser.advisor.models import Recommendation, TechnicalRead
 from market_analyser.analysis.types import Divergence
 from market_analyser.backtest.types import SignalEvaluation
 from market_analyser.events.chart_types import Marker, OverlaySpec, TrendlineSpec
+from market_analyser.events.drawing_types import DrawingSpec
 from market_analyser.forecast.regime import RegimeForecast
 from market_analyser.forecast.result import MultiHorizonForecastResult
 from market_analyser.forecast.volatility import VolatilityForecast
@@ -106,6 +107,46 @@ class ChartDivergencesPayloadV1(BaseModel):
     symbol: str
     timeframe: str
     divergences: list[Divergence]
+
+
+class ChartAnnotationsPayloadV1(BaseModel):
+    """`chart.annotations v1` payload: the AGENT's freeform-drawing set for a
+    symbol (ADR-0091, Plan 0097) — a declarative replace, mirroring how
+    `chart.update` replaces the agent overlay set. An empty `drawings` list is
+    the legitimate "clear my annotations for this symbol" message.
+
+    Per-symbol, NOT per-(symbol, timeframe): a drawing is anchored to
+    `(time, price)` and renders across every timeframe, so no `timeframe`
+    field exists here (unlike every other `chart.*` payload).
+
+    Agent-only by construction: user drawings never cross the wire (they live
+    in the renderer's `ma.userDrawings`), so every spec on this channel must
+    carry `provenance="agent"` — enforced structurally below, the same way
+    `Recommendation.label` pins its literal. Not persisted by the renderer;
+    the agent re-pushes (the ADR-0077 agent-overlay symmetry)."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    drawings: list[DrawingSpec]
+
+    @model_validator(mode="after")
+    def _validate_agent_set(self) -> ChartAnnotationsPayloadV1:
+        """Only agent-provenance specs may ride the wire, and the declarative
+        set must be unambiguous — a duplicated drawing id is malformed input,
+        rejected (never silently deduped)."""
+        for spec in self.drawings:
+            if spec.provenance != "agent":
+                raise ValueError(
+                    "chart.annotations carries agent drawings only; "
+                    f"got provenance {spec.provenance!r} on drawing {spec.id!r}"
+                )
+        ids = [spec.id for spec in self.drawings]
+        if len(ids) != len(set(ids)):
+            dupes = sorted({i for i in ids if ids.count(i) > 1})
+            raise ValueError(f"duplicate drawing id(s) in annotation set: {dupes}")
+        return self
 
 
 class RunCompletedPayloadV1(BaseModel):
@@ -459,6 +500,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.highlight": ChartHighlightPayloadV1,
     "chart.trendlines": ChartTrendlinesPayloadV1,
     "chart.divergences": ChartDivergencesPayloadV1,
+    "chart.annotations": ChartAnnotationsPayloadV1,
     "run.completed": RunCompletedPayloadV1,
     "signal.evaluated": SignalEvaluatedPayloadV1,
     "recommendation.completed": RecommendationCompletedPayloadV1,
@@ -486,6 +528,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
 __all__ = [
     "TYPE_REGISTRY",
     "AlertTriggeredPayloadV1",
+    "ChartAnnotationsPayloadV1",
     "ChartDivergencesPayloadV1",
     "ChartHighlightPayloadV1",
     "ChartShowPayloadV1",

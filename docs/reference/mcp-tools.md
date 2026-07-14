@@ -4,12 +4,13 @@
 
 # MCP tools
 
-The 56 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
 | [`analyze_symbol`](#analyzesymbol) | Compute a full technical-condition snapshot for one symbol over cached bars: trend (up/down/sideways), momentum stance, latest indicator values (RSI, MACD, Bollinger, ATR, ADX, Supertrend, plus trailing RSI/ATR percentiles), trailing support/resistance levels, any candlestick patterns on the most recent bars, and the active classical chart patterns (head & shoulders, doubles, triangles, wedges — forming or freshly confirmed) still in play. |
 | [`anchored_vwap`](#anchoredvwap) | Compute the anchored VWAP on one symbol's cached bars: the volume-weighted average of the typical price accumulated from a chosen anchor bar to the last bar (dynamic support/resistance with a fixed start, unlike the rolling vwap). |
+| [`annotate_chart`](#annotatechart) | Place freeform drawings (annotations) on a symbol's chart. |
 | [`backfill_ohlcv`](#backfillohlcv) | Pre-warm the local cache for a symbol/timeframe over [start, end] by fetching any missing bars from the upstream in the background. |
 | [`bitcoin_market_pulse`](#bitcoinmarketpulse) | Get the current crypto macro picture in one call (CoinGecko, free public API): BTC price and 24h change, BTC dominance %, total crypto market cap and its 24h change, plus a neutral `regime` label describing market STRUCTURE (btc_led / alt_structure / risk_off_structure / neutral). |
 | [`btc_cycle_snapshot`](#btccyclesnapshot) | Get the current BTC cycle picture in one call: days since the 2024-04-19 halving, ESTIMATED days to the next (the next-halving date is an estimate, hence the _est suffix), the cycle phase fraction (0.0 just after a halving, 1.0 at the estimated next), Mayer Multiple (close / 200-day SMA) and distance to the 200-week MA (close / SMA1400 - 1) from cached daily BTC-USD bars, plus the latest Fear & Greed and BTC dominance with 7/30-day deltas from the stored metric series, plus on-chain MVRV (market value / realized value) with its trailing full-history percentile. |
@@ -113,6 +114,21 @@ Compute the anchored VWAP on one symbol's cached bars: the volume-weighted avera
 | `scanned_at` | string (date-time) |
 
 **Source:** [`src/market_analyser/api/mcp_tools/anchored_vwap.py`](../../src/market_analyser/api/mcp_tools/anchored_vwap.py)
+
+## `annotate_chart`
+
+Place freeform drawings (annotations) on a symbol's chart. Publishes a `chart.annotations v1` event that declaratively REPLACES your previous annotation set for `symbol` — send the full set each time; an empty `drawings` list clears it. Each drawing is `{kind, points, id?, style?}` with `points` as `[{ts, price}, ...]` anchors: `trendline` (segment, 2 points), `ray` (through 2 points, extended right), `hline` (horizontal line at the point's price, 1 point), `vline` (vertical line at the point's ts, 1 point), `rect` (zone between 2 corner points), `fib` (Fibonacci retracement grid between 2 anchor points). Drawings are per-symbol and render on every timeframe (anchored to time+price, not bars). Supply your own stable `id` per drawing so the user's hide choices survive a re-push; `style` is optional `{color?, width?}`. Agent drawings render hide-only for the user (their own drawings stay editable) and are not persisted by the viewer — re-issue after a reload.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+| `drawings` | array[object] | yes | — |
+
+**Returns:** `dict[str, Any]`
+
+**Source:** [`src/market_analyser/api/mcp_tools/annotate_chart.py`](../../src/market_analyser/api/mcp_tools/annotate_chart.py)
 
 ## `backfill_ohlcv`
 
