@@ -1,6 +1,6 @@
 # ADR-0089 — Chart display presets (renderer-owned layer-composition container)
 
-> **Status:** proposed (Plan 0096 accepts at close)
+> **Status:** accepted (Plan 0096 close 2026-07-14)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0096-chart-and-app-declutter](../plans/0096-chart-and-app-declutter.md) (accepts this ADR at close)
 > **Related ADRs:** [ADR-0077](0077-user-originated-display-overlays.md) (user-originated display overlays — the store presets compose, **refined here**), [ADR-0062](0062-user-chart-style-overrides.md) (user chart-style overrides — the base-series-form pref presets deliberately leave alone), [ADR-0039](0039-renderer-theming-localstorage.md) (renderer-owned display prefs in `ma.*` localStorage — the persistence convention reused), [ADR-0023](0023-technical-analysis-surface.md) (client-side indicator math — why this is display, not data), [ADR-0015](0015-claude-code-primary-control-surface.md) (agent is the primary control surface — untouched), [ADR-0088](0088-lightweight-charts-v5-panes.md) (v5 panes — the render substrate)
