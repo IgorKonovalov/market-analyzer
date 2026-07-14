@@ -26,11 +26,13 @@ import { DivergencePrimitive } from '../lib/divergences'
 import {
   type HoverableLevel,
   type OverlayReading,
+  type StructureMarkerPoint,
   type TooltipContent,
   divergenceTooltipText,
   levelTooltipText,
   nearestLevelAtY,
   overlayLabel,
+  structureTooltipText,
   tooltipAtTime,
   trendlineTooltipText,
 } from '../lib/tooltip'
@@ -50,6 +52,10 @@ export interface UseChartTooltipParams {
    * overlays passes nothing and skips the lookup. */
   structureLevels?: ReadonlyArray<HoverableLevel>
   seriesRef?: RefObject<MainSeries | null>
+  /** The DRAWN market-structure markers (HH/HL/LH/LL + BOS/CHoCH) for the
+   * time-keyed structure hover (Plan 0105 phase 7) — a toggled-off layer
+   * publishes none, so it shows no hover (the `drawnMarkers` gate, mirrored). */
+  structureMarkers?: ReadonlyArray<StructureMarkerPoint>
   rebuildToken: unknown
 }
 
@@ -59,7 +65,13 @@ export function useChartTooltip(
   spanPrimitiveRef: RefObject<PatternSpanPrimitive | null>,
   trendlinePrimitiveRef: RefObject<TrendlinePrimitive | null>,
   divergencePricePrimitiveRef: RefObject<DivergencePrimitive | null>,
-  { drawnMarkers, structureLevels, seriesRef, rebuildToken }: UseChartTooltipParams,
+  {
+    drawnMarkers,
+    structureLevels,
+    seriesRef,
+    structureMarkers,
+    rebuildToken,
+  }: UseChartTooltipParams,
 ): TooltipState | null {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   // The hovered candlestick's meaning line is localizable glossary content (Plan
@@ -126,6 +138,14 @@ export function useChartTooltip(
             })
           : null
       const levels = hoveredLevel ? [levelTooltipText(hoveredLevel)] : []
+      // Market-structure markers on the hovered bar (Plan 0105 phase 7): the
+      // same time-keyed match candlestick markers use, glossary-backed content.
+      const structures =
+        param.time !== undefined && structureMarkers !== undefined
+          ? structureMarkers
+              .filter((m) => m.time === param.time)
+              .map((m) => structureTooltipText(m.label, locale))
+          : []
       const markers = timeContent?.markers ?? []
       const overlays = timeContent?.overlays ?? []
       const markerMeaning = timeContent?.markerMeaning
@@ -134,13 +154,14 @@ export function useChartTooltip(
         overlays.length === 0 &&
         trendlines.length === 0 &&
         divergences.length === 0 &&
-        levels.length === 0
+        levels.length === 0 &&
+        structures.length === 0
       ) {
         setTooltip(null)
         return
       }
       setTooltip({
-        content: { markers, overlays, trendlines, divergences, levels, markerMeaning },
+        content: { markers, overlays, trendlines, divergences, levels, structures, markerMeaning },
         x: param.point.x,
         y: param.point.y,
       })
@@ -157,6 +178,7 @@ export function useChartTooltip(
     drawnMarkers,
     structureLevels,
     seriesRef,
+    structureMarkers,
     rebuildToken,
     locale,
   ])

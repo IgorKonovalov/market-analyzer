@@ -46,6 +46,30 @@ export interface TooltipContent {
    * identity + price (Plan 0105 phase 6 / ADR-0100 rule 3, the crosshair-Y
    * proximity reuse). Absent when no level is within the pixel threshold. */
   levels?: string[]
+  /** Hovered market-structure marker read-outs — HH/HL/LH/LL + BOS/CHoCH label
+   * + glossary meaning (Plan 0105 phase 7), the same time-keyed match the
+   * candlestick markers use. Absent when the hovered bar carries none. */
+  structures?: string[]
+}
+
+/** A DRAWN market-structure marker exposed for the time-keyed hover match
+ * (Plan 0105 phase 7): a toggled-off structure layer publishes none, so a
+ * hidden layer shows no hover — the `drawnMarkers` gate, mirrored. */
+export interface StructureMarkerPoint {
+  time: UTCTimestamp
+  label: string
+}
+
+/** Hovered structure-marker read-out: the localized glossary name + its
+ * what-it-means line (`hh`/`hl`/`lh`/`ll`/`bos`/`choch` entries). Degrades to
+ * the bare marker label when the glossary has no entry — a name is always
+ * shown, never nothing. */
+export function structureTooltipText(label: string, locale: Locale = 'en'): string {
+  const record = term(label.toLowerCase())
+  if (!record) return label
+  const name = localize(record.term, locale)
+  const meaning = localize(record.whatItMeans, locale)
+  return meaning ? `${name} — ${meaning}` : name
 }
 
 /** A drawn horizontal structure level (fib ratio / pivot / fib anchor) exposed

@@ -11,6 +11,7 @@ import {
   levelTooltipText,
   nearestLevelAtY,
   overlayLabel,
+  structureTooltipText,
   tooltipAtTime,
   tooltipPosition,
   trendlineTooltipText,
@@ -249,5 +250,32 @@ describe('levelTooltipText', () => {
   it('reads identity + price', () => {
     expect(levelTooltipText({ title: 'R1', price: 130 })).toBe('R1 · 130.00')
     expect(levelTooltipText({ title: 'Fib 0.618', price: 88.2 })).toBe('Fib 0.618 · 88.20')
+  })
+})
+
+// Plan 0105 phase 7: hovered market-structure markers read glossary-backed
+// content, the same dual-hat entries the legend uses.
+describe('structureTooltipText', () => {
+  it('resolves a pivot label to its glossary name + meaning', () => {
+    const record = term('hh')!
+    expect(structureTooltipText('HH')).toBe(
+      `${localize(record.term, 'en')} — ${localize(record.whatItMeans, 'en')}`,
+    )
+  })
+
+  it('resolves the event labels case-insensitively (BOS / CHoCH)', () => {
+    const bos = term('bos')!
+    const choch = term('choch')!
+    expect(structureTooltipText('BOS')).toContain(localize(bos.term, 'en'))
+    expect(structureTooltipText('CHoCH')).toContain(localize(choch.term, 'en'))
+  })
+
+  it('localizes via the per-field fallback', () => {
+    const record = term('hh')!
+    expect(structureTooltipText('HH', 'ru')).toContain(localize(record.term, 'ru'))
+  })
+
+  it('degrades to the bare label when the glossary has no entry', () => {
+    expect(structureTooltipText('XX')).toBe('XX')
   })
 })

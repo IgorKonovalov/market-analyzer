@@ -9,10 +9,14 @@
  * amber (a character change is the notable event); the rest colour by structural
  * direction. Toggled off as one layer via `MARKET_STRUCTURE_LAYER_ID` in `hidden`.
  *
+ * Returns the DRAWN markers, time-keyed, for the hover tooltip's structure
+ * lookup (Plan 0105 phase 7) — empty when the layer is toggled off, so a hidden
+ * layer shows no hover (the `drawnMarkers` gate, mirrored).
+ *
  * MUST be called after the chart-creation effect so `seriesRef` is populated.
  * `styleVersion`/`rebuildToken` re-run it after a restyle / rebuild.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { createSeriesMarkers } from 'lightweight-charts'
 import type { ISeriesMarkersPluginApi, SeriesMarker, Time, UTCTimestamp } from 'lightweight-charts'
@@ -20,6 +24,7 @@ import type { ISeriesMarkersPluginApi, SeriesMarker, Time, UTCTimestamp } from '
 import { MARKET_STRUCTURE_LAYER_ID, chartColorsFrom, type MainSeries } from '../lib/chartSeries'
 import { resolveChartStyle } from '../lib/chartStyle'
 import type { MarketStructureResult } from '../lib/marketStructure'
+import type { StructureMarkerPoint } from '../lib/tooltip'
 import type { EffectiveTheme } from '../lib/theme'
 import type { Bar } from '../types/sidecar/bar'
 
@@ -53,9 +58,12 @@ export function useMarketStructureMarkers(
     styleVersion,
     rebuildToken,
   }: UseMarketStructureMarkersParams,
-): void {
+): StructureMarkerPoint[] {
   const pluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const pluginSeriesRef = useRef<MainSeries | null>(null)
+  // The drawn (label, time) points, published for the tooltip's time-keyed
+  // structure lookup (Plan 0105 phase 7).
+  const [drawnPoints, setDrawnPoints] = useState<StructureMarkerPoint[]>([])
 
   useEffect(() => {
     const series = seriesRef.current
@@ -99,5 +107,16 @@ export function useMarketStructureMarkers(
       pluginSeriesRef.current = series
     }
     pluginRef.current.setMarkers(markers)
+
+    // Publish the drawn points for the tooltip lookup — only when they moved,
+    // so a no-op reconcile (e.g. a pure restyle) doesn't re-render the chart.
+    const nextPoints = markers.map((m) => ({ time: m.time, label: m.text ?? '' }))
+    setDrawnPoints((prev) =>
+      prev.length === nextPoints.length &&
+      prev.every((p, i) => p.time === nextPoints[i].time && p.label === nextPoints[i].label)
+        ? prev
+        : nextPoints,
+    )
   }, [seriesRef, containerRef, structure, bars, hidden, effectiveTheme, styleVersion, rebuildToken])
+  return drawnPoints
 }

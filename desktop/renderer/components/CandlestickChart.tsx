@@ -848,8 +848,9 @@ export function CandlestickChart({
   // Market-structure markers (Plan 0092 phase 6, ADR-0084): HH/HL/LH/LL labels at
   // the confirmed swing pivots + BOS/CHoCH glyphs at their events, on their own
   // markers plugin. Called before `useChartMarkers` so the candlestick-pattern
-  // markers own the last write to the shared series-markers capture.
-  useMarketStructureMarkers(seriesRef, containerRef, {
+  // markers own the last write to the shared series-markers capture. Returns the
+  // drawn points for the tooltip's structure hover (Plan 0105 phase 7).
+  const structureMarkerPoints = useMarketStructureMarkers(seriesRef, containerRef, {
     structure: marketStructureResult,
     bars,
     hidden,
@@ -973,7 +974,13 @@ export function CandlestickChart({
     spanPrimitiveRef,
     trendlinePrimitiveRef,
     divergencePricePrimitiveRef,
-    { drawnMarkers, structureLevels, seriesRef, rebuildToken: candleType },
+    {
+      drawnMarkers,
+      structureLevels,
+      seriesRef,
+      structureMarkers: structureMarkerPoints,
+      rebuildToken: candleType,
+    },
   )
 
   // Re-apply the EXISTING chart's colours + line widths on a theme flip or a

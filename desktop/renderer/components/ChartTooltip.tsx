@@ -74,6 +74,11 @@ export function ChartTooltip({
           {label}
         </div>
       ))}
+      {(content.structures ?? []).map((label, i) => (
+        <div key={`structure-${i}`} className={styles.trendline} data-testid="tooltip-structure">
+          {label}
+        </div>
+      ))}
       {content.markers.map((label, i) => (
         <div key={`marker-${i}`} className={styles.marker} data-testid="tooltip-marker">
           {label}
