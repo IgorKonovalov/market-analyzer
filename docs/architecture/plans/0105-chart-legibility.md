@@ -146,6 +146,9 @@ export type GlossaryCategory =
 
 ## Followups (after this lands)
 
-- Record the phase-8 repro (culprit primitive + steps) here for provenance.
+- **Phase-8 live pass (2026-07-14) — the finding-6 zoom-clip bleed did NOT reproduce.** No primitive was observed painting outside the visible range, so phase 9 has no target and stays dormant unless a later live session names one (suspect list in ADR-0100 Notes stands). The OBV pane reclaim (ph3) was confirmed working live. The pass surfaced three *behavioral* findings instead, all outside this plan's scope (design/data-layer changes, not legibility fixes — route to `architect` if wanted):
+  1. **Candlestick scans are sweep-scoped, trendlines are not — asymmetry.** Chart-pattern trendlines auto-recompute when the viewport settles (`useChartPatternRecompute`, Plan 0064/ADR-0059) but candlestick pattern markers only change on an explicit scan button press, and the legend group counts stay per-sweep rather than per-viewport. Candidate followup: extend the ADR-0059 settle-recompute pattern to `scan_patterns`, and/or scope legend counts to the visible range.
+  2. **Zoom-out/scroll-left history paging dead-ends on Yahoo-sourced symbols.** The trigger chain is wired (`useLazyHistoryTrigger` → `loadOlder` → scroll-anchored prepend), but an older fetch returning no new bars latches `reachedStart` — and the Yahoo adapter fetches only now-relative `range=` windows (cannot retrieve past-ending history; the known Plan 0030 gap), so Yahoo symbols latch at the provider horizon. Absolute-window sources (Binance/Coinbase) page normally. Also: once latched there is no visible "start of available history" notice — the affordances just disappear.
+  3. (Same pass, expectation note) zooming in does not re-scan candlestick patterns on the narrower window — covered by 1.
 - If the pivot/fib proximity hover proves imprecise, promote those levels to hit-test primitives (ADR-0100 Alt B).
 - Consider a `create_watch` alert when price touches a labelled fib/pivot level (analysis followup, not legibility).
