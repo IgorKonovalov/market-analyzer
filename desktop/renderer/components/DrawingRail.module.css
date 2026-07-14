@@ -3,7 +3,6 @@
 .rail {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 2px;
   padding: 4px 3px;
   border-right: 1px solid var(--color-border);
@@ -40,20 +39,14 @@
   color: #ffffff;
 }
 
-/* The select/pointer button — the primary "back to select" control, sized up.
-   It is the neutral resting mode, not an armed drawing tool, so it never takes
-   the armed accent: the absence of any highlighted (blue) drawing tool already
-   signals select mode. `aria-pressed` stays for assistive tech; only the visual
-   accent is suppressed (the override sits after the accent rule to win on equal
-   specificity). Hover feedback still applies via the shared `.toolButton:hover`
-   rule, which outranks this on specificity. */
-.selectButton {
-  width: 40px;
-  height: 40px;
-  font-size: 20px;
-  margin-bottom: 2px;
-}
-
+/* The select/pointer button sits in the list as a plain icon, the same size and
+   shape as the drawing tools (it inherits `.toolButton` untouched). It is the
+   neutral resting mode, not an armed drawing tool, so it never takes the armed
+   accent: the absence of any highlighted (blue) drawing tool already signals
+   select mode. `aria-pressed` stays for assistive tech; only the visual accent
+   is suppressed (the override sits after the accent rule to win on equal
+   specificity). Hover + focus feedback still apply via the shared `.toolButton`
+   rules, which outrank this on specificity. */
 .selectButton[aria-pressed='true'] {
   background: transparent;
   border-color: transparent;
