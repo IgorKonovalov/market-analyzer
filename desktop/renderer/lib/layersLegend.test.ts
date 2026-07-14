@@ -86,8 +86,8 @@ describe('buildChartLayers', () => {
     expect(obv).toMatchObject({ label: 'OBV', color: colors.obv, kind: 'series', visible: true })
     // Ordered right after the indicator overlays.
     expect(rows.map((r) => r.id)).toEqual(['overlay:ema:20', 'series:obv'])
-    // OBV is a standalone derived series — no glossary key yet.
-    expect(obv?.glossaryKey).toBeUndefined()
+    // The `obv` glossary entry keys the row's tooltip (Plan 0105 phase 2).
+    expect(obv?.glossaryKey).toBe('obv')
   })
 
   it('omits the OBV row when hasObv is false', () => {
@@ -104,6 +104,8 @@ describe('buildChartLayers', () => {
     const rows = build({ hasMarketStructure: true, hidden: new Set(['structure']) })
     const structure = rows.find((r) => r.id === 'structure')
     expect(structure).toMatchObject({ kind: 'series', visible: false })
+    // The `structure` summary entry keys the row's tooltip (Plan 0105 phase 2).
+    expect(structure?.glossaryKey).toBe('structure')
   })
 
   it('omits the Market structure row when hasMarketStructure is false', () => {
@@ -117,6 +119,14 @@ describe('buildChartLayers', () => {
     const trend = rows.filter((r) => r.kind === 'trendline')
     expect(trend).toHaveLength(1)
     expect(trend[0].count).toBe(2)
+    // The pattern token keys the glossary tooltip (Plan 0105 phase 2).
+    expect(trend[0].glossaryKey).toBe('head_shoulders')
+  })
+
+  it('sets no glossary key on a patternless trendline group', () => {
+    const bare = { style: 'solid', x1: 0, y1: 0, x2: 1, y2: 1 } as unknown as TrendlineSpec
+    const rows = build({ visibleTrendlines: [bare] })
+    expect(rows.find((r) => r.kind === 'trendline')?.glossaryKey).toBeUndefined()
   })
 
   it('omits the candlestick master when there are no marker groups', () => {

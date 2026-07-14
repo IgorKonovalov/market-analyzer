@@ -12,7 +12,13 @@
  */
 import glossaryJson from './glossary.json'
 import { glossaryKeys, localize, term, type GlossaryCategory, type GlossaryRecord } from './types'
-import { PATTERN_DISPLAY_NAMES } from '../lib/candleGroups'
+import { PATTERN_DISPLAY_NAMES, type CandlestickPatternGroup } from '../lib/candleGroups'
+import { buildChartLayers } from '../lib/layersLegend'
+import { OVERLAY_REGISTRY } from '../lib/overlays'
+import { readTrendlineColors, TRENDLINE_PATTERN_TYPES } from '../lib/trendlines'
+import { chartColorsFrom } from '../lib/chartSeries'
+import { resolveChartStyle } from '../lib/chartStyle'
+import type { OverlayKind, OverlaySpec, TrendlineSpec } from '../types/events'
 
 const CATEGORIES: readonly GlossaryCategory[] = [
   'forecast',
@@ -264,4 +270,56 @@ it('gives each candlestick entry both hats keyed to the wire token', () => {
   expect(localize(engulfing!.term, 'en')).toBe('Bullish engulfing')
   expect(localize(engulfing!.howComputed, 'en')).not.toBe('')
   expect(localize(engulfing!.whatItMeans, 'en')).toContain('bullish reversal')
+})
+
+// Plan 0105 phase 2 (ADR-0100 rule 4): the legend-emission completeness gate.
+// Build the layers legend from the FULL renderable vocabulary — every supported
+// overlay kind, the OBV + market-structure rows, every candlestick detector
+// token, every classical chart-pattern type — and require every glossaryKey the
+// builder emits to resolve via term(). A new legend row whose key has no entry
+// (or a renamed/deleted entry a row still emits) fails here instead of shipping
+// as inert text.
+it('every glossaryKey the legend builder emits resolves to a glossary entry', () => {
+  const host = document.createElement('div')
+  const style = resolveChartStyle(host, 'light')
+  const colors = chartColorsFrom(style)
+  const trendlineColors = readTrendlineColors(host)
+  const overlays = (Object.keys(OVERLAY_REGISTRY) as OverlayKind[]).map(
+    (kind) => ({ kind, period: 14 }) as OverlaySpec,
+  )
+  const candleGroups: CandlestickPatternGroup[] = Object.keys(PATTERN_DISPLAY_NAMES).map(
+    (pattern) => ({
+      key: `${pattern}|bullish_marker`,
+      pattern,
+      kind: 'bullish_marker',
+      count: 1,
+      latestTs: '2026-07-14T00:00:00+00:00',
+    }),
+  )
+  const visibleTrendlines = TRENDLINE_PATTERN_TYPES.map(
+    (pattern) =>
+      ({ pattern, style: 'solid', x1: 0, y1: 0, x2: 1, y2: 1 }) as unknown as TrendlineSpec,
+  )
+  const rows = buildChartLayers({
+    overlays,
+    candleGroups,
+    enabledCandleGroups: new Set(candleGroups.map((g) => g.key)),
+    visibleTrendlines,
+    hidden: new Set(),
+    hasObv: true,
+    hasMarketStructure: true,
+    style,
+    colors,
+    trendlineColors,
+  })
+  const emitted = rows.filter((row) => row.glossaryKey != null)
+  // Sanity: the maximal build actually exercises every row family, so the gate
+  // cannot silently pass on an empty emission set.
+  expect(emitted.length).toBeGreaterThanOrEqual(
+    overlays.length + candleGroups.length + visibleTrendlines.length + 2,
+  )
+  const unresolved = emitted
+    .filter((row) => term(row.glossaryKey!) === undefined)
+    .map((row) => `${row.id} -> ${row.glossaryKey}`)
+  expect(unresolved).toEqual([])
 })

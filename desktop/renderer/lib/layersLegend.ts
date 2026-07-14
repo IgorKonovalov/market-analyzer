@@ -97,8 +97,8 @@ export function buildChartLayers({
     })
   }
   // Always-on OBV strip toggle (Plan 0076 phase 2): OBV is drawn unconditionally
-  // (Plan 0027) on its own bottom scale, so its row lists whenever the chart has
-  // bars and only carries visibility — no glossary key yet (no `obv` entry).
+  // (Plan 0027) in its own pane, so its row lists whenever the chart has bars.
+  // The `obv` glossary entry keys its tooltip (Plan 0105 phase 2).
   if (hasObv) {
     next.push({
       id: OBV_LAYER_ID,
@@ -106,6 +106,7 @@ export function buildChartLayers({
       color: colors.obv,
       kind: 'series',
       visible: !hidden.has(OBV_LAYER_ID),
+      glossaryKey: 'obv',
     })
   }
   // Market-structure toggle (Plan 0092 / ADR-0084, made a togglable legend layer
@@ -119,6 +120,8 @@ export function buildChartLayers({
       color: colors.markerNeutral,
       kind: 'series',
       visible: !hidden.has(MARKET_STRUCTURE_LAYER_ID),
+      // The `structure` summary entry keys its tooltip (Plan 0105 phase 2).
+      glossaryKey: 'structure',
     })
   }
   // Candlestick marker layer (Plan 0071 phase 2): a single MASTER row for the
@@ -191,6 +194,10 @@ export function buildChartLayers({
       visible: !hidden.has(id),
       count: group.count,
       highlightKey: key,
+      // The detector pattern token keys the glossary tooltip (Plan 0105 phase
+      // 2) — each of the 9 classical patterns resolves to a `chart_pattern`
+      // entry; a patternless spec has no token, so it degrades to plain text.
+      glossaryKey: group.pattern ?? undefined,
     })
   }
   return next
