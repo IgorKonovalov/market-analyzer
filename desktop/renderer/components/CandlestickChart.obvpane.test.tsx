@@ -132,8 +132,8 @@ describe('OBV pane lifecycle (Plan 0105 phase 3)', () => {
     expect(obv).toBeDefined()
     expect(obv._paneIndex).toBe(1)
     expect(obv.setData).toHaveBeenCalled()
-    // Its divergence primitive is attached at (re)create.
-    expect(obv.attachPrimitive).toHaveBeenCalledTimes(1)
+    // Its divergence primitive + pane-name label (ph4) attach at (re)create.
+    expect(obv.attachPrimitive).toHaveBeenCalledTimes(2)
     // Visible: the reconcile applies the current toggle state.
     expect(obv.applyOptions).toHaveBeenCalledWith({ visible: true })
   })
@@ -152,7 +152,8 @@ describe('OBV pane lifecycle (Plan 0105 phase 3)', () => {
     expect(recreated).toBeDefined()
     expect(recreated).not.toBe(obv)
     expect(recreated._paneIndex).toBe(1)
-    expect(recreated.attachPrimitive).toHaveBeenCalledTimes(1)
+    // Fresh divergence primitive + pane-name label (ph4) on the re-created series.
+    expect(recreated.attachPrimitive).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the pane (series hidden) when an obv divergence needs it', () => {

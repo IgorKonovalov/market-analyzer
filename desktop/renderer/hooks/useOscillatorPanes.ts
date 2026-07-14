@@ -32,6 +32,7 @@ import {
 import { isOscillatorOverlay, overlayColorFor, overlayLayerId } from '../lib/overlays'
 import { computeAccumulationDistribution, computeChaikinMoneyFlow, computeMfi } from '../lib/volume'
 import { DivergencePrimitive, fallbackDivergenceColors } from '../lib/divergences'
+import { PaneLabelPrimitive, paneLabelFor } from '../lib/paneLabel'
 import type { PaneRegistry } from '../lib/panes'
 import type { Bar } from '../types/sidecar/bar'
 import type { OverlayKind, OverlaySpec } from '../types/events'
@@ -191,6 +192,9 @@ export function useOscillatorPanes(
           fallbackDivergenceColors(),
         )
         series[0].attachPrimitive(divergencePrimitive)
+        // The pane's name label (Plan 0105 phase 4) — rides the primary series
+        // so it survives pan/zoom and dies with the pane.
+        series[0].attachPrimitive(new PaneLabelPrimitive(paneLabelFor(spec.kind)))
         entry = { kind: spec.kind, paneId, series, divergencePrimitive }
         panes.set(paneId, entry)
       }

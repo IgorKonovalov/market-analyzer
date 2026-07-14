@@ -36,6 +36,7 @@ import {
 } from '../lib/chartSeries'
 import { resolveChartStyle } from '../lib/chartStyle'
 import { DivergencePrimitive, readDivergenceColors } from '../lib/divergences'
+import { PaneLabelPrimitive, paneLabelFor } from '../lib/paneLabel'
 import { computeObv } from '../lib/volume'
 import type { PaneRegistry } from '../lib/panes'
 import type { EffectiveTheme } from '../lib/theme'
@@ -120,6 +121,9 @@ export function useObvPane(
       // `useDivergences` feeds it the obv oscillator-pivot segments.
       const primitive = new DivergencePrimitive('oscillator', readDivergenceColors(container))
       series.attachPrimitive(primitive)
+      // The pane's name label (Plan 0105 phase 4) — rides the series so it
+      // survives pan/zoom and dies with the pane.
+      series.attachPrimitive(new PaneLabelPrimitive(paneLabelFor('obv')))
       obvSeriesRef.current = series
       obvDivergencePrimitiveRef.current = primitive
     }

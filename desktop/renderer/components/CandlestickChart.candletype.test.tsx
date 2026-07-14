@@ -132,12 +132,12 @@ const BARS: Bar[] = Array.from({ length: 20 }, (_, i) => {
   }
 })
 
-/** The main series of a chart is the one the component attaches MULTIPLE primitives
+/** The main series of a chart is the one the component attaches FOUR primitives
  * to (span + trendline + ichimoku + price-divergence, Plan 0091 phase 9). The OBV
- * line and each oscillator pane now bear exactly one divergence primitive, so
- * `> 1` isolates the main series from those single-primitive panes. */
+ * line and each oscillator pane bear exactly two (divergence + pane-name label,
+ * Plan 0105 phases 3–4), so `> 2` isolates the main series from those panes. */
 function primitiveBearingSeries(): FakeSeries[] {
-  return allSeries.filter((s) => s.attachPrimitive.mock.calls.length > 1)
+  return allSeries.filter((s) => s.attachPrimitive.mock.calls.length > 2)
 }
 
 describe('CandlestickChart — candle series-type switch (Plan 0068 phase 4)', () => {
