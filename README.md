@@ -1,80 +1,179 @@
 # market-analyser
 
-A desktop application for analyzing markets and authoring trading strategies. An Electron + React renderer on top of a local Python sidecar (FastAPI on `127.0.0.1`) with SQLite caching and a Streamable-HTTP MCP server mounted at `/mcp`.
+A desktop app for analysing markets and authoring trading strategies — **driven by an AI agent, watched through a live chart**.
 
-**The primary control surface is Claude Code (CLI) via MCP.** You drive the app by talking to an agent, which calls MCP tools on the sidecar. The Electron viewer is a live visualisation surface: it subscribes to a sidecar event stream and renders agent-issued chart commands. The sidecar runs as a standalone process — Electron auto-attaches via a lockfile if one is already running, and closing the viewer does not stop the sidecar.
+You talk to Claude Code (the CLI); it calls tools on a local Python service; a chart window reflects the results in real time. Ask for "AAPL daily with a 20-EMA and any candlestick patterns", "backtest this RSI strategy over the last two years", or "what's my P&L on this DeFi wallet", and the answer is computed locally and drawn on screen. Nothing runs in the cloud; no live trading exists (yet — see [Roadmap](#roadmap)).
 
-This README is the entrypoint for developers cloning the repo; design docs live under `docs/architecture/`. End-user installers are not yet published.
+> This README is the entrypoint for developers cloning the repo. Design decisions live under [`docs/architecture/`](docs/architecture/); a generated, always-current API reference lives under [`docs/reference/`](docs/reference/). End-user installers are not yet published.
 
-## Capabilities
+---
 
-- **OHLCV candlestick charts** for one symbol at a time, timeframes `15m`/`1h`/`4h`/`1d`/`1w`/`1mo`. Fetches route per symbol to Yahoo Finance or (for exchange pairs like `BTCUSDT`) Binance spot klines; subsequent loads serve from a local SQLite cache keyed on `(symbol, timeframe, bar timestamp)`, with auto-backfill on cache miss and scroll-left lazy history. The data layer is written in-house under `src/market_analyser/data/`.
-- **Agent control over MCP** at `/mcp` (Streamable HTTP, long-lived bearer). 42 tools spanning market data, chart annotations, the agent-driven viewer (`show_chart`/`update_chart`/`highlight_pattern`), backtests + walk-forward + comparison, live strategy-signal evaluation, the TradingView screener, news & sentiment, live quotes, symbol search, technical-analysis snapshots, candlestick/chart-pattern scans, support/resistance levels, crypto cycle + derivatives metrics, the forecaster, the advisor, DeFi wallet scans + P&L reconstruction, and condition watches.
-- **Live agent-driven viewer** over an SSE stream at `/events`. Agents issue chart commands and the viewer reflects them within ~1 s; chart annotations persist in SQLite and survive restarts.
-- **Strategy contract + eight strategies** (`rsi`, `rsi_stop`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`, `chart_pattern_breakout`) — pure `generate_signals(bars, params) -> list[Signal]` modules (flat/long/**short**) with a pydantic `Params` model and a `META` constant. Discover them via `market-analyser strategies list [--json]`.
-- **Backtest engine** — pure `run(strategy, bars, params, **costs) -> BacktestResult` producing an equity curve, trade log, and extended metrics (Sharpe/Sortino/Calmar/profit factor/…), long **and short**, plus rolling walk-forward validation; deterministic and cross-process byte-identical modulo run provenance. Results persist to disk + a SQLite index and render in the backtest views.
-- **Technical-analysis surface** under `src/market_analyser/analysis/` — trailing/anti-lookahead indicators, candlestick-pattern detectors (span-bearing), classical chart patterns (H&S, double tops/bottoms, triangles, wedges — forming/confirmed lifecycle), volume-weighted support/resistance levels, volume analysis, BTC cycle metrics, and a `condition_snapshot`.
-- **Forecasting** (`forecast/`) — bar direction as a calibrated up/down/flat probability from causal features: price/indicator features plus BTC-cycle and lag-1 as-of-joined exogenous series (Fear & Greed, dominance, funding, open interest, MVRV), with an honest fallback to the price-only feature set when the metric store is cold. Multi-horizon on daily bars (1/5/21 bars ahead), each horizon independently gated by walk-forward-beats-baseline validation, with versioned model artifacts and full provenance — or an honest "no edge over baseline".
-- **Advisory recommendations** (`advisor/`, the one sanctioned recommend layer) — the `recommend` tool fuses the condition snapshot, a strategy's live signal, its walk-forward edge, and the forecast into a labeled advisory call (direction, entry/stop/target, derived conviction, rationale, basis) or an honest flat. Advisory only: it holds no keys and places no orders.
-- **Watchlist alerting** (`alerts/`) — persisted condition watches (indicator threshold / pattern / strategy signal) evaluated by an in-sidecar scheduler on closed bars; edge-triggered, condition-only `alert.triggered` events feed an Alerts view + toast and an agent polling leg.
-- **Data breadth** — a shared resilient HTTP client (TTL cache + retry + backoff + concurrency cap) behind Yahoo, Binance (klines + funding/open-interest), the TradingView screener, RSS news + per-headline VADER sentiment, StockTwits sentiment, the crypto Fear & Greed index, CoinGecko macro context, CoinMetrics MVRV, live quotes, symbol search, and multi-timeframe + volume analysis. External metric series are historized in SQLite behind an `as_of` anti-lookahead read contract.
-- **DeFi wallet analysis** — paste an EVM address to discover decoded positions across Ethereum / Base / Arbitrum / Optimism via Zerion (`scan_wallet` / `POST /defi/scan`), enriched with deep on-chain LP state (tick range, in-range, uncollected fees) via direct RPC; consumed by the `defi-analyst` skill. Requires a Zerion key (see [Configuration](#configuration)).
-- **DeFi P&L reconstruction** (`compute_wallet_pnl` / `POST /defi/pnl`) — deterministic average-cost P&L by transaction replay with block-time pricing (DefiLlama, first-write-wins snapshot cache; immutable tx cache), realized/unrealized per position with vs-HODL for LPs, plus a best-effort Zerion cross-check. Positions the replay can't fully book are flagged honestly `incomplete` with the reason named — never guessed.
-- **Secure Electron shell** — `contextIsolation`, `sandbox`, no node integration, double-CSP, dual-bearer auth, in-app Light/Dark/System theming. The renderer reaches the sidecar only through a typed `window.api.*` bridge.
-- **Generated API reference** under [`docs/reference/`](docs/reference/) — every MCP tool, REST route, and SSE event, with parameters, return/payload shapes, and source links. Rendered from the live, fully-wired sidecar (so it can't drift from behaviour) and CI-gated against staleness ([ADR-0064](docs/architecture/adrs/0064-generated-sidecar-api-reference.md)).
+## Why it's built this way
 
-## Architecture at a glance
+The app is deliberately split into two processes with a hard boundary between them:
+
+- A **Python sidecar** does all the thinking — fetching market data, computing indicators, running backtests, talking to on-chain RPCs. It exposes its capability twice on one loopback port: as **MCP tools** for the agent, and as **HTTP routes** for the viewer.
+- An **Electron viewer** does only display — it renders whatever the agent asks for and never touches the network except to talk to its own sidecar.
+
+The point of that split ([ADR-0015](docs/architecture/adrs/0015-claude-code-primary-control-surface.md)): the **agent is the control surface**, not a chat box bolted onto a GUI. You steer with natural language; the viewer is a windshield, not a cockpit. The sidecar runs standalone ([ADR-0016](docs/architecture/adrs/0016-standalone-sidecar-mode.md)), so an agent can work with the window closed, and closing the window never kills your session.
+
+Everything downstream is shaped by two non-negotiables that come with the trading domain: **no lookahead bias** (a decision at bar *i* only sees bars up to *i*) and **determinism** (same inputs → byte-identical outputs). These aren't style preferences — a backtest that peeks at the future or drifts between runs is worse than useless because it looks confident.
+
+---
+
+## What it does
+
+Version **0.8.0**. The surface today, grouped by what you'd ask for:
+
+**See a chart.** OHLCV candlesticks for one symbol at a time across `15m`/`1h`/`4h`/`1d`/`1w`/`1mo`. Quotes route per symbol to Yahoo Finance, Binance, or Coinbase (exchange pairs like `BTCUSDT` go to Binance/Coinbase spot); the first fetch backfills, and everything after serves from a local SQLite cache with scroll-left lazy history. The agent can draw on it live — trendlines, level markers, pattern highlights — and those annotations persist across restarts.
+
+**Read the technical condition.** Trailing (anti-lookahead) indicators, Japanese candlestick patterns, classical chart patterns (head-and-shoulders, double tops/bottoms, triangles, wedges — with a forming→confirmed lifecycle), Ichimoku, volume-weighted support/resistance, Fibonacci/pivot levels, momentum divergences, market-structure reads, and a one-shot `condition_snapshot`. Facts only — the analysis surface never says buy or sell.
+
+**Test a strategy.** Nine strategies ship (`rsi`, `rsi_stop`, `bollinger`, `macd`, `ema_cross`, `supertrend`, `donchian`, `ichimoku`, `chart_pattern_breakout`), each a pure `generate_signals(bars, params)` module (flat/long/**short**) with a typed `Params` model. The backtest engine produces an equity curve, trade log, and extended metrics (Sharpe/Sortino/Calmar/profit factor/…), long and short, plus rolling walk-forward validation — deterministic and cross-process byte-identical modulo run provenance.
+
+**Get a forecast, or a call.** The forecaster reports next-bar direction as a *calibrated* up/down/flat probability from causal features (price/indicators plus BTC-cycle and lagged exogenous series — Fear & Greed, dominance, funding, open interest, MVRV), multi-horizon (1/5/21 bars), each horizon independently gated by walk-forward-beats-baseline — or an honest "no edge". The **advisor** is the one layer allowed to turn conditions into a recommendation ([ADR-0029](docs/architecture/adrs/0029-advisory-recommendation-boundary.md)): it fuses snapshot + live signal + walk-forward edge + forecast into a labeled call (direction, entry/stop/target, conviction, rationale) or an honest flat. Advisory only — it holds no keys and places no orders.
+
+**Analyse a DeFi wallet.** Paste an EVM address to discover decoded positions across Ethereum / Base / Arbitrum / Optimism (Zerion), enriched with deep on-chain LP state (tick range, in-range, uncollected fees) via direct RPC. Deterministic average-cost P&L is reconstructed by transaction replay with block-time pricing, realized/unrealized per position with vs-HODL for LPs — and positions the replay can't fully book are flagged `incomplete` with the reason named, never guessed.
+
+**Get alerted, and screen.** Persisted condition watches (indicator threshold / pattern / strategy signal) run in-sidecar on closed bars and fire edge-triggered, condition-only alerts to a viewer toast and an agent polling leg. A TradingView screener, news + per-headline sentiment, StockTwits crowd sentiment, and Polymarket prediction-market odds round out the read-only signal breadth.
+
+All of this is reachable as **56 MCP tools** (pinned by an exhaustive registration test) and, where a view exists, through the Electron tabs. The full, auto-generated catalogue — every tool, route, and event with its parameters and payload shapes — is at [`docs/reference/`](docs/reference/) ([ADR-0064](docs/architecture/adrs/0064-generated-sidecar-api-reference.md)).
+
+---
+
+## Architecture
+
+### The big picture
+
+Two processes, one loopback port, a hard display/logic boundary. The agent and the viewer authenticate with **different bearer tokens** and reach **different transports** on the same sidecar.
 
 ```mermaid
 flowchart LR
-  agent["Claude Code (CLI)<br/>MCP client"]
+  user["Human at keyboard"]
+  agent["Claude Code (CLI)<br/>— built-in MCP client —<br/>the control surface"]
 
-  subgraph desktop["desktop/ (Electron)"]
-    main["main process<br/>(supervisor, IPC, lockfile attach)"]
-    preload["preload<br/>(window.api bridge)"]
-    renderer["renderer<br/>(React + lightweight-charts<br/>+ annotation poll + SSE subscriber)"]
-    main --> preload --> renderer
+  subgraph desktop["Electron viewer (optional, attachable)"]
+    main["main process<br/>supervisor · IPC · lockfile attach"]
+    renderer["renderer<br/>React · lightweight-charts<br/>SSE subscriber · annotation poll"]
+    main --> renderer
   end
 
-  subgraph sidecar["src/market_analyser (Python sidecar)"]
-    api["FastAPI app<br/>(/healthz, /ohlcv, /quote, /annotations,<br/>/backtests, /news, /search, /scan_patterns,<br/>/defi, /watches, /alerts, /settings,<br/>/events SSE, /mcp)"]
-    mcpapp["FastMCP server (41 tools)<br/>(data, annotations, show_*, backtest,<br/>screener, news/sentiment, quote, search,<br/>analyze_symbol, patterns/levels, cycle +<br/>derivatives metrics, forecast, recommend,<br/>scan_wallet, wallet P&L, watches)"]
-    provider["MarketDataProvider<br/>(cache-aware, as_of-gated,<br/>per-symbol Yahoo/Binance routing)"]
-    strategies["strategies/<br/>(8 modules, flat/long/short)"]
-    backtest["backtest/<br/>(engine, metrics, walk-forward,<br/>live-signal eval)"]
-    analysis["analysis/<br/>(indicators, patterns, levels,<br/>volume, cycles, condition_snapshot)"]
-    forecast["forecast/<br/>(calibrated direction probability,<br/>walk-forward gated)"]
-    advisor["advisor/<br/>(labeled advisory Recommendation)"]
-    alerts["alerts/<br/>(in-sidecar watch scheduler,<br/>edge-triggered alerts)"]
-    defi["defi/<br/>(wallet discovery + deep LP state<br/>+ tx-replay P&L)"]
-    cache[("SQLite<br/>(bars, annotations, backtest_runs,<br/>metric_points, watches, alerts,<br/>defi_tx, price_snapshots —<br/>Alembic-migrated)")]
-    adapter["Data adapters<br/>(Yahoo, Binance klines + derivatives,<br/>TradingView screener, RSS news, StockTwits,<br/>Fear & Greed, CoinGecko, CoinMetrics,<br/>Zerion, DefiLlama)"]
-    api --> provider --> cache
-    api -. mounts .-> mcpapp
-    mcpapp --> provider
-    provider --> adapter
-    backtest -. consumes .-> strategies
-    mcpapp -. consumes .-> analysis
-    mcpapp -. consumes .-> forecast
-    mcpapp -. consumes .-> advisor
-    mcpapp -. consumes .-> defi
-    alerts -. evaluates via .-> provider
-    advisor -. fuses .-> forecast
-    advisor -. fuses .-> backtest
+  subgraph sidecar["Python sidecar (standalone process)"]
+    mcp["/mcp — 56 MCP tools<br/>(Streamable HTTP)"]
+    routes["renderer HTTP routes<br/>/ohlcv /quote /backtests /news<br/>/defi /watches /alerts /settings<br/>/events (SSE) /healthz"]
+    bus["event bus<br/>(neutral core, per-subscriber queue)"]
+
+    provider["MarketDataProvider<br/>cache-aware · as_of-gated · per-symbol routing"]
+    analysis["analysis/ — indicators, patterns,<br/>levels, volume, cycles, snapshot"]
+    backtest["backtest/ — engine · metrics ·<br/>walk-forward · live-signal eval"]
+    strategies["strategies/ — 9 modules<br/>flat/long/short"]
+    forecast["forecast/ — calibrated<br/>direction probability"]
+    advisor["advisor/ — labeled<br/>Recommendation"]
+    alerts["alerts/ — in-sidecar<br/>watch scheduler"]
+    defi["defi/ — wallet discovery,<br/>LP state, tx-replay P&L"]
+    portfolio["portfolio/ — cross-venue<br/>aggregation"]
+
+    cache[("SQLite<br/>bars · annotations · backtest_runs<br/>metric_points · watches · alerts<br/>defi_tx · price_snapshots")]
+    adapters["data adapters<br/>Yahoo · Binance · Coinbase · TradingView<br/>news/StockTwits · Fear&Greed · CoinGecko<br/>CoinMetrics · Zerion · DefiLlama · Polymarket"]
+
+    mcp --> analysis & backtest & forecast & advisor & defi & portfolio & provider
+    routes --> provider
+    routes --> defi
+    mcp -.->|publish| bus
+    backtest -.->|publish| bus
+    defi -.->|publish| bus
+    alerts -.->|publish| bus
+    bus -->|SSE dispatch| routes
+    backtest --> strategies
+    forecast --> analysis
+    advisor --> forecast & backtest & analysis
+    portfolio --> defi
+    alerts --> provider
+    provider --> cache
+    provider --> adapters
   end
 
-  renderer -- "HTTP + Bearer<br/>(127.0.0.1)" --> api
-  agent -- "MCP / Streamable HTTP<br/>+ long-lived bearer" --> mcpapp
-  main -- "spawn or attach<br/>via lockfile" --> sidecar
-  adapter -- "HTTPS<br/>(ResilientHttpClient)" --> upstreams[("Upstreams<br/>(Yahoo, Binance, TradingView,<br/>RSS feeds, StockTwits, Alternative.me,<br/>CoinGecko, CoinMetrics, Zerion, DefiLlama)")]
+  user -->|types prompts| agent
+  user -->|watches charts| renderer
+  agent -->|"MCP · Bearer: mcp-secret"| mcp
+  renderer -->|"HTTP + SSE · Bearer: renderer-secret"| routes
+  main -.->|spawn or attach via lockfile| sidecar
+  adapters -->|HTTPS · resilient client| upstreams[("External upstreams")]
 ```
 
-Key seams:
+**The seams that matter** (each is a swappable boundary, not an accident):
 
-- **Agent ↔ sidecar.** Claude Code is the primary driver. It speaks MCP Streamable HTTP to `/mcp` with the long-lived `mcp-secret.json` bearer. The renderer is not in the loop for agent-issued reads/writes.
-- **Renderer ↔ sidecar.** The renderer's only outbound call is to `http://127.0.0.1:<port>` (enforced by CSP `connect-src`), always through `desktop/renderer/api/client.ts`, which injects the per-launch bearer once. The renderer never learns the MCP secret.
-- **Sidecar ↔ data sources.** Callers never know what's behind `/ohlcv`. The `MarketDataProvider` Protocol (`src/market_analyser/data/provider.py`) is the stable contract; adapters under `data/adapters/` plug into it.
-- **Anti-lookahead seam.** Every provider method takes `as_of: datetime | None`. Live callers pass `None`; backtest callers pass a fixed datetime, and the data layer never reaches for data beyond it.
+| Seam | Contract | Why it's a boundary |
+| --- | --- | --- |
+| Agent ↔ sidecar | MCP Streamable HTTP at `/mcp`, long-lived `mcp-secret.json` bearer | The agent is the primary driver; the renderer is never in the loop for agent reads/writes ([ADR-0014](docs/architecture/adrs/0014-mcp-as-second-sidecar-protocol.md)). |
+| Renderer ↔ sidecar | HTTP + SSE to `127.0.0.1` only, per-launch bearer, always via `desktop/renderer/api/client.ts` | CSP pins `connect-src` to loopback; the renderer never learns the MCP secret and never calls a third party ([ADR-0002](docs/architecture/adrs/0002-ipc-local-http.md)). |
+| Sidecar ↔ data sources | `MarketDataProvider` Protocol; adapters plug in behind it | Callers never know what's behind `/ohlcv` — Yahoo, Binance, Coinbase, or cache ([ADR-0007](docs/architecture/adrs/0007-market-data-provider.md), [ADR-0031](docs/architecture/adrs/0031-data-source-adapter-contract.md)). |
+| Live vs. historical | every provider method takes `as_of: datetime \| None` | Live callers pass `None`; backtest callers pass a fixed time and the data layer never reaches past it. This is the anti-lookahead guarantee, enforced at the data layer. |
+
+### How one agent turn flows
+
+The canonical loop: you ask, the agent calls a tool, the sidecar computes and publishes an event, the open viewer redraws. If no viewer is open, the compute still happens — the event is simply dropped (agent-only mode).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as You
+  participant C as Claude Code (MCP)
+  participant S as Sidecar
+  participant P as MarketDataProvider
+  participant B as Event bus
+  participant V as Viewer (if open)
+
+  U->>C: "show AAPL 1d with EMA20 and mark any hammers"
+  C->>S: MCP get_ohlcv + analyze_symbol + show_chart
+  S->>P: bars(AAPL, 1d, as_of=None)
+  alt cache hit
+    P-->>S: cached bars
+  else miss
+    P->>P: fetch upstream, backfill cache
+    P-->>S: fresh bars
+  end
+  S->>S: compute EMA20 + candlestick scan (trailing only)
+  S->>B: publish chart.show v1
+  B-->>V: SSE envelope
+  V-->>U: chart re-renders (~1s)
+  S-->>C: tool result (data + event_published)
+  C-->>U: natural-language summary
+```
+
+### The request lifecycle & the anti-lookahead seam
+
+A single chart request resolves through the provider, which is the only component that decides *cache vs. fetch* and the only one that ever sees `as_of`. Backtests reuse the exact same provider — they just pass a fixed `as_of`, so the historical path is provably the same code as the live path with the clock pinned.
+
+```mermaid
+flowchart TD
+  req["request: (symbol, timeframe, as_of)"] --> route{"caller"}
+  route -->|live: as_of=None| prov["MarketDataProvider"]
+  route -->|backtest: as_of=fixed| prov
+  prov --> hit{"cache covers range?"}
+  hit -->|yes| serve["serve from SQLite bars"]
+  hit -->|no| sel["source selector<br/>(per-symbol routing)"]
+  sel --> fetch["adapter fetch (resilient HTTP:<br/>TTL cache · retry · backoff · concurrency cap)"]
+  fetch --> store["write bars to cache"]
+  store --> serve
+  serve --> guard["as_of guard:<br/>drop any bar with ts > as_of"]
+  guard --> out["bars returned"]
+```
+
+That `as_of` guard is why the same `MarketDataProvider` can safely back both a live quote and a walk-forward backtest — the historical caller cannot see a bar that hadn't closed yet.
+
+### Where the state lives
+
+The sidecar persists to one SQLite database (Alembic-migrated) and three `0600` files in the user-data dir:
+
+- **SQLite** (`cache.sqlite`) — `bars`, `annotations`, `backtest_runs`, `metric_points`, `watches`, `alerts`, `defi_tx`, `price_snapshots`. Single-writer, which falls out of single-instance enforcement.
+- **`sidecar.lock`** — per-launch: pid, port, renderer bearer, process-create-time (for liveness cross-check). How the viewer attaches ([ADR-0016](docs/architecture/adrs/0016-standalone-sidecar-mode.md)).
+- **`mcp-secret.json`** — the long-lived MCP bearer, rotatable from Settings.
+- **`secrets.json`** — optional third-party API keys ([ADR-0038](docs/architecture/adrs/0038-third-party-api-key-storage.md)); values are never logged and never returned by any endpoint.
+
+The full process/component map, cold-start-vs-attach lifecycle, and out-of-band recovery sequences are diagrammed in [`docs/architecture/diagrams/claude-cli-driven-architecture.md`](docs/architecture/diagrams/claude-cli-driven-architecture.md).
+
+---
 
 ## Requirements
 
@@ -92,38 +191,27 @@ pnpm install     # desktop workspace deps (root + desktop/)
 pnpm dev         # run the app in dev mode
 ```
 
-`pnpm dev` runs four watchers concurrently:
-
-| Watcher         | Produces                                              |
-| --------------- | ---------------------------------------------------- |
-| `build-main`    | `desktop/dist/main/index.cjs` (Electron main)        |
-| `build-preload` | `desktop/dist/preload/index.cjs` (preload bridge)    |
-| `vite`          | the renderer at `http://localhost:5173`              |
-| `electron .`    | the Electron app once the three above are ready      |
-
-The main process either attaches to an already-running sidecar (via the lockfile under the user-data dir) or spawns one. When spawning, the child binds a free port on `127.0.0.1`, prints `PORT=<n>` on stdout, and the main process polls `/healthz` (10 s timeout) before opening the window. Closing the viewer does **not** stop a sidecar that was already running standalone.
+`pnpm dev` runs four watchers concurrently — Electron main, preload bridge, the Vite renderer (`http://localhost:5173`), and the Electron app once those are ready. On launch the main process either **attaches** to an already-running sidecar (via the lockfile) or **spawns** one, which binds a free `127.0.0.1` port, prints `PORT=<n>`, and answers `/healthz` before the window opens. Closing the viewer does **not** stop a standalone sidecar.
 
 ### Running the sidecar standalone
 
-For agent-driven workflows (the canonical mode) or for debugging the API in isolation:
+The canonical agent-driven mode — or for debugging the API in isolation:
 
 ```bash
 # PowerShell: $env:MARKET_ANALYSER_SECRET = "..."
 export MARKET_ANALYSER_SECRET=$(openssl rand -hex 32)
 uv run python -m market_analyser.api --port=8765
-```
 
-```bash
 curl http://127.0.0.1:8765/healthz
 curl -H "Authorization: Bearer $MARKET_ANALYSER_SECRET" \
   "http://127.0.0.1:8765/ohlcv?symbol=AAPL&timeframe=1d&start=2025-01-01T00:00:00&end=2026-01-01T00:00:00"
 ```
 
-`/mcp` uses a separate, long-lived bearer stored in `mcp-secret.json` under the user-data dir (rotated from the Settings page). Pass `--port=0` to let the OS pick an ephemeral port.
+`/mcp` uses the separate long-lived bearer in `mcp-secret.json` (rotated from Settings). Pass `--port=0` to let the OS pick a port.
 
-### Configuring Claude Code
+### Pointing Claude Code at it
 
-To drive the app from an agent, point Claude Code's MCP config at the running sidecar's `/mcp` endpoint with the bearer from `mcp-secret.json`. A repo-local `.mcp.json` is the canonical project-scoped config (gitignored — it carries the bearer inline). `pnpm dev:all` atomic-writes `.mcp.json` from the live `sidecar.lock` + `mcp-secret.json` on every sidecar boot, so there's no manual port/bearer juggling. To wire it by hand, copy the port from the sidecar's stdout `PORT=<n>` line and the bearer from `mcp-secret.json`.
+To drive the app from an agent, point Claude Code's MCP config at the running sidecar's `/mcp` with the `mcp-secret.json` bearer. A repo-local `.mcp.json` is the canonical project-scoped config (gitignored — it carries the bearer). **`pnpm dev:all` writes `.mcp.json` automatically** from the live `sidecar.lock` + `mcp-secret.json` on every boot, so there's no port/bearer juggling.
 
 ### Packaging
 
@@ -133,125 +221,78 @@ pnpm package:mac    # DMG
 pnpm package:linux  # AppImage
 ```
 
-The installer bundles `src/market_analyser/` as `extraResources` so the runtime sidecar lives next to the Electron app.
+The installer bundles `src/market_analyser/` as `extraResources` so the runtime sidecar ships next to the Electron app.
+
+---
 
 ## Configuration
 
-The sidecar accepts an optional `--config <path>` to a JSON file; defaults are sensible for development. The one key today is `db_path` (default `<user-data-dir>/market-analyser/cache.sqlite`), the SQLite location for the `bars`, `annotations`, `backtest_runs`, `metric_points`, `watches`, `alerts`, `defi_tx`, and `price_snapshots` tables.
+The sidecar takes an optional `--config <path>` (a JSON file); development defaults are sensible. The one key today is `db_path` (default `<user-data-dir>/market-analyser/cache.sqlite`).
 
 ### Secrets
 
-**You need no third-party secret to run the core app.** OHLCV charts, backtests, strategies, TradFi/technical analysis, and forecasting all work with zero keys configured. The only secrets the core app uses are two bearer tokens it generates and manages itself ([The two internal bearers](#the-two-internal-bearer-tokens-auto-managed), below) — you never set those by hand.
+**The core app needs no secrets.** Charts, backtests, strategies, TradFi/technical analysis, and forecasting all work with zero keys — the only two tokens involved are internal bearers the app generates and manages itself.
 
-Every key in the table below is **optional** and unlocks **one specific crypto/DeFi feature**. If a key is absent, only that feature is affected: it returns a typed "no key configured" error, and nothing else in the app breaks. This is the full set — there are no other secrets.
+Every key below is **optional** and unlocks **one specific crypto/DeFi feature**; if it's absent, only that feature returns a typed "no key configured" error and nothing else breaks.
 
-#### What each key unlocks
+| Key | Unlocks |
+| --- | --- |
+| `zerion_api_key` | DeFi wallet discovery + transaction history (`scan_wallet`, `compute_wallet_pnl`, `POST /defi/*`). Free Developer tier at <https://zerion.io/api>. |
+| `eth_rpc_url` / `base_rpc_url` | On-chain reads (`eth_call`) for deep Uniswap-v3 LP state and pool-discrepancy scans, on Ethereum / Base. Any JSON-RPC endpoint. |
+| `binance_read_api_key` + `binance_read_api_secret` | Read-only Binance account leg of cross-venue portfolio aggregation. Read scope only — **never a trade key** ([ADR-0044](docs/architecture/adrs/0044-trade-secret-store.md) keeps trade keys in a separate OS keychain). |
+| `alchemy_prices_key` | DeFi P&L historical-price fallback for tokens DefiLlama can't price ([ADR-0081](docs/architecture/adrs/0081-defi-pnl-wallet-total-gap.md)). |
+| `graph_api_key` | Reserved — no live consumer yet. |
 
-Each key has two spellings for the **same value**: the bare form (used in `secrets.json`) and the `MARKET_ANALYSER_<KEY>` uppercased form (used as an env var / in `.env`). Set a key by either route — see [resolution order](#where-a-key-is-resolved-from) below.
+**Where a key resolves from** ([ADR-0038](docs/architecture/adrs/0038-third-party-api-key-storage.md), [`persistence/secrets.py`](src/market_analyser/persistence/secrets.py)) — one store, one override, in order:
 
-| Key — `secrets.json` / `MARKET_ANALYSER_…` env var | What it unlocks (feature that needs it) | Where to get it |
-| --- | --- | --- |
-| `zerion_api_key`<br>`MARKET_ANALYSER_ZERION_API_KEY` | **DeFi wallet analysis.** Position discovery + transaction history behind `scan_wallet`, `POST /defi/scan`, `compute_wallet_pnl`, and the Zerion portfolio leg. Without it, every DeFi wallet scan errors. | Free Developer tier — <https://zerion.io/api> |
-| `eth_rpc_url`<br>`MARKET_ANALYSER_ETH_RPC_URL` | **Ethereum on-chain reads** (`eth_call`): deep Uniswap-v3 LP state (tick range, in-range, uncollected fees) and on-chain pool pricing / discrepancy scans on Ethereum. | Any Ethereum JSON-RPC endpoint — Alchemy, Infura, QuickNode, or a public RPC |
-| `base_rpc_url`<br>`MARKET_ANALYSER_BASE_RPC_URL` | **Base on-chain reads** — the same deep LP state and the cross-pool discrepancy / executable-quote scanner, on the Base chain. | Any Base JSON-RPC endpoint — Alchemy, Infura, QuickNode, or a public Base RPC |
-| `binance_read_api_key` + `binance_read_api_secret`<br>`MARKET_ANALYSER_BINANCE_READ_API_KEY` / `…_SECRET` | **Read-only Binance account leg** of cross-venue portfolio aggregation (your spot holdings). Read scope only — never a trade key (trade keys live in a separate OS-keychain store, [ADR-0044](docs/architecture/adrs/0044-trade-secret-store.md)). | Binance → API Management → create a **read-only** key pair |
-| `alchemy_prices_key`<br>`MARKET_ANALYSER_ALCHEMY_PRICES_KEY` | **DeFi P&L historical-price fallback** for tokens DefiLlama can't price — improves P&L completeness ([ADR-0081](docs/architecture/adrs/0081-defi-pnl-wallet-total-gap.md)). Injected server-side via the Alchemy `Authorization` header, never the URL. | Alchemy dashboard → Prices API key |
-| `graph_api_key`<br>`MARKET_ANALYSER_GRAPH_API_KEY` | **Reserved — no live consumer yet.** Held for future subgraph-backed DeFi adapters; setting it today does nothing. | The Graph Studio (only once a future feature needs it) |
+1. **Env override** `MARKET_ANALYSER_<KEY>` (the key uppercased, e.g. `MARKET_ANALYSER_BASE_RPC_URL`) — wins if non-empty.
+2. **`secrets.json`** — the canonical `0600` file at `<user-data-dir>/secrets.json`, written by the Settings page / `POST /settings/secret`, surviving restarts.
+3. Otherwise **unset** — a typed error, never a silent fallback.
 
-#### Where a key is resolved from
+A repo-root **`.env`** (dev checkout only, gitignored) is *not* a third store: at startup the sidecar loads it into the `MARKET_ANALYSER_*` env (`override=False`; **packaged builds ship no `.env`**), which just feeds layer 1. So `.env` and `secrets.json` carry the same keys — `.env` uses the `MARKET_ANALYSER_<UPPER>` form, `secrets.json` uses the bare key. See [`.env.example`](.env.example). One-off scripts must read via the real `SecretsStore`, never a bespoke bare env var.
 
-> **One store, one override — not a `.env`-vs-`secrets.json` choice.** Every key above is resolved inside the sidecar by `SecretsStore.get(key)` ([`persistence/secrets.py`](src/market_analyser/persistence/secrets.py), [ADR-0038](docs/architecture/adrs/0038-third-party-api-key-storage.md)) in this order:
->
-> 1. **Env override** `MARKET_ANALYSER_<KEY>` (the key uppercased, e.g. `MARKET_ANALYSER_BASE_RPC_URL`) — wins if set to a non-empty value.
-> 2. **`secrets.json`** — the canonical `0600` file at `<user-data-dir>/secrets.json`, a flat map of the known keys. Written by the Settings page / `POST /settings/secret`, survives restarts.
-> 3. Otherwise the key is **unset** — the adapter returns a typed "no key configured" error, never a silent fallback.
->
-> A repo-root **`.env`** (dev / source checkout only, gitignored) is **not a third store**. At startup the sidecar loads it into the `MARKET_ANALYSER_*` environment (`override=False`, so a real env var still wins; a missing file is a no-op; **packaged builds ship no `.env` and load nothing**), which just feeds layer 1. So `.env` and `secrets.json` carry the **same keys** — `.env` / env use the `MARKET_ANALYSER_<UPPER>` form, `secrets.json` uses the bare key — and `.env` is only the dev-ergonomic way to populate the override without exporting by hand.
->
-> **One-off scripts** (e.g. the `scripts/defi/*` and `runs/defi/audits/*` evidence smokes) must read credentials through the real `SecretsStore(default_app_data_dir() / "secrets.json")` — the exact resolution above — rather than inventing a bare `BASE_RPC_URL`-style env var, so there is a single source of truth. Trade-execution keys are deliberately a **separate, stricter** store (OS keychain via `keyring`, [ADR-0044](docs/architecture/adrs/0044-trade-secret-store.md)) and never live in `secrets.json` or `.env`.
+> The two internal bearers you never set by hand: **`MARKET_ANALYSER_SECRET`** (per-launch renderer bearer, generated by the Electron supervisor, never persisted) and **`mcp-secret.json`** (long-lived MCP bearer under the user-data dir). You only set `MARKET_ANALYSER_SECRET` yourself when running the sidecar [standalone](#running-the-sidecar-standalone).
 
-The value is never logged and never returned by any endpoint — `GET /settings/secrets` reports only `"set"` / absent, never the value itself.
-
-#### The two internal bearer tokens (auto-managed)
-
-These are **not** data-source keys and you do not create them — the app generates and stores them itself. Listed here only so the picture is complete:
-
-- **`MARKET_ANALYSER_SECRET`** — per-launch renderer bearer. Generated by the Electron supervisor on every spawn, passed via the child's environment, never persisted, never logged. Constant-time compare. (You set this by hand only when running the [sidecar standalone](#running-the-sidecar-standalone).)
-- **`mcp-secret.json`** — long-lived MCP bearer under the user-data dir (gitignored, OS-user-readable only). Rotate from the Settings page.
-
-#### Worked example: providing the Zerion key
-
-The `scan_wallet` MCP tool and `POST /defi/scan` need `zerion_api_key`; without it a scan returns a typed "no API key configured" error. Provide it either by **exporting** the variable in the sidecar's launch shell:
-
-```bash
-# PowerShell: $env:MARKET_ANALYSER_ZERION_API_KEY = "zk_..."
-export MARKET_ANALYSER_ZERION_API_KEY=zk_...
-```
-
-or at runtime via the write-only endpoint (persists to `secrets.json`, survives restart):
-
-```bash
-curl -X POST -H "Authorization: Bearer $MARKET_ANALYSER_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"key":"zerion_api_key","value":"zk_..."}' \
-  http://127.0.0.1:<port>/settings/secret
-```
-
-In a **dev / source checkout** the sidecar auto-loads a repo-root `.env` (see [`.env.example`](.env.example)) at startup, so putting `MARKET_ANALYSER_ZERION_API_KEY=zk_…` there is enough — no manual export needed. A real environment variable still wins over `.env` (`override=False`), and **packaged builds load nothing** (no `.env` ships next to the bundled source), so the endpoint / `secrets.json` path remains the mechanism for installed apps. The same two routes (env/`.env` or `POST /settings/secret`) work for every key in the table above.
+---
 
 ## Project structure
 
 ```
 market-analyser/
 ├── src/market_analyser/          # Python sidecar
-│   ├── api/                      # FastAPI app, routes, middleware
-│   │   ├── app.py                # app factory, bearer + CORS middleware
-│   │   ├── mcp_app.py            # FastMCP server — thin hub wiring the register_* tools
-│   │   ├── mcp_tools/            # one module per MCP tool (register_* + input models)
-│   │   ├── mcp_secret.py         # long-lived MCP secret read/rotate
-│   │   ├── lockfile.py           # standalone-sidecar lockfile + idempotent attach
-│   │   └── routes/               # /ohlcv, /quote, /annotations, /events, /settings, /search, /backtests,
-│   │                             #   /news, /scan_patterns, /defi, /watches, /alerts, /ui_events, /agent_mode, /stop
+│   ├── api/                      # FastAPI app, routes, MCP server + one module per MCP tool, lockfile
 │   ├── events/                   # neutral SSE event bus + typed envelope registry (no api dependency)
 │   ├── contracts/                # Strategy contract (Signal, BaseParams, META, discover())
-│   ├── strategies/               # rsi, rsi_stop, bollinger, macd, ema_cross, supertrend, donchian, chart_pattern_breakout
+│   ├── strategies/               # 9 strategy modules
 │   ├── backtest/                 # engine (flat/long/short) + metrics + walk-forward + live-signal eval
-│   ├── analysis/                 # indicators, candlestick + chart patterns, levels, volume, cycles, condition_snapshot
+│   ├── analysis/                 # indicators, candlestick + chart patterns, levels, volume, cycles, snapshot
 │   ├── forecast/                 # causal features, calibrated direction model, registry, walk-forward gate
 │   ├── advisor/                  # Recommendation model + fuse() (the one sanctioned recommend layer)
 │   ├── alerts/                   # watch evaluators + edge reducer + in-sidecar scheduler
 │   ├── defi/                     # wallet discovery, scan job, deep LP enrichment, tx-replay P&L
-│   ├── data/                     # MarketDataProvider Protocol, timeframes registry, metric-series registry, adapters/
-│   ├── annotations/              # repository + Pydantic model
-│   ├── persistence/              # SQLite engine, Alembic migrations
+│   ├── portfolio/                # cross-venue aggregation (Binance read + DeFi + manual file)
+│   ├── data/                     # MarketDataProvider Protocol, timeframe/metric registries, adapters/
+│   ├── persistence/              # SQLite engine, Alembic migrations, SecretsStore
+│   ├── apiref/                   # introspects the live sidecar → generates docs/reference/ (ADR-0064)
 │   ├── cli.py                    # `market-analyser strategies list` etc.
 │   └── config.py                 # AppConfig (paths, defaults)
 │
 ├── desktop/                      # pnpm workspace: Electron + React + TypeScript
-│   ├── electron/                 # main process, sidecar supervisor, IPC, lockfile attach
-│   ├── electron/preload/         # window.api preload bridge
-│   ├── renderer/                 # React (Vite + lightweight-charts)
-│   │   ├── views/                # OhlcvView, BacktestView, RecentBacktestsView, LiveSignalView,
-│   │   │                         #   RecommendationsView, NewsView, AlertsView, SettingsView
-│   │   ├── components/           # CandlestickChart, SymbolPicker, AgentModeToggle, Toast
-│   │   ├── handlers/             # SSE chart-command handlers
-│   │   ├── hooks/                # useOhlcv, useEventStream, useAnnotationsPoll, …
-│   │   ├── api/                  # typed sidecar fetch client (injects bearer)
-│   │   └── types/                # TS types generated from the sidecar's Pydantic models
+│   ├── electron/                 # main process, sidecar supervisor, IPC, preload bridge
+│   ├── renderer/                 # React (Vite + lightweight-charts): views, components, hooks, typed api client
 │   ├── shared/                   # IPC channels, Zod schemas, types used both sides
-│   ├── scripts/                  # esbuild build scripts + gen-types
 │   └── tests/                    # Playwright e2e specs
 │
 ├── tests/                        # pytest tests (mirrors src/ layout)
-├── docs/architecture/            # ADRs, plans, diagrams
+├── docs/architecture/            # ADRs, plans, diagrams, roadmap
+├── docs/reference/               # GENERATED API reference (CI-gated; do not hand-edit)
 ├── .claude/skills/               # Project-specific Claude Code skills
-├── pyproject.toml                # uv-managed Python project
-├── package.json                  # root scripts: `pnpm dev:all`, `pnpm smoke`
-├── pnpm-workspace.yaml           # pnpm workspace root (repo root + desktop)
-└── README.md                     # this file
+└── pyproject.toml / package.json / pnpm-workspace.yaml
 ```
 
-The `runs/` directory (gitignored) holds backtest, analysis, DeFi, and advice run artifacts. `positions/` (gitignored) holds the DeFi analyst's positions file (sensitive — never committed).
+`runs/` (gitignored) holds backtest, analysis, DeFi, and advice artifacts. `positions/` (gitignored) holds the DeFi analyst's positions file.
+
+---
 
 ## Development
 
@@ -263,7 +304,7 @@ uv run pytest -m network      # tests that hit the live network (off by default)
 uv run ruff check src tests   # lint
 uv run ruff format src tests  # format
 uv run mypy                   # strict type-check
-pnpm gen:api-docs             # regenerate the API reference under docs/reference/
+pnpm gen:api-docs             # regenerate docs/reference/ from the live sidecar
 pnpm gen:api-docs:check       # CI check that the committed reference is in sync
 ```
 
@@ -279,8 +320,6 @@ pnpm gen-types                # regenerate TS types from the sidecar's Pydantic 
 pnpm gen-types:check          # CI check that committed types are in sync
 ```
 
-### End-to-end smoke
-
 `pnpm smoke` drives one path through every shipped layer against live upstreams and prints PASS / FAIL / UPSTREAM-DOWN per step.
 
 ### Non-negotiables
@@ -288,43 +327,35 @@ pnpm gen-types:check          # CI check that committed types are in sync
 These apply to every change (also in [`CLAUDE.md`](CLAUDE.md)):
 
 - **No lookahead bias.** Decisions at bar `i` only see `bars[0..=i]`; indicators are trailing, never centered.
-- **Determinism.** Same inputs → byte-identical outputs. No `set` iteration, no wall-clock reads outside designated boundaries, no unseeded randomness in the financially-meaningful path.
-- **No secrets in code or logs.** Bearer tokens and IPC secrets are never persisted (except `mcp-secret.json` under the user-data dir) and never logged.
-- **Validate at boundaries.** Pydantic at the sidecar HTTP boundary, Zod at the IPC boundary; don't re-validate inside trusted code paths.
-- **Conditions are facts, decisions are the user's.** Analyst surfaces report conditions; they never recommend buy/sell.
+- **Determinism.** Same inputs → byte-identical outputs (modulo documented run provenance). No `set` iteration, no wall-clock reads, no unseeded randomness in the financially-meaningful path.
+- **No secrets in code or logs.** Bearers and IPC secrets are never persisted (except `mcp-secret.json` under the user-data dir) and never logged.
+- **Validate at boundaries.** Pydantic at the sidecar HTTP boundary, Zod at the IPC boundary; don't re-validate inside trusted paths.
+- **Conditions are facts, decisions are the user's.** Analyst surfaces report conditions; only the `advisor` layer may recommend, and it never acts.
 
-### Commit style
+### Commit style & versioning
 
-Conventional commits, enforced by `commitizen` and a `commit-msg` Husky hook. Implementers commit per phase; pushes are user-driven. CI runs on push and tag.
+Conventional commits, enforced by `commitizen` + a `commit-msg` Husky hook. Implementers commit per phase; **pushes are user-driven** and CI runs on push and tag.
 
-### Versioning
+Semantic versioning, held in the `0.x` band until the public surface (MCP tools + REST contract) is declared stable. The single source of truth is `pyproject.toml` `[project].version` (currently **0.8.0**); `desktop/package.json` is synced from it. Bumps run **once per shipped plan** in the architect's close ceremony via `uv run cz bump` (`feat` → minor, `fix` → patch), which writes both files and tags `vX.Y.Z`. `major_version_zero = true` keeps a breaking change to a minor bump pre-1.0. See [ADR-0087](docs/architecture/adrs/0087-versioning-and-release-cadence.md).
 
-Semantic versioning, held in the `0.x` band until the public surface (MCP tools + REST contract) is declared stable. The current version is **0.5.0**. The single source of truth is `pyproject.toml` `[project].version`; `desktop/package.json` is synced from it — one number for the whole app.
-
-Bumps are owned by `commitizen` and run **once per shipped plan**, in the architect's close ceremony (not per commit):
-
-```bash
-uv run cz bump            # feat → minor, fix → patch; auto-detects the increment, writes both files, creates the vX.Y.Z tag
-uv run cz bump --dry-run  # preview the next version without writing
-uv run cz version -p      # print the current project version
-```
-
-`major_version_zero = true` keeps a `BREAKING CHANGE` as a minor bump while pre-1.0, so reaching `1.0.0` is a deliberate future act, never an accident. See [ADR-0087](docs/architecture/adrs/0087-versioning-and-release-cadence.md).
+---
 
 ## Roadmap
 
-Design direction lives in [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md); in-flight and approved plans are indexed in [`docs/architecture/plans/README.md`](docs/architecture/plans/README.md).
+Direction lives in [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md); in-flight plans are indexed in [`docs/architecture/plans/README.md`](docs/architecture/plans/README.md).
 
-The app is evolving from a read-only research + decision-support tool toward **contained, gated decision-execution**. A user-approved program (2026-06-05; Plans 0036–0046) adds, in priority order: **price forecasting**, an **advisory layer**, **cross-venue portfolio management + position risk**, **Polymarket prediction-market odds** as a read-only signal, and **assisted, testnet-first trade execution** on Binance USDⓈ-M Futures. As of 2026-07-06, the first two pillars have **shipped**: the forecasting foundation (direction-as-probability, walk-forward-validated — now multi-horizon with cycle + exogenous features) and the advisory layer + its UI (labeled, basis-carrying recommendations via the `recommend` tool and the `advisor` skill). A separately-approved crypto intelligence program shipped in full (cycle/derivatives/on-chain metric series, Binance klines, the v2 forecast feature set), along with the watchlist alerting loop and DeFi P&L reconstruction. Still plans, not features: the forecast UI, Polymarket odds, the portfolio pillar (in progress), and the whole execution arc. The two principle crossings — *recommend* and *act* — are each contained to one gated skill (`advisor`, shipped; `trader`, future); the read-only analyst surfaces keep their "conditions are facts" contract, every order will require explicit human confirmation, and execution stays testnet-only until the full order loop is proven.
+The app is evolving from read-only research + decision-support toward **contained, gated decision-execution**. Of the user-approved program (Plans 0036–0046), the first two pillars have shipped: the **forecasting foundation** (direction-as-probability, walk-forward-validated, multi-horizon with cycle + exogenous features) and the **advisory layer** + its UI. A separate crypto-intelligence program shipped in full (cycle/derivatives/on-chain metric series, Binance klines, the v2 forecast feature set), alongside watchlist alerting and DeFi P&L reconstruction. Still ahead: Polymarket odds as a first-class signal, the cross-venue portfolio pillar, and the whole **assisted, testnet-first execution** arc.
 
-**Auto-update** (installer auto-update) is deferred to a future packaging plan.
+The two principle crossings — *recommend* and *act* — are each contained to one gated layer (`advisor`, shipped; a future `trader`). The analyst surfaces keep their "conditions are facts" contract, every order will require explicit human confirmation, and execution stays testnet-only until the full loop is proven. **Auto-update** is deferred to a future packaging plan.
+
+---
 
 ## Security model
 
-- **Renderer is fully sandboxed** — `contextIsolation`, `sandbox`, no node integration, double-CSP (index.html `<meta>` + response header), `connect-src` narrowed to `127.0.0.1`.
+- **Renderer is fully sandboxed** — `contextIsolation`, `sandbox`, no node integration, double-CSP (`<meta>` + response header), `connect-src` narrowed to `127.0.0.1`.
 - **Sidecar binds `127.0.0.1` only**, never `0.0.0.0`.
 - **Dual-bearer auth.** Renderer routes require the per-launch `MARKET_ANALYSER_SECRET`; `/mcp` requires the long-lived `mcp-secret.json` bearer. Both use constant-time comparison; `/healthz` is public.
-- **Secrets live in process env or under the user-data dir, never in argv** — process listings never reveal them.
+- **Secrets live in process env or under the user-data dir, never in argv** — process listings never reveal them, and no secret is ever logged or returned by an endpoint.
 - **No third-party network calls from the renderer** — all upstream data is fetched by the sidecar.
 
 If you find a security issue, please open an issue with the `security` label rather than a public PR.
