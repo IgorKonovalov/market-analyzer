@@ -1,6 +1,6 @@
 # ADR-0100 — On-chart legibility: persistent labels + primitive-hover tooltips
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0105 closed 2026-07-14)
 > **Date:** 2026-07-14
 > **Related plan(s):** 0105-chart-legibility (accepts this ADR at close)
 > **Extends:** [ADR-0060](0060-glossary-tooltip-interaction-posture.md) (glossary-tooltip posture); honours [ADR-0023](0023-technical-analysis-surface.md) (client-side indicator math), [ADR-0062](0062-user-chart-style-overrides.md) (static vs styleable colours), [ADR-0088](0088-lightweight-charts-v5-panes.md) (v5 panes), [ADR-0046](0046-mcp-large-result-delivery.md)/[ADR-0077](0077-user-originated-display-overlays.md) (nothing new on the wire)
