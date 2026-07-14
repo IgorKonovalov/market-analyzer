@@ -20,10 +20,19 @@
 import concurrently from "concurrently";
 
 import { resolveDataDir } from "./_lib/resolve-data-dir.mjs";
+import { precleanStaleLockfile } from "./spawn-sidecar.mjs";
 
 const passthrough = process.argv.slice(2);
 const dataDir = resolveDataDir();
 const lockfilePath = `${dataDir}/sidecar.lock`;
+
+// Must run BEFORE concurrently starts: the desktop chain's `wait-on file:`
+// gate fires on mere existence, so a stale lockfile from a force-killed prior
+// session (Ctrl-C on Windows) would open it immediately and Electron would
+// race the fresh sidecar — cold-spawning a duplicate that exits with
+// "sidecar already running at PID <N>". Pre-cleaning restores the gate's
+// intended meaning: lockfile present ⇒ live sidecar.
+precleanStaleLockfile({ lockfilePath });
 
 const wrapperCmd = ["node", "scripts/dev/spawn-sidecar.mjs", ...passthrough].join(" ");
 const writerCmd = "node scripts/dev/write-mcp-config.mjs --watch";

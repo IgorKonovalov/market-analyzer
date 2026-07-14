@@ -30,6 +30,7 @@
  * subtree-kill primitive instead of `child.kill` guards against future drift.
  */
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
+import { existsSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -98,6 +99,38 @@ export function checkSidecarStatus(lockfilePath, runner = defaultPythonStatusRun
   const m = raw.match(/^alive (\d+) (\d+)$/);
   if (m) return { status: "alive", pid: Number(m[1]), port: Number(m[2]) };
   throw new Error(`${PREFIX} unrecognised status output: ${JSON.stringify(raw)}`);
+}
+
+/**
+ * Remove a stale (or malformed) sidecar.lock before dev-all launches its
+ * children. The desktop chain is gated on `wait-on file:<lockfile>`, which
+ * checks existence, not liveness — a leftover file from a force-killed prior
+ * session opens that gate immediately, so Electron boots alongside the fresh
+ * sidecar, reads the dead record, and cold-spawns a duplicate that then loses
+ * the single-instance race ("sidecar already running at PID <N>"). Removing
+ * the stale file up front makes wait-on gate on the NEW sidecar's lockfile
+ * write, so Electron always takes the attach path under dev:all.
+ *
+ * A live owner is left untouched — spawn-sidecar's reuse path handles it. A
+ * present-but-malformed file (status "absent") is removed too: it would open
+ * the wait-on gate just the same.
+ */
+export function precleanStaleLockfile({
+  lockfilePath,
+  existsFn = existsSync,
+  statusFn = checkSidecarStatus,
+  rmFn = (p) => rmSync(p, { force: true }),
+  log = (line) => process.stdout.write(`${line}\n`),
+}) {
+  if (!existsFn(lockfilePath)) return { removed: false, status: "absent" };
+  const { status } = statusFn(lockfilePath);
+  if (status === "alive") return { removed: false, status };
+  rmFn(lockfilePath);
+  log(
+    `${PREFIX} removed ${status === "stale" ? "stale" : "malformed"} lockfile at `
+    + `${lockfilePath} so the desktop chain waits for the fresh sidecar`,
+  );
+  return { removed: true, status };
 }
 
 export function killSubtree(pid, spawnSyncFn = nodeSpawnSync) {

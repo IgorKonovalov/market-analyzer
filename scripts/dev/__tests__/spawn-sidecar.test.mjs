@@ -23,6 +23,7 @@ import {
   PREFIX,
   checkSidecarStatus,
   parseArgs,
+  precleanStaleLockfile,
   runWrapper,
 } from "../spawn-sidecar.mjs";
 
@@ -218,6 +219,61 @@ describe("runWrapper — reuse path", () => {
     const deps = makeDeps({ statusResult: { status: "stale" } });
     runWrapper({ argv: [], ...deps });
     assert.equal(deps.capture.spawnCalls.length, 1);
+  });
+});
+
+describe("precleanStaleLockfile", () => {
+  function makePrecleanDeps({ exists = true, statusResult = { status: "stale" } } = {}) {
+    const rmCalls = [];
+    const logLines = [];
+    let statusCalls = 0;
+    return {
+      lockfilePath: "/fake/sidecar.lock",
+      existsFn: () => exists,
+      statusFn: () => {
+        statusCalls += 1;
+        return statusResult;
+      },
+      rmFn: (p) => rmCalls.push(p),
+      log: (m) => logLines.push(m),
+      capture: { rmCalls, logLines, getStatusCalls: () => statusCalls },
+    };
+  }
+
+  it("does nothing when the lockfile is absent (no status probe, no rm)", () => {
+    const deps = makePrecleanDeps({ exists: false });
+    const result = precleanStaleLockfile(deps);
+    assert.deepEqual(result, { removed: false, status: "absent" });
+    assert.equal(deps.capture.getStatusCalls(), 0);
+    assert.deepEqual(deps.capture.rmCalls, []);
+  });
+
+  it("leaves a live owner's lockfile untouched", () => {
+    const deps = makePrecleanDeps({
+      statusResult: { status: "alive", pid: 4321, port: 53221 },
+    });
+    const result = precleanStaleLockfile(deps);
+    assert.deepEqual(result, { removed: false, status: "alive" });
+    assert.deepEqual(deps.capture.rmCalls, []);
+  });
+
+  it("removes a stale lockfile and logs the removal", () => {
+    const deps = makePrecleanDeps({ statusResult: { status: "stale" } });
+    const result = precleanStaleLockfile(deps);
+    assert.deepEqual(result, { removed: true, status: "stale" });
+    assert.deepEqual(deps.capture.rmCalls, ["/fake/sidecar.lock"]);
+    const line = deps.capture.logLines.find((l) => l.includes("removed stale lockfile"));
+    assert.ok(line, `expected removal log line, got: ${JSON.stringify(deps.capture.logLines)}`);
+    assert.ok(line.startsWith(PREFIX));
+  });
+
+  it("removes a present-but-malformed lockfile (status 'absent' with file on disk)", () => {
+    const deps = makePrecleanDeps({ statusResult: { status: "absent" } });
+    const result = precleanStaleLockfile(deps);
+    assert.deepEqual(result, { removed: true, status: "absent" });
+    assert.deepEqual(deps.capture.rmCalls, ["/fake/sidecar.lock"]);
+    const line = deps.capture.logLines.find((l) => l.includes("removed malformed lockfile"));
+    assert.ok(line, `expected removal log line, got: ${JSON.stringify(deps.capture.logLines)}`);
   });
 });
 
