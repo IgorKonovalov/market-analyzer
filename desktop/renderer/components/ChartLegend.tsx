@@ -154,6 +154,23 @@ function LegendRowSettings({ element }: { element: ChartStyleElement }): JSX.Ele
   )
 }
 
+const COLLAPSED_KEY = 'ma.legendCollapsed'
+/** Default expanded; only an explicit `'true'` collapses the panel. */
+function readCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(COLLAPSED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+function persistCollapsed(value: boolean): void {
+  try {
+    window.localStorage.setItem(COLLAPSED_KEY, String(value))
+  } catch {
+    /* storage blocked → collapse is session-only */
+  }
+}
+
 export function ChartLegend({
   layers,
   values,
@@ -169,12 +186,39 @@ export function ChartLegend({
   const [showAdd, setShowAdd] = useState(false)
   const [showSave, setShowSave] = useState(false)
   const [saveName, setSaveName] = useState('')
+  const [collapsed, setCollapsed] = useState(readCollapsed)
   // The row whose inline style editor is open (one at a time), or null.
   const [openSettings, setOpenSettings] = useState<string | null>(null)
+
+  const toggleCollapsed = (): void => {
+    setCollapsed((prev) => {
+      const next = !prev
+      persistCollapsed(next)
+      return next
+    })
+  }
 
   // Nothing to show and nothing to add ⇒ render nothing (Clean chart with no
   // overlays still lists the OBV row + the add control, so this is rare).
   if (layers.length === 0 && onAddOverlay === undefined) return null
+
+  // Collapsed: a compact pill that reclaims the chart's top-left corner.
+  if (collapsed) {
+    return (
+      <div className={styles.collapsed} data-testid="chart-legend">
+        <button
+          type="button"
+          className={styles.collapseToggle}
+          onClick={toggleCollapsed}
+          aria-expanded={false}
+          aria-label={t('chartLegend.expandAria')}
+          data-testid="legend-collapse-toggle"
+        >
+          ☰
+        </button>
+      </div>
+    )
+  }
 
   const submitSave = (e: React.FormEvent): void => {
     e.preventDefault()
@@ -191,6 +235,18 @@ export function ChartLegend({
       aria-label={t('chartLegend.ariaLabel')}
       data-testid="chart-legend"
     >
+      <div className={styles.topBar}>
+        <button
+          type="button"
+          className={styles.collapseToggle}
+          onClick={toggleCollapsed}
+          aria-expanded={true}
+          aria-label={t('chartLegend.collapseAria')}
+          data-testid="legend-collapse-toggle"
+        >
+          −
+        </button>
+      </div>
       {onApplyPreset !== undefined && presets !== undefined && (
         <div className={styles.presetBar}>
           <label className={styles.presetLabel} htmlFor="chart-preset-select">
@@ -241,8 +297,8 @@ export function ChartLegend({
             aria-label={t('chartLegend.presetNamePlaceholder')}
             data-testid="preset-name-input"
           />
-          <button type="submit" className={styles.presetSave} data-testid="preset-save-submit">
-            {t('chartLegend.savePreset')}
+          <button type="submit" className={styles.saveConfirm} data-testid="preset-save-submit">
+            {t('chartLegend.saveConfirm')}
           </button>
         </form>
       )}

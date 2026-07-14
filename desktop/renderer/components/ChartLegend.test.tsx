@@ -61,12 +61,13 @@ function renderLegend(over: Partial<React.ComponentProps<typeof ChartLegend>> = 
   onRemove: jest.Mock
   onAddOverlay: jest.Mock
   onHighlight: jest.Mock
+  unmount: () => void
 } {
   const onToggle = jest.fn()
   const onRemove = jest.fn()
   const onAddOverlay = jest.fn()
   const onHighlight = jest.fn()
-  render(
+  const { unmount } = render(
     <ChartLegend
       layers={LAYERS}
       values={VALUES}
@@ -77,8 +78,16 @@ function renderLegend(over: Partial<React.ComponentProps<typeof ChartLegend>> = 
       {...over}
     />,
   )
-  return { onToggle, onRemove, onAddOverlay, onHighlight }
+  return { onToggle, onRemove, onAddOverlay, onHighlight, unmount }
 }
+
+afterEach(() => {
+  try {
+    window.localStorage.clear() // the collapse state persists in ma.legendCollapsed
+  } catch {
+    /* ignore */
+  }
+})
 
 it('lists a row per layer with its live value', () => {
   renderLegend()
@@ -145,4 +154,20 @@ it('the style gear expands an inline editor for styleable series only', () => {
 it('renders nothing when there are no layers and nothing to add', () => {
   const { container } = render(<ChartLegend layers={[]} values={new Map()} onToggle={jest.fn()} />)
   expect(container).toBeEmptyDOMElement()
+})
+
+it('collapses to a pill and expands back, persisting the state', () => {
+  const { unmount } = renderLegend()
+  expect(screen.getByTestId('legend-row:overlay:ema:20')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByTestId('legend-collapse-toggle'))
+  expect(screen.queryByTestId('legend-row:overlay:ema:20')).not.toBeInTheDocument()
+  expect(window.localStorage.getItem('ma.legendCollapsed')).toBe('true')
+
+  // A fresh mount reads the persisted collapsed state.
+  unmount()
+  renderLegend()
+  expect(screen.queryByTestId('legend-row:overlay:ema:20')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByTestId('legend-collapse-toggle'))
+  expect(screen.getByTestId('legend-row:overlay:ema:20')).toBeInTheDocument()
 })
