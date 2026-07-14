@@ -178,6 +178,30 @@ it('toggling the OBV row removes and re-creates the OBV series', () => {
   expect(recreated[0]).not.toBe(obv)
 })
 
+// Quick toggle-all (user request 2026-07-14): one click hides every
+// hidden-set-governed layer (candle detail rows ride their master), the next
+// restores the mix that was showing before — a manually-hidden layer stays off.
+it('toggle-all hides everything, then restores the prior mix', () => {
+  renderChart()
+  toggle('series:obv') // a non-trivial pre-hide mix: OBV off, the rest on
+  expect(isVisible('series:obv')).toBe(false)
+  expect(isVisible('overlay:ema:20')).toBe(true)
+
+  fireEvent.click(screen.getByTestId('legend-toggle-all'))
+  expect(isVisible('overlay:ema:20')).toBe(false)
+  expect(isVisible('overlay:sma:50')).toBe(false)
+  expect(isVisible('candles-master')).toBe(false)
+  expect(isVisible('pline:R1')).toBe(false)
+
+  fireEvent.click(screen.getByTestId('legend-toggle-all'))
+  expect(isVisible('overlay:ema:20')).toBe(true)
+  expect(isVisible('overlay:sma:50')).toBe(true)
+  expect(isVisible('candles-master')).toBe(true)
+  expect(isVisible('pline:R1')).toBe(true)
+  // The stash restored the PRE-hide mix — the manually-hidden OBV stays off.
+  expect(isVisible('series:obv')).toBe(false)
+})
+
 it('each swatch colour equals the colour the layer was drawn with', () => {
   renderChart()
   const [ema, sma] = overlayLines()

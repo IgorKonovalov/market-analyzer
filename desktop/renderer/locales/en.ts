@@ -679,6 +679,8 @@ export const en = {
   'chartLegend.presetNamePlaceholder': 'Preset name',
   'chartLegend.collapseAria': 'Collapse indicator panel',
   'chartLegend.expandAria': 'Show indicator panel',
+  'chartLegend.hideAll': 'Hide all indicators',
+  'chartLegend.showAll': 'Show indicators',
   'chartLegend.preset.clean': 'Clean',
   'chartLegend.preset.trend': 'Trend',
   'chartLegend.preset.meanReversion': 'Mean-reversion',

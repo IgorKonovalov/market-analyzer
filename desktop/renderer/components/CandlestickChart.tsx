@@ -965,6 +965,36 @@ export function CandlestickChart({
     [layers, userOverlays],
   )
 
+  // Quick toggle-all (user request 2026-07-14, post-0105): one click hides every
+  // hidden-set-governed layer — candlestick DETAIL rows ride their master, which
+  // is included — the next click restores the mix that was showing before. The
+  // stash is per-bucket and in-memory only; without one (e.g. after a remount)
+  // "show" falls back to everything-visible. A bulk toggle diverges from an
+  // applied preset → Custom, like any manual toggle.
+  const preToggleAllRef = useRef<{ bucket: string | null; hidden: ReadonlySet<string> } | null>(
+    null,
+  )
+  const hiddenGovernedLayers = useMemo(
+    () => layers.filter((l) => candleGroupKeyFromLayerId(l.id) === null),
+    [layers],
+  )
+  const allHidden = hiddenGovernedLayers.length > 0 && hiddenGovernedLayers.every((l) => !l.visible)
+  const handleToggleAll = useCallback((): void => {
+    const write = (next: ReadonlySet<string>): void => {
+      if (bucketKey === null || !symbol || !timeframe) setEphemeralHidden(new Set(next))
+      else setLayerVisibility(symbol, timeframe, next)
+    }
+    if (allHidden) {
+      const stash = preToggleAllRef.current
+      write(stash !== null && stash.bucket === bucketKey ? stash.hidden : new Set())
+      preToggleAllRef.current = null
+    } else {
+      preToggleAllRef.current = { bucket: bucketKey, hidden }
+      write(new Set([...hidden, ...hiddenGovernedLayers.map((l) => l.id)]))
+    }
+    setActivePreset(null)
+  }, [allHidden, bucketKey, symbol, timeframe, hidden, hiddenGovernedLayers])
+
   // Hover tooltip (Plan 0047 phase 8 / Plan 0067 phase 2): crosshair-driven
   // marker/overlay/trendline read-out + pattern-bar outline (Plan 0072 phase 8:
   // `useChartTooltip` owns the state and returns it).
@@ -1049,6 +1079,8 @@ export function CandlestickChart({
           activePreset={activePreset}
           onApplyPreset={canAddOverlay ? applyPreset : undefined}
           onSavePreset={canAddOverlay ? handleSavePreset : undefined}
+          onToggleAll={handleToggleAll}
+          allHidden={allHidden}
         />
         {selection && (
           <div

@@ -688,6 +688,8 @@ export const ru = {
   'chartLegend.presetNamePlaceholder': 'Название пресета',
   'chartLegend.collapseAria': 'Свернуть панель индикаторов',
   'chartLegend.expandAria': 'Показать панель индикаторов',
+  'chartLegend.hideAll': 'Скрыть все индикаторы',
+  'chartLegend.showAll': 'Показать индикаторы',
   'chartLegend.preset.clean': 'Чистый',
   'chartLegend.preset.trend': 'Тренд',
   'chartLegend.preset.meanReversion': 'Возврат к среднему',

@@ -64,6 +64,11 @@ export interface ChartLegendProps {
   onApplyPreset?: (preset: ChartPreset) => void
   /** Save the current layout as a named preset. */
   onSavePreset?: (name: string) => void
+  /** Quick toggle-all (user request, 2026-07-14): one click hides every layer,
+   * the next restores the previous mix (the chart owns the stash). `allHidden`
+   * drives the button's state/label. Absent ⇒ the button is hidden. */
+  onToggleAll?: () => void
+  allHidden?: boolean
 }
 
 /** Localised display name for a built-in preset; user presets show verbatim. */
@@ -182,6 +187,8 @@ export function ChartLegend({
   activePreset = null,
   onApplyPreset,
   onSavePreset,
+  onToggleAll,
+  allHidden = false,
 }: ChartLegendProps): JSX.Element | null {
   const [showAdd, setShowAdd] = useState(false)
   const [showSave, setShowSave] = useState(false)
@@ -236,6 +243,19 @@ export function ChartLegend({
       data-testid="chart-legend"
     >
       <div className={styles.topBar}>
+        {onToggleAll !== undefined && (
+          <button
+            type="button"
+            className={styles.collapseToggle}
+            onClick={onToggleAll}
+            aria-pressed={allHidden}
+            aria-label={allHidden ? t('chartLegend.showAll') : t('chartLegend.hideAll')}
+            title={allHidden ? t('chartLegend.showAll') : t('chartLegend.hideAll')}
+            data-testid="legend-toggle-all"
+          >
+            {allHidden ? '🙈' : '👁'}
+          </button>
+        )}
         <button
           type="button"
           className={styles.collapseToggle}
