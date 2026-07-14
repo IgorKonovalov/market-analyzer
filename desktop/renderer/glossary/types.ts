@@ -24,6 +24,7 @@ export type GlossaryCategory =
   | 'candlestick'
   | 'defi'
   | 'divergence'
+  | 'chart_pattern'
 
 /**
  * A locale-keyed prose field (Plan 0069 phase 3). `en` is always present (the

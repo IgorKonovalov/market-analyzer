@@ -1533,5 +1533,200 @@
       "en": "An uptrend-continuation signal — the pullback held a higher low while momentum washed out, suggesting the up move may resume. A condition, never a call.",
       "ru": "Сигнал продолжения восходящего тренда — откат удержал более высокий минимум при вымывании импульса, что намекает на возобновление роста. Это состояние, а не рекомендация."
     }
+  },
+  "ichimoku": {
+    "term": {
+      "en": "Ichimoku Cloud",
+      "ru": "Облако Ишимоку"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "Five trailing lines on the classic 9/26/52 periods: Tenkan (9-bar high/low midpoint), Kijun (26-bar midpoint), Senkou A (average of Tenkan and Kijun), Senkou B (52-bar midpoint), and Chikou (the close). The chart displaces the two Senkou spans 26 bars forward — the shaded cloud — and Chikou 26 bars back; the series themselves are trailing, displacement is applied only at display.",
+      "ru": "Пять трейлинг-линий с классическими периодами 9/26/52: Тенкан (середина максимума/минимума за 9 баров), Киджун (за 26), Сенкоу A (среднее Тенкан и Киджун), Сенкоу B (за 52) и Чикоу (цена закрытия). График сдвигает обе линии Сенкоу на 26 баров вперёд — закрашенное облако — а Чикоу на 26 баров назад; сами ряды трейлинговые, сдвиг применяется только при отображении."
+    },
+    "whatItMeans": {
+      "en": "A one-glance trend read: price above the cloud is an up-regime, below it a down-regime, inside it a transition; the cloud's thickness shows how much structure a move must cross. A condition read, not a buy/sell call.",
+      "ru": "Чтение тренда одним взглядом: цена над облаком — восходящий режим, под ним — нисходящий, внутри — переходный; толщина облака показывает, сколько структуры должно преодолеть движение. Это чтение состояния, а не сигнал на покупку/продажу."
+    }
+  },
+  "obv": {
+    "term": {
+      "en": "On-Balance Volume (OBV)",
+      "ru": "Балансовый объём (OBV)"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "A running total seeded at 0: each bar's volume is added on an up close, subtracted on a down close, and left unchanged on a flat close. Drawn in its own pane; the absolute level is window-relative — only the slope and its relation to price carry meaning.",
+      "ru": "Накопительная сумма, начинающаяся с 0: объём бара прибавляется при закрытии вверх, вычитается при закрытии вниз и не меняется при неизменном закрытии. Рисуется в отдельной панели; абсолютный уровень зависит от окна — смысл несут только наклон и его соотношение с ценой."
+    },
+    "whatItMeans": {
+      "en": "Whether volume flows with or against price. OBV making new highs alongside price supports the move; OBV flattening or diverging while price advances shows the move is running on thin participation. A condition, not a signal.",
+      "ru": "Идёт ли объём вместе с ценой или против неё. Новые максимумы OBV вместе с ценой поддерживают движение; уплощение или дивергенция OBV при росте цены показывает, что движение идёт на слабом участии. Это состояние, а не сигнал."
+    }
+  },
+  "rsi": {
+    "term": {
+      "en": "RSI",
+      "ru": "RSI"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "Wilder's Relative Strength Index (default period 14) drawn in its own 0–100 pane: a smoothed ratio of average gains to average losses over the period.",
+      "ru": "Индекс относительной силы по Уайлдеру (период по умолчанию 14) в отдельной панели 0–100: сглаженное отношение средних приростов к средним потерям за период."
+    },
+    "whatItMeans": {
+      "en": "Overbought/oversold pressure. Above ~70 the move is stretched high, below ~30 stretched low — a condition about how far price has run, not a trigger to act.",
+      "ru": "Давление перекупленности/перепроданности. Выше ~70 движение растянуто вверх, ниже ~30 — вниз; это состояние о том, как далеко ушла цена, а не триггер к действию."
+    }
+  },
+  "structure": {
+    "term": {
+      "en": "Market structure",
+      "ru": "Рыночная структура"
+    },
+    "category": "overlay",
+    "howComputed": {
+      "en": "Confirmed swing pivots labeled HH/HL (higher high/low) or LH/LL (lower high/low), plus BOS (a close extending the structure in trend direction) and CHoCH (the first close breaking it against the trend), both by a small ATR-scaled margin. A price-action trend read, computed separately from the indicator-based trend.",
+      "ru": "Подтверждённые свинговые опорные точки с метками HH/HL (более высокий максимум/минимум) или LH/LL (более низкий максимум/минимум), плюс BOS (закрытие, продлевающее структуру по тренду) и CHoCH (первое закрытие, ломающее её против тренда) — оба с небольшим отступом по ATR. Чтение тренда по ценовому действию, вычисляемое отдельно от индикаторного тренда."
+    },
+    "whatItMeans": {
+      "en": "The price-action skeleton of the trend: HH+HL sequences define an uptrend, LH+LL a downtrend; BOS says the trend just extended, CHoCH warns its structure broke. Facts about the swing sequence, not calls.",
+      "ru": "Скелет тренда по ценовому действию: последовательности HH+HL определяют восходящий тренд, LH+LL — нисходящий; BOS означает продление тренда, CHoCH предупреждает о сломе его структуры. Это факты о последовательности свингов, а не рекомендации."
+    }
+  },
+  "head_shoulders": {
+    "term": {
+      "en": "Head & shoulders",
+      "ru": "Голова и плечи"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "Our detector matches three confirmed swing highs with the middle one highest (the head) and the outer two of similar height (the shoulders), and draws the neckline through the two troughs between them. Forming = geometry complete; confirmed = a close breaks the neckline by an ATR-scaled margin; the measured-move target projects the head-to-neckline depth below the break.",
+      "ru": "Детектор находит три подтверждённых свинговых максимума, где средний — самый высокий (голова), а крайние два близки по высоте (плечи), и проводит линию шеи через две впадины между ними. «Формируется» — геометрия сложилась; «подтверждён» — закрытие пробило линию шеи с отступом по ATR; расчётная цель проецирует глубину от головы до линии шеи вниз от пробоя."
+    },
+    "whatItMeans": {
+      "en": "The classical top-reversal formation: an uptrend that failed to print a higher high and then broke its support. Statistically one of the stronger reversal shapes, but a confirmed break is a condition — not a sell instruction.",
+      "ru": "Классическая разворотная формация вершины: восходящий тренд не смог обновить максимум и затем пробил свою поддержку. Статистически одна из более сильных разворотных фигур, но подтверждённый пробой — это состояние, а не указание продавать."
+    }
+  },
+  "inverse_head_shoulders": {
+    "term": {
+      "en": "Inverse head & shoulders",
+      "ru": "Перевёрнутые голова и плечи"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "The mirror of head & shoulders on swing lows: three confirmed troughs with the middle one lowest, a neckline through the two peaks between them; confirmed when a close breaks above the neckline by an ATR-scaled margin, with the head-to-neckline depth projected upward as the measured-move target.",
+      "ru": "Зеркальное отражение «головы и плеч» на свинговых минимумах: три подтверждённые впадины, средняя из которых самая глубокая, и линия шеи через два пика между ними; подтверждается закрытием выше линии шеи с отступом по ATR, а глубина от головы до линии шеи проецируется вверх как расчётная цель."
+    },
+    "whatItMeans": {
+      "en": "The classical bottom-reversal formation: a downtrend that failed to print a lower low and then broke its resistance. A confirmed break is a condition about the reversal attempt, not a buy instruction.",
+      "ru": "Классическая разворотная формация дна: нисходящий тренд не смог обновить минимум и затем пробил своё сопротивление. Подтверждённый пробой — это состояние попытки разворота, а не указание покупать."
+    }
+  },
+  "double_top": {
+    "term": {
+      "en": "Double top",
+      "ru": "Двойная вершина"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "Two confirmed swing highs of similar height separated by a trough. Forming = the second peak printed; confirmed = a close breaks below the intervening trough by an ATR-scaled margin; the pattern's height is projected below the break as the measured-move target.",
+      "ru": "Два подтверждённых свинговых максимума близкой высоты, разделённые впадиной. «Формируется» — второй пик напечатан; «подтверждён» — закрытие пробило промежуточную впадину с отступом по ATR; высота фигуры проецируется вниз от пробоя как расчётная цель."
+    },
+    "whatItMeans": {
+      "en": "Price tested the same ceiling twice and failed both times; breaking the trough between the tests confirms sellers took control of that range. A reversal condition, not a call.",
+      "ru": "Цена дважды проверила один и тот же потолок и оба раза не прошла; пробой впадины между тестами подтверждает, что продавцы взяли контроль над диапазоном. Это разворотное состояние, а не рекомендация."
+    }
+  },
+  "double_bottom": {
+    "term": {
+      "en": "Double bottom",
+      "ru": "Двойное дно"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "Two confirmed swing lows of similar depth separated by a peak. Forming = the second trough printed; confirmed = a close breaks above the intervening peak by an ATR-scaled margin; the pattern's height is projected above the break as the measured-move target.",
+      "ru": "Два подтверждённых свинговых минимума близкой глубины, разделённые пиком. «Формируется» — вторая впадина напечатана; «подтверждён» — закрытие пробило промежуточный пик с отступом по ATR; высота фигуры проецируется вверх от пробоя как расчётная цель."
+    },
+    "whatItMeans": {
+      "en": "Price tested the same floor twice and held both times; breaking the peak between the tests confirms buyers absorbed the supply there. A reversal condition, not a call.",
+      "ru": "Цена дважды проверила одно и то же дно и оба раза устояла; пробой пика между тестами подтверждает, что покупатели поглотили предложение. Это разворотное состояние, а не рекомендация."
+    }
+  },
+  "ascending_triangle": {
+    "term": {
+      "en": "Ascending triangle",
+      "ru": "Восходящий треугольник"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "A converging envelope fitted to confirmed swing pivots: a near-flat upper boundary on the highs and a rising lower boundary on the lows (outlier-tolerant fit, real pivots only). Forming = both lines fitted and converging; confirmed = a close breaks a boundary by an ATR-scaled margin, with the triangle's height projected from the break as the target.",
+      "ru": "Сходящийся конверт, подогнанный по подтверждённым свинговым опорным точкам: почти плоская верхняя граница по максимумам и восходящая нижняя по минимумам (подгонка устойчива к выбросам, только реальные опорные точки). «Формируется» — обе линии подогнаны и сходятся; «подтверждён» — закрытие пробило границу с отступом по ATR, высота треугольника проецируется от пробоя как цель."
+    },
+    "whatItMeans": {
+      "en": "Buyers keep raising their bids into a fixed ceiling — pressure building against resistance. Classically resolves upward more often, but the direction is only a fact once a break confirms. A coiling condition, not a prediction.",
+      "ru": "Покупатели поднимают заявки к фиксированному потолку — давление нарастает у сопротивления. Классически чаще разрешается вверх, но направление становится фактом только после подтверждённого пробоя. Это состояние сжатия, а не прогноз."
+    }
+  },
+  "descending_triangle": {
+    "term": {
+      "en": "Descending triangle",
+      "ru": "Нисходящий треугольник"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "A converging envelope fitted to confirmed swing pivots: a near-flat lower boundary on the lows and a falling upper boundary on the highs (outlier-tolerant fit). Forming = both lines fitted and converging; confirmed = a close breaks a boundary by an ATR-scaled margin, with the triangle's height projected from the break as the target.",
+      "ru": "Сходящийся конверт по подтверждённым свинговым опорным точкам: почти плоская нижняя граница по минимумам и нисходящая верхняя по максимумам (подгонка устойчива к выбросам). «Формируется» — обе линии подогнаны и сходятся; «подтверждён» — закрытие пробило границу с отступом по ATR, высота треугольника проецируется от пробоя как цель."
+    },
+    "whatItMeans": {
+      "en": "Sellers keep lowering their offers into a fixed floor — supply pressing on support. Classically resolves downward more often, but the direction is only a fact once a break confirms. A coiling condition, not a prediction.",
+      "ru": "Продавцы опускают предложения к фиксированному полу — предложение давит на поддержку. Классически чаще разрешается вниз, но направление становится фактом только после подтверждённого пробоя. Это состояние сжатия, а не прогноз."
+    }
+  },
+  "symmetrical_triangle": {
+    "term": {
+      "en": "Symmetrical triangle",
+      "ru": "Симметричный треугольник"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "A converging envelope fitted to confirmed swing pivots where the upper boundary falls and the lower boundary rises toward an apex (outlier-tolerant fit). Forming = both lines fitted and converging; confirmed = a close breaks either boundary by an ATR-scaled margin, with the triangle's height projected from the break as the target.",
+      "ru": "Сходящийся конверт по подтверждённым свинговым опорным точкам, где верхняя граница снижается, а нижняя растёт к вершине (подгонка устойчива к выбросам). «Формируется» — обе линии подогнаны и сходятся; «подтверждён» — закрытие пробило любую из границ с отступом по ATR, высота треугольника проецируется от пробоя как цель."
+    },
+    "whatItMeans": {
+      "en": "A balanced contraction — both sides tightening their range with no side in control. The pattern marks the coil, not the direction: only a confirmed break says which way it resolved. A condition, never a call.",
+      "ru": "Сбалансированное сжатие — обе стороны сужают диапазон, и ни одна не контролирует его. Фигура отмечает сжатие, а не направление: только подтверждённый пробой говорит, куда оно разрешилось. Это состояние, а не рекомендация."
+    }
+  },
+  "rising_wedge": {
+    "term": {
+      "en": "Rising wedge",
+      "ru": "Восходящий клин"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "A converging envelope fitted to confirmed swing pivots where both boundaries rise but the lower rises faster, squeezing the range while price grinds up (outlier-tolerant fit). Forming = both lines fitted and converging; confirmed = a close breaks a boundary by an ATR-scaled margin, with the wedge's height projected from the break as the target.",
+      "ru": "Сходящийся конверт по подтверждённым свинговым опорным точкам, где обе границы растут, но нижняя быстрее, сжимая диапазон при ползучем росте цены (подгонка устойчива к выбросам). «Формируется» — обе линии подогнаны и сходятся; «подтверждён» — закрытие пробило границу с отступом по ATR, высота клина проецируется от пробоя как цель."
+    },
+    "whatItMeans": {
+      "en": "An advance losing breadth — each push up gains less range than the last. Classically leans toward a downside resolution, but that lean is a base rate, not this chart's outcome; only a confirmed break is a fact. A condition, not a call.",
+      "ru": "Рост теряет размах — каждый рывок вверх даёт меньше диапазона, чем предыдущий. Классически склоняется к разрешению вниз, но эта склонность — базовая статистика, а не исход данного графика; фактом является только подтверждённый пробой. Это состояние, а не рекомендация."
+    }
+  },
+  "falling_wedge": {
+    "term": {
+      "en": "Falling wedge",
+      "ru": "Нисходящий клин"
+    },
+    "category": "chart_pattern",
+    "howComputed": {
+      "en": "A converging envelope fitted to confirmed swing pivots where both boundaries fall but the upper falls faster, squeezing the range while price grinds down (outlier-tolerant fit). Forming = both lines fitted and converging; confirmed = a close breaks a boundary by an ATR-scaled margin, with the wedge's height projected from the break as the target.",
+      "ru": "Сходящийся конверт по подтверждённым свинговым опорным точкам, где обе границы снижаются, но верхняя быстрее, сжимая диапазон при ползучем снижении цены (подгонка устойчива к выбросам). «Формируется» — обе линии подогнаны и сходятся; «подтверждён» — закрытие пробило границу с отступом по ATR, высота клина проецируется от пробоя как цель."
+    },
+    "whatItMeans": {
+      "en": "A decline losing force — each push down gains less range than the last. Classically leans toward an upside resolution, but that lean is a base rate, not this chart's outcome; only a confirmed break is a fact. A condition, not a call.",
+      "ru": "Снижение теряет силу — каждый рывок вниз даёт меньше диапазона, чем предыдущий. Классически склоняется к разрешению вверх, но эта склонность — базовая статистика, а не исход данного графика; фактом является только подтверждённый пробой. Это состояние, а не рекомендация."
+    }
   }
 }

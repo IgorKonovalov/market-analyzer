@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from market_analyser.advisor.fusion import SHARPE_FULL_CREDIT
+from market_analyser.analysis.chart_patterns import CHART_PATTERNS
 from market_analyser.api.mcp_tools.forecast import EDGE_MARGIN_THRESHOLD
 from market_analyser.forecast.features import (
     FEATURE_NAMES,
@@ -104,6 +105,35 @@ def test_overlay_vocabulary_is_disjoint_from_indicator_and_not_a_feature() -> No
     assert overlay_keys.isdisjoint(_feature_name_union()), (
         f"overlay keys must not be FEATURE_NAMES: {sorted(overlay_keys & _feature_name_union())}"
     )
+
+
+def test_chart_pattern_keys_equal_the_detector_pattern_names() -> None:
+    """Bidirectional (Plan 0105 phase 1): the ``chart_pattern`` glossary keys ARE
+    the detector's canonical ``CHART_PATTERNS`` tuple -- adding a detector
+    pattern, deleting its entry, or inventing a phantom pattern key each fail
+    here until the glossary catches up."""
+    detector_names = set(CHART_PATTERNS)
+    chart_pattern_keys = _keys_in_category("chart_pattern")
+    missing = detector_names - chart_pattern_keys
+    extra = chart_pattern_keys - detector_names
+    assert not missing, f"detector patterns with no glossary entry: {sorted(missing)}"
+    assert not extra, f"chart_pattern glossary keys the detector does not emit: {sorted(extra)}"
+
+
+# The Plan 0105 phase-1 legend keys: overlay/summary terms the chart legend emits
+# that phase 2 wires via `glossaryKey`. Pinned so a rename or deletion on either
+# side surfaces here rather than as a silently-inert legend row.
+_LEGEND_SUMMARY_KEYS = {"ichimoku", "obv", "rsi", "structure"}
+
+
+def test_legend_summary_keys_are_present_overlay_terms() -> None:
+    """Each Plan 0105 legend key exists and stays in the ``overlay`` vocabulary
+    (so the indicator/feature-name pin above keeps excluding them)."""
+    overlay_keys = _keys_in_category("overlay")
+    missing = _LEGEND_SUMMARY_KEYS - set(GLOSSARY)
+    assert not missing, f"legend keys with no glossary entry: {sorted(missing)}"
+    misfiled = _LEGEND_SUMMARY_KEYS - overlay_keys
+    assert not misfiled, f"legend keys not in the overlay category: {sorted(misfiled)}"
 
 
 def test_canonical_constants_are_exported_and_numeric() -> None:

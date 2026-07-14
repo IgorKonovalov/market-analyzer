@@ -23,6 +23,7 @@ const CATEGORIES: readonly GlossaryCategory[] = [
   'candlestick',
   'defi',
   'divergence',
+  'chart_pattern',
 ]
 const RECORD_KEYS = new Set(['term', 'category', 'howComputed', 'whatItMeans', 'formulaAnchor'])
 
@@ -216,12 +217,16 @@ const EXPECTED_OVERLAY_KEYS = [
   'cmf',
   'ema',
   'fibonacci',
+  'ichimoku',
   'mfi',
+  'obv',
   'pivot_points',
   'roc',
+  'rsi',
   'sma',
   'stoch_rsi',
   'stochastic',
+  'structure',
   'supertrend',
   'williams_r',
 ]
