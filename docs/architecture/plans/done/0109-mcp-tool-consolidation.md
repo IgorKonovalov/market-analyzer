@@ -1,6 +1,6 @@
 # 0109 — MCP tool consolidation (same-verb clusters → discriminated tools)
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-07-15. All six dev phases shipped (`9ac96c4` ph1 `scan_watchlist(rank_by)`, `9339093` ph2 `forecast(kind)`, `9f1eb0d` ph3 `sentiment(source)`, `37b1f6b` ph4 `price_structure(kind)`, `f4d44ee` ph5 `volume_read(kind)`, `5340d47` ph6 ledger+apiref+skill-doc sync); mid-implementation envelope amendment `c55d3d9`. MCP surface 62 → **50** (18 tools retired into 5 discriminated tools). **Mode 4 verdict: clean, no blockers.** Verified: `forecast(kind="direction")` `result` byte-identical + each kind publishes its own SSE event (`forecast.completed`/`volatility_forecast.completed`/`regime_forecast.completed`, payloads unchanged — the envelope is agent-facing only); ph4/ph5 shipped the flattened shared-wrapper shape `{kind, result, partial_reason, scanned_at}` (accepted as an improvement over the amendment's literal double-nest — reconciled in this plan); `EXPECTED_FULL_TOOLSET` = 50 and enforced against the live-wired server; `apiref --check` clean; no retired tool name in `.claude/skills`; `recommend`/advisor call the pure `analysis/`+`forecast/` cores, not retired tools; 788 api/apiref tests green. Realises [ADR-0104](../../adrs/0104-mcp-tool-surface-granularity.md) (accepted at close). **Phase 7 (human live MCP smoke) outstanding — deferrable, does not gate the close.**
 > **Created:** 2026-07-15
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0104](../adrs/0104-mcp-tool-surface-granularity.md) (granularity rule + consolidation map); consumes [0014](../adrs/0014-mcp-as-second-sidecar-protocol.md), [0064](../adrs/0064-generated-sidecar-api-reference.md); preserves [0029](../adrs/0029-advisory-recommendation-boundary.md)/[0096](../adrs/0096-screening-quality-rank-conditions-side.md) boundaries
@@ -23,6 +23,22 @@
 > zero-shape-change merge that may proceed as originally written. The ph2/4/5 done-whens
 > below are reworded from "byte-equivalent to today's `<tool>`" to "the `result` payload
 > is byte-identical, nested under the envelope."
+
+> **Close reconciliation 2026-07-15 (architect, Mode 4).** As shipped, only **`forecast`
+> (ph2)** is a genuinely disjoint cluster — its three retired tools returned *bare*
+> models (`MultiHorizonForecastResult` / `VolatilityForecast` / `RegimeForecast`) with no
+> shared wrapper — so it correctly took the `{kind, result}` envelope above.
+> **`price_structure` (ph4) and `volume_read` (ph5) are NOT disjoint clusters**: their
+> retired tools *already* shared a `{result, partial_reason, scanned_at}` wrapper, which
+> makes them the same shared-wrapper case as phase 1's `scan_watchlist`. Dev therefore
+> shipped them as a **flattened** `{kind, result, partial_reason, scanned_at}` object (the
+> mode union inside the `result` *field*, `kind` added alongside), NOT the amendment's
+> literal `{kind, result: <whole old Response>}` double-nest — which would have produced a
+> pointless `result.result`. This is accepted as an improvement: `result` /
+> `partial_reason` / `scanned_at` stay byte-identical to the retired tool (the done-when
+> standard is met with *zero* extra nesting on those fields), and the single object still
+> escapes FastMCP's union-return wrap. The Data-shapes section and the ph4/ph5 lines below
+> reflect the shipped flattened shape; the envelope pattern applies to `forecast` alone.
 
 ## TL;DR
 
@@ -110,15 +126,15 @@ Each phase folds one cluster, ships as its own commit, and keeps the tree green 
 
 ### Phase 4 — `price_structure(kind=…)`
 - **Owner skill:** dev
-- **What:** Fold `fibonacci_levels`, `pivot_points`, `anchored_vwap`, `market_structure` into `price_structure` with `kind` ∈ {`fibonacci`, `pivots`, `anchored_vwap`, `market_structure`}. Result is the discriminated envelope `PriceStructureResponse{kind, result}` (Data shapes) — `result` is the mode's existing `*Response` model unchanged. Pure reads over cached bars (no chart events — these never drew, unlike `detect_levels`). `market_structure` keeps its ADR-0084 second-trend-read semantics as the `market_structure` mode.
+- **What:** Fold `fibonacci_levels`, `pivot_points`, `anchored_vwap`, `market_structure` into `price_structure` with `kind` ∈ {`fibonacci`, `pivots`, `anchored_vwap`, `market_structure`}. The four retired reads already shared a `{result, partial_reason, scanned_at}` wrapper, so this is the phase-1 shared-wrapper case, not the disjoint envelope: result is the flattened `PriceStructureResponse{kind, result, partial_reason, scanned_at}` (Data shapes) — `result` is the mode's existing geometry model (`FibonacciLevels`/`PivotPoints`/`AnchoredVwapValue`/`MarketStructure`) as a field union, `kind` added alongside; `result`/`partial_reason`/`scanned_at` stay byte-identical. Pure reads over cached bars (no chart events — these never drew, unlike `detect_levels`). `market_structure` keeps its ADR-0084 second-trend-read semantics as the `market_structure` mode.
 - **Files touched:** `api/mcp_tools/price_structure.py` (new); delete the four retired modules; `mcp_app.py`; `tests/api/test_price_structure_tool.py` (folds the four).
-- **Done when:** each `kind` returns `{kind, result}` whose `result` is its predecessor's payload field-for-field against a fixture (the envelope adds only the `kind` + `result` nesting), and the anti-lookahead property each read carried (trailing anchor, last-completed-bar pivots) still holds under a truncation test.
+- **Done when:** each `kind` returns `{kind, result, partial_reason, scanned_at}` whose `result`/`partial_reason`/`scanned_at` are its predecessor's payload field-for-field against a fixture (the fold adds only the `kind` tag), and the anti-lookahead property each read carried (trailing anchor, last-completed-bar pivots) still holds under a truncation test.
 
 ### Phase 5 — `volume_read(kind=…)`
 - **Owner skill:** dev
-- **What:** Fold the two single-symbol volume reads `volume_confirmation` and `counter_trend_volume` into `volume_read` with `kind` ∈ {`confirmation`, `counter_trend`}. Result is the discriminated envelope `VolumeReadResponse{kind, result}` (Data shapes) — `result` is the mode's existing `*Response` model unchanged. `counter_trend`'s anchoring to the canonical snapshot trend (ADR-0083) is preserved. (Lowest-value merge; drop if review prefers to leave two thin tools.)
+- **What:** Fold the two single-symbol volume reads `volume_confirmation` and `counter_trend_volume` into `volume_read` with `kind` ∈ {`confirmation`, `counter_trend`}. Both retired reads already shared a `{result, partial_reason, scanned_at}` wrapper, so — like phase 1/4 — result is the flattened `VolumeReadResponse{kind, result, partial_reason, scanned_at}` (Data shapes): `result` is the mode's existing model (`VolumeConfirmation`/`CounterTrendVolume`) as a field union, `kind` added alongside; `result`/`partial_reason`/`scanned_at` stay byte-identical. `counter_trend`'s anchoring to the canonical snapshot trend (ADR-0083) is preserved. (Lowest-value merge; drop if review prefers to leave two thin tools.)
 - **Files touched:** `api/mcp_tools/volume_read.py` (new); delete `volume_confirmation.py` + `counter_trend_volume.py`; `mcp_app.py`; `tests/api/test_volume_read_tool.py`.
-- **Done when:** `volume_read(kind="confirmation")` and `volume_read(kind="counter_trend")` return `{kind, result}` whose `result` reproduces their predecessors' payloads field-for-field (the envelope adds only the `kind` + `result` nesting), including the counter-trend split anchored to the live snapshot trend.
+- **Done when:** `volume_read(kind="confirmation")` and `volume_read(kind="counter_trend")` return `{kind, result, partial_reason, scanned_at}` whose `result`/`partial_reason`/`scanned_at` reproduce their predecessors' payloads field-for-field (the fold adds only the `kind` tag), including the counter-trend split anchored to the live snapshot trend.
 
 ### Phase 6 — Toolset ledger + apiref + skill-doc sync
 - **Owner skill:** dev
@@ -152,18 +168,26 @@ wraps a `Union`/generic *return annotation* in `{"result": …}`; only a single 
 return stays unwrapped. So the tool return is always **one object**, and the discriminator
 is a field on it:
 
-- **Shared-wrapper clusters** — the modes' results already share a wrapper, so the union
-  lives inside a *field* and the top-level object is preserved. `scan_watchlist` (shipped
-  phase 1) is the canonical case:
+- **Shared-wrapper clusters** (`scan_watchlist` ph1, `price_structure` ph4, `volume_read`
+  ph5) — the modes' results already share a wrapper, so the union lives inside a *field*
+  and the top-level object is preserved; the fold adds only the `kind`/`rank_by`
+  discriminator alongside the existing wrapper fields (no extra nesting). `scan_watchlist`
+  (shipped phase 1) is the canonical case, and ph4/ph5's four+two retired reads already
+  shared `{result, partial_reason, scanned_at}`, so they fold the same way:
 
   ```python
   # scan_watchlist result — one object, mode-union inside `matches`:
   {"rank_by": "...", "matches": [ ...mode's match model... ],
    "skipped": [...], "scanned_at": "..."}
+  # price_structure: {kind, result: Fibonacci|Pivots|AnchoredVwap|MarketStructure|None,
+  #                   partial_reason, scanned_at}   — result/partial_reason/scanned_at
+  #                   byte-identical to the retired read
+  # volume_read:     {kind, result: VolumeConfirmation|CounterTrend|None,
+  #                   partial_reason, scanned_at}
   ```
 
-- **Disjoint-shape clusters** (`forecast` ph2, `price_structure` ph4, `volume_read` ph5) —
-  the modes return different top-level models, so wrap each in a purpose-built envelope
+- **Disjoint-shape cluster** (`forecast` ph2 only) — the three retired forecast tools
+  returned *bare* models with no shared wrapper, so wrap each in a purpose-built envelope
   (a single object → not generically wrapped) with the mode's existing model byte-identical
   under `result`:
 
@@ -172,13 +196,11 @@ is a field on it:
       kind: ForecastKind
       result: MultiHorizonForecastResult | VolatilityForecast | RegimeForecast
   # → {"kind": "direction", "result": { ...MultiHorizonForecastResult... }}
-  # price_structure: {kind, result: Fibonacci|Pivots|AnchoredVwap|MarketStructure}
-  # volume_read:     {kind, result: VolumeConfirmation|CounterTrend}
   ```
 
-  The `result` union is a plain field union (like `scan_watchlist`'s `matches` list) —
-  pydantic serializes each member by type; phase 1's discriminated-serialization test is
-  the precedent. `kind` echoes the input discriminator. Per-mode params still ride the
+  In both patterns the `result` union is a plain field union (pydantic serializes each
+  member by its runtime type — phase 1's discriminated-serialization test is the
+  precedent), and `kind` echoes the input discriminator. Per-mode params still ride the
   request as nested opts blocks (params pattern above).
 
 - **`sentiment`** (ph3) returns `dict[str, Any]` today (already `{"result": …}`-wrapped by
@@ -189,7 +211,7 @@ is a field on it:
 
 - **Internal-consumer coupling (phases 1–2).** If `recommend`/the advisor reach a retired tool rather than its compute function, that rewiring is the real work. Mitigation: audit `recommend.py` and the advisor fusion in phase 1/2 before deleting any module; if a consumer can't be cleanly redirected to the underlying function, defer that cluster's merge and land the rest.
 - **Discriminated-union schema legibility.** A fat union can bury a mode. Mitigation: write per-enum-value descriptions that carry what the retired tool's one-liner did, so `ToolSearch` still surfaces the mode.
-- **FastMCP wraps union *return* types (RESOLVED 2026-07-15 — see the mid-implementation amendment).** A tool whose return annotation is a `Union`/generic is wrapped in `{"result": …}`; only a single `BaseModel` return stays unwrapped. So the disjoint-shape clusters (ph2/4/5) can't keep each mode's exact top-level shape and instead return the `{kind, result}` envelope (a single object). Not a blocker — full consolidation retained; the `result` payload stays byte-identical and the SSE events are untouched. Immune: `scan_watchlist` (shared wrapper) and `sentiment` (already `dict`).
+- **FastMCP wraps union *return* types (RESOLVED 2026-07-15 — see the mid-implementation amendment).** A tool whose return annotation is a `Union`/generic is wrapped in `{"result": …}`; only a single `BaseModel` return stays unwrapped. So the disjoint-shape cluster `forecast` (ph2) can't keep each mode's exact top-level shape and instead returns the `{kind, result}` envelope (a single object). Not a blocker — full consolidation retained; the `result` payload stays byte-identical and the SSE events are untouched. Immune (all a single object already): `scan_watchlist`/`price_structure`/`volume_read` (shared `{…, scanned_at}` wrapper, mode-union in a field + `kind` added — see the close reconciliation) and `sentiment` (already `dict`).
 - **Event-shape preservation (phase 2).** `forecast_volatility`/`forecast_regime` publish distinct SSE events the viewer renders. The merge must keep those events byte-identical — asserted, not assumed.
 - **Sequencing vs 0103/0108.** Those plans extend `sentiment`; this plan must land phase 3 before they run, or they build the unified tool themselves. The README execution order notes this.
 - **Gainers vs losers.** One directional mode or two enum values — implementer's call in phase 1; document whichever, so the agent isn't guessing.
