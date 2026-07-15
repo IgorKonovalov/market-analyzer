@@ -37,16 +37,11 @@ import { useCandleMarkerGroups } from '../hooks/useCandleMarkerGroups'
 import { useFormingBar } from '../hooks/useFormingBar'
 import { useLayersLegend } from '../hooks/useLayersLegend'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
-import { useBbandsSeries } from '../hooks/useBbandsSeries'
 import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
 import { useObvPane } from '../hooks/useObvPane'
-import { useOscillatorPanes, type OscillatorPaneEntry } from '../hooks/useOscillatorPanes'
 import { useAnchoredVwapSeries } from '../hooks/useAnchoredVwapSeries'
 import { useMarketStructureMarkers } from '../hooks/useMarketStructureMarkers'
-import { useOverlaySeries } from '../hooks/useOverlaySeries'
-import { usePriceLines } from '../hooks/usePriceLines'
 import { useStructureLevels } from '../hooks/useStructureLevels'
-import { useSupertrendSeries } from '../hooks/useSupertrendSeries'
 import type { ChartMarker } from '../lib/markers'
 import { candleGroupKeyFromLayerId } from '../lib/candleGroups'
 import { ChartLegend } from './ChartLegend'
@@ -56,7 +51,7 @@ import { ChartTooltip } from './ChartTooltip'
 import { MarketStructureBadge } from './MarketStructureBadge'
 import { buildLegendValues } from '../lib/legendValues'
 import { marketStructure } from '../lib/marketStructure'
-import { MARKET_STRUCTURE_LAYER_ID, mainSeriesKind, type OverlayEntry } from '../lib/chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID, mainSeriesKind } from '../lib/chartSeries'
 import { formatRangeLabel, monthlyTickMarkFormatter } from '../lib/chartAxis'
 import { dedupeTrendlines, patternStateKey, trendlineGroupLayerId } from '../lib/trendlines'
 import { useTrendlines } from '../hooks/useTrendlines'
@@ -199,29 +194,10 @@ export function CandlestickChart({
   const controllerRef = useRef<ChartController | null>(null)
   if (controllerRef.current === null) controllerRef.current = new ChartController()
   const controller = controllerRef.current
-  const overlaySeriesRef = useRef<Map<string, OverlayEntry>>(new Map())
-  // Supertrend overlays (Plan 0049 phase 9) draw as TWO masked line series (the
-  // up/lower band in the bullish token, the down/upper band in the bearish token)
-  // so the trailing-stop line flips colour at trend changes. Keyed by overlayKey.
-  const supertrendSeriesRef = useRef<
-    Map<string, { up: ISeriesApi<'Line'>; down: ISeriesApi<'Line'> }>
-  >(new Map())
-  // Bollinger Bands overlays (Plan 0082 phase 2) draw as THREE line series
-  // (upper/middle/lower) on the price pane, keyed by overlayKey; a legend toggle
-  // removes all three. Fed by `useBbandsSeries` below.
-  const bbandsSeriesRef = useRef<
-    Map<
-      string,
-      { upper: ISeriesApi<'Line'>; middle: ISeriesApi<'Line'>; lower: ISeriesApi<'Line'> }
-    >
-  >(new Map())
-  // Drawn price lines (Plan 0047 phase 9), keyed by `priceLineId`. price_line
-  // overlays are horizontal lines on the candlestick series, not line series.
-  const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
   // Price-structure horizontal lines (Plan 0092 phase 5): `fibonacci` grid ratios
-  // + classic `pivot_points` P/R/S, drawn as price lines on the candlestick series
-  // (a separate map from `priceLinesRef` so the two families never collide). Fed
-  // by `useStructureLevels`.
+  // + classic `pivot_points` P/R/S, drawn as price lines on the main series (a
+  // separate map from the controller's `price_line` overlays so the two families
+  // never collide). Fed by `useStructureLevels`.
   const structureLinesRef = useRef<Map<string, IPriceLine>>(new Map())
   // Anchored-VWAP overlays (Plan 0092 phase 5) draw one line series each on the
   // price pane, keyed by overlayKey; a legend toggle removes it. Fed by
@@ -231,14 +207,11 @@ export function CandlestickChart({
   // series (draws obv oscillator-pivot segments), attached/detached with the OBV pane
   // by `useObvPane`. The price-pane divergence primitive lives in the controller
   // (attached to the main series at creation); each oscillator pane's own primitive is
-  // attached by `useOscillatorPanes`. All fed by `useDivergences` below.
+  // attached by the controller's oscillator reconciler. All fed by `useDivergences`.
   const obvDivergencePrimitiveRef = useRef<DivergencePrimitive | null>(null)
   // OBV line series (Plan 0105 phase 3): lazily created/removed by `useObvPane` with
   // its own sub-pane, so it is not one of the controller's always-on series.
   const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-  // Oscillator sub-panes (Plan 0091 phase 6): the pane map `useOscillatorPanes` owns
-  // (the PaneRegistry itself lives in the controller).
-  const oscillatorPanesRef = useRef<Map<string, OscillatorPaneEntry>>(new Map())
   // Effective theme (light/dark) drives in-place chart recoloring. A change
   // flows through `applyOptions`, never a remount — the chart-creation effect's
   // deps are `[]`, so the instance persists. (Plan 0033 phase 4.)
@@ -452,7 +425,7 @@ export function CandlestickChart({
     if (controller.volumeMaSeriesRef.current !== null) kinds.push({ kind: 'volume_ma' })
     if (controller.vwapSeriesRef.current !== null) kinds.push({ kind: 'vwap' })
     if (obvSeriesRef.current !== null) kinds.push({ kind: 'obv' })
-    for (const { spec } of overlaySeriesRef.current.values()) {
+    for (const { spec } of controller.overlaySeriesRef.current.values()) {
       kinds.push({ kind: spec.kind, period: spec.period ?? null })
     }
     window.__test_chart_render__ = {
@@ -475,31 +448,24 @@ export function CandlestickChart({
     if (!container) return
     controller.mount(container, { candleType, theme: effectiveThemeRef.current })
 
-    // Capture the Map references into locals for the cleanup closure
+    // Capture the still-external Map references into locals for the cleanup closure
     // (react-hooks/exhaustive-deps: ref.current may change between effect run and
-    // cleanup invocation; the local capture is the canonical fix).
-    const overlayMap = overlaySeriesRef.current
-    const priceLineMap = priceLinesRef.current
+    // cleanup invocation; the local capture is the canonical fix). The overlay,
+    // supertrend, bbands, price-line and oscillator-pane maps now live in the
+    // controller and are cleared by `controller.dispose()`.
     const structureLineMap = structureLinesRef.current
     const anchoredVwapMap = anchoredVwapSeriesRef.current
-    const supertrendMap = supertrendSeriesRef.current
-    const bbandsMap = bbandsSeriesRef.current
-    const oscillatorPanes = oscillatorPanesRef.current
     syncTestRenderHook()
 
     return () => {
       controller.dispose()
-      // `controller.dispose()` (via chart.remove) disposes the panes + their series;
-      // drop the reconcilers' bookkeeping so they rebuild on the fresh chart.
+      // `controller.dispose()` (via chart.remove) disposes the panes + their series
+      // and clears its own reconciler bookkeeping; drop the still-external maps so
+      // their hooks rebuild on the fresh chart.
       obvSeriesRef.current = null
       obvDivergencePrimitiveRef.current = null
-      oscillatorPanes.clear()
-      overlayMap.clear()
-      priceLineMap.clear()
       structureLineMap.clear()
       anchoredVwapMap.clear()
-      supertrendMap.clear()
-      bbandsMap.clear()
       syncTestRenderHook()
     }
     // `candleType` rebuilds the chart (series type is fixed at creation); the data
@@ -518,34 +484,21 @@ export function CandlestickChart({
     syncTestRenderHook()
   }, [controller, bars, syncTestRenderHook, candleType])
 
-  // Agent-overlay line series + supertrend two-series reconcile (Plan 0007 ph4.5 /
-  // Plan 0049 ph9), split out of the bars effect (Plan 0072 phase 8). Defined
-  // AFTER the bars effect so they run after `setMainData` on each commit; each
-  // reads the theme off the ref so a flip recolours in place (restyle effect)
-  // rather than re-creating series.
-  useOverlaySeries(controller.chartRef, containerRef, overlaySeriesRef, {
-    bars,
-    overlays: effectiveOverlays,
-    hidden,
-    effectiveThemeRef,
-    rebuildToken: candleType,
-    syncTestRenderHook,
-  })
-  useSupertrendSeries(controller.chartRef, containerRef, supertrendSeriesRef, {
-    bars,
-    overlays: effectiveOverlays,
-    hidden,
-    effectiveThemeRef,
-    rebuildToken: candleType,
-  })
-  // Bollinger Bands three-line reconcile (Plan 0082 phase 2). Static colour, so no
-  // theme read — draws upper/middle/lower on the price pane.
-  useBbandsSeries(controller.chartRef, bbandsSeriesRef, {
-    bars,
-    overlays: effectiveOverlays,
-    hidden,
-    rebuildToken: candleType,
-  })
+  // Price-pane overlay reconcile — ema/sma line series + the supertrend pair + the
+  // bbands triple — folded into the controller (Plan 0098 phase 2, ADR-0092). Keyed
+  // on bars/overlays/hidden (candleType is the rebuild token), NOT the theme: a
+  // created series takes the theme's colour, but existing series recolour in place
+  // via the restyle path, so a flip must not re-run this. The theme is read live off
+  // the ref. Runs after the bars effect so the main series has data on each commit.
+  useEffect(() => {
+    controller.setOverlays({
+      bars,
+      overlays: effectiveOverlays,
+      hidden,
+      theme: effectiveThemeRef.current,
+    })
+    syncTestRenderHook()
+  }, [controller, bars, effectiveOverlays, hidden, candleType, syncTestRenderHook])
   // Ichimoku five-line + displaced filled cloud primitive (Plan 0073 phase 4).
   // Feeds the primitive attached in the creation effect; reserves right-edge space
   // so the projected cloud shows past the last candle.
@@ -586,15 +539,26 @@ export function CandlestickChart({
   )
   // Oscillator sub-panes (Plan 0091 phase 6): each active oscillator overlay draws
   // in its own real v5 pane (via the shared PaneRegistry), toggleable from the
-  // layers legend. Reconciles create / reuse / teardown by stable pane id.
-  useOscillatorPanes(controller.chartRef, controller.paneRegistryRef, oscillatorPanesRef, {
+  // layers legend — reconcile create / reuse / teardown by stable pane id, folded
+  // into the controller (Plan 0098 phase 2). Runs after `useObvPane` (which claims
+  // pane slot 0) so oscillators take the slots below it.
+  useEffect(() => {
+    controller.setOscillators({
+      bars,
+      overlays: effectiveOverlays,
+      hidden,
+      requiredKinds: requiredOscillatorKinds,
+    })
+    syncTestRenderHook()
+  }, [
+    controller,
     bars,
-    overlays: effectiveOverlays,
+    effectiveOverlays,
     hidden,
-    requiredKinds: requiredOscillatorKinds,
-    rebuildToken: candleType,
+    requiredOscillatorKinds,
+    candleType,
     syncTestRenderHook,
-  })
+  ])
   // Divergence segments (Plan 0091 phase 9, ADR-0090): feed the price/OBV/oscillator
   // divergence primitives their segments + theme colours. Runs after the pane
   // reconcile so every oscillator pane's primitive exists.
@@ -602,7 +566,7 @@ export function CandlestickChart({
     containerRef,
     controller.divergencePricePrimitiveRef,
     obvDivergencePrimitiveRef,
-    oscillatorPanesRef,
+    controller.oscillatorPanesRef,
     { divergences, effectiveTheme, rebuildToken: candleType },
   )
 
@@ -742,15 +706,12 @@ export function CandlestickChart({
   })
 
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
-  // (S/R levels the agent pushes) on the main series (Plan 0072 phase 8:
-  // `usePriceLines`).
-  usePriceLines(controller.seriesRef, containerRef, priceLinesRef, {
-    overlays: effectiveOverlays,
-    hidden,
-    effectiveTheme,
-    styleVersion,
-    rebuildToken: candleType,
-  })
+  // (S/R levels the agent pushes) on the main series — folded into the controller
+  // (Plan 0098 phase 2). Recolours in place, so this DOES key on the theme +
+  // styleVersion (candleType is the rebuild token).
+  useEffect(() => {
+    controller.setPriceLines({ overlays: effectiveOverlays, hidden, theme: effectiveTheme })
+  }, [controller, effectiveOverlays, hidden, effectiveTheme, styleVersion, candleType])
 
   // Price-structure horizontal lines (Plan 0092 phase 5): `fibonacci` grid ratios
   // + classic `pivot_points` P/R/S drawn as price lines on the main series
@@ -870,7 +831,7 @@ export function CandlestickChart({
   // `useChartTooltip` owns the state and returns it).
   const tooltip = useChartTooltip(
     controller.chartRef,
-    overlaySeriesRef,
+    controller.overlaySeriesRef,
     controller.spanPrimitiveRef,
     controller.trendlinePrimitiveRef,
     controller.divergencePricePrimitiveRef,
@@ -896,8 +857,8 @@ export function CandlestickChart({
       volumeMaSeriesRef: controller.volumeMaSeriesRef,
       vwapSeriesRef: controller.vwapSeriesRef,
       obvSeriesRef,
-      overlaySeriesRef,
-      supertrendSeriesRef,
+      overlaySeriesRef: controller.overlaySeriesRef,
+      supertrendSeriesRef: controller.supertrendSeriesRef,
     },
     { effectiveTheme, styleVersion, candleType },
   )

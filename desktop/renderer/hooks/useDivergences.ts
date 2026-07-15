@@ -29,7 +29,7 @@ import {
   fallbackDivergenceColors,
   readDivergenceColors,
 } from '../lib/divergences'
-import type { OscillatorPaneEntry } from './useOscillatorPanes'
+import type { OscillatorPaneEntry } from '../lib/chart/oscillatorPanes'
 import type { Divergence } from '../types/events'
 
 export interface UseDivergencesParams {

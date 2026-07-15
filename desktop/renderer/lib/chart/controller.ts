@@ -26,6 +26,7 @@ import {
   VOLUME_SCALE_MARGINS,
   chartColorsFrom,
   type MainSeries,
+  type OverlayEntry,
 } from '../chartSeries'
 import { PaneRegistry } from '../panes'
 import type { EffectiveTheme } from '../theme'
@@ -34,8 +35,15 @@ import type { DrawingPrimitive } from '../drawings'
 import type { IchimokuPrimitive } from '../ichimoku'
 import type { PatternSpanPrimitive } from '../spans'
 import type { TrendlinePrimitive } from '../trendlines'
+import type { OverlayKind, OverlaySpec } from '../../types/events'
+import {
+  OverlayReconciler,
+  type OverlayReconcileParams,
+  type PriceLineReconcileParams,
+} from './overlayReconciler'
+import { OscillatorPaneReconciler, type OscillatorPaneEntry } from './oscillatorPanes'
 import { PrimitiveHub } from './primitiveHub'
-import type { MutRef } from './ref'
+import type { Holder, MutRef } from './ref'
 import { SeriesRegistry } from './seriesRegistry'
 
 export interface MountOptions {
@@ -46,10 +54,13 @@ export interface MountOptions {
 export class ChartController {
   private readonly seriesRegistry = new SeriesRegistry()
   private readonly primitives = new PrimitiveHub()
+  private readonly overlays = new OverlayReconciler()
+  private readonly oscillators = new OscillatorPaneReconciler()
 
   readonly chartRef: MutRef<IChartApi> = { current: null }
   readonly paneRegistryRef: MutRef<PaneRegistry> = { current: null }
 
+  private containerEl: HTMLDivElement | null = null
   private candleType: CandleSeriesType = 'candles'
   private prevBars: Bar[] | null = null
   private prevFirstTs: number | null = null
@@ -85,6 +96,20 @@ export class ChartController {
   get drawingPrimitiveRef(): MutRef<DrawingPrimitive> {
     return this.primitives.drawingRef
   }
+  /** ema/sma overlay series map — read by the test hook + restyle path. */
+  get overlaySeriesRef(): Holder<Map<string, OverlayEntry>> {
+    return this.overlays.overlaySeriesRef
+  }
+  /** Supertrend up/down series map — read by the restyle path. */
+  get supertrendSeriesRef(): Holder<
+    Map<string, { up: ISeriesApi<'Line'>; down: ISeriesApi<'Line'> }>
+  > {
+    return this.overlays.supertrendSeriesRef
+  }
+  /** Oscillator sub-panes map — read by `useDivergences` (fed per-pane). */
+  get oscillatorPanesRef(): Holder<Map<string, OscillatorPaneEntry>> {
+    return this.oscillators.panesRef
+  }
   /** Bars currently set on the main series (0 when unmounted), for the test hook. */
   get barCount(): number {
     return this.seriesRegistry.mainRef.current !== null ? this.barCountValue : 0
@@ -98,6 +123,7 @@ export class ChartController {
    * variables. */
   mount(container: HTMLDivElement, opts: MountOptions): void {
     this.candleType = opts.candleType
+    this.containerEl = container
     const style = resolveChartStyle(container, opts.theme)
     const colors = chartColorsFrom(style)
 
@@ -167,6 +193,38 @@ export class ChartController {
     this.prevFirstTs = newFirstMs
   }
 
+  /** Reconcile the price-pane overlay line-series families (ema/sma, supertrend,
+   * bbands). No-op until mounted. The caller keys its effect on bars/overlays/hidden
+   * (not the theme) — a created series takes its colour from the theme, but existing
+   * series recolour in place via `restyle`. */
+  setOverlays(params: OverlayReconcileParams): void {
+    const chart = this.chartRef.current
+    if (chart === null) return
+    this.overlays.reconcile(chart, this.containerEl, params)
+  }
+
+  /** Reconcile the horizontal `price_line` overlays on the main series. Recolours in
+   * place, so the caller keys its effect on the theme + styleVersion. */
+  setPriceLines(params: PriceLineReconcileParams): void {
+    const series = this.seriesRegistry.mainRef.current
+    if (series === null) return
+    this.overlays.reconcilePriceLines(series, this.containerEl, params)
+  }
+
+  /** Reconcile the oscillator sub-panes against the desired + divergence-required
+   * oscillator set. No-op until the chart + pane registry exist. */
+  setOscillators(params: {
+    bars: Bar[]
+    overlays: ReadonlyArray<OverlaySpec> | undefined
+    hidden: ReadonlySet<string>
+    requiredKinds: ReadonlySet<OverlayKind>
+  }): void {
+    const chart = this.chartRef.current
+    const registry = this.paneRegistryRef.current
+    if (chart === null || registry === null) return
+    this.oscillators.reconcile(chart, registry, params)
+  }
+
   /** Dispose the chart (which disposes its series, panes and primitives) and drop
    * all bookkeeping. Symmetric with `mount` — a mount → dispose → mount round-trip
    * leaves no stranded primitive or leaked chart. */
@@ -174,8 +232,11 @@ export class ChartController {
     this.chartRef.current?.remove()
     this.chartRef.current = null
     this.paneRegistryRef.current = null
+    this.containerEl = null
     this.seriesRegistry.clear()
     this.primitives.clear()
+    this.overlays.clear()
+    this.oscillators.clear()
     this.prevBars = null
     this.prevFirstTs = null
     this.barCountValue = 0

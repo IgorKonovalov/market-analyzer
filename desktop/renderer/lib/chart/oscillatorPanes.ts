@@ -1,22 +1,19 @@
 /**
- * Oscillator sub-pane reconcile (Plan 0091 phase 6) — the reusable wrapper the
- * plan calls for, built on the v5 panes API via `lib/panes.ts` (`PaneRegistry`).
+ * OscillatorPaneReconciler — each active oscillator overlay (stochastic / stoch_rsi
+ * / cci / williams_r / roc / mfi / cmf / ad_line / rsi / macd) draws in its OWN real
+ * v5 pane below the price pane, via the shared `PaneRegistry`. Reconciles the desired
+ * oscillator set against the live panes: create-or-reuse a pane per kind by stable
+ * id, set its height, push the mirrored series data, tear the pane down when the
+ * oscillator is removed or toggled off. Moved verbatim out of `useOscillatorPanes`
+ * (Plan 0098 phase 2, ADR-0092) — no behaviour change. Pure imperative wiring; no
+ * React.
  *
- * Each active oscillator overlay (stochastic / stoch_rsi / cci / williams_r / roc)
- * draws in its OWN real pane below the price pane, independently auto-scaled with a
- * shared time axis and one crosshair — not a `scaleMargins` band. This hook
- * reconciles the desired oscillator set against the live panes: create-or-reuse a
- * pane per oscillator by stable id, set its height, push the mirrored series data
- * (`lib/oscillators`), and tear the pane down when the oscillator is removed or its
- * legend row is toggled off (the wrapper's documented contract — toggle-off removes
- * the pane, freeing its vertical space; toggle-on re-adds it).
- *
- * MUST be called after the chart-creation effect so the chart + `PaneRegistry` refs
- * exist (the same registry the OBV pane uses, so OBV stays pane 1 and oscillators
- * take panes 2..N). `rebuildToken` (candleType) re-runs it after a chart rebuild.
+ * The reconciler shares the controller's `PaneRegistry` (the same registry the OBV
+ * pane uses, so OBV stays pane 1 and oscillators take panes 2..N). Each pane's
+ * primary series bears a `DivergencePrimitive` (fed by `useDivergences`) and a pane
+ * name label. `requiredKinds` ensures a pane for any oscillator a divergence needs,
+ * even when the user hasn't added — or has toggled off — that overlay.
  */
-import { useEffect } from 'react'
-import type { RefObject } from 'react'
 import { LineSeries } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, LineData, LineWidth } from 'lightweight-charts'
 
@@ -28,14 +25,15 @@ import {
   computeStochastic,
   computeStochasticRsi,
   computeWilliamsR,
-} from '../lib/oscillators'
-import { isOscillatorOverlay, overlayColorFor, overlayLayerId } from '../lib/overlays'
-import { computeAccumulationDistribution, computeChaikinMoneyFlow, computeMfi } from '../lib/volume'
-import { DivergencePrimitive, fallbackDivergenceColors } from '../lib/divergences'
-import { PaneLabelPrimitive, paneLabelFor } from '../lib/paneLabel'
-import type { PaneRegistry } from '../lib/panes'
-import type { Bar } from '../types/sidecar/bar'
-import type { OverlayKind, OverlaySpec } from '../types/events'
+} from '../oscillators'
+import { isOscillatorOverlay, overlayColorFor, overlayLayerId } from '../overlays'
+import { computeAccumulationDistribution, computeChaikinMoneyFlow, computeMfi } from '../volume'
+import { DivergencePrimitive, fallbackDivergenceColors } from '../divergences'
+import { PaneLabelPrimitive, paneLabelFor } from '../paneLabel'
+import type { PaneRegistry } from '../panes'
+import type { Bar } from '../../types/sidecar/bar'
+import type { OverlayKind, OverlaySpec } from '../../types/events'
+import type { Holder } from './ref'
 
 /** Height (px) of each oscillator sub-pane — matches the OBV pane so the stack of
  * sub-panes reads as one consistent band system below the price pane. */
@@ -119,42 +117,28 @@ function createOscillatorSeries(
   return series
 }
 
-export interface UseOscillatorPanesParams {
+export interface OscillatorReconcileParams {
   bars: Bar[]
   overlays: ReadonlyArray<OverlaySpec> | undefined
   hidden: ReadonlySet<string>
-  /** Oscillator kinds a divergence needs a pane for (Plan 0091 phase 9): these
-   * panes are ensured (created if absent) even when the user has not added — or has
-   * toggled off — that oscillator overlay, so the divergence's oscillator segment
-   * always has a pane to draw on. `obv` divergences are NOT included here — the
-   * OBV pane is reconciled by `useObvPane`, which applies the same required-pane
-   * rule (Plan 0105 phase 3). */
+  /** Oscillator kinds a divergence needs a pane for (Plan 0091 phase 9): ensured
+   * (created if absent) even when the user has not added — or has toggled off — that
+   * oscillator overlay. `obv` divergences are NOT included — the OBV pane is
+   * reconciled by `useObvPane`, which applies the same rule (Plan 0105 phase 3). */
   requiredKinds: ReadonlySet<OverlayKind>
-  rebuildToken: unknown
-  syncTestRenderHook: () => void
 }
 
-export function useOscillatorPanes(
-  chartRef: RefObject<IChartApi | null>,
-  paneRegistryRef: RefObject<PaneRegistry | null>,
-  oscillatorPanesRef: RefObject<Map<string, OscillatorPaneEntry>>,
-  {
-    bars,
-    overlays,
-    hidden,
-    requiredKinds,
-    rebuildToken,
-    syncTestRenderHook,
-  }: UseOscillatorPanesParams,
-): void {
-  useEffect(() => {
-    const chart = chartRef.current
-    const registry = paneRegistryRef.current
-    const panes = oscillatorPanesRef.current
-    if (!chart || !registry || !panes) return
+export class OscillatorPaneReconciler {
+  readonly panesRef: Holder<Map<string, OscillatorPaneEntry>> = { current: new Map() }
 
-    // The oscillators the chart should show now: one pane per kind, minus any whose
-    // legend row is toggled off (removed below, re-added when re-checked).
+  reconcile(
+    chart: IChartApi,
+    registry: PaneRegistry,
+    { bars, overlays, hidden, requiredKinds }: OscillatorReconcileParams,
+  ): void {
+    const panes = this.panesRef.current
+
+    // The oscillators to show now: one pane per kind, minus any toggled off.
     const desired = new Map<string, OverlaySpec>()
     for (const spec of overlays ?? []) {
       if (!isOscillatorOverlay(spec.kind)) continue
@@ -162,8 +146,8 @@ export function useOscillatorPanes(
       desired.set(oscillatorPaneId(spec.kind), spec)
     }
     // Ensure a pane for every oscillator a divergence needs (Plan 0091 phase 9),
-    // even if the user hasn't added it or has toggled it off — the oscillator
-    // segment must have a pane to draw on. A synthetic `{ kind }` spec suffices.
+    // even if the user hasn't added it or has toggled it off. A synthetic spec
+    // suffices.
     for (const kind of requiredKinds) {
       if (isOscillatorOverlay(kind)) desired.set(oscillatorPaneId(kind), { kind })
     }
@@ -184,16 +168,15 @@ export function useOscillatorPanes(
         const paneIndex = registry.ensure(paneId)
         const series = createOscillatorSeries(chart, spec.kind, overlayColorFor(spec), paneIndex)
         registry.pane(paneId)?.setHeight(OSCILLATOR_PANE_HEIGHT)
-        // Attach the divergence primitive to the pane's primary series so its
-        // lifecycle is the series' (disposed on pane removal); `useDivergences`
-        // feeds it. Draws nothing until fed.
+        // The divergence primitive rides the pane's primary series so its lifecycle
+        // is the series' (disposed on pane removal); `useDivergences` feeds it.
         const divergencePrimitive = new DivergencePrimitive(
           'oscillator',
           fallbackDivergenceColors(),
         )
         series[0].attachPrimitive(divergencePrimitive)
-        // The pane's name label (Plan 0105 phase 4) — rides the primary series
-        // so it survives pan/zoom and dies with the pane.
+        // The pane's name label (Plan 0105 phase 4) — rides the primary series so it
+        // survives pan/zoom and dies with the pane.
         series[0].attachPrimitive(new PaneLabelPrimitive(paneLabelFor(spec.kind)))
         entry = { kind: spec.kind, paneId, series, divergencePrimitive }
         panes.set(paneId, entry)
@@ -201,17 +184,10 @@ export function useOscillatorPanes(
       const lines = computeOscillatorLines(spec.kind, bars)
       entry.series.forEach((s, i) => s.setData(lines[i] ?? []))
     }
+  }
 
-    syncTestRenderHook()
-  }, [
-    chartRef,
-    paneRegistryRef,
-    oscillatorPanesRef,
-    bars,
-    overlays,
-    hidden,
-    requiredKinds,
-    rebuildToken,
-    syncTestRenderHook,
-  ])
+  /** Drop bookkeeping after `chart.remove()` disposed the panes + their series. */
+  clear(): void {
+    this.panesRef.current.clear()
+  }
 }
