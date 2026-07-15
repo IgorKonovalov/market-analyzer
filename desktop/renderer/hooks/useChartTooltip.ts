@@ -23,12 +23,14 @@ import type { ChartMarker } from '../lib/markers'
 import { PatternSpanPrimitive, markerHighlightSpan } from '../lib/spans'
 import { TrendlinePrimitive } from '../lib/trendlines'
 import { DivergencePrimitive } from '../lib/divergences'
+import type { DrawingPrimitive } from '../lib/drawings'
 import {
   type HoverableLevel,
   type OverlayReading,
   type StructureMarkerPoint,
   type TooltipContent,
   divergenceTooltipText,
+  drawingAdvisoryTooltip,
   levelTooltipText,
   nearestLevelAtY,
   overlayLabel,
@@ -65,6 +67,7 @@ export function useChartTooltip(
   spanPrimitiveRef: RefObject<PatternSpanPrimitive | null>,
   trendlinePrimitiveRef: RefObject<TrendlinePrimitive | null>,
   divergencePricePrimitiveRef: RefObject<DivergencePrimitive | null>,
+  drawingPrimitiveRef: RefObject<DrawingPrimitive | null>,
   {
     drawnMarkers,
     structureLevels,
@@ -138,6 +141,13 @@ export function useChartTooltip(
             })
           : null
       const levels = hoveredLevel ? [levelTooltipText(hoveredLevel)] : []
+      // Agent-position advisory under the cursor (Plan 0104 phase 4): the drawing
+      // primitive returns the hovered spec; an agent position with a rationale
+      // yields the `Advisory — <rationale>` line (ADR-0029/0099).
+      const hoveredDrawing =
+        drawingPrimitiveRef.current?.hoveredDrawingSpec(param.point.x, param.point.y) ?? null
+      const advisoryLine = hoveredDrawing ? drawingAdvisoryTooltip(hoveredDrawing, locale) : null
+      const advisory = advisoryLine !== null ? [advisoryLine] : []
       // Market-structure markers on the hovered bar (Plan 0105 phase 7): the
       // same time-keyed match candlestick markers use, glossary-backed content.
       const structures =
@@ -155,13 +165,23 @@ export function useChartTooltip(
         trendlines.length === 0 &&
         divergences.length === 0 &&
         levels.length === 0 &&
-        structures.length === 0
+        structures.length === 0 &&
+        advisory.length === 0
       ) {
         setTooltip(null)
         return
       }
       setTooltip({
-        content: { markers, overlays, trendlines, divergences, levels, structures, markerMeaning },
+        content: {
+          markers,
+          overlays,
+          trendlines,
+          divergences,
+          levels,
+          structures,
+          advisory,
+          markerMeaning,
+        },
         x: param.point.x,
         y: param.point.y,
       })
@@ -175,6 +195,7 @@ export function useChartTooltip(
     spanPrimitiveRef,
     trendlinePrimitiveRef,
     divergencePricePrimitiveRef,
+    drawingPrimitiveRef,
     drawnMarkers,
     structureLevels,
     seriesRef,

@@ -8,8 +8,13 @@ import type { Divergence } from '../types/events'
 import { PatternSpanPrimitive } from '../lib/spans'
 import { TrendlinePrimitive } from '../lib/trendlines'
 import { DivergencePrimitive } from '../lib/divergences'
+import { DrawingPrimitive } from '../lib/drawings'
+import type { DrawingSpec } from '../types/events'
 
-function harness(hitDivergence: DivergencePrimitive['hitTestDivergence'] = () => null) {
+function harness(
+  hitDivergence: DivergencePrimitive['hitTestDivergence'] = () => null,
+  hoveredDrawing: DrawingPrimitive['hoveredDrawingSpec'] = () => null,
+) {
   let handler: ((p: MouseEventParams) => void) | null = null
   const chart = {
     subscribeCrosshairMove: (h: (p: MouseEventParams) => void) => {
@@ -21,6 +26,7 @@ function harness(hitDivergence: DivergencePrimitive['hitTestDivergence'] = () =>
   const span = { setHighlight } as unknown as PatternSpanPrimitive
   const trend = { hitTestTrendline: () => null } as unknown as TrendlinePrimitive
   const div = { hitTestDivergence: hitDivergence } as unknown as DivergencePrimitive
+  const draw = { hoveredDrawingSpec: hoveredDrawing } as unknown as DrawingPrimitive
   const overlayRef = { current: new Map<string, OverlayEntry>() }
   return {
     chartRef: { current: chart },
@@ -28,6 +34,7 @@ function harness(hitDivergence: DivergencePrimitive['hitTestDivergence'] = () =>
     spanRef: { current: span },
     trendRef: { current: trend },
     divRef: { current: div },
+    drawRef: { current: draw },
     fire: (p: MouseEventParams) => act(() => handler?.(p)),
     setHighlight,
     unsub: chart.unsubscribeCrosshairMove as jest.Mock,
@@ -45,7 +52,7 @@ describe('useChartTooltip', () => {
   it('reports the hovered marker pattern name and clears on pointer-leave', () => {
     const h = harness()
     const { result } = renderHook(() =>
-      useChartTooltip(h.chartRef, h.overlayRef, h.spanRef, h.trendRef, h.divRef, {
+      useChartTooltip(h.chartRef, h.overlayRef, h.spanRef, h.trendRef, h.divRef, h.drawRef, {
         drawnMarkers: [HAMMER],
         rebuildToken: 'candles',
       }),
@@ -69,7 +76,7 @@ describe('useChartTooltip', () => {
   it('unsubscribes the crosshair handler on unmount', () => {
     const h = harness()
     const { unmount } = renderHook(() =>
-      useChartTooltip(h.chartRef, h.overlayRef, h.spanRef, h.trendRef, h.divRef, {
+      useChartTooltip(h.chartRef, h.overlayRef, h.spanRef, h.trendRef, h.divRef, h.drawRef, {
         drawnMarkers: [],
         rebuildToken: 'candles',
       }),
@@ -95,7 +102,7 @@ describe('useChartTooltip', () => {
     }
     const h = harness(() => divergence)
     const { result } = renderHook(() =>
-      useChartTooltip(h.chartRef, h.overlayRef, h.spanRef, h.trendRef, h.divRef, {
+      useChartTooltip(h.chartRef, h.overlayRef, h.spanRef, h.trendRef, h.divRef, h.drawRef, {
         drawnMarkers: [],
         rebuildToken: 'candles',
       }),
@@ -104,5 +111,29 @@ describe('useChartTooltip', () => {
     expect(result.current?.content.divergences?.[0]).toContain('Regular bearish divergence')
     // The glossary what-it-means line rides along after the em dash.
     expect(result.current?.content.divergences?.[0]).toContain('losing momentum')
+  })
+
+  it("surfaces a hovered agent position's advisory rationale (Plan 0104 phase 4)", () => {
+    const agentPos: DrawingSpec = {
+      kind: 'long_position',
+      points: [{ ts: '2026-05-01T00:00:00Z', price: 100 }],
+      stop: 95,
+      target: 115,
+      rationale: 'reclaimed the range low',
+      provenance: 'agent',
+      id: 'adv-1',
+    }
+    const h = harness(
+      () => null,
+      () => agentPos,
+    )
+    const { result } = renderHook(() =>
+      useChartTooltip(h.chartRef, h.overlayRef, h.spanRef, h.trendRef, h.divRef, h.drawRef, {
+        drawnMarkers: [],
+        rebuildToken: 'candles',
+      }),
+    )
+    h.fire({ point: { x: 40, y: 20 }, seriesData: new Map() } as unknown as MouseEventParams)
+    expect(result.current?.content.advisory?.[0]).toBe('Advisory — reclaimed the range low')
   })
 })

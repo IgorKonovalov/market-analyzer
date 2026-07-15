@@ -9,7 +9,11 @@
  * and the gesture discarded — UI gestures are best-effort, never blocking.
  */
 import { sidecarFetch } from './client'
-import type { BarClickedPayloadV1, RangeSelectedPayloadV1 } from '../types/ui-events'
+import type {
+  BarClickedPayloadV1,
+  DrawingChangedPayloadV1,
+  RangeSelectedPayloadV1,
+} from '../types/ui-events'
 
 async function postUiEvent(type: string, version: number, payload: unknown): Promise<void> {
   let res: Response
@@ -34,4 +38,11 @@ export function postRangeSelected(payload: RangeSelectedPayloadV1): Promise<void
 
 export function postBarClicked(payload: BarClickedPayloadV1): Promise<void> {
   return postUiEvent('ui.bar_clicked', 1, payload)
+}
+
+/** Nudge an attentive agent that the user's drawing set changed (Plan 0104,
+ * ADR-0099). Best-effort like every other gesture — a failure is logged and
+ * dropped; `get_chart_drawings` is the reliable read of the current set. */
+export function postDrawingChanged(payload: DrawingChangedPayloadV1): Promise<void> {
+  return postUiEvent('ui.drawing_changed', 1, payload)
 }

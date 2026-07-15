@@ -38,6 +38,7 @@ import {
   updateUserDrawing,
 } from '../lib/userDrawings'
 import { applyPositionHandleDrag, defaultPositionLevels, isPositionKind } from '../lib/positions'
+import { notifyDrawingMutation, syncUserDrawings } from '../lib/drawingsSync'
 import { useDrawingHitTest } from './useDrawingHitTest'
 
 /** A pointer movement under this many px (from pointerdown to pointerup) counts
@@ -122,6 +123,12 @@ export function useDrawingTools(
     setHiddenAgentIds(new Set())
     setSelectedId(null)
   }, [symbol])
+  // On chart load / symbol switch, mirror this symbol's current user set to the
+  // sidecar so the agent can read it even without an intervening edit (Plan 0104
+  // phase 4, ADR-0099). Fire-and-forget — the store is untouched on failure.
+  useEffect(() => {
+    if (symbol !== undefined) void syncUserDrawings(symbol)
+  }, [symbol])
   const { snapPixel } = useDrawingHitTest(chartRef, seriesRef, bars)
 
   const storeSnapshot = useSyncExternalStore(
@@ -170,15 +177,17 @@ export function useDrawingTools(
 
   const deleteSelected = useCallback((): void => {
     if (symbol === undefined || selectedId === null) return
-    if (provenanceOf(selectedId) === 'agent') {
+    const spec = drawings.find((d) => d.id === selectedId)
+    if (spec?.provenance === 'agent') {
       // Agent drawings are hide-only (ADR-0091): suppress locally, never remove.
       const id = selectedId
       setHiddenAgentIds((prev) => new Set(prev).add(id))
     } else {
       removeUserDrawing(symbol, selectedId)
+      if (spec !== undefined) notifyDrawingMutation(symbol, 'deleted', spec.id, spec.kind)
     }
     setSelectedId(null)
-  }, [symbol, selectedId, provenanceOf])
+  }, [symbol, selectedId, drawings])
 
   // Feed the primitive the committed drawings + selection. Re-runs after a chart
   // rebuild (fresh primitive) via `rebuildToken`.
@@ -233,6 +242,7 @@ export function useDrawingTools(
         spec.target = target
       }
       addUserDrawing(symbol, spec)
+      notifyDrawingMutation(symbol, 'created', spec.id, spec.kind)
       pendingAnchorRef.current = null
       primitive.setPreview(null)
       setSelectedId(spec.id)
@@ -318,6 +328,7 @@ export function useDrawingTools(
             ? applyPositionHandleDrag(spec, drag.handleIndex, anchor)
             : { ...spec, points: spec.points.map((p, i) => (i === drag.handleIndex ? anchor : p)) }
           updateUserDrawing(symbol, updated)
+          notifyDrawingMutation(symbol, 'modified', updated.id, updated.kind)
         } else {
           primitive.setDrawings(drawings) // couldn't snap → revert the working set
         }
@@ -348,10 +359,12 @@ export function useDrawingTools(
         selectedId !== null
       ) {
         const id = selectedId
-        if (drawings.find((d) => d.id === id)?.provenance === 'agent') {
+        const spec = drawings.find((d) => d.id === id)
+        if (spec?.provenance === 'agent') {
           setHiddenAgentIds((prev) => new Set(prev).add(id)) // hide-only (ADR-0091)
         } else {
           removeUserDrawing(symbol, id)
+          if (spec !== undefined) notifyDrawingMutation(symbol, 'deleted', spec.id, spec.kind)
         }
         setSelectedId(null)
       }

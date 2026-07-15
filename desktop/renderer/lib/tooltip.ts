@@ -11,13 +11,20 @@
  */
 import type { UTCTimestamp } from 'lightweight-charts'
 
-import type { Divergence, MarkerKind, OverlaySpec, TrendlineSpec } from '../types/events'
+import type {
+  Divergence,
+  DrawingSpec,
+  MarkerKind,
+  OverlaySpec,
+  TrendlineSpec,
+} from '../types/events'
 import type { ChartMarker } from './markers'
 import { candlePatternDisplayName } from './candleGroups'
 import { patternDisplayName, trendlineStateLabel } from './trendlines'
 import { divergenceGlossaryKey, divergenceLabel } from './divergences'
+import { isPositionKind } from './positions'
 import { localize, term } from '../glossary/types'
-import type { Locale } from './i18n'
+import { t, type Locale } from './i18n'
 
 export interface OverlayReading {
   label: string
@@ -50,6 +57,10 @@ export interface TooltipContent {
    * + glossary meaning (Plan 0105 phase 7), the same time-keyed match the
    * candlestick markers use. Absent when the hovered bar carries none. */
   structures?: string[]
+  /** Hovered agent-position advisory read-out — the `Advisory — <rationale>` line
+   * for a hovered agent-placed position box (Plan 0104 phase 4 / ADR-0029/0099).
+   * Absent when the cursor isn't over one, or it carries no rationale. */
+  advisory?: string[]
 }
 
 /** A DRAWN market-structure marker exposed for the time-keyed hover match
@@ -135,6 +146,21 @@ export function divergenceTooltipText(divergence: Divergence, locale: Locale = '
   const name = record ? localize(record.term, locale) : divergenceLabel(divergence.kind)
   const meaning = record ? localize(record.whatItMeans, locale) : ''
   return meaning ? `${name} — ${meaning}` : name
+}
+
+/**
+ * Advisory read-out for a hovered drawing (Plan 0104 phase 4): the `Advisory —
+ * <rationale>` line for an AGENT-placed position box that carries a rationale
+ * (ADR-0029/0099). Returns `null` for a user drawing, a non-position kind, or a
+ * position with no rationale — those show no advisory line. `locale` is accepted
+ * for signature symmetry with the other tooltip builders; `t()` resolves the
+ * active locale (the same one `useLocale` drives the re-render on).
+ */
+export function drawingAdvisoryTooltip(spec: DrawingSpec, _locale: Locale = 'en'): string | null {
+  if (spec.provenance !== 'agent' || !isPositionKind(spec.kind)) return null
+  const rationale = spec.rationale?.trim()
+  if (!rationale) return null
+  return t('chart.draw.advisoryTooltip', { rationale })
 }
 
 /** Default gap (px) between the crosshair and the tooltip box. */

@@ -33,3 +33,17 @@ export interface BarClickedPayloadV1 {
   low: number
   close: number
 }
+
+/** The kind of change a `ui.drawing_changed` event reports. */
+export type DrawingChange = 'created' | 'modified' | 'deleted'
+
+/** `ui.drawing_changed v1` (Plan 0104, ADR-0099) — the user created, modified, or
+ * deleted a drawing. Carries only the change identity; the agent reads the current
+ * geometry via `get_chart_drawings`. `kind` is the drawing kind as a bare string
+ * (the transport stays decoupled from the DrawingKind union). */
+export interface DrawingChangedPayloadV1 {
+  symbol: string
+  change: DrawingChange
+  drawing_id: string
+  kind: string
+}

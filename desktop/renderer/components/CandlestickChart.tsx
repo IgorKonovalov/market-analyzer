@@ -1066,6 +1066,7 @@ export function CandlestickChart({
     spanPrimitiveRef,
     trendlinePrimitiveRef,
     divergencePricePrimitiveRef,
+    drawingPrimitiveRef,
     {
       drawnMarkers,
       structureLevels,

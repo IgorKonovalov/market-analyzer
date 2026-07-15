@@ -296,6 +296,15 @@ describe('computeDrawingGeometry — Plan 0104 position & range kinds', () => {
     const offScreen: DrawingSpec = { ...longSpec, stop: -5 } // priceToY(<0) → null
     expect(computeDrawingGeometry(offScreen, timeToX, priceToY, 400, 300)).toBeNull()
   })
+
+  it('an agent-placed position carries the advisory label on its entry leg (ADR-0029)', () => {
+    const agentPos: DrawingSpec = { ...longSpec, provenance: 'agent', id: 'adv' }
+    const g = computeDrawingGeometry(agentPos, timeToX, priceToY, 400, 300)
+    expect(g!.segments[0].label).toBe('Advisory · R:R 2.00')
+    // A user position shows the bare R:R — no advisory prefix.
+    const userG = computeDrawingGeometry(longSpec, timeToX, priceToY, 400, 300)
+    expect(userG!.segments[0].label).toBe('R:R 2.00')
+  })
 })
 
 /** Attach the primitive to a fake chart whose time/price scales use our stubs, so

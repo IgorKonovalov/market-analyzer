@@ -5,9 +5,10 @@
 import type { UTCTimestamp } from 'lightweight-charts'
 
 import type { Annotation } from '../types/sidecar/annotation'
-import type { OverlaySpec, TrendlineSpec } from '../types/events'
+import type { DrawingSpec, OverlaySpec, TrendlineSpec } from '../types/events'
 import { localize, term } from '../glossary/types'
 import {
+  drawingAdvisoryTooltip,
   levelTooltipText,
   nearestLevelAtY,
   overlayLabel,
@@ -277,5 +278,43 @@ describe('structureTooltipText', () => {
 
   it('degrades to the bare label when the glossary has no entry', () => {
     expect(structureTooltipText('XX')).toBe('XX')
+  })
+})
+
+describe('drawingAdvisoryTooltip (Plan 0104 phase 4, ADR-0029/0099)', () => {
+  const agentPos = (rationale?: string): DrawingSpec => ({
+    kind: 'short_position',
+    points: [{ ts: '2026-05-01T00:00:00Z', price: 100 }],
+    stop: 110,
+    target: 90,
+    rationale,
+    provenance: 'agent',
+    id: 'a1',
+  })
+
+  it('returns the Advisory line for an agent position carrying a rationale', () => {
+    expect(drawingAdvisoryTooltip(agentPos('lost the range low'))).toBe(
+      'Advisory — lost the range low',
+    )
+  })
+
+  it('is null for an agent position with no (or blank) rationale', () => {
+    expect(drawingAdvisoryTooltip(agentPos(undefined))).toBeNull()
+    expect(drawingAdvisoryTooltip(agentPos('   '))).toBeNull()
+  })
+
+  it('is null for a USER position (a private note, never advisory)', () => {
+    expect(drawingAdvisoryTooltip({ ...agentPos('mine'), provenance: 'user' })).toBeNull()
+  })
+
+  it('is null for a non-position agent drawing', () => {
+    const line: DrawingSpec = {
+      kind: 'hline',
+      points: [{ ts: '2026-05-01T00:00:00Z', price: 100 }],
+      rationale: 'resistance',
+      provenance: 'agent',
+      id: 'l1',
+    }
+    expect(drawingAdvisoryTooltip(line)).toBeNull()
   })
 })

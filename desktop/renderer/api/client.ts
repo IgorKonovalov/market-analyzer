@@ -25,6 +25,7 @@ import type { CandlestickData, UTCTimestamp } from 'lightweight-charts'
 
 import { t } from '../lib/i18n'
 import type { SidecarPort } from '../../shared/schemas/sidecar'
+import type { DrawingSpec } from '../types/events'
 import type { Annotation } from '../types/sidecar/annotation'
 import type { Bar } from '../types/sidecar/bar'
 import type { GetTrackRecordResponse } from '../types/sidecar/get-track-record-response'
@@ -372,6 +373,24 @@ export const api = {
    */
   getWatches(): Promise<WatchOut[]> {
     return callJson<WatchOut[]>('/watches')
+  },
+  /**
+   * Mirror the user's full drawing set for `symbol` to the sidecar (Plan 0104,
+   * ADR-0099) — a declarative replace via renderer-bearer-gated
+   * `PUT /user_drawings/{symbol}` so the agent can read it with
+   * `get_chart_drawings`. The renderer stays the source of truth; this is a
+   * read-only shadow. Every spec must carry `provenance: "user"` (the sidecar
+   * 422s otherwise). Callers treat it as fire-and-forget (see `drawingsSync`).
+   */
+  putUserDrawings(
+    symbol: string,
+    drawings: DrawingSpec[],
+  ): Promise<{ symbol: string; drawing_count: number; synced_at: string | null }> {
+    return callJson(`/user_drawings/${encodeURIComponent(symbol)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(drawings),
+    })
   },
   /** Enable/disable one watch — the single viewer-owned mutation (Plan 0060). */
   setWatchEnabled(watchId: number, enabled: boolean): Promise<WatchOut> {

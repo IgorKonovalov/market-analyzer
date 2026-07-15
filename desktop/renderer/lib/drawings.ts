@@ -3,17 +3,18 @@
  * strokes `DrawingSpec` geometry anchored at `(time, price)` (Plan 0097, ADR-0091).
  *
  * Modelled on `trendlines.ts` (the pattern-trendline primitive) but for the
- * editable, user-authored drawing layer: it renders the six drawing kinds, marks
- * the SELECTED drawing with endpoint handles, and hit-tests drawings + handles so
- * the edit engine (`useDrawingTools`) can select and drag. It reuses the pure
- * ADR-0059 logical-coordinate helpers (`resolveTimeX` / `timeToFractionalLogical`)
- * and `pointSegmentDistance` from `trendlines.ts` — a projected/off-grid anchor
- * (a `ray` past the last bar) still maps rather than being dropped.
+ * editable, user-authored drawing layer: it renders the eleven drawing kinds
+ * (Plan 0097's six geometry kinds + Plan 0104's two position boxes and three range
+ * measures), marks the SELECTED drawing with endpoint handles, and hit-tests
+ * drawings + handles so the edit engine (`useDrawingTools`) can select and drag. It
+ * reuses the pure ADR-0059 logical-coordinate helpers (`resolveTimeX`) and
+ * `pointSegmentDistance` from `trendlines.ts` — a projected/off-grid anchor (a `ray`
+ * past the last bar) still maps rather than being dropped.
  *
- * Phase 2 (walking skeleton) implements `trendline` + `ray`; `hline` / `vline` /
- * `rect` / `fib` land in phase 3, which extends `computeDrawingGeometry`. The
- * pixel math lives in the pure, canvas-free `computeDrawingGeometry` /
- * `computeRayFarPoint` so it is unit-testable without a real chart.
+ * The pixel math lives in the pure, canvas-free `computeDrawingGeometry` /
+ * `computeRayFarPoint` so it is unit-testable without a real chart. An agent-placed
+ * position renders with an advisory label (ADR-0029/0099); its rationale surfaces
+ * on hover via the chart tooltip.
  */
 import type {
   ISeriesPrimitive,
@@ -290,6 +291,10 @@ export function computeDrawingGeometry(
     const rrLabel = t('chart.draw.readout.riskReward', {
       rr: rr === null ? '—' : rr.toFixed(2),
     })
+    // An agent-placed position is a recommendation made visual — label it advisory
+    // (ADR-0029/0099); the rationale rides the hover tooltip, not the canvas.
+    const entryLabel =
+      spec.provenance === 'agent' ? `${t('chart.draw.advisory')} · ${rrLabel}` : rrLabel
     const zone = (y: number): ReadonlyArray<{ x: number; y: number }> => [
       { x: entryX, y: entryY },
       { x: right, y: entryY },
@@ -304,7 +309,7 @@ export function computeDrawingGeometry(
         { x: entryX, y: targetY },
       ],
       segments: [
-        { x1: entryX, y1: entryY, x2: right, y2: entryY, label: rrLabel },
+        { x1: entryX, y1: entryY, x2: right, y2: entryY, label: entryLabel },
         { x1: entryX, y1: stopY, x2: right, y2: stopY, color: POSITION_STOP_COLOR },
         { x1: entryX, y1: targetY, x2: right, y2: targetY, color: POSITION_TARGET_COLOR },
         { x1: entryX, y1: stopY, x2: entryX, y2: targetY },
@@ -731,6 +736,14 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
       }
     }
     return best
+  }
+
+  /** The committed drawing under `(x,y)`, or `null` — the tooltip reads a hovered
+   * agent position's rationale off it (Plan 0104). Returns `null` while hidden. */
+  hoveredDrawingSpec(x: number, y: number): DrawingSpec | null {
+    const id = this.hitTestDrawingId(x, y)
+    if (id === null) return null
+    return this.specs.find((spec) => spec.id === id) ?? null
   }
 
   /** The index of the handle of drawing `id` within `tolerance` px of `(x,y)`,
