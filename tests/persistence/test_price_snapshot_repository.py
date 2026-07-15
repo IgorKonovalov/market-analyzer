@@ -80,12 +80,14 @@ def test_migration_applies_and_chain_stays_linear() -> None:
     config.set_main_option("script_location", MIGRATIONS_PACKAGE)
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
-    # The chain head advanced to 0009 (Plan 0081's orphaned-Yahoo-crypto purge);
-    # it must still be a single linear head, 0009 must chain onto 0008, and 0007
-    # must still chain onto 0006.
-    assert heads == ["0009_purge_orphaned_yahoo_crypto_bars"], (
-        f"expected a single head, got {heads}"
-    )
+    # The chain head advanced to 0010 (Plan 0110's watch note); it must still
+    # be a single linear head, each new revision must chain onto its
+    # predecessor, and 0007 must still chain onto 0006.
+    assert heads == ["0010_watch_note"], f"expected a single head, got {heads}"
+    assert (
+        script.get_revision("0010_watch_note").down_revision
+        == "0009_purge_orphaned_yahoo_crypto_bars"
+    ), "Plan 0110's note migration must chain onto 0009"
     assert (
         script.get_revision("0009_purge_orphaned_yahoo_crypto_bars").down_revision
         == "0008_advice_ledger"

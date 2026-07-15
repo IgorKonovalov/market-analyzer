@@ -1,14 +1,17 @@
 """Renderer-facing watch + alert routes (Plan 0060 phase 4 seam).
 
-The viewer's Alerts surface needs three thin reads/writes the MCP toolset
+The viewer's Alerts surface needs four thin reads/writes the MCP toolset
 does not serve (that toolset is agent-side, behind the MCP bearer):
 
 - ``GET /watches`` — the watch list the view renders;
-- ``POST /watches/{watch_id}`` — the enable/disable toggle (the plan's
-  "agent creates, viewer manages" grain, ADR-0015: creation stays MCP-only);
+- ``POST /watches/{watch_id}`` — partial update `{enabled?, note?}` (the
+  "agent creates, viewer manages" grain, ADR-0015: creation stays MCP-only;
+  Plan 0110 widened the managed fields beyond enable/disable);
+- ``DELETE /watches/{watch_id}`` — delete with the same alert-history
+  cascade as MCP `delete_watch`;
 - ``GET /alerts`` — newest-first alert history, offset/limit paged.
 
-All three are renderer-bearer-gated by the central middleware in `app.py` and
+All four are renderer-bearer-gated by the central middleware in `app.py` and
 registered only when the alerting repositories exist (i.e. persistence is
 wired). Pure repository pass-throughs — no evaluation, no scheduling; the
 domain logic stays in `alerts/`.
@@ -23,9 +26,9 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from market_analyser.alerts.types import Alert, Watch
+from market_analyser.alerts.types import NOTE_MAX_LENGTH, Alert, Watch
 from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
     WatchesRepository,
@@ -53,6 +56,7 @@ class WatchOut(BaseModel):
     enabled: bool
     last_state: bool | None
     created_at: datetime
+    note: str | None
 
     @classmethod
     def from_watch(cls, watch: Watch) -> WatchOut:
@@ -66,6 +70,7 @@ class WatchOut(BaseModel):
             enabled=watch.enabled,
             last_state=watch.last_state,
             created_at=watch.created_at,
+            note=watch.note,
         )
 
 
@@ -99,12 +104,32 @@ class AlertsPage(BaseModel):
     total: int
 
 
-class SetWatchEnabledRequest(BaseModel):
-    """Body of `POST /watches/{watch_id}` — the one mutation the viewer owns."""
+class WatchUpdateRequest(BaseModel):
+    """Body of `POST /watches/{watch_id}` — a partial update over the fields
+    the viewer manages. Absent field = untouched; explicit `note: null`
+    clears the note (distinguished via `model_fields_set`, so an
+    enable/disable toggle never silently wipes a note)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    enabled: bool
+    enabled: bool | None = None
+    note: str | None = Field(default=None, max_length=NOTE_MAX_LENGTH)
+
+    @model_validator(mode="after")
+    def _require_at_least_one_field(self) -> WatchUpdateRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one of 'enabled' or 'note' must be supplied")
+        if "enabled" in self.model_fields_set and self.enabled is None:
+            raise ValueError("'enabled' cannot be null (it is not clearable)")
+        return self
+
+
+class WatchDeleteResponse(BaseModel):
+    """Body of a successful `DELETE /watches/{watch_id}` (unknown ids 404)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    deleted: bool
 
 
 def _watches_repository(request: Request) -> WatchesRepository:
@@ -127,18 +152,29 @@ def list_watches(request: Request) -> list[WatchOut]:
 
 
 @router.post("/watches/{watch_id}", response_model=WatchOut)
-def set_watch_enabled(
+def update_watch(
     request: Request,
     watch_id: int,
-    body: SetWatchEnabledRequest,
+    body: WatchUpdateRequest,
 ) -> WatchOut:
     repo = _watches_repository(request)
-    if not repo.set_enabled(watch_id, enabled=body.enabled):
+    if body.enabled is not None and not repo.set_enabled(watch_id, enabled=body.enabled):
+        raise HTTPException(status_code=404, detail=f"unknown watch_id {watch_id}")
+    if "note" in body.model_fields_set and not repo.set_note(watch_id, body.note):
         raise HTTPException(status_code=404, detail=f"unknown watch_id {watch_id}")
     watch = repo.get(watch_id)
-    if watch is None:  # pragma: no cover — deleted between the two calls
+    if watch is None:
         raise HTTPException(status_code=404, detail=f"unknown watch_id {watch_id}")
     return WatchOut.from_watch(watch)
+
+
+@router.delete("/watches/{watch_id}", response_model=WatchDeleteResponse)
+def delete_watch(request: Request, watch_id: int) -> WatchDeleteResponse:
+    """Same cascade semantics as MCP `delete_watch`: the watch and its alert
+    history rows go together (`WatchesRepository.delete`)."""
+    if not _watches_repository(request).delete(watch_id):
+        raise HTTPException(status_code=404, detail=f"unknown watch_id {watch_id}")
+    return WatchDeleteResponse(deleted=True)
 
 
 @router.get("/alerts", response_model=AlertsPage)

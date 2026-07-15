@@ -38,6 +38,7 @@ class WatchRow(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     last_state: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class AlertRow(Base):

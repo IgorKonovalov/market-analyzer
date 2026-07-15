@@ -31,7 +31,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from market_analyser.alerts.types import Alert, Watch, validate_watch_params
+from market_analyser.alerts.types import NOTE_MAX_LENGTH, Alert, Watch, validate_watch_params
 from market_analyser.data.timeframes import registry_timeframes
 from market_analyser.persistence.models.watches import AlertRow, WatchRow
 
@@ -52,13 +52,14 @@ class WatchesRepository:
         interval_seconds: int,
         enabled: bool = True,
         created_at: datetime,
+        note: str | None = None,
     ) -> Watch:
         """Validate at the boundary, insert, and return the persisted `Watch`.
 
         Raises `UnknownWatchKindError` / pydantic `ValidationError` for a bad
         `(kind, params)` pair and `ValueError` for an empty symbol, an
-        unregistered timeframe, a non-positive interval, or a naive
-        `created_at` — all before any write.
+        unregistered timeframe, a non-positive interval, a naive
+        `created_at`, or an over-length `note` — all before any write.
         """
         if not symbol:
             raise ValueError("symbol must be non-empty")
@@ -70,6 +71,7 @@ class WatchesRepository:
             raise ValueError(f"interval_seconds must be > 0, got {interval_seconds}")
         if created_at.tzinfo is None:
             raise ValueError("created_at must be timezone-aware (UTC)")
+        _validate_note(note)
         params_model = validate_watch_params(kind, params)
 
         row = WatchRow(
@@ -82,6 +84,7 @@ class WatchesRepository:
             enabled=enabled,
             last_state=None,
             created_at=created_at,
+            note=note,
         )
         with self._session_factory() as session:
             session.add(row)
@@ -126,6 +129,18 @@ class WatchesRepository:
             if row is None:
                 return False
             row.enabled = enabled
+            session.commit()
+            return True
+
+    def set_note(self, watch_id: int, note: str | None) -> bool:
+        """Set or clear (`None`) the free-text note. Returns False when the
+        watch is absent. Raises `ValueError` for an over-length note."""
+        _validate_note(note)
+        with self._session_factory() as session:
+            row = session.get(WatchRow, watch_id)
+            if row is None:
+                return False
+            row.note = note
             session.commit()
             return True
 
@@ -196,6 +211,11 @@ class AlertsRepository:
             return [_row_to_alert(row) for row in session.scalars(stmt)], total
 
 
+def _validate_note(note: str | None) -> None:
+    if note is not None and len(note) > NOTE_MAX_LENGTH:
+        raise ValueError(f"note must be <= {NOTE_MAX_LENGTH} chars, got {len(note)}")
+
+
 def _ensure_utc(value: datetime) -> datetime:
     """SQLite loses tzinfo on round-trip; stored datetimes are UTC by contract."""
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
@@ -213,6 +233,7 @@ def _row_to_watch(row: WatchRow) -> Watch:
         enabled=row.enabled,
         last_state=row.last_state,
         created_at=_ensure_utc(row.created_at),
+        note=row.note,
     )
 
 

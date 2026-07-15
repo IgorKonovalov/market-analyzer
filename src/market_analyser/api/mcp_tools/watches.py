@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from market_analyser.alerts.types import (
     INDICATOR_IDS,
+    NOTE_MAX_LENGTH,
     PATTERN_NAMES,
     Alert,
     StrategySignalParams,
@@ -59,7 +60,10 @@ CREATE_WATCH_DESCRIPTION = (
     "interval_seconds defaults to the timeframe's bar period. Alerts are "
     "condition facts, never buy/sell advice. Delivery: `alert.triggered v1` "
     "SSE event (viewer toast) + the pending-events poll + `list_alerts` "
-    f"history. Supported timeframes: {supported_timeframes_label()}."
+    f"history. Supported timeframes: {supported_timeframes_label()}. Optional "
+    f"`note` (<= {NOTE_MAX_LENGTH} chars): free-text context for WHY the watch "
+    "exists (e.g. 'ETH long scenario A - neckline retest'), shown in the "
+    "viewer's watch list and editable there."
 )
 
 LIST_WATCHES_DESCRIPTION = (
@@ -134,6 +138,7 @@ def _create_watch_response(
     params: dict[str, Any],
     interval_seconds: int | None,
     enabled: bool,
+    note: str | None = None,
     now: datetime | None = None,
 ) -> Watch:
     """Body of `create_watch`. `now` is injectable for tests; production reads
@@ -157,6 +162,7 @@ def _create_watch_response(
         interval_seconds=effective_interval,
         enabled=enabled,
         created_at=resolved_now,
+        note=note,
     )
 
 
@@ -219,6 +225,7 @@ def register_watch_tools(
         params: dict[str, Any],
         interval_seconds: int | None = None,
         enabled: bool = True,
+        note: Annotated[str, Field(max_length=NOTE_MAX_LENGTH)] | None = None,
     ) -> Watch:
         return await asyncio.to_thread(
             lambda: _create_watch_response(
@@ -229,6 +236,7 @@ def register_watch_tools(
                 params=params,
                 interval_seconds=interval_seconds,
                 enabled=enabled,
+                note=note,
             )
         )
 

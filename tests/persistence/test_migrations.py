@@ -243,6 +243,7 @@ def test_watches_and_alerts_tables_have_expected_columns_after_upgrade() -> None
             "enabled",
             "last_state",
             "created_at",
+            "note",  # Plan 0110 phase 1 (0010_watch_note)
         }
         alert_columns = {c["name"] for c in inspector.get_columns("alerts")}
         assert alert_columns == {"id", "watch_id", "fired_at", "payload"}
@@ -442,9 +443,10 @@ def test_purge_migration_deletes_only_orphaned_yahoo_crypto_bars() -> None:
 
 
 def test_purge_migration_downgrade_leaves_schema_identical() -> None:
-    """0009 is a one-way DATA purge, not a schema change — `downgrade` is a
-    documented no-op, so `upgrade head -> downgrade 0008 -> upgrade head` leaves
-    the schema identical (nothing to add/drop)."""
+    """0009 is a one-way DATA purge, not a schema change — its `downgrade` is a
+    documented no-op. Descending from head to 0008 also passes through 0010
+    (which drops `watches.note`), so the expected post-downgrade schema is head
+    minus that one column; the 0009 step itself must change nothing."""
     engine = make_engine(":memory:")
     try:
         config = _alembic_config(engine)
@@ -461,12 +463,43 @@ def test_purge_migration_downgrade_leaves_schema_identical() -> None:
         with engine.begin() as connection:
             config.attributes["connection"] = connection
             command.downgrade(config, "0008_advice_ledger")
-        assert snapshot() == head_first  # no-op downgrade: schema unchanged
+        expected_after_down = {t: set(cols) for t, cols in head_first.items()}
+        expected_after_down["watches"] = expected_after_down["watches"] - {"note"}
+        assert snapshot() == expected_after_down  # only 0010's column gone; 0009 was a no-op
 
         with engine.begin() as connection:
             config.attributes["connection"] = connection
             command.upgrade(config, "head")
         assert snapshot() == head_first
+    finally:
+        engine.dispose()
+
+
+def test_watch_note_migration_is_reversible_single_step() -> None:
+    """`upgrade head -> downgrade 0009 -> upgrade head` drops and restores only
+    `watches.note` (Plan 0110 phase 1) — the rest of the schema is untouched."""
+    engine = make_engine(":memory:")
+    try:
+        config = _alembic_config(engine)
+
+        def watch_columns() -> set[str]:
+            return {c["name"] for c in inspect(engine).get_columns("watches")}
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        at_head = watch_columns()
+        assert "note" in at_head
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0009_purge_orphaned_yahoo_crypto_bars")
+        assert watch_columns() == at_head - {"note"}
+
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "head")
+        assert watch_columns() == at_head
     finally:
         engine.dispose()
 
