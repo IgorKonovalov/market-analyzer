@@ -8,7 +8,7 @@ import { createSeriesMarkers } from 'lightweight-charts'
 import type { IChartApi } from 'lightweight-charts'
 
 import { PrimitiveHub } from './primitiveHub'
-import { chartColorsFrom, type MainSeries } from '../chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID, chartColorsFrom, type MainSeries } from '../chartSeries'
 import { resolveChartStyle } from '../chartStyle'
 import { DivergencePrimitive } from '../divergences'
 import { TrendlinePrimitive } from '../trendlines'
@@ -120,5 +120,32 @@ describe('PrimitiveHub — feed methods', () => {
       theme: 'light',
     })
     expect((createSeriesMarkers as jest.Mock).mock.calls.length).toBeGreaterThan(firstCalls)
+  })
+
+  it('draws market-structure markers and returns the drawn points (empty when hidden)', () => {
+    const hub = new PrimitiveHub()
+    const c = container()
+    const series = fakeSeries()
+    hub.attach(series, c, colorsFor(c))
+    const structure = {
+      labeledPivots: [{ pivot: { ts: '2026-01-05T00:00:00+00:00', kind: 'high' }, label: 'HH' }],
+      events: [],
+    } as unknown as import('../marketStructure').MarketStructureResult
+
+    const points = hub.setMarketStructure(series, c, {
+      structure,
+      bars: BARS,
+      hidden: new Set(),
+      theme: 'light',
+    })
+    expect(points).toEqual([{ time: expect.any(Number), label: 'HH' }])
+
+    const hidden = hub.setMarketStructure(series, c, {
+      structure,
+      bars: BARS,
+      hidden: new Set([MARKET_STRUCTURE_LAYER_ID]),
+      theme: 'light',
+    })
+    expect(hidden).toEqual([])
   })
 })

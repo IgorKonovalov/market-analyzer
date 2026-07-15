@@ -42,7 +42,10 @@ import type { IchimokuPrimitive } from '../ichimoku'
 import type { PatternSpanPrimitive } from '../spans'
 import type { TrendlinePrimitive } from '../trendlines'
 import type { Divergence, OverlayKind, OverlaySpec, TrendlineSpec } from '../../types/events'
+import type { MarketStructureResult } from '../marketStructure'
+import type { HoverableLevel, StructureMarkerPoint } from '../tooltip'
 import { applyRestyle } from './restyle'
+import { ObvPaneReconciler } from './obvPane'
 import {
   OverlayReconciler,
   type OverlayReconcileParams,
@@ -63,6 +66,7 @@ export class ChartController {
   private readonly primitives = new PrimitiveHub()
   private readonly overlays = new OverlayReconciler()
   private readonly oscillators = new OscillatorPaneReconciler()
+  private readonly obvPane = new ObvPaneReconciler()
 
   readonly chartRef: MutRef<IChartApi> = { current: null }
   readonly paneRegistryRef: MutRef<PaneRegistry> = { current: null }
@@ -116,6 +120,10 @@ export class ChartController {
   /** Oscillator sub-panes map — read by `useDivergences` (fed per-pane). */
   get oscillatorPanesRef(): Holder<Map<string, OscillatorPaneEntry>> {
     return this.oscillators.panesRef
+  }
+  /** OBV line series (lazy) — read by the test hook. */
+  get obvSeriesRef(): MutRef<ISeriesApi<'Line'>> {
+    return this.obvPane.seriesRef
   }
   /** Bars currently set on the main series (0 when unmounted), for the test hook. */
   get barCount(): number {
@@ -252,17 +260,66 @@ export class ChartController {
     )
   }
 
-  /** Feed the price + oscillator-pane divergence primitives. The OBV divergence
-   * primitive is owned by `useObvPane` (still external) and passed in. */
-  setDivergences(
-    divergences: ReadonlyArray<Divergence>,
-    obvPrimitive: DivergencePrimitive | null,
-  ): void {
+  /** Feed the price + OBV + oscillator-pane divergence primitives their segments. */
+  setDivergences(divergences: ReadonlyArray<Divergence>): void {
     this.primitives.setDivergences(
       this.containerEl,
       divergences,
-      obvPrimitive,
+      this.obvPane.divergencePrimitiveRef.current,
       this.oscillators.panesRef.current,
+    )
+  }
+
+  /** Reconcile the lazy OBV sub-pane (create/remove + line data). */
+  setObv(params: {
+    bars: Bar[]
+    hidden: ReadonlySet<string>
+    divergences: ReadonlyArray<Divergence>
+    theme: EffectiveTheme
+  }): void {
+    this.obvPane.reconcile(
+      this.chartRef.current,
+      this.containerEl,
+      this.paneRegistryRef.current,
+      params,
+    )
+  }
+
+  /** Reconcile the fib/pivot horizontal price lines; returns the drawn levels for
+   * the hover tooltip. */
+  setStructureLevels(params: {
+    bars: Bar[]
+    overlays: ReadonlyArray<OverlaySpec> | undefined
+    hidden: ReadonlySet<string>
+  }): HoverableLevel[] {
+    const series = this.seriesRegistry.mainRef.current
+    if (series === null) return []
+    return this.overlays.reconcileStructureLevels(series, params)
+  }
+
+  /** Reconcile the anchored-VWAP line series. */
+  setAnchoredVwap(params: {
+    bars: Bar[]
+    overlays: ReadonlyArray<OverlaySpec> | undefined
+    hidden: ReadonlySet<string>
+  }): void {
+    const chart = this.chartRef.current
+    if (chart === null) return
+    this.overlays.reconcileAnchoredVwap(chart, params)
+  }
+
+  /** Draw the market-structure labels/glyphs; returns the drawn points for the
+   * hover tooltip. */
+  setMarketStructure(params: {
+    structure: MarketStructureResult
+    bars: Bar[]
+    hidden: ReadonlySet<string>
+    theme: EffectiveTheme
+  }): StructureMarkerPoint[] {
+    return this.primitives.setMarketStructure(
+      this.seriesRegistry.mainRef.current,
+      this.containerEl,
+      params,
     )
   }
 
@@ -276,9 +333,8 @@ export class ChartController {
     this.primitives.setMarkers(this.seriesRegistry.mainRef.current, this.containerEl, params)
   }
 
-  /** Re-apply the existing chart's colours + widths in place (no remount). The OBV
-   * series is owned externally and passed in. */
-  restyle(theme: EffectiveTheme, obvSeries: ISeriesApi<'Line'> | null): void {
+  /** Re-apply the existing chart's colours + widths in place (no remount). */
+  restyle(theme: EffectiveTheme): void {
     applyRestyle({
       chart: this.chartRef.current,
       mainSeries: this.seriesRegistry.mainRef.current,
@@ -288,7 +344,7 @@ export class ChartController {
       volumeSeries: this.seriesRegistry.volumeRef.current,
       volumeMaSeries: this.seriesRegistry.volumeMaRef.current,
       vwapSeries: this.seriesRegistry.vwapRef.current,
-      obvSeries,
+      obvSeries: this.obvPane.seriesRef.current,
       overlaySeries: this.overlays.overlaySeriesRef.current,
       supertrendSeries: this.overlays.supertrendSeriesRef.current,
     })
@@ -349,6 +405,7 @@ export class ChartController {
     this.primitives.clear()
     this.overlays.clear()
     this.oscillators.clear()
+    this.obvPane.clear()
     this.prevBars = null
     this.prevFirstTs = null
     this.barCountValue = 0

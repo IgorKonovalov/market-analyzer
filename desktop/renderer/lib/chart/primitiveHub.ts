@@ -20,8 +20,15 @@ import type {
   UTCTimestamp,
 } from 'lightweight-charts'
 
-import { chartColorsFrom, type ChartColors, type MainSeries } from '../chartSeries'
+import {
+  MARKET_STRUCTURE_LAYER_ID,
+  chartColorsFrom,
+  type ChartColors,
+  type MainSeries,
+} from '../chartSeries'
 import { resolveChartStyle } from '../chartStyle'
+import type { MarketStructureResult } from '../marketStructure'
+import type { StructureMarkerPoint } from '../tooltip'
 import {
   DivergencePrimitive,
   divergenceOscillatorToPaneKind,
@@ -53,6 +60,20 @@ export interface MarkerFeedParams {
   theme: EffectiveTheme
 }
 
+export interface MarketStructureFeedParams {
+  structure: MarketStructureResult
+  bars: Bar[]
+  hidden: ReadonlySet<string>
+  theme: EffectiveTheme
+}
+
+/** A change-of-character stands apart from the trend colours — amber. */
+const CHOCH_MARKER_COLOR = '#f59e0b'
+
+function toUtcSeconds(iso: string): UTCTimestamp {
+  return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp
+}
+
 export class PrimitiveHub {
   readonly spanRef: MutRef<PatternSpanPrimitive> = { current: null }
   readonly trendlineRef: MutRef<TrendlinePrimitive> = { current: null }
@@ -64,6 +85,10 @@ export class PrimitiveHub {
   // feeds; recreated when the main series is rebuilt (candle-type switch).
   private markersPlugin: ISeriesMarkersPluginApi<Time> | null = null
   private markersSeries: MainSeries | null = null
+  // A SECOND, independent markers plugin for the market-structure labels/glyphs, so
+  // they don't fight the candlestick-pattern markers for the series-markers capture.
+  private structurePlugin: ISeriesMarkersPluginApi<Time> | null = null
+  private structureSeries: MainSeries | null = null
   // Whether a non-default Ichimoku `rightOffset` is currently reserved, so it resets
   // exactly once when the last Ichimoku overlay goes away.
   private ichimokuReserved = false
@@ -228,6 +253,54 @@ export class PrimitiveHub {
     }
   }
 
+  /** Draw the price-action market structure on the candlestick series (Plan 0092
+   * ph6): HH/HL/LH/LL labels at confirmed swing pivots + BOS/CHoCH glyphs, on their
+   * OWN markers plugin. Returns the drawn (time,label) points for the tooltip's
+   * structure hover — empty when the layer is toggled off. */
+  setMarketStructure(
+    series: MainSeries | null,
+    container: HTMLDivElement | null,
+    { structure, bars, hidden, theme }: MarketStructureFeedParams,
+  ): StructureMarkerPoint[] {
+    if (series === null || container === null) return []
+    const colors = chartColorsFrom(resolveChartStyle(container, theme))
+
+    const markers: SeriesMarker<UTCTimestamp>[] = []
+    if (!hidden.has(MARKET_STRUCTURE_LAYER_ID)) {
+      for (const { pivot, label } of structure.labeledPivots) {
+        const bullish = label === 'HH' || label === 'HL'
+        markers.push({
+          time: toUtcSeconds(pivot.ts),
+          position: pivot.kind === 'high' ? 'aboveBar' : 'belowBar',
+          shape: pivot.kind === 'high' ? 'arrowDown' : 'arrowUp',
+          color: bullish ? colors.markerBullish : colors.markerBearish,
+          text: label,
+        })
+      }
+      for (const event of structure.events) {
+        const bar = bars[event.barIndex]
+        if (bar === undefined) continue
+        const trendColor =
+          event.direction === 'bullish' ? colors.markerBullish : colors.markerBearish
+        markers.push({
+          time: toUtcSeconds(bar.event_ts),
+          position: event.direction === 'bullish' ? 'aboveBar' : 'belowBar',
+          shape: 'circle',
+          color: event.kind === 'CHoCH' ? CHOCH_MARKER_COLOR : trendColor,
+          text: event.kind,
+        })
+      }
+    }
+    markers.sort((a, b) => (a.time as number) - (b.time as number))
+
+    if (this.structurePlugin === null || this.structureSeries !== series) {
+      this.structurePlugin = createSeriesMarkers(series)
+      this.structureSeries = series
+    }
+    this.structurePlugin.setMarkers(markers)
+    return markers.map((m) => ({ time: m.time, label: m.text ?? '' }))
+  }
+
   /** Drop bookkeeping after `chart.remove()` detached the primitives + markers. */
   clear(): void {
     this.spanRef.current = null
@@ -237,6 +310,8 @@ export class PrimitiveHub {
     this.drawingRef.current = null
     this.markersPlugin = null
     this.markersSeries = null
+    this.structurePlugin = null
+    this.structureSeries = null
     this.ichimokuReserved = false
   }
 }

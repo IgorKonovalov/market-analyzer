@@ -27,20 +27,28 @@ import {
   type OverlayEntry,
 } from '../chartSeries'
 import { resolveChartStyle } from '../chartStyle'
+import { anchoredVwapSeries } from '../anchoredVwap'
+import { fibAnchorLines, fibonacciGrid } from '../fibonacci'
 import { computeBbands } from '../indicators'
 import { DEFAULT_MARKER_COLORS } from '../markers'
 import {
+  ANCHORED_VWAP_COLOR,
   BBANDS_LINE_COLOR,
+  FIB_ANCHOR_COLOR,
   computeOverlayData,
   computeSupertrend,
+  fibLevelColor,
   isOscillatorOverlay,
   isStructureOverlay,
   isSupportedOverlay,
   overlayColorFor,
   overlayLayerId,
+  pivotLevelColor,
   supertrendBands,
 } from '../overlays'
+import { pivotLevelLines, pivotPoints } from '../pivots'
 import { priceLineColor, priceLineId } from '../priceLines'
+import type { HoverableLevel } from '../tooltip'
 import type { EffectiveTheme } from '../theme'
 import type { Bar } from '../../types/sidecar/bar'
 import type { OverlaySpec } from '../../types/events'
@@ -51,6 +59,14 @@ type BbandsTriple = {
   upper: ISeriesApi<'Line'>
   middle: ISeriesApi<'Line'>
   lower: ISeriesApi<'Line'>
+}
+
+interface DesiredLine {
+  price: number
+  color: string
+  title: string
+  /** Solid (default) for levels; the fib 0/1 anchor boundaries draw dashed. */
+  lineStyle?: LineStyle
 }
 
 export interface OverlayReconcileParams {
@@ -76,6 +92,11 @@ export class OverlayReconciler {
   readonly supertrendSeriesRef: Holder<Map<string, SupertrendPair>> = { current: new Map() }
   readonly bbandsSeriesRef: Holder<Map<string, BbandsTriple>> = { current: new Map() }
   readonly priceLinesRef: Holder<Map<string, IPriceLine>> = { current: new Map() }
+  // Fib/pivot horizontal price lines (Plan 0092 ph5) — a separate map from the
+  // agent `price_line` overlays so the two families never collide.
+  readonly structureLinesRef: Holder<Map<string, IPriceLine>> = { current: new Map() }
+  // Anchored-VWAP line series (Plan 0092 ph5), keyed by overlayKey.
+  readonly anchoredVwapRef: Holder<Map<string, ISeriesApi<'Line'>>> = { current: new Map() }
 
   /** Reconcile the price-pane line-series families (ema/sma, supertrend, bbands). */
   reconcile(
@@ -269,11 +290,133 @@ export class OverlayReconciler {
     }
   }
 
+  /** Reconcile the anchored-VWAP line series (Plan 0092 ph5) — one line per
+   * `anchored_vwap` overlay, accumulated from its anchor. Static colour, no theme. */
+  reconcileAnchoredVwap(
+    chart: IChartApi,
+    {
+      bars,
+      overlays,
+      hidden,
+    }: {
+      bars: Bar[]
+      overlays: ReadonlyArray<OverlaySpec> | undefined
+      hidden: ReadonlySet<string>
+    },
+  ): void {
+    const seriesMap = this.anchoredVwapRef.current
+    const desired = new Map<string, OverlaySpec>()
+    for (const spec of overlays ?? []) {
+      if (spec.kind !== 'anchored_vwap') continue
+      if (hidden.has(overlayLayerId(spec))) continue
+      desired.set(overlayKey(spec), spec)
+    }
+    for (const [key, series] of seriesMap) {
+      if (!desired.has(key)) {
+        chart.removeSeries(series)
+        seriesMap.delete(key)
+      }
+    }
+    for (const [key, spec] of desired) {
+      let series = seriesMap.get(key)
+      if (series === undefined) {
+        series = chart.addSeries(LineSeries, {
+          color: ANCHORED_VWAP_COLOR,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        })
+        seriesMap.set(key, series)
+      }
+      series.setData(anchoredVwapSeries(bars, spec.anchor_ts))
+    }
+  }
+
+  /** Reconcile the fib-grid + classic-pivot horizontal price lines on the main
+   * series (Plan 0092 ph5). Returns the drawn levels for the hover tooltip lookup —
+   * a toggled-off overlay's levels leave the list. Static colours, no theme. */
+  reconcileStructureLevels(
+    series: MainSeries,
+    {
+      bars,
+      overlays,
+      hidden,
+    }: {
+      bars: Bar[]
+      overlays: ReadonlyArray<OverlaySpec> | undefined
+      hidden: ReadonlySet<string>
+    },
+  ): HoverableLevel[] {
+    const structureLines = this.structureLinesRef.current
+    const desired = new Map<string, DesiredLine>()
+    for (const spec of overlays ?? []) {
+      if (spec.kind !== 'fibonacci' && spec.kind !== 'pivot_points') continue
+      const layer = overlayLayerId(spec)
+      if (hidden.has(layer)) continue
+      if (spec.kind === 'fibonacci') {
+        const grid = fibonacciGrid(bars, spec)
+        if (grid === null) continue
+        for (const level of grid.levels) {
+          desired.set(`${layer}:${level.ratio}`, {
+            price: level.price,
+            color: fibLevelColor(level.ratio),
+            title: `Fib ${level.ratio}`,
+          })
+        }
+        for (const anchor of fibAnchorLines(grid)) {
+          desired.set(`${layer}:${anchor.key}`, {
+            price: anchor.price,
+            color: FIB_ANCHOR_COLOR,
+            title: anchor.title,
+            lineStyle: LineStyle.Dashed,
+          })
+        }
+      } else {
+        const pivots = pivotPoints(bars, spec.method ?? 'floor')
+        if (pivots === null) continue
+        for (const line of pivotLevelLines(pivots)) {
+          desired.set(`${layer}:${line.label}`, {
+            price: line.price,
+            color: pivotLevelColor(line.label),
+            title: line.label,
+          })
+        }
+      }
+    }
+
+    for (const [id, line] of structureLines) {
+      if (!desired.has(id)) {
+        series.removePriceLine(line)
+        structureLines.delete(id)
+      }
+    }
+    for (const [id, spec] of desired) {
+      const existing = structureLines.get(id)
+      if (existing === undefined) {
+        structureLines.set(
+          id,
+          series.createPriceLine({
+            price: spec.price,
+            color: spec.color,
+            axisLabelVisible: true,
+            title: spec.title,
+            ...(spec.lineStyle !== undefined ? { lineStyle: spec.lineStyle } : {}),
+          }),
+        )
+      } else {
+        existing.applyOptions({ price: spec.price, color: spec.color, title: spec.title })
+      }
+    }
+    return [...desired.values()].map(({ title, price }) => ({ title, price }))
+  }
+
   /** Drop bookkeeping after `chart.remove()` disposed every series + price line. */
   clear(): void {
     this.overlaySeriesRef.current.clear()
     this.supertrendSeriesRef.current.clear()
     this.bbandsSeriesRef.current.clear()
     this.priceLinesRef.current.clear()
+    this.structureLinesRef.current.clear()
+    this.anchoredVwapRef.current.clear()
   }
 }

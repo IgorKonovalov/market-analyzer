@@ -296,7 +296,7 @@ describe('ChartController — reconcilers through the facade (Plan 0098 phase 5)
     const main = c.seriesRef.current as unknown as { applyOptions: jest.Mock }
     main.applyOptions.mockClear()
 
-    c.restyle('dark', null)
+    c.restyle('dark')
 
     expect(createChartMock).toHaveBeenCalledTimes(1) // no remount
     expect((chart as unknown as { applyOptions: jest.Mock }).applyOptions).toHaveBeenCalled()

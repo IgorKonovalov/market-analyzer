@@ -163,3 +163,47 @@ describe('OverlayReconciler — price lines', () => {
     expect(r.priceLinesRef.current.size).toBe(0)
   })
 })
+
+const ANCHORED_VWAP: OverlaySpec = { kind: 'anchored_vwap' } as OverlaySpec
+const PIVOTS: OverlaySpec = { kind: 'pivot_points', method: 'floor' } as OverlaySpec
+
+describe('OverlayReconciler — anchored VWAP', () => {
+  it('adds an anchored-VWAP line series and removes it on toggle-off', () => {
+    const r = new OverlayReconciler()
+    const { chart, added, removed } = fakeChart()
+    r.reconcileAnchoredVwap(chart, { bars: BARS, overlays: [ANCHORED_VWAP], hidden: new Set() })
+    expect(added).toHaveLength(1)
+    expect(r.anchoredVwapRef.current.size).toBe(1)
+    r.reconcileAnchoredVwap(chart, {
+      bars: BARS,
+      overlays: [ANCHORED_VWAP],
+      hidden: new Set([overlayLayerId(ANCHORED_VWAP)]),
+    })
+    expect(removed).toHaveLength(1)
+    expect(r.anchoredVwapRef.current.size).toBe(0)
+  })
+})
+
+describe('OverlayReconciler — structure levels', () => {
+  it('draws pivot price lines, returns the drawn levels, and clears them on toggle-off', () => {
+    const r = new OverlayReconciler()
+    const { series, created, removed } = fakeMainSeries()
+    const levels = r.reconcileStructureLevels(series, {
+      bars: BARS,
+      overlays: [PIVOTS],
+      hidden: new Set(),
+    })
+    expect(created.length).toBeGreaterThan(0)
+    expect(levels.length).toBe(created.length)
+    expect(r.structureLinesRef.current.size).toBe(created.length)
+
+    const gone = r.reconcileStructureLevels(series, {
+      bars: BARS,
+      overlays: [PIVOTS],
+      hidden: new Set([overlayLayerId(PIVOTS)]),
+    })
+    expect(gone).toHaveLength(0)
+    expect(removed.length).toBe(created.length)
+    expect(r.structureLinesRef.current.size).toBe(0)
+  })
+})
