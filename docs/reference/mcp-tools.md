@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 60 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 61 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -43,6 +43,7 @@ The 60 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`list_watches`](#listwatches) | List the persisted watches (id, symbol, timeframe, kind, params, interval_seconds, enabled, last_state, created_at), ordered by id. |
 | [`market_snapshot`](#marketsnapshot) | Get a point-in-time global market snapshot: live quotes for a fixed basket — S&P 500 (^GSPC), NASDAQ (^IXIC), VIX (^VIX), Bitcoin (BTC-USD), Ethereum (ETH-USD), EUR/USD (EURUSD=X), SPY, and GLD. |
 | [`market_structure`](#marketstructure) | Read the price-action market structure on one symbol's cached bars: labels the confirmed swing sequence HH/HL/LH/LL, derives structural_trend (up = HH+HL, down = LH+LL, else range), and detects BOS (in-trend break) and CHoCH (first counter-trend break) events. |
+| [`momentum_scan`](#momentumscan) | Filter/rank a supplied symbol list (watchlist) by an RSI band and an optional trend on cached bars — NO volume gate (the un-volume-gated complement to smart_volume, which requires a volume surge). |
 | [`multi_timeframe_analysis`](#multitimeframeanalysis) | Report whether one symbol's trend is aligned across a ladder of timeframes. |
 | [`news_for`](#newsfor) | Fetch recent news headlines for a symbol (or across all feeds when `symbol` is null) from a curated set of free RSS feeds (CoinDesk, CoinTelegraph, Yahoo Finance, MarketWatch, CNBC). |
 | [`pivot_points`](#pivotpoints) | Compute classic pivot levels on one symbol's cached bars from the last completed bar's high/low/close (the prior-completed-period default). |
@@ -849,6 +850,31 @@ Read the price-action market structure on one symbol's cached bars: labels the c
 | `scanned_at` | string (date-time) |
 
 **Source:** [`src/market_analyser/api/mcp_tools/market_structure.py`](../../src/market_analyser/api/mcp_tools/market_structure.py)
+
+## `momentum_scan`
+
+Filter/rank a supplied symbol list (watchlist) by an RSI band and an optional trend on cached bars — NO volume gate (the un-volume-gated complement to smart_volume, which requires a volume surge). For each symbol the latest RSI, trend, and momentum stance are read from its trailing condition snapshot. Returns {matches, skipped, scanned_at}: matches are only the symbols whose RSI is within [rsi_min, rsi_max] (boundary-inclusive) and, when `trend` is given (one of up, down, sideways), whose trend matches — each carrying its rsi, trend, and momentum, sorted by rsi descending then symbol; skipped lists symbols with too short a history for RSI or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbols` | array[string] | yes | — |
+| `timeframe` | string | yes | — |
+| `rsi_min` | number | no | `0.0` |
+| `rsi_max` | number | no | `100.0` |
+| `trend` | string \| null | no | `None` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `MomentumScanResponse`
+
+| Field | Type |
+| --- | --- |
+| `matches` | array[MomentumScanMatch] |
+| `skipped` | array[string] |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/momentum_scan.py`](../../src/market_analyser/api/mcp_tools/momentum_scan.py)
 
 ## `multi_timeframe_analysis`
 

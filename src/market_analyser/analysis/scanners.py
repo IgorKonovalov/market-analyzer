@@ -225,14 +225,74 @@ def score_return(bars: Sequence[Bar]) -> GainersLosersMatch | _ScanSkip:
     return GainersLosersMatch(symbol=bars[-1].symbol, change_pct=change_pct, direction=direction)
 
 
+# --------------------------------------------------------------------------- #
+# momentum scorer (Plan 0100 phase 3)                                           #
+# --------------------------------------------------------------------------- #
+
+
+class MomentumScanMatch(BaseModel):
+    """One symbol's momentum reading in a `momentum_scan` result (Plan 0100).
+
+    Read from the symbol's trailing condition snapshot: `rsi` is the latest RSI(14),
+    `trend` the composed EMA/ADX-with-Ichimoku-veto trend label (``up`` / ``down`` /
+    ``sideways``), and `momentum` the RSI-zone-plus-MACD stance (``overbought`` /
+    ``bullish`` / ``neutral`` / ``bearish`` / ``oversold``). No volume gate — this is
+    the un-volume-gated complement to `smart_volume`. Conditions only — a momentum
+    reading is a fact, never a buy/sell call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    rsi: float
+    trend: str
+    momentum: str
+
+
+def score_momentum(
+    bars: Sequence[Bar],
+    timeframe: str,
+    *,
+    rsi_min: float,
+    rsi_max: float,
+    trend: str | None,
+) -> MomentumScanMatch | _ScanSkip | None:
+    """Score one symbol's momentum from its trailing condition snapshot, filtering
+    by an RSI band and (optionally) a requested trend.
+
+    Reuses `condition_snapshot` so the RSI, trend, and momentum stance are defined
+    in exactly one place (ADR-0023) — the scan can never disagree with
+    `analyze_symbol`. No volume gate (the deliberate distinction from
+    `smart_volume`). Returns `SCAN_SKIP` when RSI is undefined over the available
+    bars (short history), ``None`` when the symbol is scanned but filtered out (RSI
+    outside the boundary-inclusive `[rsi_min, rsi_max]`, or a trend mismatch), and a
+    match otherwise. Trailing by construction — every input is `bars[0..=last]`."""
+
+    snapshot = condition_snapshot(bars, timeframe)
+    rsi = snapshot.indicators.get("rsi")
+    if rsi is None:
+        return SCAN_SKIP
+    if not (rsi_min <= rsi <= rsi_max):
+        return None
+    if trend is not None and snapshot.trend.value != trend:
+        return None
+    return MomentumScanMatch(
+        symbol=snapshot.symbol,
+        rsi=rsi,
+        trend=snapshot.trend.value,
+        momentum=snapshot.momentum.value,
+    )
+
+
 __all__ = [
     "MAX_SCAN_SYMBOLS",
     "SCAN_SKIP",
     "GainersLosersMatch",
+    "MomentumScanMatch",
     "SqueezeScanMatch",
     "_require_scan_list",
     "_require_supported_timeframe",
     "_scan_symbols",
+    "score_momentum",
     "score_return",
     "score_squeeze",
 ]

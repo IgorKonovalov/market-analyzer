@@ -64,6 +64,7 @@ from market_analyser.api.mcp_tools.list_annotations import register_list_annotat
 from market_analyser.api.mcp_tools.market_snapshot import register_market_snapshot
 from market_analyser.api.mcp_tools.market_structure import register_market_structure
 from market_analyser.api.mcp_tools.metric_series import register_get_metric_series
+from market_analyser.api.mcp_tools.momentum_scan import register_momentum_scan
 from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     register_multi_timeframe_analysis,
 )
@@ -255,10 +256,12 @@ def create_mcp_components(
     # Watchlist condition scanners (Plan 0100, ADR-0095): rank a caller-supplied
     # symbol list by a condition on cached bars via the shared `_scan_symbols`
     # fan-out. `squeeze_scan` ranks by squeeze tightness (ADR-0083 trio);
-    # `gainers_losers` ranks by trailing close-to-close % change. Always
-    # registered — provider-only, conditions only.
+    # `gainers_losers` ranks by trailing close-to-close % change; `momentum_scan`
+    # filters by RSI band + trend (no volume gate). Always registered — provider-
+    # only, conditions only.
     register_squeeze_scan(server, provider=provider)
     register_gainers_losers(server, provider=provider)
+    register_momentum_scan(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)

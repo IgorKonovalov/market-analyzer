@@ -554,6 +554,7 @@ EXPECTED_FULL_TOOLSET = {
     "list_watches",
     "market_snapshot",
     "market_structure",
+    "momentum_scan",
     "multi_timeframe_analysis",
     "news_for",
     "pivot_points",
