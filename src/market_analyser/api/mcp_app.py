@@ -52,8 +52,6 @@ from market_analyser.api.mcp_tools.detect_levels import register_detect_levels
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
 from market_analyser.api.mcp_tools.fibonacci_levels import register_fibonacci_levels
 from market_analyser.api.mcp_tools.forecast import register_forecast
-from market_analyser.api.mcp_tools.forecast_regime import register_forecast_regime
-from market_analyser.api.mcp_tools.forecast_volatility import register_forecast_volatility
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
 from market_analyser.api.mcp_tools.get_chart_drawings import register_get_chart_drawings
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
@@ -314,6 +312,12 @@ def create_mcp_components(
     # Plan 0063 (ADR-0058): with a runs_dir wired the tool also persists the
     # per-call explanation JSON under runs_dir/forecast/…; without one the
     # explanation summary still rides the wire, only the artifact is skipped.
+    # Plan 0109 (ADR-0104): `forecast` is now the unified verb — kind ∈ {direction
+    # (default), volatility, regime}, returning the ForecastResponse{kind, result}
+    # envelope; each kind keeps its own result model and its `*.completed v1` event.
+    # The two non-directional kinds (Plan 0077, ADR-0070) are read-only condition
+    # reports with no model persistence; metric_lookup enables the v2 exogenous set
+    # for every kind.
     forecast_models_dir = runs_dir.parent / "models" if runs_dir is not None else None
     register_forecast(
         server,
@@ -322,22 +326,6 @@ def create_mcp_components(
         models_dir=forecast_models_dir,
         metric_lookup=metric_points_repository,
         runs_dir=runs_dir,
-    )
-
-    # `forecast_volatility` / `forecast_regime` (Plan 0077, ADR-0070): the two
-    # non-directional forecast kinds. Same tier ladder as `forecast` (metric_lookup
-    # enables the v2 exogenous set); read-only condition reports, no model persistence.
-    register_forecast_volatility(
-        server,
-        provider=provider,
-        event_bus=event_bus,
-        metric_lookup=metric_points_repository,
-    )
-    register_forecast_regime(
-        server,
-        provider=provider,
-        event_bus=event_bus,
-        metric_lookup=metric_points_repository,
     )
 
     # `recommend` (Plan 0038, ADR-0029): the advisor layer's labeled advisory

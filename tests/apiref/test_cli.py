@@ -34,7 +34,8 @@ def test_render_reference_has_all_four_full_detail_files(
     assert "## `forecast`" in tools_md
     assert "| `symbol` | string | yes |" in tools_md
     assert "| `horizons` |" in tools_md
-    assert "**Returns:** `MultiHorizonForecastResult`" in tools_md
+    # Plan 0109 ph2 (ADR-0104): the unified `forecast` returns the discriminated envelope.
+    assert "**Returns:** `ForecastResponse`" in tools_md
     assert "src/market_analyser/api/mcp_tools/forecast.py" in tools_md
 
 

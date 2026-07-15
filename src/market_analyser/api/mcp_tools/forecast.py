@@ -1,10 +1,23 @@
 """`forecast` MCP tool — Plan 0036 phase 4, multi-horizon per Plan 0059 (ADR-0030
-/ ADR-0040 / ADR-0054).
+/ ADR-0040 / ADR-0054); the three forecast *kinds* unified behind one `kind`
+discriminator by Plan 0109 phase 2 (ADR-0104).
 
-The first **forward-looking** tool in the app. It returns, per requested horizon,
-a calibrated up/down/flat direction probability or an honest **no-edge** verdict
-— never a price level, never a recommendation (that is the advisor, ADR-0029).
-The flow:
+The app's forward-looking tool, with `kind` ∈ {`direction` (default), `volatility`,
+`regime`} selecting what is predicted. The tool returns a discriminated envelope
+`ForecastResponse{kind, result}` — a single object (so FastMCP does not wrap it in a
+generic `{result}`), with the selected kind's existing model riding **byte-identical**
+under `result`. All three kinds share the same skeleton — validate, fetch cached bars,
+build ONE feature matrix via the ADR-0057 tier ladder, offload the model work, publish a
+per-kind `*.completed v1` envelope exactly once after success — and every kind reports a
+CONDITION (a probability / a magnitude / a state distribution), never a price level and
+never a recommendation (that is the advisor, ADR-0029). The `direction` computation, its
+`result` model, and its `forecast.completed` event are unchanged from the
+pre-consolidation tool (the default `kind` preserves today's call inputs); `volatility`
+and `regime` keep their own `result` models and their `volatility_forecast.completed` /
+`regime_forecast.completed` events, absorbed here from the retired `forecast_volatility`
+/ `forecast_regime` modules.
+
+The `direction` flow:
 
     validate inputs (symbol / timeframe / range / horizons)
         -> fetch cached bars via the provider (ADR-0007)
@@ -51,8 +64,10 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict
 
 from market_analyser.api.mcp_tools._artifacts import _fs_safe, _write_explanation_artifact
 from market_analyser.api.mcp_tools._validation import (
@@ -62,7 +77,12 @@ from market_analyser.api.mcp_tools._validation import (
 )
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.types import Bar
-from market_analyser.events import EventBus, ForecastCompletedPayloadV1
+from market_analyser.events import (
+    EventBus,
+    ForecastCompletedPayloadV1,
+    RegimeForecastCompletedPayloadV1,
+    VolatilityForecastCompletedPayloadV1,
+)
 from market_analyser.forecast.exogenous import MetricAsOfLookup
 from market_analyser.forecast.explain import (
     ForecastExplanation,
@@ -85,6 +105,8 @@ from market_analyser.forecast.model import (
     predict_proba,
     train,
 )
+from market_analyser.forecast.regime import RegimeForecast
+from market_analyser.forecast.regime import forecast_regime as _run_regime_forecast
 from market_analyser.forecast.registry import (
     compute_model_version,
     model_exists,
@@ -103,6 +125,8 @@ from market_analyser.forecast.result import (
 )
 from market_analyser.forecast.tiers import select_feature_tier
 from market_analyser.forecast.validation import ForecastValidation, ScoredFold, validate
+from market_analyser.forecast.volatility import VolatilityForecast
+from market_analyser.forecast.volatility import forecast_volatility as _run_volatility_forecast
 
 # The horizon set for daily bars (ADR-0054: next-day / ~1w / ~1mo). Every other
 # timeframe keeps next-bar only for now (plan phase 3).
@@ -152,34 +176,54 @@ def _classify_edge(validation: ForecastValidation) -> tuple[float | None, EdgeSt
     return edge_margin, ("clear" if edge_margin >= EDGE_MARGIN_THRESHOLD else "marginal")
 
 
+ForecastKind = Literal["direction", "volatility", "regime"]
+
 FORECAST_DESCRIPTION = (
-    "Forecast the price DIRECTION of a cached symbol over one or more horizons, "
-    "each as a calibrated up/down/flat probability or an honest 'no edge over "
-    "baseline' verdict. Horizons default to 1/5/21 bars on 1d (next-day / ~1w / "
-    "~1mo) and to next-bar only on other timeframes; pass horizons=[...] to "
-    "override. Each horizon trains and walk-forward-validates its OWN model and "
-    "passes or fails the naive-baseline gate (persistence + majority-class) "
-    "INDEPENDENTLY — 'edge at 1d, no edge at 1mo' is a normal result; a failed "
-    "horizon ships prob_*=null with its validation basis. Features: the target "
-    "symbol's own OHLCV indicators plus BTC cycle features (halving clock, Mayer "
-    "Multiple, 200W-MA distance) and exogenous series (Fear & Greed, BTC "
-    "dominance, funding rate, open interest, MVRV) joined lag-1 as-of at bar "
-    "open, so publication-lag lookahead is structurally impossible. Feature "
-    "sets form a fixed ladder selected richest-first per call by exogenous "
-    "history depth: v2-full (all five series) -> v2-deep (F&G/funding/MVRV "
-    "only, the deep-history tier) -> v1 (OHLCV only); provenance lists exactly "
-    "the selected tier's series under series_inputs (empty for v1) and "
-    "provenance.fallback_reason names every richer tier skipped with its "
-    "surviving-row count (absent when v2-full trained; check feature_set_id "
-    "for the tier used). Each block "
-    "carries out-of-sample skill, baseline skill, "
-    "edge_margin = skill - baseline_skill, and edge_strength ('no_edge' / "
-    "'marginal' / 'clear'); treat a high prob_* under a 'marginal' edge as thin, "
-    "not near-certain. This is a CONDITION (a probability), never a buy/sell "
-    "recommendation and never a price level. Requires bars already cached for "
-    "the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, "
-    "15m, 4h, 1w."
+    "Forecast a cached symbol over a window; `kind` selects WHAT is predicted, all "
+    "read-only conditions (never a buy/sell call, never a price level). Returns "
+    "{kind, result}: the kind's payload rides under `result`. "
+    "kind='direction' (default): the price DIRECTION over one or more horizons, each a "
+    "calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. "
+    "Horizons default to 1/5/21 bars on 1d (next-day / ~1w / ~1mo) and next-bar "
+    "elsewhere; pass horizons=[...] to override. Each horizon trains and walk-forward-"
+    "validates its OWN model and passes/fails the naive-baseline gate INDEPENDENTLY "
+    "('edge at 1d, no edge at 1mo' is normal); a failed horizon ships prob_*=null with "
+    "its validation basis, and each block carries out-of-sample skill, baseline skill, "
+    "edge_margin, and edge_strength ('no_edge'/'marginal'/'clear'). "
+    "kind='volatility': realised VOLATILITY over the next horizon_bars — the predicted "
+    "per-bar magnitude with a 1-sigma band, scored against EWMA + persistence baselines "
+    "by QLIKE; when beats_baseline is false, trust baseline_vol (always surfaced). Use "
+    "it for position sizing and stop distance. "
+    "kind='regime': the market REGIME TRANSITION — the current trend x volatility state "
+    "(e.g. up_quiet / down_volatile) and a probability distribution over the "
+    "next-period regime horizon_bars ahead, scored against a persistence baseline "
+    "(regime unchanged) by the Brier score; regimes are sticky, so beating persistence "
+    "is a real signal. horizons/flat_band apply to 'direction' only; horizon_bars to "
+    "'volatility'/'regime' only. Features (all kinds): the symbol's OHLCV indicators "
+    "plus BTC cycle + exogenous series (Fear & Greed, BTC dominance, funding, open "
+    "interest, MVRV) joined lag-1 as-of at bar open (no publication-lag lookahead), on "
+    "the richest-first tier ladder v2-full -> v2-deep -> v1; provenance names the tier "
+    "(feature_set_id), its series (series_inputs), any skipped tier (fallback_reason), "
+    "and the top out-of-sample permutation-importance drivers. Requires bars already "
+    "cached for the window (backfill via get_ohlcv first). Supported timeframes: 1d, "
+    "1h, 15m, 4h, 1w."
 )
+
+
+class ForecastResponse(BaseModel):
+    """`forecast` result — the discriminated envelope (Plan 0109 ph2, ADR-0104).
+
+    A single object (so FastMCP does not wrap it in a generic ``{"result": …}``),
+    discriminated by `kind`. `result` is the selected kind's existing model, byte-
+    identical to what the retired single-kind tool returned: a `MultiHorizonForecastResult`
+    for `direction`, a `VolatilityForecast` for `volatility`, a `RegimeForecast` for
+    `regime`. The union is a plain field union (pydantic serializes each member by its
+    runtime type — the `scan_watchlist` precedent)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: ForecastKind
+    result: MultiHorizonForecastResult | VolatilityForecast | RegimeForecast
 
 
 def default_horizons(timeframe: str) -> tuple[int, ...]:
@@ -464,6 +508,216 @@ async def _multi_forecast_response(
     return result
 
 
+# --------------------------------------------------------------------------- #
+# kind="volatility" (absorbed from the retired forecast_volatility module)      #
+# --------------------------------------------------------------------------- #
+
+
+def _compute_volatility_forecast(
+    *,
+    bars: list[Bar],
+    symbol: str,
+    timeframe: str,
+    horizon_bars: int,
+    n_splits: int,
+    seed: int,
+    metric_lookup: MetricAsOfLookup | None,
+) -> VolatilityForecast:
+    """The deterministic, CPU-bound core: pick the feature tier (or v1 when no store is
+    wired), then forecast. Factored out of the async body so it is unit-testable without
+    a live MCP server (the `forecast` direction-core precedent)."""
+
+    rows: list[FeatureRow | None]
+    series_inputs: tuple[SeriesInput, ...]
+    fallback_reason: str | None
+    if metric_lookup is not None:
+        selection = select_feature_tier(bars, metric_lookup, n_splits=n_splits)
+        rows = selection.rows
+        feature_set_id = selection.feature_set_id
+        series_inputs = selection.series_inputs
+        fallback_reason = selection.fallback_reason
+    else:
+        rows = build_feature_rows(bars)
+        feature_set_id = FEATURE_SET_ID
+        series_inputs = ()
+        fallback_reason = FALLBACK_REASON_UNWIRED
+
+    return _run_volatility_forecast(
+        bars,
+        symbol=symbol,
+        timeframe=timeframe,
+        horizon_bars=horizon_bars,
+        n_splits=n_splits,
+        model_params=ModelParams(seed=seed),
+        feature_rows=rows,
+        feature_set_id=feature_set_id,
+        series_inputs=series_inputs,
+        fallback_reason=fallback_reason,
+    )
+
+
+async def _volatility_forecast_response(
+    *,
+    provider: MarketDataProvider,
+    event_bus: EventBus,
+    metric_lookup: MetricAsOfLookup | None,
+    symbol: str,
+    timeframe: str,
+    range_start: datetime,
+    range_end: datetime,
+    horizon_bars: int,
+    n_splits: int,
+    seed: int,
+) -> VolatilityForecast:
+    """Body of `forecast(kind="volatility")`: validate, fetch, tier-select, offload the
+    model work, then publish the completed envelope exactly once after success."""
+
+    _require_non_empty_symbol(symbol)
+    _require_supported_timeframe(timeframe)
+    _require_ordered_range(range_start, range_end)
+    if horizon_bars < 1:
+        raise ValueError(f"horizon_bars must be >= 1, got {horizon_bars}")
+    if n_splits < 2:
+        raise ValueError(f"n_splits must be >= 2, got {n_splits}")
+
+    bars = list(
+        await asyncio.to_thread(
+            provider.get_ohlcv,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=range_start,
+            end=range_end,
+        )
+    )
+    if not bars:
+        raise ValueError(
+            f"no cached bars for {symbol} {timeframe} over the requested window; "
+            "backfill via get_ohlcv first",
+        )
+
+    result = await asyncio.to_thread(
+        _compute_volatility_forecast,
+        bars=bars,
+        symbol=symbol,
+        timeframe=timeframe,
+        horizon_bars=horizon_bars,
+        n_splits=n_splits,
+        seed=seed,
+        metric_lookup=metric_lookup,
+    )
+
+    # Publish AFTER a successful computation — every raise above leaves the bus untouched.
+    event_bus.publish(
+        "volatility_forecast.completed", VolatilityForecastCompletedPayloadV1(forecast=result)
+    )
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# kind="regime" (absorbed from the retired forecast_regime module)             #
+# --------------------------------------------------------------------------- #
+
+
+def _compute_regime_forecast(
+    *,
+    bars: list[Bar],
+    symbol: str,
+    timeframe: str,
+    horizon_bars: int,
+    n_splits: int,
+    seed: int,
+    metric_lookup: MetricAsOfLookup | None,
+) -> RegimeForecast:
+    """The deterministic, CPU-bound core: pick the feature tier (or v1 when no store is
+    wired), then forecast. Factored out of the async body so it is unit-testable without
+    a live MCP server."""
+
+    rows: list[FeatureRow | None]
+    series_inputs: tuple[SeriesInput, ...]
+    fallback_reason: str | None
+    if metric_lookup is not None:
+        selection = select_feature_tier(bars, metric_lookup, n_splits=n_splits)
+        rows = selection.rows
+        feature_set_id = selection.feature_set_id
+        series_inputs = selection.series_inputs
+        fallback_reason = selection.fallback_reason
+    else:
+        rows = build_feature_rows(bars)
+        feature_set_id = FEATURE_SET_ID
+        series_inputs = ()
+        fallback_reason = FALLBACK_REASON_UNWIRED
+
+    return _run_regime_forecast(
+        bars,
+        symbol=symbol,
+        timeframe=timeframe,
+        horizon_bars=horizon_bars,
+        n_splits=n_splits,
+        model_params=ModelParams(seed=seed),
+        feature_rows=rows,
+        feature_set_id=feature_set_id,
+        series_inputs=series_inputs,
+        fallback_reason=fallback_reason,
+    )
+
+
+async def _regime_forecast_response(
+    *,
+    provider: MarketDataProvider,
+    event_bus: EventBus,
+    metric_lookup: MetricAsOfLookup | None,
+    symbol: str,
+    timeframe: str,
+    range_start: datetime,
+    range_end: datetime,
+    horizon_bars: int,
+    n_splits: int,
+    seed: int,
+) -> RegimeForecast:
+    """Body of `forecast(kind="regime")`: validate, fetch, tier-select, offload the model
+    work, then publish the completed envelope exactly once after success."""
+
+    _require_non_empty_symbol(symbol)
+    _require_supported_timeframe(timeframe)
+    _require_ordered_range(range_start, range_end)
+    if horizon_bars < 1:
+        raise ValueError(f"horizon_bars must be >= 1, got {horizon_bars}")
+    if n_splits < 2:
+        raise ValueError(f"n_splits must be >= 2, got {n_splits}")
+
+    bars = list(
+        await asyncio.to_thread(
+            provider.get_ohlcv,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=range_start,
+            end=range_end,
+        )
+    )
+    if not bars:
+        raise ValueError(
+            f"no cached bars for {symbol} {timeframe} over the requested window; "
+            "backfill via get_ohlcv first",
+        )
+
+    result = await asyncio.to_thread(
+        _compute_regime_forecast,
+        bars=bars,
+        symbol=symbol,
+        timeframe=timeframe,
+        horizon_bars=horizon_bars,
+        n_splits=n_splits,
+        seed=seed,
+        metric_lookup=metric_lookup,
+    )
+
+    # Publish AFTER a successful computation — every raise above leaves the bus untouched.
+    event_bus.publish(
+        "regime_forecast.completed", RegimeForecastCompletedPayloadV1(forecast=result)
+    )
+    return result
+
+
 def register_forecast(
     server: FastMCP,
     *,
@@ -473,14 +727,21 @@ def register_forecast(
     metric_lookup: MetricAsOfLookup | None = None,
     runs_dir: Path | None = None,
 ) -> None:
-    """Bind `forecast` to `server`. The provider, event bus, models_dir and
-    metric store are captured by closure so the tool body keeps the parameter
-    list FastMCP introspects for the schema. ``metric_lookup`` (the ADR-0051
-    as_of surface) enables the v2 exogenous feature set; without it the tool
-    computes on the v1 set and says so in its provenance. ``runs_dir`` (Plan
-    0063, ADR-0058) enables the per-call explanation artifact under
-    ``runs_dir/forecast/…``; without it the explanation summary still rides
-    the wire, only the full JSON is skipped."""
+    """Bind the unified `forecast` tool to `server`. The provider, event bus,
+    models_dir and metric store are captured by closure so the tool body keeps the
+    parameter list FastMCP introspects for the schema. ``metric_lookup`` (the ADR-0051
+    as_of surface) enables the v2 exogenous feature set for every kind; without it the
+    tool computes on the v1 set and says so in its provenance. ``runs_dir`` (Plan
+    0063, ADR-0058) enables the per-call explanation artifact for the ``direction``
+    kind under ``runs_dir/forecast/…``; without it the explanation summary still rides
+    the wire, only the full JSON is skipped.
+
+    `kind` dispatches to the unchanged per-kind body (Plan 0109 ph2, ADR-0104), and the
+    result is wrapped in the `ForecastResponse{kind, result}` envelope: ``direction``
+    (default — preserves today's call inputs and `result` model) publishes
+    ``forecast.completed``, ``volatility`` publishes ``volatility_forecast.completed``,
+    ``regime`` publishes ``regime_forecast.completed``. ``horizons`` / ``flat_band`` are
+    read by ``direction`` only; ``horizon_bars`` by ``volatility`` / ``regime`` only."""
 
     @server.tool(description=FORECAST_DESCRIPTION)
     async def forecast(
@@ -488,26 +749,57 @@ def register_forecast(
         timeframe: str,
         range_start: datetime,
         range_end: datetime,
+        kind: ForecastKind = "direction",
         horizons: list[int] | None = None,
         flat_band: float = 0.001,
+        horizon_bars: int = 5,
         n_splits: int = 5,
         seed: int = DEFAULT_SEED,
-    ) -> MultiHorizonForecastResult:
-        return await _multi_forecast_response(
-            provider=provider,
-            event_bus=event_bus,
-            models_dir=models_dir,
-            metric_lookup=metric_lookup,
-            symbol=symbol,
-            timeframe=timeframe,
-            range_start=range_start,
-            range_end=range_end,
-            horizons=horizons,
-            flat_band=flat_band,
-            n_splits=n_splits,
-            seed=seed,
-            runs_dir=runs_dir,
-        )
+    ) -> ForecastResponse:
+        result: MultiHorizonForecastResult | VolatilityForecast | RegimeForecast
+        if kind == "volatility":
+            result = await _volatility_forecast_response(
+                provider=provider,
+                event_bus=event_bus,
+                metric_lookup=metric_lookup,
+                symbol=symbol,
+                timeframe=timeframe,
+                range_start=range_start,
+                range_end=range_end,
+                horizon_bars=horizon_bars,
+                n_splits=n_splits,
+                seed=seed,
+            )
+        elif kind == "regime":
+            result = await _regime_forecast_response(
+                provider=provider,
+                event_bus=event_bus,
+                metric_lookup=metric_lookup,
+                symbol=symbol,
+                timeframe=timeframe,
+                range_start=range_start,
+                range_end=range_end,
+                horizon_bars=horizon_bars,
+                n_splits=n_splits,
+                seed=seed,
+            )
+        else:
+            result = await _multi_forecast_response(
+                provider=provider,
+                event_bus=event_bus,
+                models_dir=models_dir,
+                metric_lookup=metric_lookup,
+                symbol=symbol,
+                timeframe=timeframe,
+                range_start=range_start,
+                range_end=range_end,
+                horizons=horizons,
+                flat_band=flat_band,
+                n_splits=n_splits,
+                seed=seed,
+                runs_dir=runs_dir,
+            )
+        return ForecastResponse(kind=kind, result=result)
 
 
 __all__ = [
@@ -516,14 +808,21 @@ __all__ = [
     "FALLBACK_REASON_UNWIRED",
     "FORECAST_DESCRIPTION",
     "EdgeStrength",
+    "ForecastKind",
     "ForecastProvenance",
+    "ForecastResponse",
     "ForecastResult",
     "HorizonForecast",
     "MultiHorizonForecastResult",
+    "RegimeForecast",
     "SeriesInput",
+    "VolatilityForecast",
     "_classify_edge",
     "_compute_multi_horizon_forecast",
+    "_compute_regime_forecast",
     "_multi_forecast_response",
+    "_regime_forecast_response",
+    "_volatility_forecast_response",
     "default_horizons",
     "register_forecast",
 ]

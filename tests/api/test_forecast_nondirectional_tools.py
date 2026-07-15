@@ -1,12 +1,15 @@
-"""Phase-3 done-when for Plan 0077: the `forecast_volatility` / `forecast_regime` tools.
+"""Done-when for the non-directional forecast kinds (Plan 0077 ph3; unified into
+`forecast(kind=…)` by Plan 0109 ph2, ADR-0104).
 
-Two load-bearing guarantees:
+The `forecast_volatility` / `forecast_regime` tools folded into the `volatility` /
+`regime` kinds of the one `forecast` tool; their response bodies now live in
+`api/mcp_tools/forecast.py`. Two load-bearing guarantees survive the merge:
 
-* each tool publishes its ``*.completed v1`` envelope **exactly once** on success, strictly
-  after the result is built (drained from a subscription opened before the call), and
-  **zero** envelopes on failure (empty cached bars);
-* both tools are **read-only** — no trade key, no order, no network write path exists in
-  either tool module (a source-level scan, the same boundary `recommend` carries).
+* each kind publishes its ``*.completed v1`` envelope **exactly once** on success,
+  strictly after the result is built (drained from a subscription opened before the
+  call), and **zero** envelopes on failure (empty cached bars);
+* the forecast tool module is **read-only** — no trade key, no order, no network write
+  path (a source-level scan, the same boundary `recommend` carries).
 
 Registration in `create_mcp_components` and the `EXPECTED_FULL_TOOLSET` membership are
 pinned by `tests/api/test_mcp_tools.py`; the forecasters' own correctness lives in
@@ -21,10 +24,11 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from market_analyser.api.mcp_tools import forecast_regime as regime_tool
-from market_analyser.api.mcp_tools import forecast_volatility as volatility_tool
-from market_analyser.api.mcp_tools.forecast_regime import _regime_forecast_response
-from market_analyser.api.mcp_tools.forecast_volatility import _volatility_forecast_response
+from market_analyser.api.mcp_tools import forecast as forecast_module
+from market_analyser.api.mcp_tools.forecast import (
+    _regime_forecast_response,
+    _volatility_forecast_response,
+)
 from market_analyser.events import Envelope, EventBus
 from tests.api.test_forecast_tool import BARS, _BarsProvider
 
@@ -120,10 +124,11 @@ def test_regime_tool_publishes_nothing_on_empty_bars() -> None:
 
 def test_nondirectional_forecast_tools_are_read_only() -> None:
     """No trade-permissioned secret, no order placement, no network write path exists in
-    either tool module — source-level, so a future 'just submit it' accretion fails here
-    before it ships (the ADR-0029 / ADR-0025 boundary the advisor surface also carries)."""
+    the forecast tool module — source-level, so a future 'just submit it' accretion fails
+    here before it ships (the ADR-0029 / ADR-0025 boundary the advisor surface also
+    carries)."""
 
-    sources = [Path(volatility_tool.__file__), Path(regime_tool.__file__)]
+    sources = [Path(forecast_module.__file__)]
 
     forbidden_tokens = (
         "place_order",

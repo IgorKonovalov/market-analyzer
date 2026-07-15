@@ -88,9 +88,11 @@ from market_analyser.forecast.features import (
     build_feature_rows_v2_deep,
 )
 from market_analyser.forecast.labels import Direction, LabelParams, build_labels
+from market_analyser.forecast.regime import RegimeForecast
 from market_analyser.forecast.result import HorizonForecast, MultiHorizonForecastResult
 from market_analyser.forecast.tiers import MIN_TIER_ROWS
 from market_analyser.forecast.validation import ForecastValidation
+from market_analyser.forecast.volatility import VolatilityForecast
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
 from market_analyser.persistence.engine import (
     apply_migrations,
@@ -1065,7 +1067,8 @@ def test_forecast_tool_registered_and_returns_result(live_server: str, mcp_secre
             return dict(result.structuredContent)
 
     payload = asyncio.run(_run())
-    parsed = MultiHorizonForecastResult.model_validate(payload)
+    assert payload["kind"] == "direction"  # discriminated envelope (Plan 0109 ph2)
+    parsed = MultiHorizonForecastResult.model_validate(payload["result"])
     assert parsed.symbol == "SYN"
     assert parsed.timeframe == "1d"
     assert parsed.feature_set_id == FEATURE_SET_ID  # v1, stated
@@ -1074,6 +1077,43 @@ def test_forecast_tool_registered_and_returns_result(live_server: str, mcp_secre
     assert block.provenance is not None
     assert block.provenance.model_version
     assert block.provenance.series_inputs == ()  # and not silent about it
+
+
+def test_forecast_kind_dispatch_over_the_wire(live_server: str, mcp_secret: str) -> None:
+    """Plan 0109 ph2 (ADR-0104): the unified `forecast` tool routes `kind` to the right
+    non-directional body over the real transport, returning the `{kind, result}`
+    envelope — `volatility`'s result round-trips through VolatilityForecast, `regime`'s
+    through RegimeForecast — and the retired standalone names are gone from the surface.
+    The direction default is covered above; the per-kind `*.completed` events are pinned
+    by test_forecast_nondirectional_tools.py."""
+
+    async def _run() -> tuple[dict[str, object], dict[str, object], set[str]]:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            listed = {t.name for t in (await session.list_tools()).tools}
+            base = {
+                "symbol": "SYN",
+                "timeframe": "1d",
+                "range_start": "2025-01-01T00:00:00+00:00",
+                "range_end": "2025-12-31T00:00:00+00:00",
+                "horizon_bars": 5,
+                "n_splits": 4,
+            }
+            vol = await session.call_tool("forecast", {**base, "kind": "volatility"})
+            reg = await session.call_tool("forecast", {**base, "kind": "regime"})
+            for result in (vol, reg):
+                assert not result.isError, f"forecast errored: {result.content}"
+                assert result.structuredContent is not None
+            assert vol.structuredContent is not None
+            assert reg.structuredContent is not None
+            return dict(vol.structuredContent), dict(reg.structuredContent), listed
+
+    vol_payload, reg_payload, listed = asyncio.run(_run())
+    assert listed.isdisjoint({"forecast_volatility", "forecast_regime"})
+    # Envelope discriminated by kind; each kind's result round-trips through its own model.
+    assert vol_payload["kind"] == "volatility"
+    assert reg_payload["kind"] == "regime"
+    assert VolatilityForecast.model_validate(vol_payload["result"]).symbol == "SYN"
+    assert RegimeForecast.model_validate(reg_payload["result"]).symbol == "SYN"
 
 
 # The v2 live-server fixture pair: a real metric store (in-memory SQLite through
@@ -1135,7 +1175,8 @@ def test_forecast_tool_round_trips_with_series_inputs(v2_live_server: str, mcp_s
             return dict(result.structuredContent)
 
     payload = asyncio.run(_run())
-    parsed = MultiHorizonForecastResult.model_validate(payload)
+    assert payload["kind"] == "direction"  # discriminated envelope (Plan 0109 ph2)
+    parsed = MultiHorizonForecastResult.model_validate(payload["result"])
 
     assert parsed.feature_set_id == FEATURE_SET_ID_V2
     assert [block.horizon_bars for block in parsed.horizons] == [1, 5, 21]

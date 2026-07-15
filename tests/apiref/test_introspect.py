@@ -41,13 +41,16 @@ def test_forecast_tool_record_has_expected_shape(tmp_path: Path) -> None:
     forecast = tools["forecast"]
 
     param_names = {param.name for param in forecast.params}
-    assert {"symbol", "timeframe", "range_start", "range_end", "horizons"} <= param_names
+    # Plan 0109 ph2 (ADR-0104): unified `forecast` takes the `kind` discriminator
+    # alongside the direction params.
+    assert {"symbol", "timeframe", "range_start", "range_end", "horizons", "kind"} <= param_names
     symbol = next(param for param in forecast.params if param.name == "symbol")
     assert symbol.required is True
     assert symbol.type_str == "string"
 
-    # Return shape comes from the tool's real output schema.
-    assert forecast.return_shape == "MultiHorizonForecastResult"
+    # Return shape is the discriminated envelope (Plan 0109 ph2); the per-kind payload
+    # rides under its `result` field.
+    assert forecast.return_shape == "ForecastResponse"
     assert forecast.source_module == "market_analyser.api.mcp_tools.forecast"
     assert forecast.source_path == "src/market_analyser/api/mcp_tools/forecast.py"
 

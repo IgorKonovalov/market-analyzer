@@ -539,8 +539,6 @@ EXPECTED_FULL_TOOLSET = {
     "fibonacci_levels",
     "find_convergence_opportunities",
     "forecast",
-    "forecast_regime",
-    "forecast_volatility",
     "get_backtest",
     "get_chart_drawings",
     "get_metric_series",

@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 55 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -27,9 +27,7 @@ The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`evaluate_signals`](#evaluatesignals) | Evaluate a strategy against the CURRENT bar of one symbol — a live signal read, not a historical backtest. |
 | [`fibonacci_levels`](#fibonaccilevels) | Compute a Fibonacci grid on one symbol's cached bars, auto-anchored to the dominant recent swing. |
 | [`find_convergence_opportunities`](#findconvergenceopportunities) | Screen prediction markets matching a query for CONVERGENCE opportunities — markets nearing resolution whose top outcome is near-certain, where a price converging to 1.00 leaves a few percent of implied upside. |
-| [`forecast`](#forecast) | Forecast the price DIRECTION of a cached symbol over one or more horizons, each as a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. |
-| [`forecast_regime`](#forecastregime) | Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. |
-| [`forecast_volatility`](#forecastvolatility) | Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. |
+| [`forecast`](#forecast) | Forecast a cached symbol over a window; `kind` selects WHAT is predicted, all read-only conditions (never a buy/sell call, never a price level). |
 | [`get_backtest`](#getbacktest) | Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). |
 | [`get_chart_drawings`](#getchartdrawings) | Read the drawings the USER placed on a symbol's chart (trendlines, rays, h/v-lines, rectangles, fib grids, long/short position boxes, and date/price range measures) — use this to see and reason about what the user drew, e.g. |
 | [`get_metric_series`](#getmetricseries) | Read a stored metric time series (ADR-0051): points of one registered series_id over an inclusive [start, end] epoch-second window, sorted by ts ascending. |
@@ -454,7 +452,7 @@ Screen prediction markets matching a query for CONVERGENCE opportunities — mar
 
 ## `forecast`
 
-Forecast the price DIRECTION of a cached symbol over one or more horizons, each as a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. Horizons default to 1/5/21 bars on 1d (next-day / ~1w / ~1mo) and to next-bar only on other timeframes; pass horizons=[...] to override. Each horizon trains and walk-forward-validates its OWN model and passes or fails the naive-baseline gate (persistence + majority-class) INDEPENDENTLY — 'edge at 1d, no edge at 1mo' is a normal result; a failed horizon ships prob_*=null with its validation basis. Features: the target symbol's own OHLCV indicators plus BTC cycle features (halving clock, Mayer Multiple, 200W-MA distance) and exogenous series (Fear & Greed, BTC dominance, funding rate, open interest, MVRV) joined lag-1 as-of at bar open, so publication-lag lookahead is structurally impossible. Feature sets form a fixed ladder selected richest-first per call by exogenous history depth: v2-full (all five series) -> v2-deep (F&G/funding/MVRV only, the deep-history tier) -> v1 (OHLCV only); provenance lists exactly the selected tier's series under series_inputs (empty for v1) and provenance.fallback_reason names every richer tier skipped with its surviving-row count (absent when v2-full trained; check feature_set_id for the tier used). Each block carries out-of-sample skill, baseline skill, edge_margin = skill - baseline_skill, and edge_strength ('no_edge' / 'marginal' / 'clear'); treat a high prob_* under a 'marginal' edge as thin, not near-certain. This is a CONDITION (a probability), never a buy/sell recommendation and never a price level. Requires bars already cached for the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, 15m, 4h, 1w.
+Forecast a cached symbol over a window; `kind` selects WHAT is predicted, all read-only conditions (never a buy/sell call, never a price level). Returns {kind, result}: the kind's payload rides under `result`. kind='direction' (default): the price DIRECTION over one or more horizons, each a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. Horizons default to 1/5/21 bars on 1d (next-day / ~1w / ~1mo) and next-bar elsewhere; pass horizons=[...] to override. Each horizon trains and walk-forward-validates its OWN model and passes/fails the naive-baseline gate INDEPENDENTLY ('edge at 1d, no edge at 1mo' is normal); a failed horizon ships prob_*=null with its validation basis, and each block carries out-of-sample skill, baseline skill, edge_margin, and edge_strength ('no_edge'/'marginal'/'clear'). kind='volatility': realised VOLATILITY over the next horizon_bars — the predicted per-bar magnitude with a 1-sigma band, scored against EWMA + persistence baselines by QLIKE; when beats_baseline is false, trust baseline_vol (always surfaced). Use it for position sizing and stop distance. kind='regime': the market REGIME TRANSITION — the current trend x volatility state (e.g. up_quiet / down_volatile) and a probability distribution over the next-period regime horizon_bars ahead, scored against a persistence baseline (regime unchanged) by the Brier score; regimes are sticky, so beating persistence is a real signal. horizons/flat_band apply to 'direction' only; horizon_bars to 'volatility'/'regime' only. Features (all kinds): the symbol's OHLCV indicators plus BTC cycle + exogenous series (Fear & Greed, BTC dominance, funding, open interest, MVRV) joined lag-1 as-of at bar open (no publication-lag lookahead), on the richest-first tier ladder v2-full -> v2-deep -> v1; provenance names the tier (feature_set_id), its series (series_inputs), any skipped tier (fallback_reason), and the top out-of-sample permutation-importance drivers. Requires bars already cached for the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, 15m, 4h, 1w.
 
 **Parameters**
 
@@ -464,90 +462,21 @@ Forecast the price DIRECTION of a cached symbol over one or more horizons, each 
 | `timeframe` | string | yes | — |
 | `range_start` | string (date-time) | yes | — |
 | `range_end` | string (date-time) | yes | — |
+| `kind` | enum["direction", "volatility", "regime"] | no | `"direction"` |
 | `horizons` | array[integer] \| null | no | `None` |
 | `flat_band` | number | no | `0.001` |
+| `horizon_bars` | integer | no | `5` |
 | `n_splits` | integer | no | `5` |
 | `seed` | integer | no | `1729` |
 
-**Returns:** `MultiHorizonForecastResult`
+**Returns:** `ForecastResponse`
 
 | Field | Type |
 | --- | --- |
-| `symbol` | string |
-| `timeframe` | string |
-| `as_of_bar_ts` | string (date-time) |
-| `feature_set_id` | string |
-| `horizons` | array[HorizonForecast] |
+| `kind` | enum["direction", "volatility", "regime"] |
+| `result` | MultiHorizonForecastResult \| VolatilityForecast \| RegimeForecast |
 
 **Source:** [`src/market_analyser/api/mcp_tools/forecast.py`](../../src/market_analyser/api/mcp_tools/forecast.py)
-
-## `forecast_regime`
-
-Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. up_quiet / down_volatile) and a probability distribution over the next-period regime horizon_bars ahead, scored against a persistence baseline (regime unchanged) by the Brier score. beats_baseline is the honest gate (the classifier must beat persistence out-of-sample); regimes are sticky, so persistence is a strong baseline and beating it is a real signal. The trend axis is the same classifier the analyst snapshot uses; the volatility axis splits ATR% at its trailing median. Features use the richest-first tier ladder (v2-full -> v2-deep -> v1); provenance names the tier, its series, any skipped tier, and the top out-of-sample permutation-importance drivers. Distinct from bitcoin_market_pulse's whole-market regime: this is per-symbol and predictive. A CONDITION, never a buy/sell recommendation. Requires bars already cached for the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, 15m, 4h, 1w.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbol` | string | yes | — |
-| `timeframe` | string | yes | — |
-| `range_start` | string (date-time) | yes | — |
-| `range_end` | string (date-time) | yes | — |
-| `horizon_bars` | integer | no | `5` |
-| `n_splits` | integer | no | `5` |
-| `seed` | integer | no | `1729` |
-
-**Returns:** `RegimeForecast`
-
-| Field | Type |
-| --- | --- |
-| `symbol` | string |
-| `timeframe` | string |
-| `as_of_bar_ts` | string (date-time) |
-| `horizon_bars` | integer |
-| `current_regime` | RegimeState \| null |
-| `transition_probs` | object \| null |
-| `beats_baseline` | boolean |
-| `score_margin` | number \| null |
-| `validation` | RegimeValidation |
-| `provenance` | ForecastProvenance \| null |
-
-**Source:** [`src/market_analyser/api/mcp_tools/forecast_regime.py`](../../src/market_analyser/api/mcp_tools/forecast_regime.py)
-
-## `forecast_volatility`
-
-Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. beats_baseline is the honest gate (the model must beat the better baseline out-of-sample); when it does not, trust baseline_vol (the winning baseline's current reading), which is always surfaced. Features use the same richest-first tier ladder as `forecast` (v2-full -> v2-deep -> v1 by exogenous history depth); provenance names the tier (feature_set_id), its series (series_inputs), any skipped tier (fallback_reason), and the top out-of-sample permutation-importance drivers. This is a CONDITION (a magnitude), never a buy/sell recommendation and never a price level; use it for position sizing and stop distance. Requires bars already cached for the window (backfill via get_ohlcv first). Supported timeframes: 1d, 1h, 15m, 4h, 1w.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbol` | string | yes | — |
-| `timeframe` | string | yes | — |
-| `range_start` | string (date-time) | yes | — |
-| `range_end` | string (date-time) | yes | — |
-| `horizon_bars` | integer | no | `5` |
-| `n_splits` | integer | no | `5` |
-| `seed` | integer | no | `1729` |
-
-**Returns:** `VolatilityForecast`
-
-| Field | Type |
-| --- | --- |
-| `symbol` | string |
-| `timeframe` | string |
-| `as_of_bar_ts` | string (date-time) |
-| `horizon_bars` | integer |
-| `predicted_vol` | number \| null |
-| `band` | array[any] \| null |
-| `baseline_vol` | number \| null |
-| `baseline_kind` | enum["persistence", "ewma"] \| null |
-| `beats_baseline` | boolean |
-| `score_margin` | number \| null |
-| `validation` | VolatilityValidation |
-| `provenance` | ForecastProvenance \| null |
-
-**Source:** [`src/market_analyser/api/mcp_tools/forecast_volatility.py`](../../src/market_analyser/api/mcp_tools/forecast_volatility.py)
 
 ## `get_backtest`
 
