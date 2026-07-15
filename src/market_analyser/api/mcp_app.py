@@ -54,7 +54,6 @@ from market_analyser.api.mcp_tools.fibonacci_levels import register_fibonacci_le
 from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.forecast_regime import register_forecast_regime
 from market_analyser.api.mcp_tools.forecast_volatility import register_forecast_volatility
-from market_analyser.api.mcp_tools.gainers_losers import register_gainers_losers
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
 from market_analyser.api.mcp_tools.get_chart_drawings import register_get_chart_drawings
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
@@ -64,7 +63,6 @@ from market_analyser.api.mcp_tools.list_annotations import register_list_annotat
 from market_analyser.api.mcp_tools.market_snapshot import register_market_snapshot
 from market_analyser.api.mcp_tools.market_structure import register_market_structure
 from market_analyser.api.mcp_tools.metric_series import register_get_metric_series
-from market_analyser.api.mcp_tools.momentum_scan import register_momentum_scan
 from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
     register_multi_timeframe_analysis,
 )
@@ -74,23 +72,20 @@ from market_analyser.api.mcp_tools.pool_discrepancies import register_pool_discr
 from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
 from market_analyser.api.mcp_tools.prediction_markets import register_prediction_market_tools
 from market_analyser.api.mcp_tools.prediction_screener import register_prediction_screener
-from market_analyser.api.mcp_tools.quality_rank import register_quality_rank
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.recommend import register_recommend
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.scan_patterns import register_scan_patterns
 from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
+from market_analyser.api.mcp_tools.scan_watchlist import register_scan_watchlist
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
 from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
 from market_analyser.api.mcp_tools.show_chart import register_show_chart
-from market_analyser.api.mcp_tools.smart_volume import register_smart_volume
-from market_analyser.api.mcp_tools.squeeze_scan import register_squeeze_scan
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
 from market_analyser.api.mcp_tools.technical_read import register_technical_read
 from market_analyser.api.mcp_tools.track_record import register_get_track_record
 from market_analyser.api.mcp_tools.update_chart import register_update_chart
-from market_analyser.api.mcp_tools.volume_breakout import register_volume_breakout
 from market_analyser.api.mcp_tools.volume_confirmation import register_volume_confirmation
 from market_analyser.api.mcp_tools.walk_forward_backtest import register_walk_forward_backtest
 from market_analyser.api.mcp_tools.watches import register_watch_tools
@@ -242,7 +237,6 @@ def create_mcp_components(
     register_compare_strategies(server, provider=provider)
     register_walk_forward_backtest(server, provider=provider)
     register_multi_timeframe_analysis(server, provider=provider)
-    register_volume_breakout(server, provider=provider)
     register_volume_confirmation(server, provider=provider)
     register_counter_trend_volume(server, provider=provider)
     register_detect_divergences(server, provider=provider, event_bus=event_bus)
@@ -253,21 +247,14 @@ def create_mcp_components(
     register_market_structure(server, provider=provider)
     register_pivot_points(server, provider=provider)
     register_anchored_vwap(server, provider=provider)
-    register_smart_volume(server, provider=provider)
-    # Watchlist condition scanners (Plan 0100, ADR-0095): rank a caller-supplied
-    # symbol list by a condition on cached bars via the shared `_scan_symbols`
-    # fan-out. `squeeze_scan` ranks by squeeze tightness (ADR-0083 trio);
-    # `gainers_losers` ranks by trailing close-to-close % change; `momentum_scan`
-    # filters by RSI band + trend (no volume gate). Always registered — provider-
-    # only, conditions only.
-    register_squeeze_scan(server, provider=provider)
-    register_gainers_losers(server, provider=provider)
-    register_momentum_scan(server, provider=provider)
-    # Composite quality rank (Plan 0101, ADR-0096): a screening rank over the same
-    # `_scan_symbols` fan-out — a normalized 0..100 composite decomposed into named
-    # factor contributions with a liquidity gate. Conditions only (ADR-0029); a call
-    # goes through `recommend`, which may consume this rank.
-    register_quality_rank(server, provider=provider)
+    # Unified watchlist scanner (Plan 0109, ADR-0104): one `scan_watchlist(rank_by=…)`
+    # verb folding the six same-verb scanners — squeeze / gainers / losers / momentum /
+    # quality / volume_breakout / smart_volume — into modes over the shared
+    # `_scan_symbols` fan-out (ADR-0095) and the `analysis/volume` conditions, unchanged.
+    # Always registered — provider-only, conditions only (the `quality` mode stays an
+    # ADR-0096 screening rank; a call goes through `recommend`, which consumes the
+    # underlying quality scorer directly, not this tool).
+    register_scan_watchlist(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)

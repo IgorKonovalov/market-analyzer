@@ -1,11 +1,13 @@
-"""Phase-3 done-when for Plan 0021: the volume-scanner MCP tools.
+"""Done-when for the `volume_confirmation` single-symbol read (Plan 0021 phase 3).
 
-The bodies are factored into `_volume_breakout_scan_response` /
-`_volume_confirmation_response` / `_smart_volume_scan_response` so the scan, skip,
-and boundary paths run on a single event loop. One live-MCP-server test covers
-registration + transport for all three. A `_SeededProvider` returns canned
-per-(symbol, timeframe) bars (honouring the window + `as_of` truncation) and can
-be told to raise for specific symbols, exercising graceful degradation.
+The `volume_breakout` and `smart_volume` scans this file once also covered were folded
+into `scan_watchlist(rank_by=…)` by Plan 0109 phase 1 — their assertions now live in
+`test_scan_watchlist_tool.py`. `volume_confirmation` stays a standalone tool until
+Plan 0109 phase 5 folds it into `volume_read`; its body is factored into
+`_volume_confirmation_response` so the detail + no-bars paths run on a single event
+loop, and one live-MCP-server test covers registration + transport. A `_SeededProvider`
+returns canned per-(symbol, timeframe) bars (honouring the window + `as_of`
+truncation).
 """
 
 from __future__ import annotations
@@ -26,21 +28,9 @@ from fastapi import FastAPI
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from market_analyser.analysis.volume import (
-    BREAKOUT_PRICE_LOOKBACK,
-    BREAKOUT_VOL_MULTIPLE,
-    CONFIRMATION_LOOKBACK,
-    SMART_RSI_HIGH,
-    SMART_RSI_LOW,
-    SMART_VOL_MULTIPLE,
-)
+from market_analyser.analysis.volume import CONFIRMATION_LOOKBACK
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
-from market_analyser.api.mcp_tools.smart_volume import (
-    MAX_SCAN_SYMBOLS,
-    _smart_volume_scan_response,
-)
-from market_analyser.api.mcp_tools.volume_breakout import _volume_breakout_scan_response
 from market_analyser.api.mcp_tools.volume_confirmation import _volume_confirmation_response
 from market_analyser.data.types import (
     Bar,
@@ -67,46 +57,26 @@ def _mk(
     symbol: str,
     closes: Sequence[float],
     volumes: Sequence[float],
-    highs: Sequence[float] | None = None,
-    lows: Sequence[float] | None = None,
 ) -> list[Bar]:
-    """Daily bars ending today from explicit close/volume series; highs/lows
-    default to the close (a degenerate but valid OHLC band)."""
+    """Daily bars ending today from explicit close/volume series; highs/lows collapse
+    to the close (a degenerate but valid OHLC band — the confirmation read is
+    close/volume driven)."""
 
     n = len(closes)
-    hi = highs if highs is not None else list(closes)
-    lo = lows if lows is not None else list(closes)
     return [
         Bar(
             symbol=symbol,
             timeframe="1d",
             event_ts=_END - timedelta(days=n - 1 - i),
             open=closes[i],
-            high=hi[i],
-            low=lo[i],
+            high=closes[i],
+            low=closes[i],
             close=closes[i],
             volume=volumes[i],
             source="fixture",
         )
         for i in range(n)
     ]
-
-
-def _breakout(symbol: str, *, last_volume: float) -> list[Bar]:
-    """20 tight-range bars then a 21st that clears the trailing high (101) on a
-    volume surge whose multiple scales with `last_volume`."""
-
-    closes = [100.0] * 20 + [110.0]
-    volumes = [100.0] * 20 + [last_volume]
-    highs = [101.0] * 20 + [111.0]
-    lows = [99.0] * 20 + [109.0]
-    return _mk(symbol, closes, volumes, highs, lows)
-
-
-def _drift(symbol: str) -> list[Bar]:
-    """A quiet drift inside the range with no volume surge — not a breakout."""
-
-    return _mk(symbol, [100.0] * 20 + [100.5], [100.0] * 21, [101.0] * 21, [99.0] * 21)
 
 
 def _confirmation(symbol: str, *, up_volume: float, down_volume: float) -> list[Bar]:
@@ -124,28 +94,6 @@ def _confirmation(symbol: str, *, up_volume: float, down_volume: float) -> list[
             close += 2.0
             volumes.append(up_volume)
         closes.append(close)
-    return _mk(symbol, closes, volumes)
-
-
-def _oscillating(symbol: str, *, last_volume: float, n: int = 30) -> list[Bar]:
-    """Alternating closes → RSI ≈ 50 (inside the smart-volume band); volume surge
-    on the last bar."""
-
-    closes: list[float] = []
-    close = 100.0
-    for i in range(n):
-        close += 1.0 if i % 2 == 0 else -1.0
-        closes.append(close)
-    volumes = [last_volume if i == n - 1 else 100.0 for i in range(n)]
-    return _mk(symbol, closes, volumes)
-
-
-def _uptrend(symbol: str, *, last_volume: float, n: int = 30) -> list[Bar]:
-    """Monotonic rise → RSI ≈ 100 (above the band); the same last-bar surge as
-    `_oscillating`."""
-
-    closes = [100.0 + i for i in range(n)]
-    volumes = [last_volume if i == n - 1 else 100.0 for i in range(n)]
     return _mk(symbol, closes, volumes)
 
 
@@ -220,84 +168,6 @@ class _SeededProvider:
 
 
 # --------------------------------------------------------------------------- #
-# volume_breakout scan                                                          #
-# --------------------------------------------------------------------------- #
-
-
-def test_breakout_scan_returns_only_breakouts_sorted() -> None:
-    provider = _SeededProvider(
-        {
-            ("A", "1d"): _breakout("A", last_volume=300.0),  # multiple ~2.7
-            ("B", "1d"): _drift("B"),  # no breakout
-            ("C", "1d"): _breakout("C", last_volume=400.0),  # multiple ~3.5
-        }
-    )
-    resp = asyncio.run(
-        _volume_breakout_scan_response(
-            provider=provider,
-            symbols=["A", "B", "C"],
-            timeframe="1d",
-            vol_multiple=BREAKOUT_VOL_MULTIPLE,
-            price_lookback=BREAKOUT_PRICE_LOOKBACK,
-            as_of=None,
-        )
-    )
-    # B excluded; C before A (multiple descending).
-    assert [m.symbol for m in resp.matches] == ["C", "A"]
-    assert resp.matches[0].volume_multiple is not None
-    assert resp.matches[1].volume_multiple is not None
-    assert resp.matches[0].volume_multiple > resp.matches[1].volume_multiple
-    for m in resp.matches:
-        assert m.is_breakout is True
-        assert m.direction == "bullish"
-        assert m.broken_level == 101.0
-    assert resp.skipped == []
-    assert resp.scanned_at.tzinfo is not None
-
-
-def test_breakout_scan_skips_missing_and_failed_symbols() -> None:
-    provider = _SeededProvider(
-        {("A", "1d"): _breakout("A", last_volume=300.0)},
-        error_symbols={"BOOM"},
-    )
-    resp = asyncio.run(
-        _volume_breakout_scan_response(
-            provider=provider,
-            symbols=["A", "MISSING", "BOOM"],
-            timeframe="1d",
-            vol_multiple=BREAKOUT_VOL_MULTIPLE,
-            price_lookback=BREAKOUT_PRICE_LOOKBACK,
-            as_of=None,
-        )
-    )
-    assert [m.symbol for m in resp.matches] == ["A"]  # the rest still scanned
-    assert sorted(resp.skipped) == ["BOOM", "MISSING"]  # no-bars + fetch-error both skipped
-
-
-@pytest.mark.parametrize(
-    ("symbols", "timeframe"),
-    [
-        ([], "1d"),  # empty list
-        (["A", "B"], "5m"),  # unsupported timeframe
-        ([f"S{i}" for i in range(MAX_SCAN_SYMBOLS + 1)], "1d"),  # over the cap
-    ],
-)
-def test_breakout_scan_boundary_validation(symbols: list[str], timeframe: str) -> None:
-    provider = _SeededProvider({})
-    with pytest.raises(ValueError):
-        asyncio.run(
-            _volume_breakout_scan_response(
-                provider=provider,
-                symbols=symbols,
-                timeframe=timeframe,
-                vol_multiple=BREAKOUT_VOL_MULTIPLE,
-                price_lookback=BREAKOUT_PRICE_LOOKBACK,
-                as_of=None,
-            )
-        )
-
-
-# --------------------------------------------------------------------------- #
 # volume_confirmation detail                                                    #
 # --------------------------------------------------------------------------- #
 
@@ -339,97 +209,7 @@ def test_confirmation_detail_no_bars() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# smart_volume scan                                                             #
-# --------------------------------------------------------------------------- #
-
-
-def test_smart_volume_scan_returns_only_qualifying() -> None:
-    provider = _SeededProvider(
-        {
-            ("A", "1d"): _oscillating("A", last_volume=200.0),  # surge + RSI in band
-            ("B", "1d"): _uptrend("B", last_volume=200.0),  # surge but RSI above band
-        }
-    )
-    resp = asyncio.run(
-        _smart_volume_scan_response(
-            provider=provider,
-            symbols=["A", "B"],
-            timeframe="1d",
-            rsi_low=SMART_RSI_LOW,
-            rsi_high=SMART_RSI_HIGH,
-            vol_multiple=SMART_VOL_MULTIPLE,
-            as_of=None,
-        )
-    )
-    assert [m.symbol for m in resp.matches] == ["A"]
-    assert resp.matches[0].qualifies is True
-    assert resp.skipped == []
-
-
-def test_smart_volume_scan_rejects_bad_band() -> None:
-    provider = _SeededProvider({})
-    with pytest.raises(ValueError):
-        asyncio.run(
-            _smart_volume_scan_response(
-                provider=provider,
-                symbols=["A"],
-                timeframe="1d",
-                rsi_low=70.0,
-                rsi_high=30.0,  # inverted band
-                vol_multiple=SMART_VOL_MULTIPLE,
-                as_of=None,
-            )
-        )
-
-
-def test_smart_volume_scan_skips_missing_and_failed_symbols() -> None:
-    # smart_volume carries its own copy of the cap + skip loop (deliberately not
-    # shared with volume_breakout), so it needs its own coverage of the path.
-    provider = _SeededProvider(
-        {("A", "1d"): _oscillating("A", last_volume=200.0)},
-        error_symbols={"BOOM"},
-    )
-    resp = asyncio.run(
-        _smart_volume_scan_response(
-            provider=provider,
-            symbols=["A", "MISSING", "BOOM"],
-            timeframe="1d",
-            rsi_low=SMART_RSI_LOW,
-            rsi_high=SMART_RSI_HIGH,
-            vol_multiple=SMART_VOL_MULTIPLE,
-            as_of=None,
-        )
-    )
-    assert [m.symbol for m in resp.matches] == ["A"]  # the rest still scanned
-    assert sorted(resp.skipped) == ["BOOM", "MISSING"]  # no-bars + fetch-error both skipped
-
-
-@pytest.mark.parametrize(
-    ("symbols", "timeframe"),
-    [
-        ([], "1d"),  # empty list
-        (["A", "B"], "5m"),  # unsupported timeframe
-        ([f"S{i}" for i in range(MAX_SCAN_SYMBOLS + 1)], "1d"),  # over the cap
-    ],
-)
-def test_smart_volume_scan_boundary_validation(symbols: list[str], timeframe: str) -> None:
-    provider = _SeededProvider({})
-    with pytest.raises(ValueError):
-        asyncio.run(
-            _smart_volume_scan_response(
-                provider=provider,
-                symbols=symbols,
-                timeframe=timeframe,
-                rsi_low=SMART_RSI_LOW,
-                rsi_high=SMART_RSI_HIGH,
-                vol_multiple=SMART_VOL_MULTIPLE,
-                as_of=None,
-            )
-        )
-
-
-# --------------------------------------------------------------------------- #
-# Live MCP server: registration + transport for all three                       #
+# Live MCP server: registration + transport                                     #
 # --------------------------------------------------------------------------- #
 
 
@@ -454,10 +234,7 @@ def annotations_repo() -> Iterator[AnnotationsRepository]:
 @pytest.fixture
 def app(mcp_secret: str, annotations_repo: AnnotationsRepository) -> FastAPI:
     provider = _SeededProvider(
-        {
-            ("A", "1d"): _breakout("A", last_volume=300.0),
-            ("CONF", "1d"): _confirmation("CONF", up_volume=300.0, down_volume=50.0),
-        }
+        {("CONF", "1d"): _confirmation("CONF", up_volume=300.0, down_volume=50.0)}
     )
     return create_app(
         secret=RENDERER_SECRET,
@@ -508,35 +285,20 @@ async def _mcp_session(url: str, bearer: str) -> AsyncIterator[ClientSession]:
         yield session
 
 
-def test_scanner_tools_registered_and_callable(live_server: str, mcp_secret: str) -> None:
-    """All three tools are registered under their documented names and reachable
-    over the real MCP transport, returning the documented response shapes."""
+def test_confirmation_tool_registered_and_callable(live_server: str, mcp_secret: str) -> None:
+    """`volume_confirmation` is registered under its documented name and reachable over
+    the real MCP transport, returning the documented response shape."""
 
     async def _run() -> None:
         async with _mcp_session(live_server, mcp_secret) as session:
             listed = {t.name for t in (await session.list_tools()).tools}
-            assert {"volume_breakout", "volume_confirmation", "smart_volume"} <= listed
+            assert "volume_confirmation" in listed
 
-            breakout = await session.call_tool(
-                "volume_breakout", {"symbols": ["A"], "timeframe": "1d"}
-            )
             confirmation = await session.call_tool(
                 "volume_confirmation", {"symbol": "CONF", "timeframe": "1d"}
             )
-            smart = await session.call_tool("smart_volume", {"symbols": ["A"], "timeframe": "1d"})
-            for result in (breakout, confirmation, smart):
-                assert not result.isError, f"tool errored: {result.content}"
-                assert result.structuredContent is not None
-
-            breakout_sc = breakout.structuredContent
-            assert breakout_sc is not None
-            matches = breakout_sc["matches"]
-            assert isinstance(matches, list)
-            assert {m["symbol"] for m in matches} == {"A"}
-            assert breakout_sc["scanned_at"]
-
-            confirmation_sc = confirmation.structuredContent
-            assert confirmation_sc is not None
-            assert confirmation_sc["result"] is not None
+            assert not confirmation.isError, f"tool errored: {confirmation.content}"
+            assert confirmation.structuredContent is not None
+            assert confirmation.structuredContent["result"] is not None
 
     asyncio.run(_run())

@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 62 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -30,7 +30,6 @@ The 62 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`forecast`](#forecast) | Forecast the price DIRECTION of a cached symbol over one or more horizons, each as a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. |
 | [`forecast_regime`](#forecastregime) | Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. |
 | [`forecast_volatility`](#forecastvolatility) | Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. |
-| [`gainers_losers`](#gainerslosers) | Rank a supplied symbol list (watchlist) by trailing close-to-close % change over one timeframe window on cached bars — the biggest gainer first, the biggest loser last. |
 | [`get_backtest`](#getbacktest) | Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). |
 | [`get_chart_drawings`](#getchartdrawings) | Read the drawings the USER placed on a symbol's chart (trendlines, rays, h/v-lines, rectangles, fib grids, long/short position boxes, and date/price range measures) — use this to see and reason about what the user drew, e.g. |
 | [`get_metric_series`](#getmetricseries) | Read a stored metric time series (ADR-0051): points of one registered series_id over an inclusive [start, end] epoch-second window, sorted by ts ascending. |
@@ -43,30 +42,26 @@ The 62 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`list_watches`](#listwatches) | List the persisted watches (id, symbol, timeframe, kind, params, interval_seconds, enabled, last_state, created_at), ordered by id. |
 | [`market_snapshot`](#marketsnapshot) | Get a point-in-time global market snapshot: live quotes for a fixed basket — S&P 500 (^GSPC), NASDAQ (^IXIC), VIX (^VIX), Bitcoin (BTC-USD), Ethereum (ETH-USD), EUR/USD (EURUSD=X), SPY, and GLD. |
 | [`market_structure`](#marketstructure) | Read the price-action market structure on one symbol's cached bars: labels the confirmed swing sequence HH/HL/LH/LL, derives structural_trend (up = HH+HL, down = LH+LL, else range), and detects BOS (in-trend break) and CHoCH (first counter-trend break) events. |
-| [`momentum_scan`](#momentumscan) | Filter/rank a supplied symbol list (watchlist) by an RSI band and an optional trend on cached bars — NO volume gate (the un-volume-gated complement to smart_volume, which requires a volume surge). |
 | [`multi_timeframe_analysis`](#multitimeframeanalysis) | Report whether one symbol's trend is aligned across a ladder of timeframes. |
 | [`news_for`](#newsfor) | Fetch recent news headlines for a symbol (or across all feeds when `symbol` is null) from a curated set of free RSS feeds (CoinDesk, CoinTelegraph, Yahoo Finance, MarketWatch, CNBC). |
 | [`pivot_points`](#pivotpoints) | Compute classic pivot levels on one symbol's cached bars from the last completed bar's high/low/close (the prior-completed-period default). |
 | [`portfolio_summary`](#portfoliosummary) | Aggregate cross-venue holdings into one read-only view (facts only, no recommendation of any kind): the Binance account leg (spot balances + USDS-M futures positions, read via the read-only API key), the DeFi leg (wallet discovery across Ethereum/Base/Arbitrum/Optimism when a 0x wallet address is given, with average-cost basis joined from the reconstructed on-chain history), and the manual positions file (positions/portfolio.json). |
 | [`prediction_market_odds`](#predictionmarketodds) | Get one prediction market's current outcomes and implied probabilities by market_id (from search_prediction_markets). |
-| [`quality_rank`](#qualityrank) | Rank a supplied symbol list (watchlist) by a composite technical-quality score on cached bars. |
 | [`quote_for`](#quotefor) | Get a live quote for one symbol: price, change_pct, previous_close, day high/low, 52-week high/low, currency, market_state (REGULAR/PRE/POST/CLOSED) and volume. |
 | [`recommend`](#recommend) | ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single labeled trade recommendation: the technical condition snapshot, the named strategy's live signal on the current bar, its walk-forward out-of-sample edge, and the calibrated direction forecast. |
 | [`run_backtest`](#runbacktest) | Run a backtest for a single strategy/symbol/timeframe window. |
 | [`scan_patterns`](#scanpatterns) | Sweep a time range for EVERY candlestick pattern on the cached bars and highlight them all at once: publishes a single `chart.highlight v1` event carrying one marker per detected pattern (multi-bar patterns carry a bar span; doji/neutral patterns are included). |
 | [`scan_pool_discrepancies`](#scanpooldiscrepancies) | Screen configured DEX pools for cross-pool price discrepancies, NET OF COST, for one or more canonical pairs (e.g. |
 | [`scan_wallet`](#scanwallet) | Discover a wallet's DeFi positions from a public EVM address across Ethereum, Base, Arbitrum, and Optimism. |
+| [`scan_watchlist`](#scanwatchlist) | Rank or filter a supplied symbol list (watchlist) on cached bars by a chosen condition — one watchlist-ranking verb, `rank_by` selects the mode. |
 | [`screener_query`](#screenerquery) | Screen a market universe for symbols matching indicator/price filters (e.g. |
 | [`search_prediction_markets`](#searchpredictionmarkets) | Search prediction markets by free text and get each match with its current odds. |
 | [`search_symbols`](#searchsymbols) | Resolve a loose or free-text name/ticker to fetchable symbols (e.g. |
 | [`sentiment_for_news`](#sentimentfornews) | Summarise news sentiment for a symbol over a window by running VADER over each recent headline and aggregating. |
 | [`show_chart`](#showchart) | Render a chart in the Electron viewer. |
-| [`smart_volume`](#smartvolume) | Scan a supplied symbol list (watchlist) for a volume surge with RSI in a band on cached bars. |
-| [`squeeze_scan`](#squeezescan) | Rank a supplied symbol list (watchlist) by squeeze tightness on cached bars. |
 | [`stocktwits_sentiment`](#stocktwitssentiment) | Summarise StockTwits crowd sentiment for a symbol over a window by counting users' explicit Bullish/Bearish post labels (no NLP model). |
 | [`technical_read`](#technicalread) | ADVISORY ONLY, LESSER TIER — a single-indicator technical read: the mechanical direction (long/short/flat) of ONE curated regime indicator by its textbook rule, with NO conviction and NO entry/stop/target levels. |
 | [`update_chart`](#updatechart) | Apply a delta to the currently-rendered chart. |
-| [`volume_breakout`](#volumebreakout) | Scan a supplied symbol list (watchlist) for price+volume breakouts on cached bars. |
 | [`volume_confirmation`](#volumeconfirmation) | Report how well volume backs one symbol's recent price move on cached bars. |
 | [`walk_forward_backtest`](#walkforwardbacktest) | Evaluate one strategy across n_splits rolling out-of-sample folds and return per-fold metrics plus an aggregate (mean/std of total_return and sharpe) and a full-run baseline. |
 | [`write_annotation`](#writeannotation) | Write a chart annotation (bullish/bearish marker on a single candle). |
@@ -554,28 +549,6 @@ Forecast realised VOLATILITY (not direction) of a cached symbol over the next ho
 
 **Source:** [`src/market_analyser/api/mcp_tools/forecast_volatility.py`](../../src/market_analyser/api/mcp_tools/forecast_volatility.py)
 
-## `gainers_losers`
-
-Rank a supplied symbol list (watchlist) by trailing close-to-close % change over one timeframe window on cached bars — the biggest gainer first, the biggest loser last. Returns {matches, skipped, scanned_at}: each match carries its signed change_pct (latest close vs the prior close, in percent) and a coarse direction (up when non-negative, down when negative), sorted by change_pct descending, ties broken by symbol; skipped lists symbols with a single bar (no prior close) or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — a raw move is a fact, never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbols` | array[string] | yes | — |
-| `timeframe` | string | yes | — |
-| `as_of` | string (date-time) \| null | no | `None` |
-
-**Returns:** `GainersLosersResponse`
-
-| Field | Type |
-| --- | --- |
-| `matches` | array[GainersLosersMatch] |
-| `skipped` | array[string] |
-| `scanned_at` | string (date-time) |
-
-**Source:** [`src/market_analyser/api/mcp_tools/gainers_losers.py`](../../src/market_analyser/api/mcp_tools/gainers_losers.py)
-
 ## `get_backtest`
 
 Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). Returns the spec, the full metrics block, and the COMPLETE trade list (entry/exit bar index + price per round-trip) inline — the trade-by-trade breakdown run_backtest's compact summary omits. The equity curve is one point per bar and can be large, so it is NOT returned unless include_equity=true; when requested it is paged like get_ohlcv (equity_offset / max_equity_points, capped at 1000, with partial_reason='too_large' and total_available/offset/returned when more remain). An unknown run_id is a not-found error, not a result.
@@ -852,31 +825,6 @@ Read the price-action market structure on one symbol's cached bars: labels the c
 
 **Source:** [`src/market_analyser/api/mcp_tools/market_structure.py`](../../src/market_analyser/api/mcp_tools/market_structure.py)
 
-## `momentum_scan`
-
-Filter/rank a supplied symbol list (watchlist) by an RSI band and an optional trend on cached bars — NO volume gate (the un-volume-gated complement to smart_volume, which requires a volume surge). For each symbol the latest RSI, trend, and momentum stance are read from its trailing condition snapshot. Returns {matches, skipped, scanned_at}: matches are only the symbols whose RSI is within [rsi_min, rsi_max] (boundary-inclusive) and, when `trend` is given (one of up, down, sideways), whose trend matches — each carrying its rsi, trend, and momentum, sorted by rsi descending then symbol; skipped lists symbols with too short a history for RSI or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbols` | array[string] | yes | — |
-| `timeframe` | string | yes | — |
-| `rsi_min` | number | no | `0.0` |
-| `rsi_max` | number | no | `100.0` |
-| `trend` | string \| null | no | `None` |
-| `as_of` | string (date-time) \| null | no | `None` |
-
-**Returns:** `MomentumScanResponse`
-
-| Field | Type |
-| --- | --- |
-| `matches` | array[MomentumScanMatch] |
-| `skipped` | array[string] |
-| `scanned_at` | string (date-time) |
-
-**Source:** [`src/market_analyser/api/mcp_tools/momentum_scan.py`](../../src/market_analyser/api/mcp_tools/momentum_scan.py)
-
 ## `multi_timeframe_analysis`
 
 Report whether one symbol's trend is aligned across a ladder of timeframes. Runs the full condition snapshot per timeframe and returns {alignment, analyzed_at}: alignment.timeframes carries each timeframe's snapshot (null when nothing is cached for that timeframe — backfill via get_ohlcv first), alignment.dominant_trend is the trend held by the most timeframes, and alignment.agreement is the 0..1 fraction of available timeframes that agree with it. Default ladder is weekly/daily/4h/1h/15m; pass `timeframes` to override. Pass `as_of` (ISO datetime) for historical replay — each per-timeframe read is trailing, so no future bar leaks in. Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
@@ -962,28 +910,6 @@ Get one prediction market's current outcomes and implied probabilities by market
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/prediction_markets.py`](../../src/market_analyser/api/mcp_tools/prediction_markets.py)
-
-## `quality_rank`
-
-Rank a supplied symbol list (watchlist) by a composite technical-quality score on cached bars. For each symbol a normalized 0..100 score is fused from its trailing condition snapshot and decomposed into four named factor contributions (trend, momentum, volume, volatility) that SUM to the score, plus a per-asset-class liquidity gate that flags/caps thin names. Returns {matches, skipped, scanned_at}: matches are the whole watchlist ranked by score descending (highest-quality setup first), each carrying its factors, liquidity_ok, and an optional liquidity_note, ties broken by symbol; skipped lists symbols with too short a history to score or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). This is a SCREENING RANK, conditions only — NOT a recommendation (no buy/sell, no grade); use `recommend` for a directional call. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbols` | array[string] | yes | — |
-| `timeframe` | string | yes | — |
-| `as_of` | string (date-time) \| null | no | `None` |
-
-**Returns:** `QualityRankResponse`
-
-| Field | Type |
-| --- | --- |
-| `matches` | array[QualityScore] |
-| `skipped` | array[string] |
-| `scanned_at` | string (date-time) |
-
-**Source:** [`src/market_analyser/api/mcp_tools/quality_rank.py`](../../src/market_analyser/api/mcp_tools/quality_rank.py)
 
 ## `quote_for`
 
@@ -1108,6 +1034,33 @@ Discover a wallet's DeFi positions from a public EVM address across Ethereum, Ba
 
 **Source:** [`src/market_analyser/api/mcp_tools/scan_wallet.py`](../../src/market_analyser/api/mcp_tools/scan_wallet.py)
 
+## `scan_watchlist`
+
+Rank or filter a supplied symbol list (watchlist) on cached bars by a chosen condition — one watchlist-ranking verb, `rank_by` selects the mode. Returns {rank_by, matches, skipped, scanned_at}: matches carry the mode's per-symbol reading (tie-broken by symbol); skipped lists symbols with too short a history for the mode or no cached bars (backfill via get_ohlcv first). Modes: `squeeze` ranks by TTM squeeze tightness (ADR-0083 trio: bb_width, its trailing 90-window percentile, squeeze_on), most-coiled first; `gainers` ranks by trailing close-to-close % change descending (biggest gainer first) and `losers` the same move ascending (biggest loser first); `momentum` filters by an RSI band [momentum.rsi_min, momentum.rsi_max] and optional momentum.trend (one of up, down, sideways), NO volume gate, ranked by RSI descending; `quality` ranks by a composite 0..100 technical-quality score descending (four factor contributions that sum to the score, plus a liquidity gate); `volume_breakout` keeps only price+volume breakouts (volume_breakout.vol_multiple x trailing average AND clearing the volume_breakout.price_lookback-bar high/low), ranked by multiple descending; `smart_volume` keeps only a volume surge (smart_volume.vol_multiple x average) with RSI inside [smart_volume.rsi_low, smart_volume.rsi_high], ranked by multiple descending. Each mode's extra params live in a nested block named for the mode; modes without extra params take only symbols/timeframe/as_of. Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — a ranking is a fact, never buy/sell advice (the `quality` mode is a SCREENING RANK, not a recommendation — use `recommend` for a directional call). Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbols` | array[string] | yes | — |
+| `timeframe` | string | yes | — |
+| `rank_by` | enum["squeeze", "gainers", "losers", "momentum", "quality", "volume_breakout", "smart_volume"] | yes | — |
+| `momentum` | MomentumOpts \| null | no | `None` |
+| `volume_breakout` | VolumeBreakoutOpts \| null | no | `None` |
+| `smart_volume` | SmartVolumeOpts \| null | no | `None` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `ScanWatchlistResponse`
+
+| Field | Type |
+| --- | --- |
+| `rank_by` | enum["squeeze", "gainers", "losers", "momentum", "quality", "volume_breakout", "smart_volume"] |
+| `matches` | array[SqueezeScanMatch \| GainersLosersMatch \| MomentumScanMatch \| QualityScore \| VolumeBreakout \| SmartVolumeHit] |
+| `skipped` | array[string] |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/scan_watchlist.py`](../../src/market_analyser/api/mcp_tools/scan_watchlist.py)
+
 ## `screener_query`
 
 Screen a market universe for symbols matching indicator/price filters (e.g. RSI < 30 on US large-caps). Returns the matching rows with their indicator columns plus `queried_at`, the wall-clock time the screen ran. Results are wall-clock-sensitive — there is no historical replay (no as_of). `filters` is a dict keyed by column with operator sub-dicts, e.g. {"RSI": {"lt": 30}, "market_cap_basic": {"gte": 1e10}}; operators are lt/lte/gt/gte/eq/ne (a bare scalar means equality). Data comes from TradingView's public scanner (reverse-engineered; may change without notice).
@@ -1182,53 +1135,6 @@ Render a chart in the Electron viewer. Publishes a `chart.show v1` event to the 
 
 **Source:** [`src/market_analyser/api/mcp_tools/show_chart.py`](../../src/market_analyser/api/mcp_tools/show_chart.py)
 
-## `smart_volume`
-
-Scan a supplied symbol list (watchlist) for a volume surge with RSI in a band on cached bars. A symbol qualifies when its latest bar's volume is at least `vol_multiple` times its trailing average AND the latest RSI sits inside [rsi_low, rsi_high]. Returns {matches, skipped, scanned_at}: matches are the qualifying symbols only, each with volume_multiple and rsi, sorted by multiple descending then symbol; skipped lists symbols with no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbols` | array[string] | yes | — |
-| `timeframe` | string | yes | — |
-| `rsi_low` | number | no | `40.0` |
-| `rsi_high` | number | no | `60.0` |
-| `vol_multiple` | number | no | `1.5` |
-| `as_of` | string (date-time) \| null | no | `None` |
-
-**Returns:** `SmartVolumeScanResponse`
-
-| Field | Type |
-| --- | --- |
-| `matches` | array[SmartVolumeHit] |
-| `skipped` | array[string] |
-| `scanned_at` | string (date-time) |
-
-**Source:** [`src/market_analyser/api/mcp_tools/smart_volume.py`](../../src/market_analyser/api/mcp_tools/smart_volume.py)
-
-## `squeeze_scan`
-
-Rank a supplied symbol list (watchlist) by squeeze tightness on cached bars. For each symbol the TTM squeeze trio is read from its trailing condition snapshot (ADR-0083): bb_width (Bollinger band-width, the compression metric), bb_width_pct90 (its trailing 90-window percentile — lower = tighter coil), and squeeze_on (Bollinger inside Keltner on the latest bar). Returns {matches, skipped, scanned_at}: matches are the whole watchlist ranked by bb_width_pct90 ascending (most-coiled first), each carrying its trio, ties broken by symbol; skipped lists symbols with too short a history for the percentile or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbols` | array[string] | yes | — |
-| `timeframe` | string | yes | — |
-| `as_of` | string (date-time) \| null | no | `None` |
-
-**Returns:** `SqueezeScanResponse`
-
-| Field | Type |
-| --- | --- |
-| `matches` | array[SqueezeScanMatch] |
-| `skipped` | array[string] |
-| `scanned_at` | string (date-time) |
-
-**Source:** [`src/market_analyser/api/mcp_tools/squeeze_scan.py`](../../src/market_analyser/api/mcp_tools/squeeze_scan.py)
-
 ## `stocktwits_sentiment`
 
 Summarise StockTwits crowd sentiment for a symbol over a window by counting users' explicit Bullish/Bearish post labels (no NLP model). Returns `symbol` (upper-cased), `score` ((bullish - bearish) / labeled count, in [-1, 1]), `window`, `source` ('stocktwits'), a `breakdown` of positive/negative/neutral post counts, and `queried_at`. Pass the exact StockTwits ticker: a plain symbol for stocks (AAPL) and the '.X' suffix for crypto (BTC.X, ETH.X). Patchy coverage on small-caps returns an all-zero breakdown (neutral, not unknown); a symbol StockTwits does not track is an error. `window` is one of 1h/4h/24h/7d. Wall-clock-sensitive — no historical replay.
@@ -1288,30 +1194,6 @@ Apply a delta to the currently-rendered chart. Publishes a `chart.update v1` eve
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/update_chart.py`](../../src/market_analyser/api/mcp_tools/update_chart.py)
-
-## `volume_breakout`
-
-Scan a supplied symbol list (watchlist) for price+volume breakouts on cached bars. A symbol breaks out when its latest bar's volume is at least `vol_multiple` times its trailing average AND the close clears its trailing `price_lookback`-bar high (bullish) or low (bearish). Returns {matches, skipped, scanned_at}: matches are the breakouts only, each with direction, volume_multiple, and the broken price level, sorted by multiple descending then symbol; skipped lists symbols with no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbols` | array[string] | yes | — |
-| `timeframe` | string | yes | — |
-| `vol_multiple` | number | no | `2.0` |
-| `price_lookback` | integer | no | `20` |
-| `as_of` | string (date-time) \| null | no | `None` |
-
-**Returns:** `VolumeBreakoutScanResponse`
-
-| Field | Type |
-| --- | --- |
-| `matches` | array[VolumeBreakout] |
-| `skipped` | array[string] |
-| `scanned_at` | string (date-time) |
-
-**Source:** [`src/market_analyser/api/mcp_tools/volume_breakout.py`](../../src/market_analyser/api/mcp_tools/volume_breakout.py)
 
 ## `volume_confirmation`
 
