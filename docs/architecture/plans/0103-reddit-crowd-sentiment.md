@@ -41,11 +41,12 @@ flowchart LR
 - **Files touched:** `src/market_analyser/data/adapters/reddit_sentiment.py` (new), `data/sources.py` / provider wiring if a new Protocol variant is needed, tests with fixture JSON.
 - **Done when:** adapter unit tests over fixture JSON pin (a) the score sign for a bullish vs a bearish post set, (b) upvote weighting (a high-upvote post moves the aggregate more), (c) empty-on-error / empty-on-rate-limit degrade (no exception, no fabrication), and (d) the label thresholds. No secret required to run.
 
-### Phase 2 — `reddit_sentiment` MCP tool
+### Phase 2 — Reddit as a `sentiment(source="reddit")` mode
 - **Owner skill:** dev
-- **What:** Expose `reddit_sentiment(symbol, category)` returning the aggregate + top posts.
-- **Files touched:** `api/mcp_tools/reddit_sentiment.py` (new), register in `mcp_app.py`, `EXPECTED_FULL_TOOLSET` +1, regenerate `docs/reference/`.
-- **Done when:** the tool returns `{score, label, sample_size, top_posts, as_of}` for a fixture, category routing (crypto / stocks / all) selects the right subreddit group, and the response is conditions-only (**no** `action` / `signal` / `recommendation` key asserted).
+> **Amended 2026-07-15 ([ADR-0104](../adrs/0104-mcp-tool-surface-granularity.md)):** Reddit is a new *source* mode of the unified `sentiment` tool ([Plan 0109](0109-mcp-tool-consolidation.md) creates it), **not** a new top-level `reddit_sentiment` tool. If 0109 has landed, this phase adds `"reddit"` to the `source` enum + binds the adapter — no `register_*` call, no `EXPECTED_FULL_TOOLSET` bump. If 0103 runs before 0109 phase 3, land `reddit_sentiment` as written and 0109 folds it in; **prefer sequencing 0109 phase 3 first.**
+- **What:** Expose Reddit sentiment via `sentiment(source="reddit", symbol, category)` returning the aggregate + top posts.
+- **Files touched:** `api/mcp_tools/sentiment.py` (add source binding) or, pre-0109, `api/mcp_tools/reddit_sentiment.py` (new) + `EXPECTED_FULL_TOOLSET` +1; regenerate `docs/reference/`.
+- **Done when:** `sentiment(source="reddit", …)` returns `{score, label, sample_size, top_posts, as_of}` for a fixture, category routing (crypto / stocks / all) selects the right subreddit group, and the response is conditions-only (**no** `action` / `signal` / `recommendation` key asserted).
 
 ### Phase 3 — Live smoke
 - **Owner skill:** human

@@ -41,11 +41,12 @@ flowchart LR
 - **Files touched:** `src/market_analyser/data/adapters/social_sentiment.py` (new), `data/sources.py` if a wiring tweak is needed, `persistence/secrets.py` key-name registration, tests with fixture JSON (keyed) + a no-key path.
 - **Done when:** tests pin (a) score sign/label for a bullish vs bearish fixture, (b) **no-key → honest-empty** (inert, no exception), (c) resilient-path failure/rate-limit → empty (no fabrication), (d) sample-size surfaced. Runs green with no secret configured.
 
-### Phase 2 — `social_sentiment` MCP tool + registry wiring
+### Phase 2 — X/social as a `sentiment(source=…)` mode + registry wiring
 - **Owner skill:** dev
-- **What:** register the source in the composition root; expose `social_sentiment(symbol, window)` returning `{score, label, sample_size, source, as_of}`. Conditions only; honest-empty (with a "no key configured" note) when the key is absent.
-- **Files touched:** `api/app.py`/`mcp_app.py` (registry + registration), `api/mcp_tools/social_sentiment.py` (new), `EXPECTED_FULL_TOOLSET` +1, regenerate `docs/reference/`.
-- **Done when:** the tool returns the aggregate for a fixture; the no-key path returns honest-empty + note (not an error); response asserts **no** `action`/`signal`/`recommendation` key (ADR-0029); apiref `--check` clean.
+> **Amended 2026-07-15 ([ADR-0104](../adrs/0104-mcp-tool-surface-granularity.md)):** X/social is a new *source* mode of the unified `sentiment` tool ([Plan 0109](0109-mcp-tool-consolidation.md) creates it), **not** a new top-level `social_sentiment` tool. If 0109 has landed, this phase adds the source value (`"x"` / `"social"`) to the `source` enum + binds the key-gated adapter — no `register_*` call, no `EXPECTED_FULL_TOOLSET` bump. If 0108 runs before 0109 phase 3, land `social_sentiment` as written and 0109 folds it in; **prefer sequencing 0109 phase 3 first.**
+- **What:** register the source in the composition root; expose it via `sentiment(source="x", symbol, window)` returning `{score, label, sample_size, source, as_of}`. Conditions only; honest-empty (with a "no key configured" note) when the key is absent.
+- **Files touched:** `api/app.py`/`mcp_app.py` (registry), `api/mcp_tools/sentiment.py` (add source binding) or, pre-0109, `api/mcp_tools/social_sentiment.py` (new) + `EXPECTED_FULL_TOOLSET` +1; regenerate `docs/reference/`.
+- **Done when:** `sentiment(source="x", …)` returns the aggregate for a fixture; the no-key path returns honest-empty + note (not an error); response asserts **no** `action`/`signal`/`recommendation` key (ADR-0029); apiref `--check` clean.
 
 ### Phase 3 — Live smoke (deferred until a key is funded)
 - **Owner skill:** human

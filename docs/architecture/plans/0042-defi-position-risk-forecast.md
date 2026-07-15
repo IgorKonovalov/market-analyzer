@@ -55,11 +55,12 @@ flowchart LR
 - **Files touched:** `src/market_analyser/defi/risk.py`, `pyproject.toml` (+ `uv lock`), `tests/defi/test_risk.py`, `tests/defi/test_risk_determinism.py`.
 - **Done when:** A liquidation-probability estimate is reproducible across two runs with the same seed (determinism test, mirroring [ADR-0018](../adrs/0018-backtest-result-schema.md)); the vol model is fit on **trailing** data only (causal — a test asserts no future price informs the fit); every probability output **states its assumption** ("under realized-vol-from-last-90-days") and a bare probability without the assumption fails a presentation test.
 
-### Phase 3 — Risk tools (conditional-facts surface)
+### Phase 3 — Risk tool (conditional-facts surface)
 - **Owner skill:** dev
-- **What:** Read-only MCP tools surfacing scenario sensitivity and conditional risk for a position/portfolio, framed strictly as conditional facts.
+> **Amended 2026-07-15 ([ADR-0104](../adrs/0104-mcp-tool-surface-granularity.md)):** the two conceptual reads (scenario sensitivity + conditional probability) are two *modes* of one verb → ship **one** `defi_risk(kind="scenario"|"conditional", …)` tool with a discriminated result, **not** two top-level tools. `EXPECTED_FULL_TOOLSET` +1 (not +2).
+- **What:** One read-only MCP tool surfacing scenario sensitivity and conditional risk for a position/portfolio, framed strictly as conditional facts, discriminated by `kind`.
 - **Files touched:** `src/market_analyser/api/mcp_tools/defi_risk.py`, registration, `tests/api/test_defi_risk_tools.py`, the full-toolset registration test.
-- **Done when:** A scenario tool returns IL/HF/liquidation-distance for a supplied shock, and a risk tool returns liquidation probability + IL distribution with assumptions attached; a test asserts the outputs contain **no** exit/rebalance/de-risk language (the [ADR-0037](../adrs/0037-defi-position-risk-forecast.md) invariant-4 boundary); tools are in the full-toolset assertion. This phase's close **accepts [ADR-0037](../adrs/0037-defi-position-risk-forecast.md)**.
+- **Done when:** `defi_risk(kind="scenario")` returns IL/HF/liquidation-distance for a supplied shock, and `defi_risk(kind="conditional")` returns liquidation probability + IL distribution with assumptions attached; a test asserts the outputs contain **no** exit/rebalance/de-risk language (the [ADR-0037](../adrs/0037-defi-position-risk-forecast.md) invariant-4 boundary); tools are in the full-toolset assertion. This phase's close **accepts [ADR-0037](../adrs/0037-defi-position-risk-forecast.md)**.
 
 ## Risks & open questions
 
