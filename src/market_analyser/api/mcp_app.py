@@ -82,6 +82,7 @@ from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
 from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
 from market_analyser.api.mcp_tools.show_chart import register_show_chart
 from market_analyser.api.mcp_tools.smart_volume import register_smart_volume
+from market_analyser.api.mcp_tools.squeeze_scan import register_squeeze_scan
 from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
 from market_analyser.api.mcp_tools.technical_read import register_technical_read
 from market_analyser.api.mcp_tools.track_record import register_get_track_record
@@ -250,6 +251,11 @@ def create_mcp_components(
     register_pivot_points(server, provider=provider)
     register_anchored_vwap(server, provider=provider)
     register_smart_volume(server, provider=provider)
+    # Watchlist condition scanners (Plan 0100, ADR-0095): rank a caller-supplied
+    # symbol list by a condition on cached bars via the shared `_scan_symbols`
+    # fan-out. `squeeze_scan` ranks by squeeze tightness (ADR-0083 trio). Always
+    # registered — provider-only, conditions only.
+    register_squeeze_scan(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)

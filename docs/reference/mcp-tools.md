@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 58 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 59 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -59,6 +59,7 @@ The 58 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`sentiment_for_news`](#sentimentfornews) | Summarise news sentiment for a symbol over a window by running VADER over each recent headline and aggregating. |
 | [`show_chart`](#showchart) | Render a chart in the Electron viewer. |
 | [`smart_volume`](#smartvolume) | Scan a supplied symbol list (watchlist) for a volume surge with RSI in a band on cached bars. |
+| [`squeeze_scan`](#squeezescan) | Rank a supplied symbol list (watchlist) by squeeze tightness on cached bars. |
 | [`stocktwits_sentiment`](#stocktwitssentiment) | Summarise StockTwits crowd sentiment for a symbol over a window by counting users' explicit Bullish/Bearish post labels (no NLP model). |
 | [`technical_read`](#technicalread) | ADVISORY ONLY, LESSER TIER — a single-indicator technical read: the mechanical direction (long/short/flat) of ONE curated regime indicator by its textbook rule, with NO conviction and NO entry/stop/target levels. |
 | [`update_chart`](#updatechart) | Apply a delta to the currently-rendered chart. |
@@ -1133,6 +1134,28 @@ Scan a supplied symbol list (watchlist) for a volume surge with RSI in a band on
 | `scanned_at` | string (date-time) |
 
 **Source:** [`src/market_analyser/api/mcp_tools/smart_volume.py`](../../src/market_analyser/api/mcp_tools/smart_volume.py)
+
+## `squeeze_scan`
+
+Rank a supplied symbol list (watchlist) by squeeze tightness on cached bars. For each symbol the TTM squeeze trio is read from its trailing condition snapshot (ADR-0083): bb_width (Bollinger band-width, the compression metric), bb_width_pct90 (its trailing 90-window percentile — lower = tighter coil), and squeeze_on (Bollinger inside Keltner on the latest bar). Returns {matches, skipped, scanned_at}: matches are the whole watchlist ranked by bb_width_pct90 ascending (most-coiled first), each carrying its trio, ties broken by symbol; skipped lists symbols with too short a history for the percentile or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbols` | array[string] | yes | — |
+| `timeframe` | string | yes | — |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `SqueezeScanResponse`
+
+| Field | Type |
+| --- | --- |
+| `matches` | array[SqueezeScanMatch] |
+| `skipped` | array[string] |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/squeeze_scan.py`](../../src/market_analyser/api/mcp_tools/squeeze_scan.py)
 
 ## `stocktwits_sentiment`
 

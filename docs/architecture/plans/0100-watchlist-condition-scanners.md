@@ -1,6 +1,6 @@
 # 0100 — Watchlist condition scanners
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-13
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0095](../adrs/0095-watchlist-scan-fanout-harness.md) (paired, accepts at close), [0023](../adrs/0023-technical-analysis-surface.md), [0007](../adrs/0007-market-data-provider.md), [0083](../adrs/0083-squeeze-and-counter-trend-volume-semantics.md)

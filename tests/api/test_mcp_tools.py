@@ -570,6 +570,7 @@ EXPECTED_FULL_TOOLSET = {
     "sentiment_for_news",
     "show_chart",
     "smart_volume",
+    "squeeze_scan",
     "stocktwits_sentiment",
     "technical_read",
     "update_chart",
