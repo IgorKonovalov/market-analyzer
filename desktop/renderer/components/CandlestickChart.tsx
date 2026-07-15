@@ -22,8 +22,7 @@
  * regression that loses a series cannot pass.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { ColorType, HistogramSeries, LineSeries, createChart } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi, LineWidth, Logical } from 'lightweight-charts'
+import type { ISeriesApi } from 'lightweight-charts'
 
 import type { IPriceLine } from 'lightweight-charts'
 
@@ -57,36 +56,14 @@ import { ChartTooltip } from './ChartTooltip'
 import { MarketStructureBadge } from './MarketStructureBadge'
 import { buildLegendValues } from '../lib/legendValues'
 import { marketStructure } from '../lib/marketStructure'
-import {
-  MARKET_STRUCTURE_LAYER_ID,
-  PRICE_SCALE_ID,
-  PRICE_SCALE_MARGINS,
-  VOLUME_SCALE_ID,
-  VOLUME_SCALE_MARGINS,
-  applyMainColors,
-  chartColorsFrom,
-  createMainSeries,
-  mainSeriesKind,
-  setMainData,
-  type MainSeries,
-  type OverlayEntry,
-} from '../lib/chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID, mainSeriesKind, type OverlayEntry } from '../lib/chartSeries'
 import { formatRangeLabel, monthlyTickMarkFormatter } from '../lib/chartAxis'
-import { IchimokuPrimitive, readIchimokuColors } from '../lib/ichimoku'
-import { PaneRegistry } from '../lib/panes'
-import { PatternSpanPrimitive } from '../lib/spans'
-import {
-  TrendlinePrimitive,
-  dedupeTrendlines,
-  patternStateKey,
-  readTrendlineColors,
-  trendlineGroupLayerId,
-} from '../lib/trendlines'
+import { dedupeTrendlines, patternStateKey, trendlineGroupLayerId } from '../lib/trendlines'
 import { useTrendlines } from '../hooks/useTrendlines'
-import { DivergencePrimitive, readDivergenceColors } from '../lib/divergences'
+import type { DivergencePrimitive } from '../lib/divergences'
 import { useDivergences, requiredOscillatorKindsFor } from '../hooks/useDivergences'
-import { DrawingPrimitive } from '../lib/drawings'
 import { useDrawingTools } from '../hooks/useDrawingTools'
+import { ChartController } from '../lib/chart/controller'
 import { DrawingRail } from './DrawingRail'
 import {
   getStoredTheme,
@@ -94,7 +71,7 @@ import {
   subscribeEffective,
   type EffectiveTheme,
 } from '../lib/theme'
-import { getCandleType, resolveChartStyle, subscribeChartStyle } from '../lib/chartStyle'
+import { getCandleType, subscribeChartStyle } from '../lib/chartStyle'
 import {
   addUserOverlay,
   getUserOverlaysSnapshot,
@@ -123,13 +100,6 @@ import {
   type PresetShow,
 } from '../lib/chartPresets'
 import { overlayLayerId } from '../lib/overlays'
-import {
-  VOLUME_MA_PERIOD,
-  VWAP_PERIOD,
-  computeVolumeBars,
-  computeVolumeMa,
-  computeVwap,
-} from '../lib/volume'
 import type { Bar } from '../types/sidecar/bar'
 import type {
   Divergence,
@@ -219,18 +189,16 @@ export function CandlestickChart({
   historyTriggerEnabled = false,
 }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
-  const chartRef = useRef<IChartApi | null>(null)
-  // The main price series — its concrete type (candlestick / bar / line / area)
-  // is chosen at creation from `candleType` (Plan 0068 phase 4).
-  const seriesRef = useRef<MainSeries | null>(null)
-  // First-bar timestamp (ms) of the previous render, to detect left-side growth.
-  const prevFirstTsRef = useRef<number | null>(null)
-  // The `bars` reference from the previous bars-effect run. The effect also runs
-  // on overlay/visibility changes (to reconcile series), but only a genuine DATA
-  // change (a new `bars` array: load, symbol/tf/range change, lazy-prepend) may
-  // refit the view — toggling a layer must preserve the user's zoom/pan
-  // (Plan 0049 phase 11).
-  const prevBarsRef = useRef<Bar[] | null>(null)
+  // The imperative lightweight-charts core (Plan 0098 / ADR-0092): owns the chart
+  // instance, the main + always-on series, the PaneRegistry, and the five main-
+  // series primitives, behind a declarative API. Instantiated once and reused
+  // across candle-type rebuilds (dispose → mount on the same instance); its
+  // ref-object handles are stable identities the still-React hooks below capture,
+  // exactly as the former component refs were. The remaining refs here belong to
+  // reconciler concerns (overlays, oscillator panes, OBV) that later phases fold in.
+  const controllerRef = useRef<ChartController | null>(null)
+  if (controllerRef.current === null) controllerRef.current = new ChartController()
+  const controller = controllerRef.current
   const overlaySeriesRef = useRef<Map<string, OverlayEntry>>(new Map())
   // Supertrend overlays (Plan 0049 phase 9) draw as TWO masked line series (the
   // up/lower band in the bullish token, the down/upper band in the bearish token)
@@ -259,46 +227,18 @@ export function CandlestickChart({
   // price pane, keyed by overlayKey; a legend toggle removes it. Fed by
   // `useAnchoredVwapSeries`.
   const anchoredVwapSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map())
-  // Multi-bar pattern span band (Plan 0049 phase 7): one series primitive,
-  // attached at mount, fed spans/colors/visibility by the spans effect below.
-  const spanPrimitiveRef = useRef<PatternSpanPrimitive | null>(null)
-  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049): attached at mount
-  // alongside the span band — NOT inside `useTrendlines` — so its lifecycle is
-  // tied to the chart's and it always rides the LIVE series (Plan 0064 follow-up:
-  // the hook-attach stranded it on a discarded chart under StrictMode). Fed by
-  // `useTrendlines` below.
-  const trendlinePrimitiveRef = useRef<TrendlinePrimitive | null>(null)
-  // Ichimoku overlay primitive (Plan 0073 phase 4, ADR-0067): attached at mount
-  // like the span/trendline primitives so it rides the live series and is disposed
-  // by `chart.remove()`. Draws the five lines + displaced filled cloud; fed by
-  // `useIchimokuSeries` below.
-  const ichimokuPrimitiveRef = useRef<IchimokuPrimitive | null>(null)
-  // Divergence primitives (Plan 0091 phase 9, ADR-0090): the price-pane primitive
-  // rides the candle series (draws price-pivot segments); the OBV-pane primitive
-  // rides the OBV series (draws obv oscillator-pivot segments). Each oscillator
-  // pane's own divergence primitive is attached by `useOscillatorPanes`. All fed by
-  // `useDivergences` below, same lifecycle discipline as the trendline primitive.
-  const divergencePricePrimitiveRef = useRef<DivergencePrimitive | null>(null)
+  // OBV-pane divergence primitive (Plan 0091 phase 9, ADR-0090): rides the OBV line
+  // series (draws obv oscillator-pivot segments), attached/detached with the OBV pane
+  // by `useObvPane`. The price-pane divergence primitive lives in the controller
+  // (attached to the main series at creation); each oscillator pane's own primitive is
+  // attached by `useOscillatorPanes`. All fed by `useDivergences` below.
   const obvDivergencePrimitiveRef = useRef<DivergencePrimitive | null>(null)
-  // User/agent freeform-drawing primitive (Plan 0097 phase 2, ADR-0091): attached
-  // at mount like the trendline/span primitives so it rides the live series and is
-  // disposed by `chart.remove()`. Fed drawings/selection/preview by `useDrawingTools`.
-  const drawingPrimitiveRef = useRef<DrawingPrimitive | null>(null)
-  // Always-on volume series (Plan 0027 phase 3).
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
-  const volumeMaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-  const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  // OBV line series (Plan 0105 phase 3): lazily created/removed by `useObvPane` with
+  // its own sub-pane, so it is not one of the controller's always-on series.
   const obvSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
-  // Oscillator sub-panes (Plan 0091 phase 6): the pane registry (shared with the
-  // lazily-reconciled OBV pane, which claims slot 0 so it stays the first
-  // sub-pane — Plan 0105 phase 3) and the pane map `useOscillatorPanes` owns.
-  const paneRegistryRef = useRef<PaneRegistry | null>(null)
+  // Oscillator sub-panes (Plan 0091 phase 6): the pane map `useOscillatorPanes` owns
+  // (the PaneRegistry itself lives in the controller).
   const oscillatorPanesRef = useRef<Map<string, OscillatorPaneEntry>>(new Map())
-  // Bar count currently drawn on the candlestick, updated by the bars effect.
-  // Held in a ref (not read from `bars` in syncTestRenderHook) so the hook can be
-  // a stable useCallback — otherwise listing it in the mount effect's deps would
-  // make a `bars` change recreate the chart.
-  const barCountRef = useRef(0)
   // Effective theme (light/dark) drives in-place chart recoloring. A change
   // flows through `applyOptions`, never a remount — the chart-creation effect's
   // deps are `[]`, so the instance persists. (Plan 0033 phase 4.)
@@ -494,21 +434,23 @@ export function CandlestickChart({
     scanVisibleRange,
     scanChartPatternsVisibleRange,
     recomputeTrendlines,
-  } = useChartScans(chartRef, { symbol, timeframe })
+  } = useChartScans(controller.chartRef, { symbol, timeframe })
 
-  // Reflect what's drawn into the test hook. Stable identity (reads only refs),
-  // so it can sit in the effect dep arrays without retriggering them.
+  // Reflect what's drawn into the test hook. Stable identity (reads only the stable
+  // controller + refs), so it can sit in the effect dep arrays without retriggering
+  // them. The controller owns the main + always-on series; OBV and the agent
+  // overlays are still reconciled by their hooks, so they're read from their refs.
   const syncTestRenderHook = useCallback((): void => {
     const kinds: Array<{ kind: string; period?: number | null }> = []
-    if (seriesRef.current !== null) {
+    if (controller.seriesRef.current !== null) {
       // Read the type from the store (not a dep) so this stays a stable callback;
       // a candle-type change rebuilds via the creation effect, which calls this.
       kinds.push({ kind: mainSeriesKind(getCandleType()) })
     }
     // Always-on volume series, between the candlestick and the agent overlays.
-    if (volumeSeriesRef.current !== null) kinds.push({ kind: 'volume' })
-    if (volumeMaSeriesRef.current !== null) kinds.push({ kind: 'volume_ma' })
-    if (vwapSeriesRef.current !== null) kinds.push({ kind: 'vwap' })
+    if (controller.volumeSeriesRef.current !== null) kinds.push({ kind: 'volume' })
+    if (controller.volumeMaSeriesRef.current !== null) kinds.push({ kind: 'volume_ma' })
+    if (controller.vwapSeriesRef.current !== null) kinds.push({ kind: 'vwap' })
     if (obvSeriesRef.current !== null) kinds.push({ kind: 'obv' })
     for (const { spec } of overlaySeriesRef.current.values()) {
       kinds.push({ kind: spec.kind, period: spec.period ?? null })
@@ -516,123 +458,26 @@ export function CandlestickChart({
     window.__test_chart_render__ = {
       seriesCount: kinds.length,
       seriesKinds: kinds,
-      barCount: seriesRef.current !== null ? barCountRef.current : 0,
+      barCount: controller.barCount,
     }
-  }, [])
+  }, [controller])
 
+  // Create the chart on mount, dispose on unmount, rebuild on a candle-type change
+  // (the series type is fixed at creation, so `candleType` keys this effect). The
+  // controller owns the imperative wiring (chart, series, panes, primitives); this
+  // effect is the React lifecycle shell that drives it and clears the still-external
+  // reconciler bookkeeping the chart's own `remove()` already disposed, so their
+  // hooks rebuild on the fresh chart (Plan 0098 phase 1; later phases fold these
+  // reconcilers into the controller too). The theme ref gives the current theme
+  // without making this effect re-run — a flip recolours in place (restyle effect).
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
+    controller.mount(container, { candleType, theme: effectiveThemeRef.current })
 
-    // lightweight-charts hands these strings to canvas APIs that don't resolve
-    // CSS variables; passing `var(--chart-up)` paints with the browser's
-    // invalid-color fallback. Resolve every token (⊕ user overrides + widths) to
-    // concrete values at mount (and again on theme/style change in the effect
-    // below). The ref gives the current theme without making this effect re-run.
-    const style = resolveChartStyle(container, effectiveThemeRef.current)
-    const colors = chartColorsFrom(style)
-
-    const chart = createChart(container, {
-      layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: colors.text,
-      },
-      grid: {
-        vertLines: { color: colors.border },
-        horzLines: { color: colors.border },
-      },
-      timeScale: {
-        timeVisible: false,
-        secondsVisible: false,
-      },
-      autoSize: true,
-    })
-    const series = createMainSeries(chart, candleType)
-    applyMainColors(series, candleType, colors)
-
-    // Always-on volume series (Plan 0027 phase 3). Created once at mount; their
-    // data is pushed in the bars effect. Disposed by `chart.remove()` on unmount
-    // alongside the candlestick (the chart owns all its series).
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: VOLUME_SCALE_ID,
-      color: colors.volume,
-      priceFormat: { type: 'volume' },
-      priceLineVisible: false,
-      lastValueVisible: false,
-    })
-    const volumeMaSeries = chart.addSeries(LineSeries, {
-      priceScaleId: VOLUME_SCALE_ID,
-      color: colors.volumeMa,
-      lineWidth: style.widths.volumeMa as LineWidth,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    })
-    const vwapSeries = chart.addSeries(LineSeries, {
-      priceScaleId: PRICE_SCALE_ID, // rides the main price scale alongside candles
-      color: colors.vwap,
-      lineWidth: style.widths.vwap as LineWidth,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    })
-    // The pane registry owns every sub-pane below the price pane (Plan 0095
-    // phase 2, v5 `addPane()`): the OBV pane is lazily reconciled by `useObvPane`
-    // (Plan 0105 phase 3 — no empty pane when OBV is off) at slot 0, and the
-    // oscillator panes (Plan 0091) follow it. Volume/VWAP stay on pane 0.
-    const paneRegistry = new PaneRegistry(chart)
-    paneRegistryRef.current = paneRegistry
-    // Candles occupy the upper band of the price pane; volume hugs its bottom.
-    chart.priceScale(PRICE_SCALE_ID).applyOptions({ scaleMargins: PRICE_SCALE_MARGINS })
-    chart.priceScale(VOLUME_SCALE_ID).applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS })
-
-    // Attach the pattern-span band primitive once (Plan 0049 phase 7). It draws
-    // nothing until the spans effect feeds it spans; `chart.remove()` detaches it.
-    const spanPrimitive = new PatternSpanPrimitive({
-      bullish: colors.markerBullish,
-      bearish: colors.markerBearish,
-      neutral: colors.markerNeutral,
-    })
-    series.attachPrimitive(spanPrimitive)
-    spanPrimitiveRef.current = spanPrimitive
-
-    // Attach the trendline primitive once, here (not in `useTrendlines`), so it
-    // rides the live series for the chart's whole life and is disposed by
-    // `chart.remove()` — the same lifecycle as the span band (Plan 0064 fix).
-    const trendlinePrimitive = new TrendlinePrimitive(readTrendlineColors(container))
-    series.attachPrimitive(trendlinePrimitive)
-    trendlinePrimitiveRef.current = trendlinePrimitive
-
-    // Attach the Ichimoku primitive once (Plan 0073 phase 4), same lifecycle as the
-    // span/trendline primitives. It draws nothing until `useIchimokuSeries` feeds
-    // it geometries; `chart.remove()` detaches it.
-    const ichimokuPrimitive = new IchimokuPrimitive(readIchimokuColors(container))
-    series.attachPrimitive(ichimokuPrimitive)
-    ichimokuPrimitiveRef.current = ichimokuPrimitive
-
-    // Divergence primitives (Plan 0091 phase 9, ADR-0090): the price-pane one on
-    // the candle series (draws every divergence's price-pivot segment). The OBV
-    // pane's primitive is attached by `useObvPane` (Plan 0105 phase 3) and each
-    // oscillator pane's by `useOscillatorPanes`. All fed by `useDivergences`;
-    // `chart.remove()` detaches this one.
-    const divergenceColors = readDivergenceColors(container)
-    const divergencePricePrimitive = new DivergencePrimitive('price', divergenceColors)
-    series.attachPrimitive(divergencePricePrimitive)
-    divergencePricePrimitiveRef.current = divergencePricePrimitive
-
-    // User/agent drawing primitive (Plan 0097 phase 2): attached once here so it
-    // rides the live series; `useDrawingTools` feeds it. Drawn on the price pane,
-    // above the candles (its own top z-order). `chart.remove()` detaches it.
-    const drawingPrimitive = new DrawingPrimitive()
-    series.attachPrimitive(drawingPrimitive)
-    drawingPrimitiveRef.current = drawingPrimitive
-
-    chartRef.current = chart
-    seriesRef.current = series
-    volumeSeriesRef.current = volumeSeries
-    volumeMaSeriesRef.current = volumeMaSeries
-    vwapSeriesRef.current = vwapSeries
-    // Capture the Map reference into a local for the cleanup closure
-    // (react-hooks/exhaustive-deps: ref.current may change between effect
-    // run and cleanup invocation; the local capture is the canonical fix).
+    // Capture the Map references into locals for the cleanup closure
+    // (react-hooks/exhaustive-deps: ref.current may change between effect run and
+    // cleanup invocation; the local capture is the canonical fix).
     const overlayMap = overlaySeriesRef.current
     const priceLineMap = priceLinesRef.current
     const structureLineMap = structureLinesRef.current
@@ -643,25 +488,13 @@ export function CandlestickChart({
     syncTestRenderHook()
 
     return () => {
-      chart.remove()
-      chartRef.current = null
-      seriesRef.current = null
-      spanPrimitiveRef.current = null
-      trendlinePrimitiveRef.current = null
-      ichimokuPrimitiveRef.current = null
-      divergencePricePrimitiveRef.current = null
-      obvDivergencePrimitiveRef.current = null
-      drawingPrimitiveRef.current = null
-      volumeSeriesRef.current = null
-      volumeMaSeriesRef.current = null
-      vwapSeriesRef.current = null
+      controller.dispose()
+      // `controller.dispose()` (via chart.remove) disposes the panes + their series;
+      // drop the reconcilers' bookkeeping so they rebuild on the fresh chart.
       obvSeriesRef.current = null
-      // `chart.remove()` disposes the panes + their series; drop our bookkeeping so
-      // the oscillator hook rebuilds them on the fresh chart (Plan 0091).
-      paneRegistryRef.current = null
+      obvDivergencePrimitiveRef.current = null
       oscillatorPanes.clear()
       overlayMap.clear()
-      // The chart owns its price lines (disposed by chart.remove); drop our refs.
       priceLineMap.clear()
       structureLineMap.clear()
       anchoredVwapMap.clear()
@@ -672,63 +505,25 @@ export function CandlestickChart({
     // `candleType` rebuilds the chart (series type is fixed at creation); the data
     // / marker / primitive effects + chart-subscribing hooks key on it too, so they
     // re-run and re-attach to the fresh series in the same commit (Plan 0068 ph4).
-  }, [syncTestRenderHook, candleType])
+  }, [controller, syncTestRenderHook, candleType])
 
+  // Push bar data through the controller: it fills the main + always-on series and
+  // handles the scroll-anchored left-edge prepend (Plan 0030) vs fit-on-genuine-
+  // -change (Plan 0049 ph11) internally. `candleType` re-runs this after a rebuild
+  // so the fresh main series gets its data (Plan 0068 ph4); overlay/supertrend
+  // reconcile lives in its own hook (Plan 0072 phase 8), so this doesn't key on
+  // overlays/hidden.
   useEffect(() => {
-    const chart = chartRef.current
-    const candlestick = seriesRef.current
-    if (!chart || !candlestick) return
-
-    // Scroll-anchored prepend (Plan 0030): if `bars` grew on the LEFT (older
-    // bars were prepended), capture the visible logical range *before* replacing
-    // the data so we can shift it right by the number of prepended bars — the
-    // viewport stays on the same bars instead of jumping. Any other change
-    // (initial load, symbol/range change, forward growth) keeps the existing
-    // fit-on-update behavior.
-    const newFirstMs = bars.length > 0 ? new Date(bars[0].event_ts).getTime() : null
-    const prevFirstMs = prevFirstTsRef.current
-    const grewOnLeft = prevFirstMs !== null && newFirstMs !== null && newFirstMs < prevFirstMs
-    const rangeBeforePrepend = grewOnLeft ? chart.timeScale().getVisibleLogicalRange() : null
-
-    setMainData(candlestick, candleType, bars)
-    barCountRef.current = bars.length
-
-    // Always-on volume series, derived client-side from the same `bars`. Empty
-    // `bars` yields empty arrays (no NaN/Infinity reaches lightweight-charts).
-    volumeSeriesRef.current?.setData(computeVolumeBars(bars))
-    volumeMaSeriesRef.current?.setData(computeVolumeMa(bars, VOLUME_MA_PERIOD))
-    vwapSeriesRef.current?.setData(computeVwap(bars, VWAP_PERIOD))
-
-    const barsChanged = prevBarsRef.current !== bars
-    if (grewOnLeft && rangeBeforePrepend && prevFirstMs !== null) {
-      let prepended = 0
-      for (const b of bars) {
-        if (new Date(b.event_ts).getTime() < prevFirstMs) prepended += 1
-        else break
-      }
-      chart.timeScale().setVisibleLogicalRange({
-        from: (rangeBeforePrepend.from + prepended) as Logical,
-        to: (rangeBeforePrepend.to + prepended) as Logical,
-      })
-    } else if (barsChanged) {
-      // Only a genuine data change refits — NOT an overlay add or a legend toggle
-      // (those re-run this effect via `overlays`/`hidden` but leave `bars` intact).
-      chart.timeScale().fitContent()
-    }
-    prevBarsRef.current = bars
-    prevFirstTsRef.current = newFirstMs
+    controller.setBars(bars)
     syncTestRenderHook()
-    // `candleType` re-runs this after a rebuild so the fresh main series gets its
-    // data pushed (Plan 0068 ph4). Overlay/supertrend reconcile lives in its own
-    // hook now (Plan 0072 phase 8), so this effect no longer keys on overlays/hidden.
-  }, [bars, syncTestRenderHook, candleType])
+  }, [controller, bars, syncTestRenderHook, candleType])
 
   // Agent-overlay line series + supertrend two-series reconcile (Plan 0007 ph4.5 /
   // Plan 0049 ph9), split out of the bars effect (Plan 0072 phase 8). Defined
   // AFTER the bars effect so they run after `setMainData` on each commit; each
   // reads the theme off the ref so a flip recolours in place (restyle effect)
   // rather than re-creating series.
-  useOverlaySeries(chartRef, containerRef, overlaySeriesRef, {
+  useOverlaySeries(controller.chartRef, containerRef, overlaySeriesRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -736,7 +531,7 @@ export function CandlestickChart({
     rebuildToken: candleType,
     syncTestRenderHook,
   })
-  useSupertrendSeries(chartRef, containerRef, supertrendSeriesRef, {
+  useSupertrendSeries(controller.chartRef, containerRef, supertrendSeriesRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -745,7 +540,7 @@ export function CandlestickChart({
   })
   // Bollinger Bands three-line reconcile (Plan 0082 phase 2). Static colour, so no
   // theme read — draws upper/middle/lower on the price pane.
-  useBbandsSeries(chartRef, bbandsSeriesRef, {
+  useBbandsSeries(controller.chartRef, bbandsSeriesRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -754,7 +549,7 @@ export function CandlestickChart({
   // Ichimoku five-line + displaced filled cloud primitive (Plan 0073 phase 4).
   // Feeds the primitive attached in the creation effect; reserves right-edge space
   // so the projected cloud shows past the last candle.
-  useIchimokuSeries(chartRef, containerRef, ichimokuPrimitiveRef, {
+  useIchimokuSeries(controller.chartRef, containerRef, controller.ichimokuPrimitiveRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -767,14 +562,21 @@ export function CandlestickChart({
   // divergence primitive re-attached. An obv divergence keeps the pane (series
   // hidden) so its oscillator segment always has a pane to draw on. Runs before
   // `useOscillatorPanes`/`useDivergences` so the pane + primitive exist first.
-  useObvPane(chartRef, containerRef, paneRegistryRef, obvSeriesRef, obvDivergencePrimitiveRef, {
-    bars,
-    hidden,
-    divergences,
-    effectiveThemeRef,
-    rebuildToken: candleType,
-    syncTestRenderHook,
-  })
+  useObvPane(
+    controller.chartRef,
+    containerRef,
+    controller.paneRegistryRef,
+    obvSeriesRef,
+    obvDivergencePrimitiveRef,
+    {
+      bars,
+      hidden,
+      divergences,
+      effectiveThemeRef,
+      rebuildToken: candleType,
+      syncTestRenderHook,
+    },
+  )
   // Oscillator panes a divergence needs (Plan 0091 phase 9): ensured below even if
   // the user hasn't added — or has toggled off — that oscillator, so the divergence's
   // oscillator segment always has a pane. `obv` uses the OBV pane `useObvPane` owns.
@@ -785,7 +587,7 @@ export function CandlestickChart({
   // Oscillator sub-panes (Plan 0091 phase 6): each active oscillator overlay draws
   // in its own real v5 pane (via the shared PaneRegistry), toggleable from the
   // layers legend. Reconciles create / reuse / teardown by stable pane id.
-  useOscillatorPanes(chartRef, paneRegistryRef, oscillatorPanesRef, {
+  useOscillatorPanes(controller.chartRef, controller.paneRegistryRef, oscillatorPanesRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -798,7 +600,7 @@ export function CandlestickChart({
   // reconcile so every oscillator pane's primitive exists.
   useDivergences(
     containerRef,
-    divergencePricePrimitiveRef,
+    controller.divergencePricePrimitiveRef,
     obvDivergencePrimitiveRef,
     oscillatorPanesRef,
     { divergences, effectiveTheme, rebuildToken: candleType },
@@ -806,7 +608,7 @@ export function CandlestickChart({
 
   // Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`
   // into the chart's CURRENT (forming) bar in place (Plan 0072 phase 8: `useFormingBar`).
-  useFormingBar(seriesRef, { quote, bars, timeframe, candleType })
+  useFormingBar(controller.seriesRef, { quote, bars, timeframe, candleType })
 
   // Monthly axis ticks (Plan 0050 phase 7): the `1mo` timeframe needs month/year
   // tick marks, not the day-level labels lightweight-charts' default emits at some
@@ -816,7 +618,7 @@ export function CandlestickChart({
   // behind `!isLoading`), so each timeframe gets a fresh chart and this runs once
   // per mount; the `else` branch is just belt-and-suspenders if that ever changes.
   useEffect(() => {
-    const chart = chartRef.current
+    const chart = controller.chartRef.current
     if (!chart) return
     chart.applyOptions({
       timeScale: {
@@ -824,7 +626,7 @@ export function CandlestickChart({
       },
     })
     // Re-apply on a rebuild (Plan 0068 ph4) — the fresh chart needs the formatter.
-  }, [timeframe, candleType])
+  }, [controller, timeframe, candleType])
 
   // Freeform-drawing tool mode (Plan 0097 phase 2, ADR-0091). The component owns
   // `activeTool` so it can coordinate the two pointer machines: `useChartGestures`
@@ -836,7 +638,7 @@ export function CandlestickChart({
   // Called AFTER the chart-creation effect so its gesture effect sees a
   // populated `chartRef`/`seriesRef` on mount.
   const { selectRangeMode, toggleSelectRange, selection, rangeLabel, clickedBarTs } =
-    useChartGestures(containerRef, chartRef, seriesRef, {
+    useChartGestures(containerRef, controller.chartRef, controller.seriesRef, {
       symbol,
       timeframe,
       bars,
@@ -850,15 +652,21 @@ export function CandlestickChart({
     selectedId: selectedDrawingId,
     selectedProvenance: selectedDrawingProvenance,
     deleteSelected: deleteSelectedDrawing,
-  } = useDrawingTools(containerRef, chartRef, seriesRef, drawingPrimitiveRef, {
-    symbol,
-    bars,
-    selectRangeMode,
-    activeTool,
-    onActiveToolChange: setActiveTool,
-    agentDrawings,
-    rebuildToken: candleType,
-  })
+  } = useDrawingTools(
+    containerRef,
+    controller.chartRef,
+    controller.seriesRef,
+    controller.drawingPrimitiveRef,
+    {
+      symbol,
+      bars,
+      selectRangeMode,
+      activeTool,
+      onActiveToolChange: setActiveTool,
+      agentDrawings,
+      rebuildToken: candleType,
+    },
+  )
 
   // Keep the two pointer machines mutually exclusive: arming a drawing tool exits
   // range-select, and entering range-select disarms the drawing tool.
@@ -878,7 +686,7 @@ export function CandlestickChart({
   // user scrolls near the left edge. A sibling concern to the pointer gestures
   // (it is not a pointer gesture), and likewise called after the chart-creation
   // effect so `chartRef` is populated on mount.
-  useLazyHistoryTrigger(chartRef, {
+  useLazyHistoryTrigger(controller.chartRef, {
     enabled: historyTriggerEnabled && onReachLeftEdge !== undefined,
     onReachLeftEdge: onReachLeftEdge ?? NOOP,
     rebuildToken: candleType,
@@ -888,7 +696,7 @@ export function CandlestickChart({
   // (Plan 0064 phase 5, ADR-0059) so the lines are re-derived for the bars on
   // screen and return after a reload. Called after the chart-creation effect so
   // `chartRef` is populated on mount; gated off until symbol+timeframe are known.
-  useChartPatternRecompute(chartRef, {
+  useChartPatternRecompute(controller.chartRef, {
     enabled: symbol !== undefined && timeframe !== undefined,
     onRecompute: () => {
       void recomputeTrendlines()
@@ -900,7 +708,7 @@ export function CandlestickChart({
   // attached in the chart-creation effect above (Plan 0064 fix); this hook only
   // FEEDS it specs/colours/visibility. Called after that effect so the ref is
   // populated on mount.
-  useTrendlines(containerRef, trendlinePrimitiveRef, {
+  useTrendlines(containerRef, controller.trendlinePrimitiveRef, {
     trendlines: shownTrendlines,
     highlightKey: highlightedTrendlineKey,
     effectiveTheme,
@@ -912,7 +720,7 @@ export function CandlestickChart({
   // markers plugin. Called before `useChartMarkers` so the candlestick-pattern
   // markers own the last write to the shared series-markers capture. Returns the
   // drawn points for the tooltip's structure hover (Plan 0105 phase 7).
-  const structureMarkerPoints = useMarketStructureMarkers(seriesRef, containerRef, {
+  const structureMarkerPoints = useMarketStructureMarkers(controller.seriesRef, containerRef, {
     structure: marketStructureResult,
     bars,
     hidden,
@@ -924,7 +732,7 @@ export function CandlestickChart({
   // Candlestick markers + pattern-span band (Plan 0049 phases 7 & 10 / Plan 0071
   // phase 2): draw only the enabled groups' markers + spans, themed, with the
   // clicked-bar affordance and hover emphasis (Plan 0072 phase 8: `useChartMarkers`).
-  useChartMarkers(seriesRef, containerRef, spanPrimitiveRef, {
+  useChartMarkers(controller.seriesRef, containerRef, controller.spanPrimitiveRef, {
     drawnMarkers,
     clickedBarTs,
     highlightedCandleGroup,
@@ -936,7 +744,7 @@ export function CandlestickChart({
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
   // (S/R levels the agent pushes) on the main series (Plan 0072 phase 8:
   // `usePriceLines`).
-  usePriceLines(seriesRef, containerRef, priceLinesRef, {
+  usePriceLines(controller.seriesRef, containerRef, priceLinesRef, {
     overlays: effectiveOverlays,
     hidden,
     effectiveTheme,
@@ -950,7 +758,7 @@ export function CandlestickChart({
   // anchor/method). Toggled per overlay from the legend like the other overlays.
   // Returns the drawn levels for the nearest-level-on-hover tooltip lookup
   // (Plan 0105 phase 6).
-  const structureLevels = useStructureLevels(seriesRef, structureLinesRef, {
+  const structureLevels = useStructureLevels(controller.seriesRef, structureLinesRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -958,7 +766,7 @@ export function CandlestickChart({
   })
   // Anchored-VWAP line series (Plan 0092 phase 5): one line per `anchored_vwap`
   // overlay, accumulated from its anchor (explicit or dominant-swing auto-anchor).
-  useAnchoredVwapSeries(chartRef, anchoredVwapSeriesRef, {
+  useAnchoredVwapSeries(controller.chartRef, anchoredVwapSeriesRef, {
     bars,
     overlays: effectiveOverlays,
     hidden,
@@ -1061,16 +869,16 @@ export function CandlestickChart({
   // marker/overlay/trendline read-out + pattern-bar outline (Plan 0072 phase 8:
   // `useChartTooltip` owns the state and returns it).
   const tooltip = useChartTooltip(
-    chartRef,
+    controller.chartRef,
     overlaySeriesRef,
-    spanPrimitiveRef,
-    trendlinePrimitiveRef,
-    divergencePricePrimitiveRef,
-    drawingPrimitiveRef,
+    controller.spanPrimitiveRef,
+    controller.trendlinePrimitiveRef,
+    controller.divergencePricePrimitiveRef,
+    controller.drawingPrimitiveRef,
     {
       drawnMarkers,
       structureLevels,
-      seriesRef,
+      seriesRef: controller.seriesRef,
       structureMarkers: structureMarkerPoints,
       rebuildToken: candleType,
     },
@@ -1082,11 +890,11 @@ export function CandlestickChart({
   useChartRestyle(
     {
       containerRef,
-      chartRef,
-      seriesRef,
-      volumeSeriesRef,
-      volumeMaSeriesRef,
-      vwapSeriesRef,
+      chartRef: controller.chartRef,
+      seriesRef: controller.seriesRef,
+      volumeSeriesRef: controller.volumeSeriesRef,
+      volumeMaSeriesRef: controller.volumeMaSeriesRef,
+      vwapSeriesRef: controller.vwapSeriesRef,
       obvSeriesRef,
       overlaySeriesRef,
       supertrendSeriesRef,
