@@ -580,6 +580,34 @@ class MultiTimeframeAlignment(BaseModel):
     agreement: float  # 0..1 fraction of available timeframes agreeing
 
 
+class QualityScore(BaseModel):
+    """One symbol's composite technical-quality screening rank (Plan 0101, ADR-0096).
+
+    `score` is a normalized 0..100 composite of four factor contributions
+    (`factors`: trend, momentum, volume, volatility) that **sum to `score`** — the
+    decomposition is transparent, so a caller sees *why* a name ranks where it does,
+    never a black-box number. `liquidity_ok` is the per-asset-class liquidity gate
+    (bar notional vs a crypto/equity floor); when it is `False`, `liquidity_note`
+    says why and the composite has been capped so a thin name cannot rank as
+    high-quality.
+
+    A **screening rank, never a call** (ADR-0096, on the ADR-0029 conditions side):
+    the model carries NO `action` / `signal` / `recommendation` / `grade` / `buy` /
+    `sell` field — any of those would be a directional call in a score's clothing.
+    The `advisor` (`recommend`) may *consume* the rank; the rank never advises.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    score: float = Field(ge=0.0, le=100.0)  # 0..100 composite, ranked descending
+    # {"trend", "momentum", "volume", "volatility"} → each factor's contribution to
+    # `score`; the values sum to `score` (invariant pinned by test).
+    factors: dict[str, float]
+    liquidity_ok: bool
+    liquidity_note: str | None = None  # why the gate flagged/capped the name, if it did
+
+
 __all__ = [
     "AnchoredVwapValue",
     "ChartPatternHit",
@@ -601,6 +629,7 @@ __all__ = [
     "Pivot",
     "PivotPoint",
     "PivotPoints",
+    "QualityScore",
     "SmartVolumeHit",
     "StructureEvent",
     "StructureEventKind",

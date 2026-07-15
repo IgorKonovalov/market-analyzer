@@ -1,6 +1,6 @@
 # 0101 — Composite quality/momentum screening rank
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-13
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0096](../adrs/0096-screening-quality-rank-conditions-side.md) (paired, accepts at close), [0095](../adrs/0095-watchlist-scan-fanout-harness.md), [0029](../adrs/0029-advisory-recommendation-boundary.md), [0023](../adrs/0023-technical-analysis-surface.md)
