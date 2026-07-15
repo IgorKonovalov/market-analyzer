@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-Add X (Twitter) / social sentiment as a fifth `SentimentSource`, built **source-agnostically behind the seam** with the concrete provider (recommended: LunarCrush) behind a `SecretsStore` key. Absent the key the source is **inert and returns honest-empty**, so the feature ships and degrades cleanly with no spend. Conditions only ([ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)); wall-clock-sensitive, no `as_of`. First user-visible behaviour: `social_sentiment("BTC")` returns an aggregate bullish/bearish score + sample size when a key is configured, or an honest-empty result when not.
+Add X (Twitter) / social sentiment as a fifth `SentimentSource`, built **source-agnostically behind the seam** with the concrete provider (recommended: LunarCrush) behind a `SecretsStore` key. Absent the key the source is **inert and returns honest-empty**, so the feature ships and degrades cleanly with no spend. Surfaced as an **`x` source mode of the unified `sentiment` tool** ([ADR-0104](../adrs/0104-mcp-tool-surface-granularity.md); Plan 0109 shipped the tool + injectable source registry). Conditions only ([ADR-0029](../adrs/0029-advisory-recommendation-boundary.md)); wall-clock-sensitive, no `as_of`. First user-visible behaviour: `sentiment(source="x", symbol="BTC")` returns an aggregate bullish/bearish score + sample size when a key is configured, or an honest-empty result when not.
 
 ## Context & problem
 
@@ -22,7 +22,7 @@ Build the seam + a LunarCrush reference adapter (phases 1–2), gated behind an 
 ```mermaid
 flowchart LR
     subgraph sidecar [Python sidecar]
-        T[social_sentiment tool]
+        T["sentiment tool<br/>source=x (ADR-0104)"]
         A["data/adapters/social_sentiment.py<br/>SentimentSource · aggregate score"]
         K["SecretsStore key (ADR-0038)<br/>absent -> inert / honest-empty"]
         R["resilient HTTP (ADR-0019)"]
@@ -44,13 +44,14 @@ flowchart LR
 ### Phase 2 — X/social as a `sentiment(source=…)` mode + registry wiring
 - **Owner skill:** dev
 > **Amended 2026-07-15 ([ADR-0104](../adrs/0104-mcp-tool-surface-granularity.md)):** X/social is a new *source* mode of the unified `sentiment` tool ([Plan 0109](0109-mcp-tool-consolidation.md) creates it), **not** a new top-level `social_sentiment` tool. If 0109 has landed, this phase adds the source value (`"x"` / `"social"`) to the `source` enum + binds the key-gated adapter — no `register_*` call, no `EXPECTED_FULL_TOOLSET` bump. If 0108 runs before 0109 phase 3, land `social_sentiment` as written and 0109 folds it in; **prefer sequencing 0109 phase 3 first.**
+> **Resolved 2026-07-15:** Plan 0109 closed — `sentiment(source)` and its injectable source registry are live on `main` (`api/mcp_tools/sentiment.py`, `source ∈ {news, stocktwits}`). The pre-0109 fallback branch is moot: this phase adds the source to the registry, no new tool module, no toolset bump. **Source value pinned: `"x"`** — modes name the *venue* (`news`, `stocktwits`, `reddit`), not the provider; LunarCrush is swappable behind the seam, so `"lunarcrush"` would leak the implementation and `"social"` is too vague beside a sibling `reddit` mode.
 - **What:** register the source in the composition root; expose it via `sentiment(source="x", symbol, window)` returning `{score, label, sample_size, source, as_of}`. Conditions only; honest-empty (with a "no key configured" note) when the key is absent.
 - **Files touched:** `api/app.py`/`mcp_app.py` (registry), `api/mcp_tools/sentiment.py` (add source binding) or, pre-0109, `api/mcp_tools/social_sentiment.py` (new) + `EXPECTED_FULL_TOOLSET` +1; regenerate `docs/reference/`.
 - **Done when:** `sentiment(source="x", …)` returns the aggregate for a fixture; the no-key path returns honest-empty + note (not an error); response asserts **no** `action`/`signal`/`recommendation` key (ADR-0029); apiref `--check` clean.
 
 ### Phase 3 — Live smoke (deferred until a key is funded)
 - **Owner skill:** human
-- **What:** with a funded LunarCrush key in `secrets.json`, run `social_sentiment("BTC")` and `social_sentiment("AERO")` against the live sidecar. Verify the majors score coherently and check whether the **small-cap the user holds (AERO)** has usable coverage or comes back thin/empty — the coverage question ADR-0103 flags.
+- **What:** with a funded LunarCrush key in `secrets.json`, run `sentiment(source="x", symbol="BTC")` and `sentiment(source="x", symbol="AERO")` against the live sidecar. Verify the majors score coherently and check whether the **small-cap the user holds (AERO)** has usable coverage or comes back thin/empty — the coverage question ADR-0103 flags.
 - **Files touched:** none (smoke).
 - **Done when:** user-attested that the tool returns coherent social sentiment for majors, with an honest read on small-cap coverage. **This phase does not gate the plan's close** — phases 1–2 ship the seam; phase 3 runs whenever a key is funded.
 
