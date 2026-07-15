@@ -77,6 +77,10 @@
   gap: var(--space-2);
   cursor: pointer;
   min-width: 0;
+  /* Grow to absorb the row's slack so the enabled/disabled status and the
+     delete button sit in a stable right-hand column regardless of how wide
+     the meta label ("indicator threshold" vs "pattern") renders. */
+  flex: 1;
 }
 
 .watchSymbol {
