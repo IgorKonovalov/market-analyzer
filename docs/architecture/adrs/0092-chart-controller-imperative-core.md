@@ -1,6 +1,6 @@
 # ADR-0092 — Imperative `ChartController` core; the React chart component is a thin adapter
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0098 close 2026-07-15)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0098-chart-controller-refactor](../plans/0098-chart-controller-refactor.md) (accepts this ADR at its close)
 
