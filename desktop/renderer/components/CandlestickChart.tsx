@@ -1,25 +1,31 @@
 /**
- * Lightweight-charts wrapper. Three effects, three responsibilities:
- *   1. Create the chart once on mount; dispose on unmount.
- *   2. Push data when `bars` change; never recreate the chart for new data;
- *      reconcile overlay series (Plan 0007 phase 4.5) when `overlays` or
- *      `bars` change: add new line series, remove gone ones, recompute
- *      data for the kept ones.
- *   3. Push markers when `annotations` (or the clicked-bar marker) change;
- *      layer onto the candlestick.
+ * CandlestickChart — the thin React adapter over the imperative chart core
+ * (Plan 0098 / ADR-0092). All lightweight-charts wiring — the chart instance, the
+ * main + always-on series, the panes, the five main-series primitives, the overlay
+ * and oscillator-pane reconcilers, restyle, the axis and the forming bar — lives in a
+ * plain-TS `ChartController` (`lib/chart/`). This component builds the controller
+ * once, drives it through declarative forward effects (mount / setBars / setOverlays /
+ * setPriceLines / setOscillators / setTrendlines / setIchimoku / setDivergences /
+ * setMarkers / restyle / setTimeframeAxis / setQuote), and keeps only what genuinely
+ * produces React state + JSX: the gesture / tooltip / scan / lazy-history / legend /
+ * candle-marker-group hooks, the user-overlay + layer-visibility + preset stores, and
+ * the render tree.
  *
- * The pointer-gesture state machine (agent-mode range-select + bar-click) lives
- * in `useChartGestures` (Plan 0029 phase 1); the component owns chart lifecycle
- * and declarative series reconciliation and hands the hook its chart/series refs.
+ * A handful of reconcilers added AFTER this plan was drafted — Plan 0092's fib/pivot
+ * price lines + anchored VWAP + market-structure markers, Plan 0105's lazy OBV pane —
+ * are still fed through their own hooks (useStructureLevels / useAnchoredVwapSeries /
+ * useMarketStructureMarkers / useObvPane), reading the controller's chart / series /
+ * pane handles. The remaining `lightweight-charts` type imports here belong to those;
+ * folding them into the controller is the documented followup.
  *
- * Disposing on unmount is non-negotiable — without it every navigation leaks
- * a Canvas/WebGL context. See ui-builder/references/best-practices.md.
+ * Disposing on unmount is non-negotiable — without it every navigation leaks a
+ * Canvas/WebGL context (`controller.dispose()`). See
+ * ui-builder/references/best-practices.md.
  *
- * The renderer exposes `window.__test_chart_render__` reflecting what's
- * actually drawn on the chart (one entry per series, including the
- * candlestick). Playwright `live-chart.spec.ts` and the renderer-side unit
- * spec assert against that — NOT the reducer's overlay list — so a render
- * regression that loses a series cannot pass.
+ * The renderer exposes `window.__test_chart_render__` reflecting what's actually drawn
+ * (one entry per series, including the candlestick). Playwright `live-chart.spec.ts`
+ * and the renderer-side specs assert against that — NOT the reducer's overlay list —
+ * so a render regression that loses a series cannot pass.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ISeriesApi } from 'lightweight-charts'
@@ -53,6 +59,7 @@ import { dedupeTrendlines, patternStateKey, trendlineGroupLayerId } from '../lib
 import { requiredOscillatorKindsFor, type DivergencePrimitive } from '../lib/divergences'
 import { useDrawingTools } from '../hooks/useDrawingTools'
 import { ChartController } from '../lib/chart/controller'
+import { routeLayerHighlight, routeLayerToggle } from '../lib/chart/legendRouting'
 import { DrawingRail } from './DrawingRail'
 import {
   getStoredTheme,
@@ -367,26 +374,25 @@ export function CandlestickChart({
     toggleCandleGroup,
     candleKeySet,
   } = useCandleMarkerGroups(annotations, hidden)
-  // LayersPanel routes a candlestick GROUP row (opt-in) to the enabled set and
-  // everything else (overlays / candlestick master / price-lines / trendline
-  // groups, all opt-out) to `hidden` — the glue joining the two legend systems.
+  // Dispatch the two-legend routing decision (pure `legendRouting`): a candlestick
+  // GROUP row toggles the enabled set, everything else toggles `hidden`; a candle
+  // group key drives marker emphasis, any other key the trendline primitive.
   const onLayerToggle = useCallback(
     (id: string): void => {
-      const groupKey = candleGroupKeyFromLayerId(id)
-      if (groupKey !== null) toggleCandleGroup(groupKey)
-      else toggleLayer(id)
+      const route = routeLayerToggle(id)
+      if (route.kind === 'candleGroup') toggleCandleGroup(route.groupKey)
+      else toggleLayer(route.id)
     },
     [toggleCandleGroup, toggleLayer],
   )
-  // Hover-highlight is shared by both legend systems: a candlestick group key
-  // drives the marker emphasis, any other key drives the trendline primitive.
   const onLayerHighlight = useCallback(
     (key: string | null): void => {
-      if (key !== null && candleKeySet.has(key)) {
-        setHighlightedCandleGroup(key)
+      const route = routeLayerHighlight(key, candleKeySet)
+      if (route.kind === 'candleGroup') {
+        setHighlightedCandleGroup(route.key)
         setHighlightedTrendlineKey(null)
       } else {
-        setHighlightedTrendlineKey(key)
+        setHighlightedTrendlineKey(route.key)
         setHighlightedCandleGroup(null)
       }
     },

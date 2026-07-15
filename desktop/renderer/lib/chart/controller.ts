@@ -5,13 +5,15 @@
  * primitives (PrimitiveHub), behind a declarative API the React component drives.
  * Plain TypeScript — no React import.
  *
- * Phase 1 (walking skeleton): `mount` / `setBars` / `dispose`, plus read handles
- * for the concerns still living in React hooks (overlays, oscillator panes,
- * primitive feeds, restyle, axis, forming-bar) that read the controller's refs
- * until later phases fold them in. The component instantiates the controller once
- * and reuses it across candle-type rebuilds (dispose → mount on the same instance);
- * the ref-object identities are stable across that rebuild, matching the old
- * component refs the hooks captured.
+ * The declarative API: `mount` / `setBars` / `dispose` (lifecycle), `setOverlays` /
+ * `setPriceLines` / `setOscillators` (reconcilers), `setTrendlines` / `setIchimoku` /
+ * `setDivergences` / `setMarkers` (primitive feeds), `restyle`, `setTimeframeAxis`
+ * and `setQuote`. The work lives in focused sub-units (SeriesRegistry, PrimitiveHub,
+ * OverlayReconciler, OscillatorPaneReconciler, restyle) so this facade only
+ * delegates. The component instantiates the controller once and reuses it across
+ * candle-type rebuilds (dispose → mount on the same instance); the exposed ref-object
+ * identities are stable across that rebuild, matching the component refs the few
+ * still-external hooks (OBV pane, fib/pivot, anchored VWAP, market structure) capture.
  */
 import { ColorType, createChart } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from 'lightweight-charts'
