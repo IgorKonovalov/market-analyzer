@@ -541,6 +541,7 @@ EXPECTED_FULL_TOOLSET = {
     "forecast",
     "forecast_regime",
     "forecast_volatility",
+    "gainers_losers",
     "get_backtest",
     "get_chart_drawings",
     "get_metric_series",

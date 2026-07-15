@@ -54,6 +54,7 @@ from market_analyser.api.mcp_tools.fibonacci_levels import register_fibonacci_le
 from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.forecast_regime import register_forecast_regime
 from market_analyser.api.mcp_tools.forecast_volatility import register_forecast_volatility
+from market_analyser.api.mcp_tools.gainers_losers import register_gainers_losers
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
 from market_analyser.api.mcp_tools.get_chart_drawings import register_get_chart_drawings
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
@@ -253,9 +254,11 @@ def create_mcp_components(
     register_smart_volume(server, provider=provider)
     # Watchlist condition scanners (Plan 0100, ADR-0095): rank a caller-supplied
     # symbol list by a condition on cached bars via the shared `_scan_symbols`
-    # fan-out. `squeeze_scan` ranks by squeeze tightness (ADR-0083 trio). Always
+    # fan-out. `squeeze_scan` ranks by squeeze tightness (ADR-0083 trio);
+    # `gainers_losers` ranks by trailing close-to-close % change. Always
     # registered — provider-only, conditions only.
     register_squeeze_scan(server, provider=provider)
+    register_gainers_losers(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)

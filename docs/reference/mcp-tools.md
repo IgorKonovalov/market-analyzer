@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 59 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 60 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -30,6 +30,7 @@ The 59 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`forecast`](#forecast) | Forecast the price DIRECTION of a cached symbol over one or more horizons, each as a calibrated up/down/flat probability or an honest 'no edge over baseline' verdict. |
 | [`forecast_regime`](#forecastregime) | Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. |
 | [`forecast_volatility`](#forecastvolatility) | Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. |
+| [`gainers_losers`](#gainerslosers) | Rank a supplied symbol list (watchlist) by trailing close-to-close % change over one timeframe window on cached bars — the biggest gainer first, the biggest loser last. |
 | [`get_backtest`](#getbacktest) | Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). |
 | [`get_chart_drawings`](#getchartdrawings) | Read the drawings the USER placed on a symbol's chart (trendlines, rays, h/v-lines, rectangles, fib grids, long/short position boxes, and date/price range measures) — use this to see and reason about what the user drew, e.g. |
 | [`get_metric_series`](#getmetricseries) | Read a stored metric time series (ADR-0051): points of one registered series_id over an inclusive [start, end] epoch-second window, sorted by ts ascending. |
@@ -550,6 +551,28 @@ Forecast realised VOLATILITY (not direction) of a cached symbol over the next ho
 | `provenance` | ForecastProvenance \| null |
 
 **Source:** [`src/market_analyser/api/mcp_tools/forecast_volatility.py`](../../src/market_analyser/api/mcp_tools/forecast_volatility.py)
+
+## `gainers_losers`
+
+Rank a supplied symbol list (watchlist) by trailing close-to-close % change over one timeframe window on cached bars — the biggest gainer first, the biggest loser last. Returns {matches, skipped, scanned_at}: each match carries its signed change_pct (latest close vs the prior close, in percent) and a coarse direction (up when non-negative, down when negative), sorted by change_pct descending, ties broken by symbol; skipped lists symbols with a single bar (no prior close) or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — a raw move is a fact, never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbols` | array[string] | yes | — |
+| `timeframe` | string | yes | — |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `GainersLosersResponse`
+
+| Field | Type |
+| --- | --- |
+| `matches` | array[GainersLosersMatch] |
+| `skipped` | array[string] |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/gainers_losers.py`](../../src/market_analyser/api/mcp_tools/gainers_losers.py)
 
 ## `get_backtest`
 

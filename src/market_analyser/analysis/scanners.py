@@ -26,7 +26,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -185,12 +185,54 @@ def score_squeeze(bars: Sequence[Bar], timeframe: str) -> SqueezeScanMatch | _Sc
     )
 
 
+# --------------------------------------------------------------------------- #
+# return scorer (Plan 0100 phase 2)                                             #
+# --------------------------------------------------------------------------- #
+
+
+class GainersLosersMatch(BaseModel):
+    """One symbol's move in a `gainers_losers` result (Plan 0100).
+
+    `change_pct` is the signed close-to-close percentage change over one timeframe
+    window — the latest bar's close against the immediately-prior bar's close (a
+    +5.0 is a 5% gain, a -3.0 a 3% loss). `direction` is the coarse sign: ``up``
+    when the change is non-negative, ``down`` when negative. Conditions only — a
+    raw move is a fact, never a buy/sell call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    change_pct: float  # signed, latest close vs the prior close, in percent
+    direction: Literal["up", "down"]
+
+
+def score_return(bars: Sequence[Bar]) -> GainersLosersMatch | _ScanSkip:
+    """Score one symbol's trailing close-to-close move over one timeframe window.
+
+    Returns `SCAN_SKIP` when there is no prior close to measure against — a single
+    bar, or a zero prior close (no defined return off a zero base): scanned,
+    uncomputable, reported in `skipped`, never a divide-by-zero. Trailing by
+    construction — reads only the last two bars (both at-or-before the scan's
+    `as_of`), so no future bar is involved."""
+
+    if len(bars) < 2:
+        return SCAN_SKIP
+    prior_close = bars[-2].close
+    if prior_close == 0:
+        return SCAN_SKIP
+    change_pct = (bars[-1].close - prior_close) / prior_close * 100.0
+    direction: Literal["up", "down"] = "up" if change_pct >= 0 else "down"
+    return GainersLosersMatch(symbol=bars[-1].symbol, change_pct=change_pct, direction=direction)
+
+
 __all__ = [
     "MAX_SCAN_SYMBOLS",
     "SCAN_SKIP",
+    "GainersLosersMatch",
     "SqueezeScanMatch",
     "_require_scan_list",
     "_require_supported_timeframe",
     "_scan_symbols",
+    "score_return",
     "score_squeeze",
 ]
