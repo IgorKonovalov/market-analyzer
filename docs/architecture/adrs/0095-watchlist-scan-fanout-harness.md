@@ -1,6 +1,6 @@
 # ADR-0095 — Shared watchlist-scan fan-out harness
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0100 close 2026-07-15)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0100](../plans/0100-watchlist-condition-scanners.md), consumed by [0101](../plans/0101-composite-quality-rank.md) and [0102](../plans/0102-crypto-sector-rotation.md)
 
