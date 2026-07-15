@@ -222,3 +222,27 @@ describe('ChartController — lifecycle (Plan 0098 phase 1)', () => {
     expect(lineMains[0].attachPrimitive).toHaveBeenCalledTimes(5)
   })
 })
+
+describe('ChartController — forming bar (setQuote)', () => {
+  it('updates the current bar when the quote falls within its period', () => {
+    const c = new ChartController()
+    c.mount(container, { candleType: 'candles', theme: 'light' })
+    const b = bars(5) // last bar starts 2026-04-05T00:00:00Z
+    c.setBars(b)
+    const series = c.seriesRef.current as unknown as { update: jest.Mock }
+    series.update.mockClear()
+    c.setQuote({ price: 200, as_of: '2026-04-05T06:00:00+00:00' } as unknown as never, b, '1d')
+    expect(series.update).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves every bar when the quote predates the current bar', () => {
+    const c = new ChartController()
+    c.mount(container, { candleType: 'candles', theme: 'light' })
+    const b = bars(5)
+    c.setBars(b)
+    const series = c.seriesRef.current as unknown as { update: jest.Mock }
+    series.update.mockClear()
+    c.setQuote({ price: 200, as_of: '2026-04-01T00:00:00+00:00' } as unknown as never, b, '1d')
+    expect(series.update).not.toHaveBeenCalled()
+  })
+})

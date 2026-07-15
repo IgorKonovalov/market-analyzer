@@ -110,6 +110,22 @@ export function divergenceOscillatorToPaneKind(
   return oscillator === 'macd_hist' ? 'macd' : oscillator
 }
 
+/** The oscillator kinds a divergence set needs a pane for (Plan 0091 phase 9):
+ * every referenced oscillator EXCEPT `obv` (whose pane `useObvPane` reconciles —
+ * and keeps alive for an obv divergence — Plan 0105 phase 3). Fed to the controller's
+ * `setOscillators` `requiredKinds` so the panes are ensured before the divergence
+ * feed runs. */
+export function requiredOscillatorKindsFor(
+  divergences: ReadonlyArray<Divergence>,
+): Set<'rsi' | 'macd' | 'mfi'> {
+  const kinds = new Set<'rsi' | 'macd' | 'mfi'>()
+  for (const d of divergences) {
+    if (d.oscillator === 'obv') continue
+    kinds.add(divergenceOscillatorToPaneKind(d.oscillator) as 'rsi' | 'macd' | 'mfi')
+  }
+  return kinds
+}
+
 function toUtcSeconds(iso: string): UTCTimestamp {
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp
 }

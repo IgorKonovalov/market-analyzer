@@ -28,16 +28,12 @@ import type { IPriceLine } from 'lightweight-charts'
 
 import { t } from '../lib/i18n'
 import { useChartGestures } from '../hooks/useChartGestures'
-import { useChartMarkers } from '../hooks/useChartMarkers'
 import { useChartPatternRecompute } from '../hooks/useChartPatternRecompute'
-import { useChartRestyle } from '../hooks/useChartRestyle'
 import { useChartScans } from '../hooks/useChartScans'
 import { useChartTooltip } from '../hooks/useChartTooltip'
 import { useCandleMarkerGroups } from '../hooks/useCandleMarkerGroups'
-import { useFormingBar } from '../hooks/useFormingBar'
 import { useLayersLegend } from '../hooks/useLayersLegend'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
-import { useIchimokuSeries } from '../hooks/useIchimokuSeries'
 import { useObvPane } from '../hooks/useObvPane'
 import { useAnchoredVwapSeries } from '../hooks/useAnchoredVwapSeries'
 import { useMarketStructureMarkers } from '../hooks/useMarketStructureMarkers'
@@ -52,11 +48,9 @@ import { MarketStructureBadge } from './MarketStructureBadge'
 import { buildLegendValues } from '../lib/legendValues'
 import { marketStructure } from '../lib/marketStructure'
 import { MARKET_STRUCTURE_LAYER_ID, mainSeriesKind } from '../lib/chartSeries'
-import { formatRangeLabel, monthlyTickMarkFormatter } from '../lib/chartAxis'
+import { formatRangeLabel } from '../lib/chartAxis'
 import { dedupeTrendlines, patternStateKey, trendlineGroupLayerId } from '../lib/trendlines'
-import { useTrendlines } from '../hooks/useTrendlines'
-import type { DivergencePrimitive } from '../lib/divergences'
-import { useDivergences, requiredOscillatorKindsFor } from '../hooks/useDivergences'
+import { requiredOscillatorKindsFor, type DivergencePrimitive } from '../lib/divergences'
 import { useDrawingTools } from '../hooks/useDrawingTools'
 import { ChartController } from '../lib/chart/controller'
 import { DrawingRail } from './DrawingRail'
@@ -499,16 +493,13 @@ export function CandlestickChart({
     })
     syncTestRenderHook()
   }, [controller, bars, effectiveOverlays, hidden, candleType, syncTestRenderHook])
-  // Ichimoku five-line + displaced filled cloud primitive (Plan 0073 phase 4).
-  // Feeds the primitive attached in the creation effect; reserves right-edge space
-  // so the projected cloud shows past the last candle.
-  useIchimokuSeries(controller.chartRef, containerRef, controller.ichimokuPrimitiveRef, {
-    bars,
-    overlays: effectiveOverlays,
-    hidden,
-    effectiveTheme,
-    rebuildToken: candleType,
-  })
+  // Ichimoku five-line + displaced filled cloud primitive (Plan 0073 phase 4) —
+  // folded into the controller (Plan 0098 phase 3). Feeds the primitive attached at
+  // creation + reserves right-edge space for the projected cloud. `effectiveTheme`
+  // re-reads the colour tokens on a flip.
+  useEffect(() => {
+    controller.setIchimoku({ bars, overlays: effectiveOverlays, hidden })
+  }, [controller, bars, effectiveOverlays, hidden, effectiveTheme, candleType])
   // OBV pane lifecycle (Plan 0105 phase 3): lazy create/remove like the oscillator
   // panes — toggling OBV off removes its pane (no empty ~30px band; a Clean chart
   // is born without one), toggling on re-creates it as the FIRST sub-pane with its
@@ -560,36 +551,24 @@ export function CandlestickChart({
     syncTestRenderHook,
   ])
   // Divergence segments (Plan 0091 phase 9, ADR-0090): feed the price/OBV/oscillator
-  // divergence primitives their segments + theme colours. Runs after the pane
-  // reconcile so every oscillator pane's primitive exists.
-  useDivergences(
-    containerRef,
-    controller.divergencePricePrimitiveRef,
-    obvDivergencePrimitiveRef,
-    controller.oscillatorPanesRef,
-    { divergences, effectiveTheme, rebuildToken: candleType },
-  )
+  // divergence primitives their segments + colours — folded into the controller
+  // (Plan 0098 phase 3). The OBV divergence primitive is still owned by `useObvPane`
+  // and passed in. Runs after the pane reconcile so every oscillator pane exists.
+  useEffect(() => {
+    controller.setDivergences(divergences, obvDivergencePrimitiveRef.current)
+  }, [controller, divergences, candleType])
 
-  // Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`
-  // into the chart's CURRENT (forming) bar in place (Plan 0072 phase 8: `useFormingBar`).
-  useFormingBar(controller.seriesRef, { quote, bars, timeframe, candleType })
+  // Live forming-bar update (Plan 0049 phase 10) — folded into the controller
+  // (Plan 0098 phase 3).
+  useEffect(() => {
+    controller.setQuote(quote, bars, timeframe)
+  }, [controller, quote, bars, timeframe, candleType])
 
   // Monthly axis ticks (Plan 0050 phase 7): the `1mo` timeframe needs month/year
-  // tick marks, not the day-level labels lightweight-charts' default emits at some
-  // zooms (which read as repeated "1" day numbers on month-spaced bars). Scoped to
-  // `1mo` only — every other timeframe keeps the library default. The chart
-  // unmounts during the loading state on a timeframe change (OhlcvView gates it
-  // behind `!isLoading`), so each timeframe gets a fresh chart and this runs once
-  // per mount; the `else` branch is just belt-and-suspenders if that ever changes.
+  // tick marks — folded into the controller (Plan 0098 phase 3). Re-applied on a
+  // rebuild (the fresh chart needs the formatter).
   useEffect(() => {
-    const chart = controller.chartRef.current
-    if (!chart) return
-    chart.applyOptions({
-      timeScale: {
-        tickMarkFormatter: timeframe === '1mo' ? monthlyTickMarkFormatter : undefined,
-      },
-    })
-    // Re-apply on a rebuild (Plan 0068 ph4) — the fresh chart needs the formatter.
+    controller.setTimeframeAxis(timeframe)
   }, [controller, timeframe, candleType])
 
   // Freeform-drawing tool mode (Plan 0097 phase 2, ADR-0091). The component owns
@@ -668,16 +647,12 @@ export function CandlestickChart({
     rebuildToken: candleType,
   })
 
-  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049). The primitive is
-  // attached in the chart-creation effect above (Plan 0064 fix); this hook only
-  // FEEDS it specs/colours/visibility. Called after that effect so the ref is
-  // populated on mount.
-  useTrendlines(containerRef, controller.trendlinePrimitiveRef, {
-    trendlines: shownTrendlines,
-    highlightKey: highlightedTrendlineKey,
-    effectiveTheme,
-    rebuildToken: candleType,
-  })
+  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049): feed the primitive
+  // (attached at creation) its specs/colours/visibility — folded into the controller
+  // (Plan 0098 phase 3). `effectiveTheme` re-reads the colour tokens on a flip.
+  useEffect(() => {
+    controller.setTrendlines(shownTrendlines, highlightedTrendlineKey)
+  }, [controller, shownTrendlines, highlightedTrendlineKey, effectiveTheme, candleType])
 
   // Market-structure markers (Plan 0092 phase 6, ADR-0084): HH/HL/LH/LL labels at
   // the confirmed swing pivots + BOS/CHoCH glyphs at their events, on their own
@@ -695,15 +670,25 @@ export function CandlestickChart({
 
   // Candlestick markers + pattern-span band (Plan 0049 phases 7 & 10 / Plan 0071
   // phase 2): draw only the enabled groups' markers + spans, themed, with the
-  // clicked-bar affordance and hover emphasis (Plan 0072 phase 8: `useChartMarkers`).
-  useChartMarkers(controller.seriesRef, containerRef, controller.spanPrimitiveRef, {
+  // clicked-bar affordance and hover emphasis — folded into the controller (Plan
+  // 0098 phase 3). Runs after `useMarketStructureMarkers` so the candlestick markers
+  // own the last write to the shared series-markers capture.
+  useEffect(() => {
+    controller.setMarkers({
+      drawnMarkers,
+      clickedBarTs,
+      highlightGroup: highlightedCandleGroup,
+      theme: effectiveTheme,
+    })
+  }, [
+    controller,
     drawnMarkers,
     clickedBarTs,
     highlightedCandleGroup,
     effectiveTheme,
     styleVersion,
-    rebuildToken: candleType,
-  })
+    candleType,
+  ])
 
   // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
   // (S/R levels the agent pushes) on the main series — folded into the controller
@@ -846,22 +831,12 @@ export function CandlestickChart({
   )
 
   // Re-apply the EXISTING chart's colours + line widths on a theme flip or a
-  // chart-style store mutation (Plan 0068 phase 2) — in place via `applyOptions`,
-  // no remount (Plan 0072 phase 8: `useChartRestyle`).
-  useChartRestyle(
-    {
-      containerRef,
-      chartRef: controller.chartRef,
-      seriesRef: controller.seriesRef,
-      volumeSeriesRef: controller.volumeSeriesRef,
-      volumeMaSeriesRef: controller.volumeMaSeriesRef,
-      vwapSeriesRef: controller.vwapSeriesRef,
-      obvSeriesRef,
-      overlaySeriesRef: controller.overlaySeriesRef,
-      supertrendSeriesRef: controller.supertrendSeriesRef,
-    },
-    { effectiveTheme, styleVersion, candleType },
-  )
+  // chart-style store mutation (Plan 0068 phase 2) — in place via `applyOptions`, no
+  // remount, folded into the controller (Plan 0098 phase 3). The OBV series is still
+  // owned by `useObvPane` and passed in.
+  useEffect(() => {
+    controller.restyle(effectiveTheme, obvSeriesRef.current)
+  }, [controller, effectiveTheme, styleVersion, candleType])
 
   // Track the effective theme; the subscription fires on an explicit theme
   // change and on an OS flip while in `system` mode. Unsubscribes on unmount.

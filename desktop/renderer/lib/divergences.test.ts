@@ -13,8 +13,8 @@ import {
   divergenceOscillatorToPaneKind,
   fallbackDivergenceColors,
   pointToSegmentDistance,
+  requiredOscillatorKindsFor,
 } from './divergences'
-import { requiredOscillatorKindsFor } from '../hooks/useDivergences'
 import type { Divergence } from '../types/events'
 
 const COLORS = fallbackDivergenceColors()

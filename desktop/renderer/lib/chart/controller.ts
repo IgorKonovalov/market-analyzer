@@ -14,11 +14,15 @@
  * component refs the hooks captured.
  */
 import { ColorType, createChart } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi, Logical } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from 'lightweight-charts'
 
 import type { Bar } from '../../types/sidecar/bar'
+import type { QuoteResponse } from '../../types/sidecar/quote-response'
 import type { CandleSeriesType } from '../chartStyle'
 import { resolveChartStyle } from '../chartStyle'
+import { monthlyTickMarkFormatter } from '../chartAxis'
+import { timeframeDurationMs } from '../timeframes'
+import type { ChartMarker } from '../markers'
 import {
   PRICE_SCALE_ID,
   PRICE_SCALE_MARGINS,
@@ -35,7 +39,8 @@ import type { DrawingPrimitive } from '../drawings'
 import type { IchimokuPrimitive } from '../ichimoku'
 import type { PatternSpanPrimitive } from '../spans'
 import type { TrendlinePrimitive } from '../trendlines'
-import type { OverlayKind, OverlaySpec } from '../../types/events'
+import type { Divergence, OverlayKind, OverlaySpec, TrendlineSpec } from '../../types/events'
+import { applyRestyle } from './restyle'
 import {
   OverlayReconciler,
   type OverlayReconcileParams,
@@ -223,6 +228,111 @@ export class ChartController {
     const registry = this.paneRegistryRef.current
     if (chart === null || registry === null) return
     this.oscillators.reconcile(chart, registry, params)
+  }
+
+  /** Feed the trendline primitive its specs + hovered legend group. */
+  setTrendlines(specs: ReadonlyArray<TrendlineSpec>, highlightKey: string | null): void {
+    this.primitives.setTrendlines(this.containerEl, specs, highlightKey)
+  }
+
+  /** Feed the Ichimoku primitive its geometries + reserve trailing axis space. */
+  setIchimoku(params: {
+    bars: Bar[]
+    overlays: ReadonlyArray<OverlaySpec> | undefined
+    hidden: ReadonlySet<string>
+  }): void {
+    this.primitives.setIchimoku(
+      this.chartRef.current,
+      this.containerEl,
+      params.bars,
+      params.overlays,
+      params.hidden,
+    )
+  }
+
+  /** Feed the price + oscillator-pane divergence primitives. The OBV divergence
+   * primitive is owned by `useObvPane` (still external) and passed in. */
+  setDivergences(
+    divergences: ReadonlyArray<Divergence>,
+    obvPrimitive: DivergencePrimitive | null,
+  ): void {
+    this.primitives.setDivergences(
+      this.containerEl,
+      divergences,
+      obvPrimitive,
+      this.oscillators.panesRef.current,
+    )
+  }
+
+  /** Feed the candlestick markers plugin + the pattern-span band. */
+  setMarkers(params: {
+    drawnMarkers: ChartMarker[]
+    clickedBarTs: string | null
+    highlightGroup: string | null
+    theme: EffectiveTheme
+  }): void {
+    this.primitives.setMarkers(this.seriesRegistry.mainRef.current, this.containerEl, params)
+  }
+
+  /** Re-apply the existing chart's colours + widths in place (no remount). The OBV
+   * series is owned externally and passed in. */
+  restyle(theme: EffectiveTheme, obvSeries: ISeriesApi<'Line'> | null): void {
+    applyRestyle({
+      chart: this.chartRef.current,
+      mainSeries: this.seriesRegistry.mainRef.current,
+      container: this.containerEl,
+      candleType: this.candleType,
+      theme,
+      volumeSeries: this.seriesRegistry.volumeRef.current,
+      volumeMaSeries: this.seriesRegistry.volumeMaRef.current,
+      vwapSeries: this.seriesRegistry.vwapRef.current,
+      obvSeries,
+      overlaySeries: this.overlays.overlaySeriesRef.current,
+      supertrendSeries: this.overlays.supertrendSeriesRef.current,
+    })
+  }
+
+  /** The `1mo` timeframe gets month/year tick marks; every other timeframe the
+   * library default. Re-applied on a rebuild (the fresh chart needs the formatter). */
+  setTimeframeAxis(timeframe: string | undefined): void {
+    const chart = this.chartRef.current
+    if (chart === null) return
+    chart.applyOptions({
+      timeScale: {
+        tickMarkFormatter: timeframe === '1mo' ? monthlyTickMarkFormatter : undefined,
+      },
+    })
+  }
+
+  /** Live forming-bar update (Plan 0049 phase 10): feed the already-polled `/quote`
+   * into the CURRENT bar via `series.update()`, but only when the quote's `as_of`
+   * falls within the latest bar's period — never rewrite a closed bar nor fabricate
+   * a new one. No lookahead: this is the live current bar, not historical replay. */
+  setQuote(
+    quote: QuoteResponse | null | undefined,
+    bars: Bar[],
+    timeframe: string | undefined,
+  ): void {
+    const series = this.seriesRegistry.mainRef.current
+    if (series === null || !quote || bars.length === 0) return
+    const periodMs = timeframeDurationMs(timeframe)
+    if (periodMs === null) return
+    const last = bars[bars.length - 1]
+    const lastStartMs = new Date(last.event_ts).getTime()
+    const asOfMs = new Date(quote.as_of).getTime()
+    if (asOfMs < lastStartMs || asOfMs >= lastStartMs + periodMs) return
+    const time = Math.floor(lastStartMs / 1000) as UTCTimestamp
+    if (this.candleType === 'line' || this.candleType === 'area') {
+      ;(series as ISeriesApi<'Line'>).update({ time, value: quote.price })
+    } else {
+      ;(series as ISeriesApi<'Candlestick'>).update({
+        time,
+        open: last.open,
+        high: Math.max(last.high, quote.price),
+        low: Math.min(last.low, quote.price),
+        close: quote.price,
+      })
+    }
   }
 
   /** Dispose the chart (which disposes its series, panes and primitives) and drop
