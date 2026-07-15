@@ -78,9 +78,8 @@ from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
 from market_analyser.api.mcp_tools.scan_watchlist import register_scan_watchlist
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
-from market_analyser.api.mcp_tools.sentiment_for_news import register_sentiment_for_news
+from market_analyser.api.mcp_tools.sentiment import register_sentiment
 from market_analyser.api.mcp_tools.show_chart import register_show_chart
-from market_analyser.api.mcp_tools.stocktwits_sentiment import register_stocktwits_sentiment
 from market_analyser.api.mcp_tools.technical_read import register_technical_read
 from market_analyser.api.mcp_tools.track_record import register_get_track_record
 from market_analyser.api.mcp_tools.update_chart import register_update_chart
@@ -256,11 +255,13 @@ def create_mcp_components(
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)
-    register_sentiment_for_news(server, provider=provider)
+    # Unified sentiment tool (Plan 0109, ADR-0104): one `sentiment(source=…)` verb over
+    # a source registry — `news` (RSS + VADER) and `stocktwits` (crowd labels) today; a
+    # new source (0103 Reddit / 0108 social) binds as one enum value + one registry entry.
+    register_sentiment(server, provider=provider)
     register_crypto_fear_greed(server, provider=provider)
     register_bitcoin_market_pulse(server, provider=provider)
     register_market_snapshot(server, provider=provider)
-    register_stocktwits_sentiment(server, provider=provider)
 
     # Prediction-market odds (Plan 0040, ADR-0041): read-only Polymarket odds via
     # the ADR-0031 selector registry. Keyless (public Gamma reads — no secret, no

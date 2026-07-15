@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 55 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 54 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -55,9 +55,8 @@ The 55 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`screener_query`](#screenerquery) | Screen a market universe for symbols matching indicator/price filters (e.g. |
 | [`search_prediction_markets`](#searchpredictionmarkets) | Search prediction markets by free text and get each match with its current odds. |
 | [`search_symbols`](#searchsymbols) | Resolve a loose or free-text name/ticker to fetchable symbols (e.g. |
-| [`sentiment_for_news`](#sentimentfornews) | Summarise news sentiment for a symbol over a window by running VADER over each recent headline and aggregating. |
+| [`sentiment`](#sentiment) | Summarise crowd/news sentiment for a symbol over a window; `source` selects the feed. |
 | [`show_chart`](#showchart) | Render a chart in the Electron viewer. |
-| [`stocktwits_sentiment`](#stocktwitssentiment) | Summarise StockTwits crowd sentiment for a symbol over a window by counting users' explicit Bullish/Bearish post labels (no NLP model). |
 | [`technical_read`](#technicalread) | ADVISORY ONLY, LESSER TIER — a single-indicator technical read: the mechanical direction (long/short/flat) of ONE curated regime indicator by its textbook rule, with NO conviction and NO entry/stop/target levels. |
 | [`update_chart`](#updatechart) | Apply a delta to the currently-rendered chart. |
 | [`volume_confirmation`](#volumeconfirmation) | Report how well volume backs one symbol's recent price move on cached bars. |
@@ -1032,19 +1031,19 @@ Resolve a loose or free-text name/ticker to fetchable symbols (e.g. 'bitcoin' or
 
 **Source:** [`src/market_analyser/api/mcp_tools/search_symbols.py`](../../src/market_analyser/api/mcp_tools/search_symbols.py)
 
-## `sentiment_for_news`
+## `sentiment`
 
-Summarise news sentiment for a symbol over a window by running VADER over each recent headline and aggregating. Returns `score` (mean compound in [-1, 1]), `window`, `source` ('rss-vader'), a `breakdown` of positive/negative/neutral headline counts, and `queried_at`. No news in the window returns score 0.0 with an all-zero breakdown (zero, not unknown). `window` is one of 1h/4h/24h/7d. Wall-clock-sensitive — no historical replay.
+Summarise crowd/news sentiment for a symbol over a window; `source` selects the feed. Returns {score (in [-1, 1]), window, source, breakdown (positive/negative/neutral counts), queried_at}. source='news': mean VADER compound over each recent RSS headline (source tag 'rss-vader'); no headlines in the window returns score 0.0 with an all-zero breakdown (zero, not unknown). source='stocktwits': (bullish - bearish) / labeled-post count from StockTwits' explicit post labels (no NLP; source tag 'stocktwits') — the payload also echoes the upper-cased `symbol`; pass the exact StockTwits ticker (AAPL for stocks, the '.X' suffix for crypto like BTC.X/ETH.X); patchy small-cap coverage returns an all-zero breakdown (neutral, not unknown), a symbol StockTwits does not track is an error. `window` is one of 1h/4h/24h/7d. Wall-clock-sensitive — no historical replay (no as_of). This is a CONDITION (crowd/news mood), never buy/sell advice.
 
 **Parameters**
 
 | Name | Type | Required | Default |
 | --- | --- | --- | --- |
-| `params` | SentimentForNewsInput | yes | — |
+| `params` | SentimentInput | yes | — |
 
 **Returns:** `dict[str, Any]`
 
-**Source:** [`src/market_analyser/api/mcp_tools/sentiment_for_news.py`](../../src/market_analyser/api/mcp_tools/sentiment_for_news.py)
+**Source:** [`src/market_analyser/api/mcp_tools/sentiment.py`](../../src/market_analyser/api/mcp_tools/sentiment.py)
 
 ## `show_chart`
 
@@ -1063,20 +1062,6 @@ Render a chart in the Electron viewer. Publishes a `chart.show v1` event to the 
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/show_chart.py`](../../src/market_analyser/api/mcp_tools/show_chart.py)
-
-## `stocktwits_sentiment`
-
-Summarise StockTwits crowd sentiment for a symbol over a window by counting users' explicit Bullish/Bearish post labels (no NLP model). Returns `symbol` (upper-cased), `score` ((bullish - bearish) / labeled count, in [-1, 1]), `window`, `source` ('stocktwits'), a `breakdown` of positive/negative/neutral post counts, and `queried_at`. Pass the exact StockTwits ticker: a plain symbol for stocks (AAPL) and the '.X' suffix for crypto (BTC.X, ETH.X). Patchy coverage on small-caps returns an all-zero breakdown (neutral, not unknown); a symbol StockTwits does not track is an error. `window` is one of 1h/4h/24h/7d. Wall-clock-sensitive — no historical replay.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `params` | StockTwitsSentimentInput | yes | — |
-
-**Returns:** `dict[str, Any]`
-
-**Source:** [`src/market_analyser/api/mcp_tools/stocktwits_sentiment.py`](../../src/market_analyser/api/mcp_tools/stocktwits_sentiment.py)
 
 ## `technical_read`
 
