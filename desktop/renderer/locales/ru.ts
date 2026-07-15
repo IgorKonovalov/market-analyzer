@@ -238,8 +238,23 @@ export const ru = {
   'chart.draw.vline': 'Вертикальная линия',
   'chart.draw.rect': 'Прямоугольник / зона',
   'chart.draw.fib': 'Коррекция Фибоначчи',
+  // Trading-idea tools (Plan 0104 / ADR-0099).
+  'chart.draw.long_position': 'Длинная позиция',
+  'chart.draw.short_position': 'Короткая позиция',
+  'chart.draw.date_range': 'Диапазон дат',
+  'chart.draw.price_range': 'Диапазон цен',
+  'chart.draw.date_price_range': 'Диапазон дат и цен',
   'chart.draw.delete': 'Удалить выбранный рисунок',
   'chart.draw.hide': 'Скрыть рисунок агента',
+  // Drawing readouts (position R:R + range measures, Plan 0104).
+  'chart.draw.readout.riskReward': 'Р/П {rr}',
+  'chart.draw.readout.bars': '{n, plural, one {# бар} few {# бара} many {# баров} other {# бара}}',
+  'chart.draw.readout.days': '{n, plural, one {# день} few {# дня} many {# дней} other {# дня}}',
+  'chart.draw.readout.hours': '{n, plural, one {# час} few {# часа} many {# часов} other {# часа}}',
+  'chart.draw.readout.priceDelta': 'Δ {value} ({pct}%)',
+  // Agent advisory position (Plan 0104 phase 4, ADR-0029/0099).
+  'chart.draw.advisory': 'Рекомендация',
+  'chart.draw.advisoryTooltip': 'Рекомендация — {rationale}',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Структура',
   'chart.structure.trend.up': 'Вверх',

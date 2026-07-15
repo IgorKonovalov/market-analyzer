@@ -177,6 +177,79 @@ describe('userDrawings store', () => {
     // as agent (agent drawings ride the wire, never the store; Plan 0097 phase 4).
     expect(list.every((d) => d.provenance === 'user')).toBe(true)
   })
+
+  // Plan 0104: position kinds carry stop/target through persistence; a malformed
+  // position (missing / mis-ordered levels) is dropped like any bad record.
+  const longPos = (id: string): DrawingSpec => ({
+    kind: 'long_position',
+    points: [tp('2026-05-01T00:00:00Z', 100)],
+    stop: 95,
+    target: 115,
+    provenance: 'user',
+    id,
+  })
+
+  it('round-trips a long_position (stop/target preserved) through persistence', async () => {
+    const m1 = await freshStore()
+    m1.addUserDrawing('AAPL', longPos('p1'))
+    const m2 = await freshStore()
+    const restored = m2.loadUserDrawings('AAPL')
+    expect(restored).toHaveLength(1)
+    expect(restored[0].kind).toBe('long_position')
+    expect(restored[0].stop).toBe(95)
+    expect(restored[0].target).toBe(115)
+  })
+
+  it('drops a position persisted with a violated stop/entry/target ordering', async () => {
+    window.localStorage.setItem(
+      'ma.userDrawings',
+      JSON.stringify({
+        AAPL: [
+          {
+            kind: 'long_position',
+            points: [tp('2026-05-01T00:00:00Z', 100)],
+            stop: 105, // above entry → invalid for a long
+            target: 115,
+            provenance: 'user',
+            id: 'bad',
+          },
+        ],
+      }),
+    )
+    const m = await freshStore()
+    expect(m.loadUserDrawings('AAPL')).toHaveLength(0)
+  })
+
+  it('drops a position persisted without stop/target', async () => {
+    window.localStorage.setItem(
+      'ma.userDrawings',
+      JSON.stringify({
+        AAPL: [
+          {
+            kind: 'short_position',
+            points: [tp('2026-05-01T00:00:00Z', 100)],
+            provenance: 'user',
+            id: 'bad',
+          },
+        ],
+      }),
+    )
+    const m = await freshStore()
+    expect(m.loadUserDrawings('AAPL')).toHaveLength(0)
+  })
+
+  it('round-trips a range measure (date_price_range) through persistence', async () => {
+    const range: DrawingSpec = {
+      kind: 'date_price_range',
+      points: [tp('2026-05-01T00:00:00Z', 100), tp('2026-05-05T00:00:00Z', 120)],
+      provenance: 'user',
+      id: 'r1',
+    }
+    const m1 = await freshStore()
+    m1.addUserDrawing('AAPL', range)
+    const m2 = await freshStore()
+    expect(m2.loadUserDrawings('AAPL')[0].kind).toBe('date_price_range')
+  })
 })
 
 describe('mergeDrawings (Plan 0097 phase 4, ADR-0091)', () => {

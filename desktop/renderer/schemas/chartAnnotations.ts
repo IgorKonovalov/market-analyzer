@@ -31,12 +31,28 @@ const drawingStyleSchema = z
   })
   .strict()
 
-const drawingKindSchema = z.enum(['trendline', 'ray', 'hline', 'vline', 'rect', 'fib'])
+const drawingKindSchema = z.enum([
+  'trendline',
+  'ray',
+  'hline',
+  'vline',
+  'rect',
+  'fib',
+  'long_position',
+  'short_position',
+  'date_range',
+  'price_range',
+  'date_price_range',
+])
 
 const drawingSpecSchema = z
   .object({
     kind: drawingKindSchema,
     points: z.array(timePricePointSchema),
+    stop: z.number().nullish(),
+    target: z.number().nullish(),
+    rationale: z.string().nullish(),
+    basis: z.string().nullish(),
     provenance: z.enum(['agent', 'user']),
     style: drawingStyleSchema.nullish(),
     id: z.string().min(1),

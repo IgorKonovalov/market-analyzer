@@ -341,20 +341,39 @@ describe('SSE envelope schema parity (TS ↔ pydantic)', () => {
     expect(requiredNames(dumped.DrawingStyle)).toEqual([])
   })
 
-  it('DrawingSpec fields match (six kinds; id always on the wire; Plan 0097 / ADR-0091)', () => {
+  it('DrawingSpec fields match (eleven kinds; stop/target/rationale/basis added; id always on the wire; Plan 0097+0104 / ADR-0091/0099)', () => {
     expect(propertyNames(dumped.DrawingSpec)).toEqual([
+      'basis',
       'id',
       'kind',
       'points',
       'provenance',
+      'rationale',
+      'stop',
       'style',
+      'target',
     ])
     // `id` has a default_factory → NOT in pydantic `required`, but it is always
     // present on the wire (generated when omitted), so the TS marks it required.
-    // `style` defaults to None → optional both sides.
+    // `style` defaults to None → optional both sides. `stop`/`target`/`rationale`/
+    // `basis` (Plan 0104) all default to None and are `exclude_none`-stripped —
+    // optional both sides (required on position kinds by the model validator, not
+    // by schema `required`).
     expect(requiredNames(dumped.DrawingSpec)).toEqual(['kind', 'points', 'provenance'])
     expect(literalValues(dumped.DrawingSpec, 'kind')).toEqual(
-      ['fib', 'hline', 'ray', 'rect', 'trendline', 'vline'].sort(),
+      [
+        'date_price_range',
+        'date_range',
+        'fib',
+        'hline',
+        'long_position',
+        'price_range',
+        'ray',
+        'rect',
+        'short_position',
+        'trendline',
+        'vline',
+      ].sort(),
     )
     expect(literalValues(dumped.DrawingSpec, 'provenance')).toEqual(['agent', 'user'])
   })

@@ -198,6 +198,106 @@ describe('computeDrawingGeometry — phase-3 kinds', () => {
   })
 })
 
+describe('computeDrawingGeometry — Plan 0104 position & range kinds', () => {
+  const longSpec: DrawingSpec = {
+    kind: 'long_position',
+    points: [tp(T1, 100)],
+    stop: 90,
+    target: 120,
+    provenance: 'user',
+    id: 'pos-1',
+  }
+
+  it('long_position: entry/stop/target handles, red+green legs, R:R caption + two fill zones', () => {
+    const g = computeDrawingGeometry(longSpec, timeToX, priceToY, 400, 300)
+    expect(g).not.toBeNull()
+    // entryY=200, stopY=210, targetY=180; entryX=100, extends to right=400.
+    expect(g!.handles).toEqual([
+      { x: 100, y: 200 }, // entry
+      { x: 100, y: 210 }, // stop
+      { x: 100, y: 180 }, // target
+    ])
+    // Entry line carries the derived R:R (|120-100|/|100-90| = 2.00).
+    expect(g!.segments[0]).toEqual({ x1: 100, y1: 200, x2: 400, y2: 200, label: 'R:R 2.00' })
+    expect(g!.segments[1].color).toBe('#e03131') // stop leg red
+    expect(g!.segments[2].color).toBe('#2f9e44') // target leg green
+    // Two coloured fill zones (stop leg red, target leg green).
+    expect(g!.fills).toHaveLength(2)
+    expect(g!.fills![0].color).toBe('#e03131')
+    expect(g!.fills![1].color).toBe('#2f9e44')
+  })
+
+  it('short_position: stop above entry, target below, R:R still derived', () => {
+    const shortSpec: DrawingSpec = {
+      kind: 'short_position',
+      points: [tp(T1, 100)],
+      stop: 110,
+      target: 80,
+      provenance: 'user',
+      id: 'pos-2',
+    }
+    const g = computeDrawingGeometry(shortSpec, timeToX, priceToY, 400, 300)
+    // stopY=190 (above entryY=200 in pixels), targetY=220 (below). |80-100|/|100-110| = 2.
+    expect(g!.handles).toEqual([
+      { x: 100, y: 200 },
+      { x: 100, y: 190 },
+      { x: 100, y: 220 },
+    ])
+    expect(g!.segments[0].label).toBe('R:R 2.00')
+  })
+
+  it('date_range: two vertical lines + a bars·span readout on the connector', () => {
+    const spec2: DrawingSpec = {
+      kind: 'date_range',
+      points: [tp(T1, 100), tp(T2, 120)],
+      provenance: 'user',
+      id: 'dr-1',
+    }
+    // Two bars in [T1, T2]; T1→T2 is 2 calendar days.
+    const barTimes = [toUtc(T1), toUtc(T2)]
+    const g = computeDrawingGeometry(spec2, timeToX, priceToY, 400, 300, undefined, barTimes)
+    expect(g!.segments[0]).toEqual({ x1: 100, y1: 0, x2: 100, y2: 300 }) // vertical at xa
+    expect(g!.segments[1]).toEqual({ x1: 200, y1: 0, x2: 200, y2: 300 }) // vertical at xb
+    expect(g!.segments[2].label).toBe('2 bars · 2 days')
+    expect(g!.handles).toEqual([
+      { x: 100, y: 200 },
+      { x: 200, y: 180 },
+    ])
+  })
+
+  it('price_range: two horizontal lines + a Δprice/% readout', () => {
+    const spec2: DrawingSpec = {
+      kind: 'price_range',
+      points: [tp(T1, 100), tp(T2, 120)],
+      provenance: 'user',
+      id: 'pr-1',
+    }
+    const g = computeDrawingGeometry(spec2, timeToX, priceToY, 400, 300)
+    expect(g!.segments[0]).toEqual({ x1: 0, y1: 200, x2: 400, y2: 200 }) // horizontal at ya
+    expect(g!.segments[1]).toEqual({ x1: 0, y1: 180, x2: 400, y2: 180 }) // horizontal at yb
+    // Δ = 120-100 = 20, +20%.
+    expect(g!.segments[2].label).toBe('Δ 20 (+20%)')
+  })
+
+  it('date_price_range: a boxed measure captioned with both readouts', () => {
+    const spec2: DrawingSpec = {
+      kind: 'date_price_range',
+      points: [tp(T1, 100), tp(T2, 120)],
+      provenance: 'user',
+      id: 'dpr-1',
+    }
+    const barTimes = [toUtc(T1), toUtc(T2)]
+    const g = computeDrawingGeometry(spec2, timeToX, priceToY, 400, 300, undefined, barTimes)
+    expect(g!.fillPolygon).toHaveLength(4)
+    expect(g!.segments[0].label).toBe('2 bars · 2 days · Δ 20 (+20%)')
+  })
+
+  it('long_position returns null when a level maps off-screen', () => {
+    const offScreen: DrawingSpec = { ...longSpec, stop: -5 } // priceToY(<0) → null
+    expect(computeDrawingGeometry(offScreen, timeToX, priceToY, 400, 300)).toBeNull()
+  })
+})
+
 /** Attach the primitive to a fake chart whose time/price scales use our stubs, so
  * `renderGeometry` populates the hit-test cache without a real chart. */
 function attach(primitive: DrawingPrimitive): void {
@@ -272,5 +372,29 @@ describe('DrawingPrimitive hit-testing', () => {
     expect(primitive.hitTestDrawingId(250, 191)).toBe('fib-1')
     // Between ratio lines → no hit.
     expect(primitive.hitTestDrawingId(250, 250)).toBeNull()
+  })
+
+  it('selects a position box by a leg and grabs its three price handles (Plan 0104)', () => {
+    const primitive = new DrawingPrimitive()
+    attach(primitive)
+    primitive.setDrawings([
+      {
+        kind: 'long_position',
+        points: [tp(T1, 100)],
+        stop: 90,
+        target: 120,
+        provenance: 'user',
+        id: 'pos-1',
+      },
+    ])
+    primitive.renderGeometry(400, 300)
+    // Near the entry leg (y=200, spanning x=100..400).
+    expect(primitive.hitTestDrawingId(250, 201)).toBe('pos-1')
+    // Away from every leg (between target y=180 and entry y=200 interior).
+    expect(primitive.hitTestDrawingId(250, 190)).toBeNull()
+    // The three handles sit at the entry x (100): entry (0), stop (1), target (2).
+    expect(primitive.hitTestHandle('pos-1', 100, 200)).toBe(0)
+    expect(primitive.hitTestHandle('pos-1', 100, 210)).toBe(1)
+    expect(primitive.hitTestHandle('pos-1', 100, 180)).toBe(2)
   })
 })

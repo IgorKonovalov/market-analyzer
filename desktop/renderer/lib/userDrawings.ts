@@ -17,6 +17,7 @@
  */
 import type { DrawingKind, DrawingSpec, DrawingStyle, TimePricePoint } from '../types/events'
 import { POINT_COUNT_BY_KIND } from './drawings'
+import { isPositionKind, positionLevelsValid } from './positions'
 
 const STORAGE_KEY = 'ma.userDrawings'
 /** Bounds so per-symbol persistence can't grow without limit (ADR-0091): cap
@@ -56,9 +57,11 @@ function sanitizeStyle(raw: unknown): DrawingStyle | undefined {
 }
 
 /** Coerce an unknown parsed value into a clean user `DrawingSpec`, or `null` when
- * it isn't a well-formed drawing (bad kind, wrong anchor count, missing id). The
- * stored provenance is always forced to `"user"` — the store never holds agent
- * drawings. */
+ * it isn't a well-formed drawing (bad kind, wrong anchor count, missing id, or — for
+ * a position — stop/target that don't satisfy the ordering invariant). The stored
+ * provenance is always forced to `"user"` — the store never holds agent drawings.
+ * A position keeps its `stop`/`target`; every other kind drops them (they belong to
+ * the position kinds alone, matching the sidecar model). */
 function sanitizeSpec(raw: unknown): DrawingSpec | null {
   if (typeof raw !== 'object' || raw === null) return null
   const obj = raw as Record<string, unknown>
@@ -70,6 +73,15 @@ function sanitizeSpec(raw: unknown): DrawingSpec | null {
   const spec: DrawingSpec = { kind: obj.kind, points, provenance: 'user', id: obj.id }
   const style = sanitizeStyle(obj.style)
   if (style !== undefined) spec.style = style
+  if (isPositionKind(obj.kind)) {
+    const stop = typeof obj.stop === 'number' && Number.isFinite(obj.stop) ? obj.stop : null
+    const target = typeof obj.target === 'number' && Number.isFinite(obj.target) ? obj.target : null
+    // A position with missing or mis-ordered levels is malformed → dropped, never
+    // rendered as an invalid box (Plan 0104 / ADR-0099).
+    if (!positionLevelsValid(obj.kind, points[0].price, stop, target)) return null
+    spec.stop = stop
+    spec.target = target
+  }
   return spec
 }
 

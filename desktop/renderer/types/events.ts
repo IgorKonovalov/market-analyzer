@@ -166,8 +166,21 @@ export interface DrawingStyle {
   width?: number | null
 }
 
-/** The six freeform-drawing geometry kinds (Plan 0097 / ADR-0091). */
-export type DrawingKind = 'trendline' | 'ray' | 'hline' | 'vline' | 'rect' | 'fib'
+/** The eleven freeform-drawing geometry kinds: six from Plan 0097 / ADR-0091, five
+ * trading-idea kinds from Plan 0104 / ADR-0099 (two position boxes + three range
+ * measures). */
+export type DrawingKind =
+  | 'trendline'
+  | 'ray'
+  | 'hline'
+  | 'vline'
+  | 'rect'
+  | 'fib'
+  | 'long_position'
+  | 'short_position'
+  | 'date_range'
+  | 'price_range'
+  | 'date_price_range'
 
 /** Who authored a drawing — the merge + edit-affordance discriminator (ADR-0091):
  * `user` drawings are editable and renderer-local; `agent` drawings are hide-only
@@ -182,10 +195,21 @@ export type DrawingProvenance = 'agent' | 'user'
  * rest — validated sidecar-side). `id` has a pydantic default-factory (uuid4 hex)
  * so it is NOT in the schema's `required` set but is ALWAYS present on the wire —
  * hence required here (the `TrendlineSpec.style` precedent). `style` defaults to
- * None and is `exclude_none`-stripped — hence optional. */
+ * None and is `exclude_none`-stripped — hence optional.
+ *
+ * Plan 0104 adds four optional fields: `stop`/`target` (the position kinds' price
+ * levels — required on `long_position`/`short_position`, absent elsewhere; the
+ * sidecar validates the `stop < entry < target` / `target < entry < stop` ordering)
+ * and `rationale`/`basis` (an agent-placed position's advisory obligation, ADR-0029;
+ * user drawings carry neither). All four are `| None` in pydantic and
+ * `exclude_none`-stripped from the wire — hence optional here. */
 export interface DrawingSpec {
   kind: DrawingKind
   points: TimePricePoint[]
+  stop?: number | null
+  target?: number | null
+  rationale?: string | null
+  basis?: string | null
   provenance: DrawingProvenance
   style?: DrawingStyle | null
   id: string

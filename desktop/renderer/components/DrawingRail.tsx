@@ -4,8 +4,8 @@
  * Presentational: a vertical column of tool buttons (select + the drawing kinds)
  * and a delete affordance. All state + behaviour live in `useDrawingTools`; this
  * only renders the buttons and reports clicks. Fills the left-edge slot Plan 0096
- * reserved in `CandlestickChart`. Phase 2 ships select + trendline + ray; phase 3
- * adds hline / vline / rect / fib buttons here.
+ * reserved in `CandlestickChart`. Plan 0097 ships select + the six geometry kinds;
+ * Plan 0104 adds the two position boxes and the three range measures.
  */
 import type { DrawingKind, DrawingProvenance } from '../types/events'
 import { t } from '../lib/i18n'
@@ -36,6 +36,12 @@ const TOOL_BUTTONS: ToolButton[] = [
   { tool: 'vline', glyph: '│', labelKey: 'chart.draw.vline' },
   { tool: 'rect', glyph: '▭', labelKey: 'chart.draw.rect' },
   { tool: 'fib', glyph: '≣', labelKey: 'chart.draw.fib' },
+  // Plan 0104 trading-idea tools: position boxes + range measures.
+  { tool: 'long_position', glyph: '⬆', labelKey: 'chart.draw.long_position' },
+  { tool: 'short_position', glyph: '⬇', labelKey: 'chart.draw.short_position' },
+  { tool: 'date_range', glyph: '↔', labelKey: 'chart.draw.date_range' },
+  { tool: 'price_range', glyph: '↕', labelKey: 'chart.draw.price_range' },
+  { tool: 'date_price_range', glyph: '▦', labelKey: 'chart.draw.date_price_range' },
 ]
 
 export function DrawingRail({

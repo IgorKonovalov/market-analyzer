@@ -28,7 +28,9 @@ import type {
 } from 'lightweight-charts'
 
 import type { DrawingKind, DrawingSpec } from '../types/events'
+import { t } from './i18n'
 import { FIB_ANCHOR_COLOR, fibLevelColor } from './overlays'
+import { riskReward } from './positions'
 import { pointSegmentDistance, resolveTimeX } from './trendlines'
 
 /** Default stroke colour for a user drawing when its `style.color` is unset. A
@@ -39,6 +41,14 @@ export const DEFAULT_DRAWING_COLOR = '#2962ff'
 export const DEFAULT_AGENT_DRAWING_COLOR = '#f08c00'
 /** Default stroke width (px) when `style.width` is unset. */
 export const DEFAULT_DRAWING_WIDTH = 2
+
+/** Position-box zone colours (Plan 0104): the stop leg is risk (red), the target
+ * leg is reward (green) — the standard long/short-tool palette, legible in both
+ * themes. */
+export const POSITION_STOP_COLOR = '#e03131'
+export const POSITION_TARGET_COLOR = '#2f9e44'
+/** Fill opacity for a position's stop/target zones — low enough candles read through. */
+export const POSITION_FILL_ALPHA = 0.1
 
 /** Half-side (px) of the square endpoint handle drawn on the selected drawing. */
 export const HANDLE_HALF_PX = 4
@@ -60,6 +70,13 @@ export const POINT_COUNT_BY_KIND: Record<DrawingKind, number> = {
   vline: 1,
   rect: 2,
   fib: 2,
+  // Plan 0104: a position is anchored by its single entry point (stop/target are
+  // prices, not anchors); a range measure spans two anchors.
+  long_position: 1,
+  short_position: 1,
+  date_range: 2,
+  price_range: 2,
+  date_price_range: 2,
 }
 
 function toUtcSeconds(iso: string): UTCTimestamp {
@@ -85,10 +102,20 @@ export interface DrawingHandle {
   y: number
 }
 
+/** A filled polygon zone with its own colour + opacity (Plan 0104): a position box
+ * has two — the red stop leg and the green target leg — so a single `fillPolygon`
+ * (one colour) no longer suffices. */
+export interface DrawingFill {
+  polygon: ReadonlyArray<{ x: number; y: number }>
+  color: string
+  alpha: number
+}
+
 /** The pixel geometry of one drawing: the stroked line(s), the anchor handles a
- * drag grabs, the resolved stroke style, and (for a `rect` zone) an optional
- * fill polygon drawn semi-transparent beneath the strokes. `segments` is empty
- * when an anchor maps off-screen (a converter returns `null`). */
+ * drag grabs, the resolved stroke style, an optional single `fillPolygon` (a
+ * `rect` zone, drawn in the drawing colour) and optional multi-colour `fills` (a
+ * position box's two zones). `segments` is empty when an anchor maps off-screen (a
+ * converter returns `null`). */
 export interface DrawingGeometry {
   id: string
   kind: DrawingKind
@@ -97,6 +124,7 @@ export interface DrawingGeometry {
   color: string
   width: number
   fillPolygon?: ReadonlyArray<{ x: number; y: number }>
+  fills?: ReadonlyArray<DrawingFill>
 }
 
 /** The standard Fibonacci retracement ratios (Plan 0097 phase 3): 0 / 23.6 /
@@ -161,6 +189,39 @@ function clampVisible(extent: number): number {
   return Math.min(Math.max(8, extent * 0.15), Math.max(8, extent - 8))
 }
 
+/** Count of bars whose time falls within `[tsA, tsB]` inclusive — the bar-span
+ * readout for the date range measures (Plan 0104). */
+function barsBetween(
+  barTimes: readonly UTCTimestamp[],
+  tsA: UTCTimestamp,
+  tsB: UTCTimestamp,
+): number {
+  const lo = Math.min(tsA, tsB)
+  const hi = Math.max(tsA, tsB)
+  let count = 0
+  for (const time of barTimes) if (time >= lo && time <= hi) count += 1
+  return count
+}
+
+/** Localised calendar-span readout from two ISO anchor times: days when the span
+ * is >= 1 day, else hours (Plan 0104; en-US numerals per ADR-0063). */
+function timeSpanReadout(tsA: string, tsB: string): string {
+  const ms = Math.abs(new Date(tsB).getTime() - new Date(tsA).getTime())
+  const hours = ms / 3_600_000
+  if (hours >= 24) return t('chart.draw.readout.days', { n: Number((hours / 24).toFixed(1)) })
+  return t('chart.draw.readout.hours', { n: Number(hours.toFixed(1)) })
+}
+
+/** Localised price-move readout `Δ <abs> (<±pct>%)` between two anchor prices
+ * (Plan 0104; en-US numerals per ADR-0063). */
+function priceDeltaReadout(priceA: number, priceB: number): string {
+  const delta = priceB - priceA
+  const abs = Math.abs(delta).toLocaleString('en-US', { maximumFractionDigits: 2 })
+  const pct = priceA !== 0 ? (delta / priceA) * 100 : 0
+  const pctStr = (pct >= 0 ? '+' : '') + pct.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return t('chart.draw.readout.priceDelta', { value: abs, pct: pctStr })
+}
+
 /**
  * Pure: map one `DrawingSpec` to its pixel geometry via a time→x converter (with
  * the off-grid `resolveTimeX` fallback) and a price→y converter. Covers all six
@@ -177,6 +238,7 @@ export function computeDrawingGeometry(
   mediaWidth: number,
   mediaHeight: number,
   defaultColor?: string,
+  barTimes: readonly UTCTimestamp[] = [],
 ): DrawingGeometry | null {
   // Unstyled drawings colour by provenance: user blue, agent amber (so the two
   // sources read apart at a glance, ADR-0091). An explicit `defaultColor`
@@ -213,6 +275,104 @@ export function computeDrawingGeometry(
     }
   }
 
+  // Position box (Plan 0104): one entry anchor + stop/target prices. Extends right
+  // from the entry time (like a ray of zones): a red entry↔stop leg and a green
+  // entry↔target leg, three price handles (entry, stop, target), an R:R caption.
+  if (spec.kind === 'long_position' || spec.kind === 'short_position') {
+    if (spec.stop == null || spec.target == null) return null // malformed (pre-validated away)
+    const entryY = priceToY(spec.points[0].price)
+    const stopY = priceToY(spec.stop)
+    const targetY = priceToY(spec.target)
+    if (entryY === null || stopY === null || targetY === null) return null
+    const entryX = timeToX(toUtcSeconds(spec.points[0].ts)) ?? clampVisible(mediaWidth)
+    const right = mediaWidth
+    const rr = riskReward(spec.points[0].price, spec.stop, spec.target)
+    const rrLabel = t('chart.draw.readout.riskReward', {
+      rr: rr === null ? '—' : rr.toFixed(2),
+    })
+    const zone = (y: number): ReadonlyArray<{ x: number; y: number }> => [
+      { x: entryX, y: entryY },
+      { x: right, y: entryY },
+      { x: right, y },
+      { x: entryX, y },
+    ]
+    return {
+      ...style,
+      handles: [
+        { x: entryX, y: entryY },
+        { x: entryX, y: stopY },
+        { x: entryX, y: targetY },
+      ],
+      segments: [
+        { x1: entryX, y1: entryY, x2: right, y2: entryY, label: rrLabel },
+        { x1: entryX, y1: stopY, x2: right, y2: stopY, color: POSITION_STOP_COLOR },
+        { x1: entryX, y1: targetY, x2: right, y2: targetY, color: POSITION_TARGET_COLOR },
+        { x1: entryX, y1: stopY, x2: entryX, y2: targetY },
+      ],
+      fills: [
+        { polygon: zone(stopY), color: POSITION_STOP_COLOR, alpha: POSITION_FILL_ALPHA },
+        { polygon: zone(targetY), color: POSITION_TARGET_COLOR, alpha: POSITION_FILL_ALPHA },
+      ],
+    }
+  }
+
+  // Date range (Plan 0104): two vertical lines at the anchor times + a readout
+  // (bar count · calendar span) on a connector at mid-height. Prices are carried
+  // by the anchors but not used (the lines span the full height).
+  if (spec.kind === 'date_range') {
+    const xa = timeToX(toUtcSeconds(spec.points[0].ts))
+    const xb = timeToX(toUtcSeconds(spec.points[1].ts))
+    if (xa === null || xb === null) return null
+    const bars = barsBetween(
+      barTimes,
+      toUtcSeconds(spec.points[0].ts),
+      toUtcSeconds(spec.points[1].ts),
+    )
+    const label = `${t('chart.draw.readout.bars', { n: bars })} · ${timeSpanReadout(
+      spec.points[0].ts,
+      spec.points[1].ts,
+    )}`
+    const midY = mediaHeight / 2
+    const handleY = priceToY(spec.points[0].price) ?? clampVisible(mediaHeight)
+    const handleYb = priceToY(spec.points[1].price) ?? clampVisible(mediaHeight)
+    return {
+      ...style,
+      handles: [
+        { x: xa, y: handleY },
+        { x: xb, y: handleYb },
+      ],
+      segments: [
+        { x1: xa, y1: 0, x2: xa, y2: mediaHeight },
+        { x1: xb, y1: 0, x2: xb, y2: mediaHeight },
+        { x1: Math.min(xa, xb), y1: midY, x2: Math.max(xa, xb), y2: midY, label },
+      ],
+    }
+  }
+
+  // Price range (Plan 0104): two horizontal lines at the anchor prices + a readout
+  // (Δprice, %) on a connector at mid-width. Times are carried but not used.
+  if (spec.kind === 'price_range') {
+    const ya = priceToY(spec.points[0].price)
+    const yb = priceToY(spec.points[1].price)
+    if (ya === null || yb === null) return null
+    const label = priceDeltaReadout(spec.points[0].price, spec.points[1].price)
+    const midX = mediaWidth / 2
+    const handleX = timeToX(toUtcSeconds(spec.points[0].ts)) ?? clampVisible(mediaWidth)
+    const handleXb = timeToX(toUtcSeconds(spec.points[1].ts)) ?? clampVisible(mediaWidth)
+    return {
+      ...style,
+      handles: [
+        { x: handleX, y: ya },
+        { x: handleXb, y: yb },
+      ],
+      segments: [
+        { x1: 0, y1: ya, x2: mediaWidth, y2: ya },
+        { x1: 0, y1: yb, x2: mediaWidth, y2: yb },
+        { x1: midX, y1: Math.min(ya, yb), x2: midX, y2: Math.max(ya, yb), label },
+      ],
+    }
+  }
+
   // The remaining kinds are two-anchor; both anchors must map fully.
   const a = mapPoint(spec.points[0], timeToX, priceToY)
   const b = mapPoint(spec.points[1], timeToX, priceToY)
@@ -236,6 +396,32 @@ export function computeDrawingGeometry(
     const segments: DrawingSegment[] = corners.map((c, i) => {
       const n = corners[(i + 1) % corners.length]
       return { x1: c.x, y1: c.y, x2: n.x, y2: n.y }
+    })
+    return { ...style, handles, segments, fillPolygon: corners }
+  }
+  if (spec.kind === 'date_price_range') {
+    // A measured box: the four edges + a fill, captioned with BOTH readouts (bar
+    // span · calendar span, then Δprice · %).
+    const corners = [
+      { x: a.x, y: a.y },
+      { x: b.x, y: a.y },
+      { x: b.x, y: b.y },
+      { x: a.x, y: b.y },
+    ]
+    const bars = barsBetween(
+      barTimes,
+      toUtcSeconds(spec.points[0].ts),
+      toUtcSeconds(spec.points[1].ts),
+    )
+    const label = `${t('chart.draw.readout.bars', { n: bars })} · ${timeSpanReadout(
+      spec.points[0].ts,
+      spec.points[1].ts,
+    )} · ${priceDeltaReadout(spec.points[0].price, spec.points[1].price)}`
+    const segments: DrawingSegment[] = corners.map((c, i) => {
+      const n = corners[(i + 1) % corners.length]
+      const seg: DrawingSegment = { x1: c.x, y1: c.y, x2: n.x, y2: n.y }
+      if (i === 0) seg.label = label // caption on the top edge
+      return seg
     })
     return { ...style, handles, segments, fillPolygon: corners }
   }
@@ -293,6 +479,20 @@ function strokeGeometry(
     ctx.beginPath()
     ctx.moveTo(g.fillPolygon[0].x, g.fillPolygon[0].y)
     for (const p of g.fillPolygon.slice(1)) ctx.lineTo(p.x, p.y)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+  }
+  // Multi-colour zones (a position box's red stop leg + green target leg), each in
+  // its own colour + opacity, beneath the strokes.
+  for (const fill of g.fills ?? []) {
+    if (fill.polygon.length < 3) continue
+    ctx.save()
+    ctx.globalAlpha = fill.alpha
+    ctx.fillStyle = fill.color
+    ctx.beginPath()
+    ctx.moveTo(fill.polygon[0].x, fill.polygon[0].y)
+    for (const p of fill.polygon.slice(1)) ctx.lineTo(p.x, p.y)
     ctx.closePath()
     ctx.fill()
     ctx.restore()
@@ -449,6 +649,7 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
   private converters(): {
     timeToX: (t: UTCTimestamp) => number | null
     priceToY: (price: number) => number | null
+    barTimes: UTCTimestamp[]
   } | null {
     const timeScale = this.chart?.timeScale()
     const series = this.series
@@ -465,7 +666,7 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
         (logical) => timeScale.logicalToCoordinate(logical as Logical),
       )
     const priceToY = (p: number): number | null => series.priceToCoordinate(p)
-    return { timeToX, priceToY }
+    return { timeToX, priceToY, barTimes }
   }
 
   /** Recompute pixel geometry for every spec (+ preview) against the current
@@ -480,14 +681,24 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
       this.cachedGeometry = []
       this.cachedPreview = null
     } else {
-      const { timeToX, priceToY } = conv
+      const { timeToX, priceToY, barTimes } = conv
       this.cachedGeometry = this.specs
-        .map((spec) => computeDrawingGeometry(spec, timeToX, priceToY, width, height))
+        .map((spec) =>
+          computeDrawingGeometry(spec, timeToX, priceToY, width, height, undefined, barTimes),
+        )
         .filter((g): g is DrawingGeometry => g !== null)
       this.cachedPreview =
         this.previewSpec === null
           ? null
-          : computeDrawingGeometry(this.previewSpec, timeToX, priceToY, width, height)
+          : computeDrawingGeometry(
+              this.previewSpec,
+              timeToX,
+              priceToY,
+              width,
+              height,
+              undefined,
+              barTimes,
+            )
     }
     return {
       geometry: this.cachedGeometry,

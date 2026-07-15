@@ -37,6 +37,7 @@ import {
   subscribeUserDrawings,
   updateUserDrawing,
 } from '../lib/userDrawings'
+import { applyPositionHandleDrag, defaultPositionLevels, isPositionKind } from '../lib/positions'
 import { useDrawingHitTest } from './useDrawingHitTest'
 
 /** A pointer movement under this many px (from pointerdown to pointerup) counts
@@ -224,6 +225,13 @@ export function useDrawingTools(
         return
       }
       const spec: DrawingSpec = { kind, points: anchors, provenance: 'user', id: genDrawingId() }
+      // A position places with proportionate default stop/target (2:1 R:R) that the
+      // user then drags; ranges and lines carry no levels (Plan 0104).
+      if (isPositionKind(kind)) {
+        const { stop, target } = defaultPositionLevels(kind, anchors[0].price)
+        spec.stop = stop
+        spec.target = target
+      }
       addUserDrawing(symbol, spec)
       pendingAnchorRef.current = null
       primitive.setPreview(null)
@@ -274,10 +282,13 @@ export function useDrawingTools(
         if (anchor === null) return
         const spec = drawings.find((d) => d.id === drag.id)
         if (spec === undefined) return
-        const points = spec.points.map((p, i) => (i === drag.handleIndex ? anchor : p))
-        // Feed the working set directly (single clean line following the cursor);
-        // committed to the store on release.
-        primitive.setDrawings(drawings.map((d) => (d.id === drag.id ? { ...spec, points } : d)))
+        // A position edits three coupled price handles under an ordering clamp; every
+        // other kind re-anchors the dragged point directly (Plan 0104).
+        const updated = isPositionKind(spec.kind)
+          ? applyPositionHandleDrag(spec, drag.handleIndex, anchor)
+          : { ...spec, points: spec.points.map((p, i) => (i === drag.handleIndex ? anchor : p)) }
+        // Feed the working set directly (following the cursor); committed on release.
+        primitive.setDrawings(drawings.map((d) => (d.id === drag.id ? updated : d)))
         return
       }
       if (activeTool !== null && pendingAnchorRef.current !== null) {
@@ -303,8 +314,10 @@ export function useDrawingTools(
         const anchor = snapPixel(x, y)
         const spec = drawings.find((d) => d.id === drag.id)
         if (anchor !== null && spec !== undefined) {
-          const points = spec.points.map((p, i) => (i === drag.handleIndex ? anchor : p))
-          updateUserDrawing(symbol, { ...spec, points })
+          const updated = isPositionKind(spec.kind)
+            ? applyPositionHandleDrag(spec, drag.handleIndex, anchor)
+            : { ...spec, points: spec.points.map((p, i) => (i === drag.handleIndex ? anchor : p)) }
+          updateUserDrawing(symbol, updated)
         } else {
           primitive.setDrawings(drawings) // couldn't snap → revert the working set
         }

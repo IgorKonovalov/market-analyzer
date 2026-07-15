@@ -225,8 +225,23 @@ export const en = {
   'chart.draw.vline': 'Vertical line',
   'chart.draw.rect': 'Rectangle / zone',
   'chart.draw.fib': 'Fibonacci retracement',
+  // Trading-idea tools (Plan 0104 / ADR-0099).
+  'chart.draw.long_position': 'Long position',
+  'chart.draw.short_position': 'Short position',
+  'chart.draw.date_range': 'Date range',
+  'chart.draw.price_range': 'Price range',
+  'chart.draw.date_price_range': 'Date & price range',
   'chart.draw.delete': 'Delete selected drawing',
   'chart.draw.hide': 'Hide agent drawing',
+  // Drawing readouts (position R:R + range measures, Plan 0104).
+  'chart.draw.readout.riskReward': 'R:R {rr}',
+  'chart.draw.readout.bars': '{n, plural, one {# bar} other {# bars}}',
+  'chart.draw.readout.days': '{n, plural, one {# day} other {# days}}',
+  'chart.draw.readout.hours': '{n, plural, one {# hour} other {# hours}}',
+  'chart.draw.readout.priceDelta': 'Δ {value} ({pct}%)',
+  // Agent advisory position (Plan 0104 phase 4, ADR-0029/0099).
+  'chart.draw.advisory': 'Advisory',
+  'chart.draw.advisoryTooltip': 'Advisory — {rationale}',
   // Market-structure badge (MarketStructureBadge.tsx, Plan 0092 / ADR-0084).
   'chart.structure.label': 'Structure',
   'chart.structure.trend.up': 'Up',
