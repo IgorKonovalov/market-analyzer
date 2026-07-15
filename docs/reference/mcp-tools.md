@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 50 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -15,7 +15,6 @@ The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`btc_cycle_snapshot`](#btccyclesnapshot) | Get the current BTC cycle picture in one call: days since the 2024-04-19 halving, ESTIMATED days to the next (the next-halving date is an estimate, hence the _est suffix), the cycle phase fraction (0.0 just after a halving, 1.0 at the estimated next), Mayer Multiple (close / 200-day SMA) and distance to the 200-week MA (close / SMA1400 - 1) from cached daily BTC-USD bars, plus the latest Fear & Greed and BTC dominance with 7/30-day deltas from the stored metric series, plus on-chain MVRV (market value / realized value) with its trailing full-history percentile. |
 | [`compare_strategies`](#comparestrategies) | Run every reference strategy on one symbol/timeframe/window at its default parameters and return a leaderboard ranked by a chosen metric. |
 | [`compute_wallet_pnl`](#computewalletpnl) | Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction history (Ethereum, Base, Arbitrum, Optimism): per-position and total realized/unrealized P&L under average-cost lots, every leg valued at its own block timestamp - never trusting an aggregator's number. |
-| [`counter_trend_volume`](#countertrendvolume) | Decompose one symbol's recent volume into with-trend vs counter-trend on cached bars, anchored to the symbol's canonical trend (the same up/down/sideways label analyze_symbol reports). |
 | [`create_watch`](#createwatch) | Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). |
 | [`crypto_fear_greed`](#cryptofeargreed) | Get the current crypto Fear & Greed index (Alternative.me): a single 0-100 value with a label (Extreme Fear / Fear / Neutral / Greed / Extreme Greed). |
 | [`delete_watch`](#deletewatch) | Delete a watch by id, including its alert history. |
@@ -56,7 +55,7 @@ The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`show_chart`](#showchart) | Render a chart in the Electron viewer. |
 | [`technical_read`](#technicalread) | ADVISORY ONLY, LESSER TIER — a single-indicator technical read: the mechanical direction (long/short/flat) of ONE curated regime indicator by its textbook rule, with NO conviction and NO entry/stop/target levels. |
 | [`update_chart`](#updatechart) | Apply a delta to the currently-rendered chart. |
-| [`volume_confirmation`](#volumeconfirmation) | Report how well volume backs one symbol's recent price move on cached bars. |
+| [`volume_read`](#volumeread) | Read one symbol's recent volume against its price move on cached bars; `kind` selects the read. |
 | [`walk_forward_backtest`](#walkforwardbacktest) | Evaluate one strategy across n_splits rolling out-of-sample folds and return per-fold metrics plus an aggregate (mean/std of total_return and sharpe) and a full-run baseline. |
 | [`write_annotation`](#writeannotation) | Write a chart annotation (bullish/bearish marker on a single candle). |
 
@@ -193,29 +192,6 @@ Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction 
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/compute_wallet_pnl.py`](../../src/market_analyser/api/mcp_tools/compute_wallet_pnl.py)
-
-## `counter_trend_volume`
-
-Decompose one symbol's recent volume into with-trend vs counter-trend on cached bars, anchored to the symbol's canonical trend (the same up/down/sideways label analyze_symbol reports). Returns {result, partial_reason, scanned_at}: result.bars lists each of the trailing `lookback` bars with its direction (close-vs-open), trailing relative volume, and a counter-trend flag, and result.counter_trend_volume_share is the share of directional volume on the counter-trend bars (high = a volume divergence against the trend). When the trend is sideways there is nothing to run counter to: anchored_to_sideways is true and the share is null (undefined, not forced). result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first). Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
-
-**Parameters**
-
-| Name | Type | Required | Default |
-| --- | --- | --- | --- |
-| `symbol` | string | yes | — |
-| `timeframe` | string | yes | — |
-| `lookback` | integer | no | `20` |
-| `as_of` | string (date-time) \| null | no | `None` |
-
-**Returns:** `CounterTrendVolumeResponse`
-
-| Field | Type |
-| --- | --- |
-| `result` | CounterTrendVolume \| null |
-| `partial_reason` | string \| null |
-| `scanned_at` | string (date-time) |
-
-**Source:** [`src/market_analyser/api/mcp_tools/counter_trend_volume.py`](../../src/market_analyser/api/mcp_tools/counter_trend_volume.py)
 
 ## `create_watch`
 
@@ -1042,9 +1018,9 @@ Apply a delta to the currently-rendered chart. Publishes a `chart.update v1` eve
 
 **Source:** [`src/market_analyser/api/mcp_tools/update_chart.py`](../../src/market_analyser/api/mcp_tools/update_chart.py)
 
-## `volume_confirmation`
+## `volume_read`
 
-Report how well volume backs one symbol's recent price move on cached bars. Returns {result, partial_reason, scanned_at}: result.score is a 0..1 share of directional volume aligned with the net move over the trailing `lookback` bars (high when the move is carried by trend volume, low on a counter-trend divergence), with result.confirmed, direction, and the supportive/opposing volume figures. result is null with partial_reason='no_bars' when nothing is cached (backfill via get_ohlcv first). Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+Read one symbol's recent volume against its price move on cached bars; `kind` selects the read. Returns {kind, result, partial_reason, scanned_at}: result is the mode's read (null with partial_reason='no_bars' when nothing is cached — backfill via get_ohlcv first), scanned_at is run provenance. Modes: kind='confirmation' — how well volume backs the recent move (VolumeConfirmation: score, a 0..1 share of directional volume aligned with the net move over the trailing confirmation.lookback bars — high when the move is carried by trend volume, low on a counter-trend divergence — plus confirmed, direction, and the supportive/opposing volume figures). kind='counter_trend' — the volume decomposed with-trend vs counter-trend, anchored to the symbol's canonical trend (the same up/down/sideways label analyze_symbol reports, NOT the net move): result.bars lists each trailing counter_trend.lookback bar with its direction, trailing relative volume, and counter-trend flag, and result.counter_trend_volume_share is the share of directional volume on the counter-trend bars (high = a volume divergence against the trend); when the trend is sideways there is nothing to run counter to, anchored_to_sideways is true and the share is null. Pass `as_of` for historical replay (trailing — no future leak). Conditions only — never buy/sell advice. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
 
 **Parameters**
 
@@ -1052,18 +1028,21 @@ Report how well volume backs one symbol's recent price move on cached bars. Retu
 | --- | --- | --- | --- |
 | `symbol` | string | yes | — |
 | `timeframe` | string | yes | — |
-| `lookback` | integer | no | `20` |
+| `kind` | enum["confirmation", "counter_trend"] | yes | — |
+| `confirmation` | ConfirmationOpts \| null | no | `None` |
+| `counter_trend` | CounterTrendOpts \| null | no | `None` |
 | `as_of` | string (date-time) \| null | no | `None` |
 
-**Returns:** `VolumeConfirmationResponse`
+**Returns:** `VolumeReadResponse`
 
 | Field | Type |
 | --- | --- |
-| `result` | VolumeConfirmation \| null |
+| `kind` | enum["confirmation", "counter_trend"] |
+| `result` | VolumeConfirmation \| CounterTrendVolume \| null |
 | `partial_reason` | string \| null |
 | `scanned_at` | string (date-time) |
 
-**Source:** [`src/market_analyser/api/mcp_tools/volume_confirmation.py`](../../src/market_analyser/api/mcp_tools/volume_confirmation.py)
+**Source:** [`src/market_analyser/api/mcp_tools/volume_read.py`](../../src/market_analyser/api/mcp_tools/volume_read.py)
 
 ## `walk_forward_backtest`
 

@@ -38,7 +38,6 @@ from market_analyser.api.mcp_tools.backfill_ohlcv import register_backfill_ohlcv
 from market_analyser.api.mcp_tools.bitcoin_market_pulse import register_bitcoin_market_pulse
 from market_analyser.api.mcp_tools.compare_strategies import register_compare_strategies
 from market_analyser.api.mcp_tools.compute_wallet_pnl import register_compute_wallet_pnl
-from market_analyser.api.mcp_tools.counter_trend_volume import register_counter_trend_volume
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.cycle_snapshot import register_btc_cycle_snapshot
 from market_analyser.api.mcp_tools.derivatives_snapshot import (
@@ -80,7 +79,7 @@ from market_analyser.api.mcp_tools.show_chart import register_show_chart
 from market_analyser.api.mcp_tools.technical_read import register_technical_read
 from market_analyser.api.mcp_tools.track_record import register_get_track_record
 from market_analyser.api.mcp_tools.update_chart import register_update_chart
-from market_analyser.api.mcp_tools.volume_confirmation import register_volume_confirmation
+from market_analyser.api.mcp_tools.volume_read import register_volume_read
 from market_analyser.api.mcp_tools.walk_forward_backtest import register_walk_forward_backtest
 from market_analyser.api.mcp_tools.watches import register_watch_tools
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
@@ -231,8 +230,11 @@ def create_mcp_components(
     register_compare_strategies(server, provider=provider)
     register_walk_forward_backtest(server, provider=provider)
     register_multi_timeframe_analysis(server, provider=provider)
-    register_volume_confirmation(server, provider=provider)
-    register_counter_trend_volume(server, provider=provider)
+    # Single-symbol volume reads (Plan 0021/0090; unified Plan 0109 ph5, ADR-0104): one
+    # `volume_read(kind=…)` verb folding volume_confirmation and counter_trend_volume
+    # (anchored to the ADR-0083 snapshot trend) into modes over a shared cached-bar read.
+    # Returns the {kind, result, partial_reason, scanned_at} envelope; conditions only.
+    register_volume_read(server, provider=provider)
     register_detect_divergences(server, provider=provider, event_bus=event_bus)
     # Price-structure reads (Plan 0092; unified Plan 0109 ph4, ADR-0104): one
     # `price_structure(kind=…)` verb folding the Fibonacci grid, classic pivots,
