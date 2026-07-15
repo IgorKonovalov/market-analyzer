@@ -1,6 +1,6 @@
 # 0103 — Reddit crowd sentiment source
 
-> **Status:** approved
+> **Status:** done — closed 2026-07-15. Phase 1 `55b9565` (dev — `data/adapters/reddit_sentiment.py` + provider seam: fixed multi-subreddit keyless fetch, upvote-weighted lexicon score, honest-empty degrade, pure `reddit_label` ladder; `_sentiment_sources["reddit"]` + `get_sentiment` `Literal` widening; 15 adapter tests incl. provider routing) → phase 2 `fee1bfb` (dev — `sentiment(source="reddit")` as one registry entry per ADR-0104, `label`/`sample_size` derived at the tool layer, stale `test_rejects_unknown_source` re-pointed, apiref regen; no toolset bump, `EXPECTED_FULL_TOOLSET` still 50). Clean Mode 4 against the amended (conformant-`SentimentSample`) design — no blockers/majors; gates re-verified independently at close (31 targeted tests green, toolset guard, `apiref --check` clean). ADR-0098 accepted. Phase 3 (human live smoke) deferred — does not gate close.
 > **Created:** 2026-07-13
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0098](../adrs/0098-reddit-keyless-crowd-sentiment.md) (paired, accepts at close), [0031](../adrs/0031-data-source-adapter-contract.md), [0019](../adrs/0019-external-http-adapter-resilience.md), [0029](../adrs/0029-advisory-recommendation-boundary.md), [0069](../adrs/0069-crypto-first-asset-class-positioning.md)
