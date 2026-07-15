@@ -4,7 +4,7 @@
 
 # REST API
 
-The 25 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
+The 26 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
 
 | Route | Summary |
 | --- | --- |
@@ -31,6 +31,7 @@ The 25 renderer-facing REST operations, from the FastAPI OpenAPI document. Every
 | [`POST /settings/stop`](#post-settingsstop) | Post Stop |
 | [`GET /track_record`](#get-trackrecord) | Get Track Record |
 | [`POST /ui_events`](#post-uievents) | Post Ui Event |
+| [`PUT /user_drawings/{symbol}`](#put-userdrawingssymbol) | Put User Drawings |
 | [`GET /watches`](#get-watches) | List Watches |
 | [`POST /watches/{watch_id}`](#post-watcheswatchid) | Set Watch Enabled |
 
@@ -356,6 +357,22 @@ Post Ui Event
 No parameters.
 
 **Request body:** `UIEventRequest`
+
+## `PUT /user_drawings/{symbol}`
+
+Declaratively replace `symbol`'s mirrored user drawing set. Returns the
+stamped `synced_at` so the renderer can confirm the sync landed.
+
+**Auth:** renderer bearer
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+
+**Request body:** `array[DrawingSpec]`
+**Response:** `object`
 
 ## `GET /watches`
 

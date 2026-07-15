@@ -55,6 +55,7 @@ from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.forecast_regime import register_forecast_regime
 from market_analyser.api.mcp_tools.forecast_volatility import register_forecast_volatility
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
+from market_analyser.api.mcp_tools.get_chart_drawings import register_get_chart_drawings
 from market_analyser.api.mcp_tools.get_ohlcv import register_get_ohlcv
 from market_analyser.api.mcp_tools.get_pending_ui_events import register_get_pending_ui_events
 from market_analyser.api.mcp_tools.highlight_pattern import register_highlight_pattern
@@ -121,6 +122,7 @@ from market_analyser.persistence.repositories.watches import (
 )
 from market_analyser.portfolio.sources import MANUAL_POSITIONS_FILENAME
 from market_analyser.ui_events.buffer import UIEventBuffer
+from market_analyser.user_drawings import UserDrawingsMirror
 
 
 def create_mcp_components(
@@ -129,6 +131,7 @@ def create_mcp_components(
     annotations_repository: AnnotationsRepository,
     event_bus: EventBus,
     ui_event_buffer: UIEventBuffer,
+    user_drawings_mirror: UserDrawingsMirror | None = None,
     backfill_coordinator: BackfillCoordinator | None = None,
     backtest_runs_repository: BacktestRunsRepository | None = None,
     advice_ledger_repository: AdviceLedgerRepository | None = None,
@@ -188,6 +191,16 @@ def create_mcp_components(
     # the agent drawing set per symbol via `chart.annotations v1`. Display-only,
     # never persisted sidecar-side — no repo dep.
     register_annotate_chart(server, event_bus=event_bus)
+    # Drawing read-back (Plan 0104, ADR-0099): the agent reads the user's drawings
+    # from the in-memory mirror the `PUT /user_drawings` route feeds. Always
+    # registered — the mirror needs no external deps; when the caller supplies none
+    # (the apiref wiring), a fresh empty mirror is used for introspection.
+    register_get_chart_drawings(
+        server,
+        user_drawings_mirror=(
+            user_drawings_mirror if user_drawings_mirror is not None else UserDrawingsMirror()
+        ),
+    )
     register_highlight_pattern(
         server, annotations_repository=annotations_repository, event_bus=event_bus
     )

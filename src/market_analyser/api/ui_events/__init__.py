@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -70,9 +70,30 @@ class BarClickedPayloadV1(BaseModel):
     close: float
 
 
+class DrawingChangedPayloadV1(BaseModel):
+    """`ui.drawing_changed v1` (Plan 0104, ADR-0099): the user created, modified,
+    or deleted a drawing on `symbol`'s chart.
+
+    Ungated, like every other gesture post-ADR-0101: a low-latency nudge that the
+    user's drawing set changed. It carries only the identity of the change — the
+    agent enumerates the current geometry via `get_chart_drawings`, the reliable
+    read. `kind` is the drawing's kind as a bare string (not the `DrawingSpec`
+    Literal) so this transport vocabulary stays decoupled from the model's kind
+    set; the authoritative shape lives in the mirror, not here."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    change: Literal["created", "modified", "deleted"]
+    drawing_id: str
+    kind: str
+
+
 UI_EVENT_TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "ui.range_selected": RangeSelectedPayloadV1,
     "ui.bar_clicked": BarClickedPayloadV1,
+    "ui.drawing_changed": DrawingChangedPayloadV1,
 }
 
 

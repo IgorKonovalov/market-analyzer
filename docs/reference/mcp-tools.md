@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 58 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -31,6 +31,7 @@ The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`forecast_regime`](#forecastregime) | Forecast the market REGIME TRANSITION (not direction) of a cached symbol: the current regime (a trailing trend x volatility state, e.g. |
 | [`forecast_volatility`](#forecastvolatility) | Forecast realised VOLATILITY (not direction) of a cached symbol over the next horizon_bars: the predicted per-bar volatility with a 1-sigma out-of-sample band, scored against deterministic EWMA + persistence baselines by QLIKE. |
 | [`get_backtest`](#getbacktest) | Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). |
+| [`get_chart_drawings`](#getchartdrawings) | Read the drawings the USER placed on a symbol's chart (trendlines, rays, h/v-lines, rectangles, fib grids, long/short position boxes, and date/price range measures) — use this to see and reason about what the user drew, e.g. |
 | [`get_metric_series`](#getmetricseries) | Read a stored metric time series (ADR-0051): points of one registered series_id over an inclusive [start, end] epoch-second window, sorted by ts ascending. |
 | [`get_ohlcv`](#getohlcv) | Read OHLCV bars for one symbol over a [start, end] window. |
 | [`get_pending_ui_events`](#getpendinguievents) | Read recent UI events the user generated in the chart viewer — drag-selected ranges and single bar clicks. |
@@ -583,6 +584,26 @@ Fetch a persisted backtest's full detail by run_id (the id run_backtest returns)
 | `equity` | EquityPage \| null |
 
 **Source:** [`src/market_analyser/api/mcp_tools/get_backtest.py`](../../src/market_analyser/api/mcp_tools/get_backtest.py)
+
+## `get_chart_drawings`
+
+Read the drawings the USER placed on a symbol's chart (trendlines, rays, h/v-lines, rectangles, fib grids, long/short position boxes, and date/price range measures) — use this to see and reason about what the user drew, e.g. 'what do you think about this resistance line I drew?'. Returns `{symbol, drawings, synced_at}` where each drawing is `{kind, points, id, ...}` anchored at `(ts, price)`. `synced_at` is an ISO timestamp of the last sync, or null when the viewer has not synced this symbol since the sidecar started — null (or a stale timestamp) means the set may not reflect what is on screen now, so read it before trusting an empty list. This is a READ-ONLY mirror; the user owns their drawings — place your own with annotate_chart instead.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbol` | string | yes | — |
+
+**Returns:** `UserDrawingsSnapshot`
+
+| Field | Type |
+| --- | --- |
+| `symbol` | string |
+| `drawings` | array[DrawingSpec] |
+| `synced_at` | string (date-time) \| null |
+
+**Source:** [`src/market_analyser/api/mcp_tools/get_chart_drawings.py`](../../src/market_analyser/api/mcp_tools/get_chart_drawings.py)
 
 ## `get_metric_series`
 

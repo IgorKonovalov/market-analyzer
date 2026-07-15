@@ -542,6 +542,7 @@ EXPECTED_FULL_TOOLSET = {
     "forecast_regime",
     "forecast_volatility",
     "get_backtest",
+    "get_chart_drawings",
     "get_metric_series",
     "get_ohlcv",
     "get_pending_ui_events",

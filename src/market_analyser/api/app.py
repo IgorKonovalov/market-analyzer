@@ -48,6 +48,7 @@ from market_analyser.api.routes.settings import router as settings_router
 from market_analyser.api.routes.settings_stop import router as settings_stop_router
 from market_analyser.api.routes.track_record import router as track_record_router
 from market_analyser.api.routes.ui_events import router as ui_events_router
+from market_analyser.api.routes.user_drawings import router as user_drawings_router
 from market_analyser.api.routes.watches import router as watches_router
 from market_analyser.api.sse_ticket import SseTicketStore
 from market_analyser.attribution.scoring_job import (
@@ -111,6 +112,7 @@ from market_analyser.persistence.repositories.watches import (
 from market_analyser.persistence.repository import BarRepository
 from market_analyser.persistence.secrets import SecretsStore
 from market_analyser.ui_events.buffer import UIEventBuffer
+from market_analyser.user_drawings import UserDrawingsMirror
 
 AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({"/healthz"})
 MCP_PREFIX = "/mcp"
@@ -264,6 +266,12 @@ def create_app(
     # MCP-secret dependency. In-memory, ephemeral by design (ADR-0021);
     # forwarding is unconditional per ADR-0101 (no agent-mode gate).
     ui_event_buffer = UIEventBuffer()
+    # The user-drawings mirror (Plan 0104, ADR-0099): the in-memory shadow the
+    # `PUT /user_drawings` route feeds and the `get_chart_drawings` MCP tool reads.
+    # Always constructed — one instance shared between the renderer-side route and
+    # the MCP tool below; in-memory and ephemeral by design (the renderer owns the
+    # drawings, this is a read-only shadow with no persistence).
+    user_drawings_mirror = UserDrawingsMirror()
     # The backfill coordinator (Plan 0013) needs the narrow SupportsBackfill
     # capability (get_ohlcv + coverage + get_ohlcv_with_status). The production
     # DefaultMarketDataProvider satisfies it; a coverage-less stub yields None and
@@ -375,6 +383,7 @@ def create_app(
             annotations_repository=annotations_repository,
             event_bus=effective_event_bus,
             ui_event_buffer=ui_event_buffer,
+            user_drawings_mirror=user_drawings_mirror,
             backfill_coordinator=backfill_coordinator,
             backtest_runs_repository=backtest_runs_repository,
             advice_ledger_repository=advice_ledger_repository,
@@ -597,6 +606,9 @@ def create_app(
     # Plan 0014: the buffer is the renderer→agent seam (POST /ui_events appends;
     # the phase-2 MCP tool/resource read it). Ungated per ADR-0101.
     app.state.ui_event_buffer = ui_event_buffer
+    # Plan 0104 (ADR-0099): the user-drawings mirror — the same instance the
+    # `PUT /user_drawings` route writes and the `get_chart_drawings` MCP tool reads.
+    app.state.user_drawings_mirror = user_drawings_mirror
     # The backfill coordinator (Plan 0013) is exposed on app.state so a future
     # phase / route can introspect in-flight backfills; the MCP tools receive it
     # directly via create_mcp_components.
@@ -779,6 +791,12 @@ def create_app(
     # the central middleware; no MCP-secret dependency, so always registered.
     # Forwarding is unconditional per ADR-0101 — no agent-mode routes.
     app.include_router(ui_events_router)
+
+    # Plan 0104 (ADR-0099): user-drawing read-back ingress (PUT /user_drawings/
+    # {symbol}). Renderer-bearer-gated by the central middleware; no MCP-secret
+    # dependency, so always registered. The agent reads the mirror back through
+    # the `get_chart_drawings` MCP tool.
+    app.include_router(user_drawings_router)
 
     if mcp_components is not None:
         _, asgi_app = mcp_components
