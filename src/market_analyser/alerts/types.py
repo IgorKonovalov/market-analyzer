@@ -34,6 +34,10 @@ from market_analyser.data.timeframes import registry_timeframes
 
 WatchKind = Literal["indicator_threshold", "pattern", "strategy_signal"]
 
+# One cap for the free-text watch note, shared by every boundary that accepts
+# it (MCP `create_watch`, the REST partial update, the repository writes).
+NOTE_MAX_LENGTH = 500
+
 # The scalar indicator ids of the ADR-0023 condition-snapshot surface
 # (`analysis/snapshot.py`'s `indicators` dict), plus `close`. The trailing
 # percentile ranks (`rsi_pct90`/`atr_pct90`) are excluded: they are derived
@@ -174,6 +178,7 @@ class Watch(BaseModel):
     enabled: bool
     last_state: bool | None
     created_at: datetime
+    note: Annotated[str, Field(max_length=NOTE_MAX_LENGTH)] | None = None
 
     @model_validator(mode="after")
     def _validate_consistency(self) -> Watch:
@@ -210,6 +215,7 @@ class Alert(BaseModel):
 
 __all__ = [
     "INDICATOR_IDS",
+    "NOTE_MAX_LENGTH",
     "PATTERN_NAMES",
     "WATCH_KINDS",
     "Alert",

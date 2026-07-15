@@ -94,6 +94,14 @@ export const ru = {
   'alerts.kind.indicatorThreshold': 'порог индикатора',
   'alerts.kind.pattern': 'паттерн',
   'alerts.kind.strategySignal': 'сигнал стратегии',
+  'alerts.createdAt': 'создано {when} UTC',
+  'alerts.deleteWatch': 'Удалить наблюдение {id}',
+  'alerts.deleteConfirm':
+    'Удалить наблюдение {id} ({symbol} {timeframe}) и его историю оповещений?',
+  'alerts.editNote': 'Изменить заметку наблюдения {id}',
+  'alerts.noteInputLabel': 'Заметка наблюдения {id}',
+  'alerts.saveNote': 'Сохранить',
+  'alerts.cancelNote': 'Отмена',
 
   // ── Toast (Toast.tsx) ──
   'toast.dismiss': 'Закрыть уведомление',

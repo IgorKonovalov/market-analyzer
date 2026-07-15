@@ -1,9 +1,16 @@
 """Plan 0060 phase 4 — the renderer-facing watch/alert routes.
 
-The viewer's Alerts surface reads the watch list and alert history and owns
-exactly one mutation (enable/disable). Pinned here: bearer gating, the
-enable round-trip the phase's done-when (b) rides on, 404 on unknown ids,
-and newest-first paging with honest totals.
+The viewer's Alerts surface reads the watch list and alert history and
+manages watches. Pinned here: bearer gating, the enable round-trip the
+phase's done-when (b) rides on, 404 on unknown ids, and newest-first paging
+with honest totals.
+
+Plan 0110 phase 1 widened the mutation surface; also pinned:
+- `POST /watches/{id}` is a partial update — it mutates exactly the supplied
+  fields (an enable/disable toggle never wipes the note), `note: null`
+  clears, and an empty body is 422;
+- `DELETE /watches/{id}` removes the watch AND its alert-history rows
+  (asserted by row count), 404 on unknown ids.
 """
 
 from __future__ import annotations
@@ -65,7 +72,9 @@ def _auth() -> dict[str, str]:
     return {"Authorization": f"Bearer {RENDERER_SECRET}"}
 
 
-def _seed_watch(watches: WatchesRepository, *, symbol: str = "BTC-USD") -> int:
+def _seed_watch(
+    watches: WatchesRepository, *, symbol: str = "BTC-USD", note: str | None = None
+) -> int:
     return watches.create(
         symbol=symbol,
         timeframe="1d",
@@ -73,13 +82,15 @@ def _seed_watch(watches: WatchesRepository, *, symbol: str = "BTC-USD") -> int:
         params={"indicator": "rsi", "operator": "<", "level": 30.0},
         interval_seconds=86_400,
         created_at=CREATED_AT,
+        note=note,
     ).id
 
 
 class TestAuth:
-    def test_all_three_routes_reject_missing_bearer(self, client: TestClient) -> None:
+    def test_all_four_routes_reject_missing_bearer(self, client: TestClient) -> None:
         assert client.get("/watches").status_code == 401
         assert client.post("/watches/1", json={"enabled": False}).status_code == 401
+        assert client.delete("/watches/1").status_code == 401
         assert client.get("/alerts").status_code == 401
 
 
@@ -131,6 +142,86 @@ class TestWatchesRoutes:
             headers=_auth(),
         )
         assert response.status_code == 422
+
+    def test_list_returns_note(self, client: TestClient, watches: WatchesRepository) -> None:
+        _seed_watch(watches, note="ETH long scenario A")
+        [row] = client.get("/watches", headers=_auth()).json()
+        assert row["note"] == "ETH long scenario A"
+
+
+class TestPartialUpdate:
+    def test_note_only_update_leaves_enabled_untouched(
+        self, client: TestClient, watches: WatchesRepository
+    ) -> None:
+        watch_id = _seed_watch(watches)
+        response = client.post(
+            f"/watches/{watch_id}", json={"note": "neckline retest"}, headers=_auth()
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["note"] == "neckline retest"
+        assert body["enabled"] is True
+
+    def test_enabled_only_update_never_wipes_the_note(
+        self, client: TestClient, watches: WatchesRepository
+    ) -> None:
+        """The plan's named risk: absent `note` must mean untouched, or every
+        enable/disable toggle silently wipes notes."""
+        watch_id = _seed_watch(watches, note="keep me")
+        response = client.post(f"/watches/{watch_id}", json={"enabled": False}, headers=_auth())
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is False
+        assert body["note"] == "keep me"
+
+    def test_explicit_null_note_clears(
+        self, client: TestClient, watches: WatchesRepository
+    ) -> None:
+        watch_id = _seed_watch(watches, note="stale context")
+        response = client.post(f"/watches/{watch_id}", json={"note": None}, headers=_auth())
+        assert response.status_code == 200
+        assert response.json()["note"] is None
+
+    def test_empty_body_is_422(self, client: TestClient, watches: WatchesRepository) -> None:
+        watch_id = _seed_watch(watches)
+        assert client.post(f"/watches/{watch_id}", json={}, headers=_auth()).status_code == 422
+
+    def test_null_enabled_is_422(self, client: TestClient, watches: WatchesRepository) -> None:
+        watch_id = _seed_watch(watches)
+        response = client.post(f"/watches/{watch_id}", json={"enabled": None}, headers=_auth())
+        assert response.status_code == 422
+
+    def test_over_length_note_is_422(self, client: TestClient, watches: WatchesRepository) -> None:
+        watch_id = _seed_watch(watches)
+        response = client.post(f"/watches/{watch_id}", json={"note": "x" * 501}, headers=_auth())
+        assert response.status_code == 422
+
+
+class TestDeleteWatch:
+    def test_delete_removes_watch_and_history_rows(
+        self,
+        client: TestClient,
+        watches: WatchesRepository,
+        alerts: AlertsRepository,
+    ) -> None:
+        watch_id = _seed_watch(watches)
+        for i in range(3):
+            alerts.insert(
+                watch_id=watch_id,
+                fired_at=FIRED_AT + timedelta(hours=i),
+                payload={"condition": f"fact {i}"},
+            )
+        assert client.get("/alerts", headers=_auth()).json()["total"] == 3
+
+        response = client.delete(f"/watches/{watch_id}", headers=_auth())
+        assert response.status_code == 200
+        assert response.json() == {"deleted": True}
+
+        assert client.get("/watches", headers=_auth()).json() == []
+        assert client.get("/alerts", headers=_auth()).json()["total"] == 0
+
+    def test_delete_unknown_watch_is_404(self, client: TestClient) -> None:
+        assert client.delete("/watches/9999", headers=_auth()).status_code == 404
 
 
 class TestAlertsRoute:

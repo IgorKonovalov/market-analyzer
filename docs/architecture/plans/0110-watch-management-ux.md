@@ -1,6 +1,6 @@
 # 0110 — Watch management UX: condition display, delete, and notes
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-15
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0055](../adrs/0055-watchlist-alerting.md) (alerting design — "agent creates, viewer manages"), [0015](../adrs/0015-claude-code-primary-control-surface.md) (agent as primary control surface), [0029](../adrs/0029-advisory-recommendation-boundary.md) (alert rows are condition facts), [0063](../adrs/0063-russian-localization.md) (i18n parity), [0064](../adrs/0064-generated-api-reference.md) (apiref regen)

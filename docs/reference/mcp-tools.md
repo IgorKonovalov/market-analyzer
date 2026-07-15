@@ -195,7 +195,7 @@ Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction 
 
 ## `create_watch`
 
-Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). Three kinds: 'indicator_threshold' (params: {indicator, operator, level} with operator one of < <= > >= and indicator one of adx, atr, bb_lower, bb_middle, bb_pct_b, bb_upper, close, macd, macd_hist, macd_signal, minus_di, obv, obv_slope, plus_di, rel_volume, rsi, supertrend, supertrend_direction, vol_pct90, vol_sma20, volume, vwap), 'pattern' (params: {pattern} one of bearish_engulfing, bearish_harami, bullish_engulfing, bullish_harami, dark_cloud_cover, doji, evening_star, hammer, hanging_man, marubozu, morning_star, piercing_line, three_black_crows, three_white_soldiers), and 'strategy_signal' (params: {strategy_id, params} — fires when the strategy emits a fresh signal on the latest closed bar). Alerts are EDGE-TRIGGERED: one alert per false->true transition of the condition, evaluated on closed bars only. interval_seconds defaults to the timeframe's bar period. Alerts are condition facts, never buy/sell advice. Delivery: `alert.triggered v1` SSE event (viewer toast) + the pending-events poll + `list_alerts` history. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). Three kinds: 'indicator_threshold' (params: {indicator, operator, level} with operator one of < <= > >= and indicator one of adx, atr, bb_lower, bb_middle, bb_pct_b, bb_upper, close, macd, macd_hist, macd_signal, minus_di, obv, obv_slope, plus_di, rel_volume, rsi, supertrend, supertrend_direction, vol_pct90, vol_sma20, volume, vwap), 'pattern' (params: {pattern} one of bearish_engulfing, bearish_harami, bullish_engulfing, bullish_harami, dark_cloud_cover, doji, evening_star, hammer, hanging_man, marubozu, morning_star, piercing_line, three_black_crows, three_white_soldiers), and 'strategy_signal' (params: {strategy_id, params} — fires when the strategy emits a fresh signal on the latest closed bar). Alerts are EDGE-TRIGGERED: one alert per false->true transition of the condition, evaluated on closed bars only. interval_seconds defaults to the timeframe's bar period. Alerts are condition facts, never buy/sell advice. Delivery: `alert.triggered v1` SSE event (viewer toast) + the pending-events poll + `list_alerts` history. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo. Optional `note` (<= 500 chars): free-text context for WHY the watch exists (e.g. 'ETH long scenario A - neckline retest'), shown in the viewer's watch list and editable there.
 
 **Parameters**
 
@@ -207,6 +207,7 @@ Create a persisted watch the sidecar's alerting scheduler evaluates on an interv
 | `params` | object | yes | — |
 | `interval_seconds` | integer \| null | no | `None` |
 | `enabled` | boolean | no | `True` |
+| `note` | string \| null | no | `None` |
 
 **Returns:** `Watch`
 
@@ -221,6 +222,7 @@ Create a persisted watch the sidecar's alerting scheduler evaluates on an interv
 | `enabled` | boolean |
 | `last_state` | boolean \| null |
 | `created_at` | string (date-time) |
+| `note` | string \| null |
 
 **Source:** [`src/market_analyser/api/mcp_tools/watches.py`](../../src/market_analyser/api/mcp_tools/watches.py)
 

@@ -4,7 +4,7 @@
 
 # REST API
 
-The 26 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
+The 27 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
 
 | Route | Summary |
 | --- | --- |
@@ -33,7 +33,8 @@ The 26 renderer-facing REST operations, from the FastAPI OpenAPI document. Every
 | [`POST /ui_events`](#post-uievents) | Post Ui Event |
 | [`PUT /user_drawings/{symbol}`](#put-userdrawingssymbol) | Put User Drawings |
 | [`GET /watches`](#get-watches) | List Watches |
-| [`POST /watches/{watch_id}`](#post-watcheswatchid) | Set Watch Enabled |
+| [`DELETE /watches/{watch_id}`](#delete-watcheswatchid) | Delete Watch |
+| [`POST /watches/{watch_id}`](#post-watcheswatchid) | Update Watch |
 
 ---
 
@@ -386,9 +387,10 @@ No parameters.
 
 **Response:** `array[WatchOut]`
 
-## `POST /watches/{watch_id}`
+## `DELETE /watches/{watch_id}`
 
-Set Watch Enabled
+Same cascade semantics as MCP `delete_watch`: the watch and its alert
+history rows go together (`WatchesRepository.delete`).
 
 **Auth:** renderer bearer
 
@@ -398,5 +400,19 @@ Set Watch Enabled
 | --- | --- | --- | --- |
 | `watch_id` | integer | yes | — |
 
-**Request body:** `SetWatchEnabledRequest`
+**Response:** `WatchDeleteResponse`
+
+## `POST /watches/{watch_id}`
+
+Update Watch
+
+**Auth:** renderer bearer
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `watch_id` | integer | yes | — |
+
+**Request body:** `WatchUpdateRequest`
 **Response:** `WatchOut`

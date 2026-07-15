@@ -31,7 +31,7 @@ from pydantic import ValidationError
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from market_analyser.alerts.types import UnknownWatchKindError
+from market_analyser.alerts.types import NOTE_MAX_LENGTH, UnknownWatchKindError
 from market_analyser.api.app import create_app
 from market_analyser.api.mcp_secret import load_or_generate_mcp_secret
 from market_analyser.api.mcp_tools.watches import (
@@ -101,6 +101,35 @@ class TestCreateWatchBody:
         )
         assert watch.interval_seconds == 3600
         assert watch.enabled is False
+
+    def test_note_persists_and_defaults_to_none(self, watches: WatchesRepository) -> None:
+        with_note = _create_watch_response(
+            watches_repository=watches,
+            symbol="ETH-USD",
+            timeframe="1d",
+            kind="indicator_threshold",
+            params={"indicator": "close", "operator": "<=", "level": 1831.62},
+            interval_seconds=None,
+            enabled=True,
+            note="ETH long scenario A - neckline retest",
+            now=CREATED_AT,
+        )
+        assert with_note.note == "ETH long scenario A - neckline retest"
+        loaded = watches.get(with_note.id)
+        assert loaded is not None
+        assert loaded.note == "ETH long scenario A - neckline retest"
+
+        without_note = _create_watch_response(
+            watches_repository=watches,
+            symbol="BTC-USD",
+            timeframe="1d",
+            kind="pattern",
+            params={"pattern": "hammer"},
+            interval_seconds=None,
+            enabled=True,
+            now=CREATED_AT,
+        )
+        assert without_note.note is None
 
     def test_strategy_watch_resolves_strategy_at_creation(self, watches: WatchesRepository) -> None:
         watch = _create_watch_response(
@@ -358,12 +387,14 @@ def test_watch_lifecycle_round_trips_over_mcp(live_server: str, mcp_secret: str)
                     "timeframe": "1d",
                     "kind": "indicator_threshold",
                     "params": {"indicator": "rsi", "operator": "<", "level": 30.0},
+                    "note": "throwaway smoke watch",
                 },
             )
             assert created.isError is False
             assert created.structuredContent is not None
             watch_id = created.structuredContent["id"]
             assert created.structuredContent["interval_seconds"] == 86_400
+            assert created.structuredContent["note"] == "throwaway smoke watch"
 
             listed = await session.call_tool("list_watches", {})
             assert listed.isError is False
@@ -399,6 +430,31 @@ def test_create_watch_with_bogus_kind_errors_over_mcp(live_server: str, mcp_secr
                 },
             )
             assert result.isError is True
+
+    asyncio.run(_run())
+
+
+def test_create_watch_over_cap_note_errors_over_mcp(live_server: str, mcp_secret: str) -> None:
+    """Plan 0110 phase 1 done-when: the tool's input schema caps `note` at
+    NOTE_MAX_LENGTH, so an over-length note is refused at the MCP boundary."""
+
+    async def _run() -> None:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "create_watch",
+                {
+                    "symbol": "BTC-USD",
+                    "timeframe": "1d",
+                    "kind": "pattern",
+                    "params": {"pattern": "doji"},
+                    "note": "x" * (NOTE_MAX_LENGTH + 1),
+                },
+            )
+            assert result.isError is True
+
+            listed = await session.call_tool("list_watches", {})
+            assert listed.isError is False
+            assert _result_list(listed.structuredContent) == []
 
     asyncio.run(_run())
 

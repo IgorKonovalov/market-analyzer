@@ -8,6 +8,10 @@ Done-when claims pinned here:
     (the edge-detector's memory survives process death);
 (c) alert history reads are newest-first with deterministic offset/limit
     paging and honest totals.
+
+Plan 0110 phase 1 adds: the free-text `note` round-trips (create → read,
+`set_note` update, `set_note(id, None)` clear), with the length cap enforced
+before any write.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from market_analyser.alerts.types import (
+    NOTE_MAX_LENGTH,
     IndicatorThresholdParams,
     PatternParams,
     StrategySignalParams,
@@ -167,6 +172,44 @@ class TestWatchLifecycle:
         page, total = alerts.list(watch_id=created.id, limit=10)
         assert page == [] and total == 0
         assert watches.delete(created.id) is False
+
+    def test_note_round_trips_through_create(self, watches: WatchesRepository) -> None:
+        created = _create_threshold_watch(watches, note="ETH long scenario A - neckline retest")
+        assert created.note == "ETH long scenario A - neckline retest"
+        loaded = watches.get(created.id)
+        assert loaded is not None
+        assert loaded.note == "ETH long scenario A - neckline retest"
+        assert [w.note for w in watches.list()] == ["ETH long scenario A - neckline retest"]
+
+    def test_note_defaults_to_none(self, watches: WatchesRepository) -> None:
+        created = _create_threshold_watch(watches)
+        assert created.note is None
+
+    def test_set_note_updates_and_clears(self, watches: WatchesRepository) -> None:
+        created = _create_threshold_watch(watches, note="original")
+        assert watches.set_note(created.id, "revised") is True
+        loaded = watches.get(created.id)
+        assert loaded is not None and loaded.note == "revised"
+
+        assert watches.set_note(created.id, None) is True
+        cleared = watches.get(created.id)
+        assert cleared is not None and cleared.note is None
+
+        assert watches.set_note(9999, "ghost") is False
+
+    def test_over_length_note_is_rejected_before_any_write(
+        self, watches: WatchesRepository
+    ) -> None:
+        too_long = "x" * (NOTE_MAX_LENGTH + 1)
+        with pytest.raises(ValueError, match="note"):
+            _create_threshold_watch(watches, note=too_long)
+        assert watches.list() == []
+
+        created = _create_threshold_watch(watches, note="keep me")
+        with pytest.raises(ValueError, match="note"):
+            watches.set_note(created.id, too_long)
+        loaded = watches.get(created.id)
+        assert loaded is not None and loaded.note == "keep me"
 
     def test_last_state_starts_none_and_updates(self, watches: WatchesRepository) -> None:
         created = _create_threshold_watch(watches)

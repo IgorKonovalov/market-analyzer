@@ -14,4 +14,5 @@ export interface WatchOut {
   last_state: boolean | null
   /** ISO 8601 UTC timestamp. */
   created_at: string
+  note: string | null
 }
