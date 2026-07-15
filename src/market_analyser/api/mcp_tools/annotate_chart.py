@@ -16,13 +16,19 @@ from mcp.server.fastmcp import FastMCP
 
 from market_analyser.api.mcp_tools._validation import _require_non_empty_symbol
 from market_analyser.events import ChartAnnotationsPayloadV1, DrawingSpec, EventBus
+from market_analyser.events.drawing_types import _POSITION_KINDS
 
 
 def _parse_drawings(raw: list[dict[str, Any]]) -> list[DrawingSpec]:
     """Validate each drawing dict into a `DrawingSpec`, stamping agent
     provenance. A spec claiming any other provenance is rejected loudly — the
     tool never silently rewrites what the caller asserted (user drawings never
-    cross the wire, ADR-0091)."""
+    cross the wire, ADR-0091).
+
+    An agent-placed position kind (`long_position`/`short_position`) is a
+    recommendation made visual, so it must carry a non-empty `rationale` and
+    `basis` (ADR-0029/ADR-0099): a bare entry/stop/target box drawn without them
+    is rejected here, never silently accepted or stripped of its obligation."""
     specs: list[DrawingSpec] = []
     for item in raw:
         claimed = item.get("provenance")
@@ -31,7 +37,16 @@ def _parse_drawings(raw: list[dict[str, Any]]) -> list[DrawingSpec]:
                 "annotate_chart places agent drawings only; "
                 f"got provenance {claimed!r} (omit the field or pass 'agent')"
             )
-        specs.append(DrawingSpec.model_validate({**item, "provenance": "agent"}))
+        spec = DrawingSpec.model_validate({**item, "provenance": "agent"})
+        if spec.kind in _POSITION_KINDS and not (
+            (spec.rationale or "").strip() and (spec.basis or "").strip()
+        ):
+            raise ValueError(
+                f"an agent-placed {spec.kind} is an advisory recommendation and "
+                "requires a non-empty rationale and basis (ADR-0029); "
+                "provide both or place a non-position drawing"
+            )
+        specs.append(spec)
     return specs
 
 
@@ -51,13 +66,21 @@ def register_annotate_chart(server: FastMCP, *, event_bus: EventBus) -> None:
             "`ray` (through 2 points, extended right), `hline` (horizontal "
             "line at the point's price, 1 point), `vline` (vertical line at "
             "the point's ts, 1 point), `rect` (zone between 2 corner points), "
-            "`fib` (Fibonacci retracement grid between 2 anchor points). "
-            "Drawings are per-symbol and render on every timeframe (anchored "
-            "to time+price, not bars). Supply your own stable `id` per drawing "
-            "so the user's hide choices survive a re-push; `style` is optional "
-            "`{color?, width?}`. Agent drawings render hide-only for the user "
-            "(their own drawings stay editable) and are not persisted by the "
-            "viewer — re-issue after a reload."
+            "`fib` (Fibonacci retracement grid between 2 anchor points), "
+            "`date_range` / `price_range` / `date_price_range` (measure "
+            "between 2 anchor points; readouts derived at render). The "
+            "position kinds `long_position` / `short_position` take exactly 1 "
+            "anchor `(ts, entry)` plus required `stop` and `target` prices — "
+            "long needs `stop < entry < target`, short `target < entry < "
+            "stop` — and, because a position box is a directional call, an "
+            "agent-placed one MUST also carry non-empty `rationale` and `basis` "
+            "strings (ADR-0029; a bare box is rejected). Risk-reward is derived, "
+            "never sent. Drawings are per-symbol and render on every timeframe "
+            "(anchored to time+price, not bars). Supply your own stable `id` "
+            "per drawing so the user's hide choices survive a re-push; `style` "
+            "is optional `{color?, width?}`. Agent drawings render hide-only "
+            "for the user (their own drawings stay editable) and are not "
+            "persisted by the viewer — re-issue after a reload."
         ),
     )
     def annotate_chart(

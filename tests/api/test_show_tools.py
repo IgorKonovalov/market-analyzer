@@ -1185,7 +1185,9 @@ def test_annotate_chart_empty_set_clears(
 _P0 = TimePricePoint(ts=datetime(2026, 4, 25, tzinfo=UTC), price=99.0)
 _P1 = TimePricePoint(ts=datetime(2026, 5, 5, tzinfo=UTC), price=104.0)
 
-# One valid anchor set per kind (the plan's six geometry kinds).
+# One valid anchor set per non-position kind (the six 0097 geometry kinds plus
+# the three Plan 0104 range measures — all constructible from points alone; the
+# position kinds need stop/target and get their own tests below).
 _VALID_POINTS_BY_KIND: dict[str, list[TimePricePoint]] = {
     "trendline": [_P0, _P1],
     "ray": [_P0, _P1],
@@ -1193,6 +1195,9 @@ _VALID_POINTS_BY_KIND: dict[str, list[TimePricePoint]] = {
     "vline": [_P0],
     "rect": [_P0, _P1],
     "fib": [_P0, _P1],
+    "date_range": [_P0, _P1],
+    "price_range": [_P0, _P1],
+    "date_price_range": [_P0, _P1],
 }
 
 # One malformed anchor set per kind (wrong point count each time).
@@ -1203,6 +1208,9 @@ _MALFORMED_POINTS_BY_KIND: dict[str, list[TimePricePoint]] = {
     "vline": [],
     "rect": [_P1],
     "fib": [_P0],
+    "date_range": [_P0],
+    "price_range": [_P0, _P1, _P0],
+    "date_price_range": [],
 }
 
 
@@ -1262,3 +1270,198 @@ def test_drawing_style_rejects_non_positive_width() -> None:
     """A zero/negative stroke width is undrawable — rejected at the boundary."""
     with pytest.raises(ValidationError):
         DrawingStyle(width=0)
+
+
+# --------------------------------------------------------------------------- #
+# Plan 0104 ph1: position kinds + the advisory guard (ADR-0099/ADR-0029)       #
+# --------------------------------------------------------------------------- #
+
+# _P0.price is the entry (99.0); stops/targets straddle it per direction.
+_LONG_STOP = 95.0
+_LONG_TARGET = 110.0
+_SHORT_STOP = 110.0
+_SHORT_TARGET = 90.0
+
+
+def test_long_position_valid_round_trips() -> None:
+    """A long position (one entry anchor + stop < entry < target) validates and
+    round-trips; stop/target ride the wire, risk-reward is never stored."""
+    spec = DrawingSpec(
+        kind="long_position",
+        points=[_P0],
+        stop=_LONG_STOP,
+        target=_LONG_TARGET,
+        provenance="user",
+        id="long-1",
+    )
+    assert DrawingSpec.model_validate(spec.model_dump()) == spec
+    wire = spec.model_dump(mode="json", exclude_none=True)
+    assert wire["stop"] == _LONG_STOP
+    assert wire["target"] == _LONG_TARGET
+    assert "rationale" not in wire  # None → dropped; a user note is optional
+    assert "risk_reward" not in wire and "rr" not in wire  # derived, never stored
+
+
+def test_short_position_valid_round_trips() -> None:
+    """A short position (target < entry < stop) validates and round-trips."""
+    spec = DrawingSpec(
+        kind="short_position",
+        points=[_P0],
+        stop=_SHORT_STOP,
+        target=_SHORT_TARGET,
+        provenance="user",
+        id="short-1",
+    )
+    assert DrawingSpec.model_validate(spec.model_dump()) == spec
+
+
+@pytest.mark.parametrize("kind", ["long_position", "short_position"])
+def test_position_missing_stop_or_target_raises(kind: str) -> None:
+    """A position kind without both a stop and a target is malformed."""
+    with pytest.raises(ValidationError, match="requires both a stop and a target"):
+        DrawingSpec(
+            kind=kind,  # type: ignore[arg-type]
+            points=[_P0],
+            target=_LONG_TARGET,  # stop omitted
+            provenance="agent",
+        )
+
+
+def test_long_position_bad_ordering_raises() -> None:
+    """long_position needs stop < entry < target — a target below entry breaks
+    the invariant and is rejected (never silently drawn)."""
+    with pytest.raises(ValidationError, match="stop < entry < target"):
+        DrawingSpec(
+            kind="long_position",
+            points=[_P0],
+            stop=_LONG_STOP,
+            target=90.0,  # below the 99.0 entry
+            provenance="agent",
+        )
+
+
+def test_short_position_bad_ordering_raises() -> None:
+    """short_position needs target < entry < stop — a stop below entry breaks
+    the invariant and is rejected."""
+    with pytest.raises(ValidationError, match="target < entry < stop"):
+        DrawingSpec(
+            kind="short_position",
+            points=[_P0],
+            stop=95.0,  # below the 99.0 entry
+            target=_SHORT_TARGET,
+            provenance="agent",
+        )
+
+
+def test_non_position_kind_rejects_stop_target() -> None:
+    """stop/target belong to the position kinds alone — a line carrying them is
+    malformed input, rejected rather than silently ignored."""
+    with pytest.raises(ValidationError, match="must not carry stop/target"):
+        DrawingSpec(
+            kind="hline",
+            points=[_P0],
+            stop=_LONG_STOP,
+            provenance="user",
+        )
+
+
+def test_annotate_chart_accepts_agent_position_with_rationale_and_basis(
+    live_server: str, mcp_secret: str, event_bus: EventBus
+) -> None:
+    """The advisory guard's accept branch: an agent-placed long position that
+    carries a non-empty rationale + basis publishes normally (ADR-0029)."""
+    sub = event_bus.subscribe()
+
+    async def _run() -> None:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "annotate_chart",
+                {
+                    "symbol": "BTC-USD",
+                    "drawings": [
+                        {
+                            "kind": "long_position",
+                            "points": [_pt(_T0, 61000.0)],
+                            "stop": 59000.0,
+                            "target": 66000.0,
+                            "rationale": "reclaimed the range low with rising OBV",
+                            "basis": "walk-forward edge + bullish MACD cross",
+                            "id": "adv-long",
+                        }
+                    ],
+                },
+            )
+            assert not result.isError, f"annotate_chart errored: {result.content}"
+
+    asyncio.run(_run())
+    queued = _drain_queue(sub)
+    assert len(queued) == 1
+    reparsed = ChartAnnotationsPayloadV1.model_validate(queued[0].payload)
+    assert reparsed.drawings[0].kind == "long_position"
+    assert reparsed.drawings[0].rationale
+    assert reparsed.drawings[0].basis
+
+
+def test_annotate_chart_rejects_agent_position_without_rationale_basis(
+    live_server: str, mcp_secret: str, event_bus: EventBus
+) -> None:
+    """The advisory guard's reject branch: an agent-placed position with a
+    missing/empty rationale or basis is refused with a typed error, never
+    published (ADR-0029/ADR-0099 — a bare directional box is a naked call)."""
+    sub = event_bus.subscribe()
+
+    async def _run() -> bool:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "annotate_chart",
+                {
+                    "symbol": "BTC-USD",
+                    "drawings": [
+                        {
+                            "kind": "short_position",
+                            "points": [_pt(_T0, 64000.0)],
+                            "stop": 66000.0,
+                            "target": 60000.0,
+                            "rationale": "   ",  # whitespace-only → empty
+                            "basis": "",
+                            "id": "bare-short",
+                        }
+                    ],
+                },
+            )
+            return bool(result.isError)
+
+    assert asyncio.run(_run()), "expected annotate_chart to reject the bare position"
+    assert _drain_queue(sub) == [], "no envelope should be published on rejection"
+
+
+def test_annotate_chart_still_accepts_rationale_free_non_position(
+    live_server: str, mcp_secret: str, event_bus: EventBus
+) -> None:
+    """The guard is scoped to position kinds: a plain hline / rect / range needs
+    no rationale and still publishes (the boundary didn't over-reach)."""
+    sub = event_bus.subscribe()
+
+    async def _run() -> None:
+        async with _mcp_session(live_server, mcp_secret) as session:
+            result = await session.call_tool(
+                "annotate_chart",
+                {
+                    "symbol": "AAPL",
+                    "drawings": [
+                        {"kind": "hline", "points": [_pt(_T0, 200.0)], "id": "r1"},
+                        {
+                            "kind": "date_range",
+                            "points": [_pt(_T0, 200.0), _pt(_T1, 210.0)],
+                            "id": "r2",
+                        },
+                    ],
+                },
+            )
+            assert not result.isError, f"annotate_chart errored: {result.content}"
+
+    asyncio.run(_run())
+    queued = _drain_queue(sub)
+    assert len(queued) == 1
+    reparsed = ChartAnnotationsPayloadV1.model_validate(queued[0].payload)
+    assert [d.kind for d in reparsed.drawings] == ["hline", "date_range"]

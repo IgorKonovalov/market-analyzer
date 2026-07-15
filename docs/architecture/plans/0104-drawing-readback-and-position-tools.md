@@ -1,6 +1,6 @@
 # 0104 — Drawing read-back + position & range tools
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-14
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [0099-user-drawing-readback-and-advisory-positions](../adrs/0099-user-drawing-readback-and-advisory-positions.md) (paired — accepts at close), [0091-chart-annotation-layer](../adrs/0091-chart-annotation-layer.md) (the two-source annotation layer this extends; its read-channel open question is decided by ADR-0099), [0021-renderer-to-agent-feedback](../adrs/0021-renderer-to-agent-feedback.md) (the `ui_events` buffer the draw event rides; its agent-mode gate is removed by [ADR-0101](../adrs/0101-remove-agent-mode-gate.md)/[Plan 0106](0106-remove-agent-mode.md)), [0029-advisory-recommendation-boundary](../adrs/0029-advisory-recommendation-boundary.md) (extended to the drawn form of a recommendation), [0077-user-originated-display-overlays](../adrs/0077-user-originated-display-overlays.md) (display-vs-control test), [0063-in-house-i18n-and-reason-codes](../adrs/0063-in-house-i18n-and-reason-codes.md) (en/ru parity), [0008-electron-shell-conventions](../adrs/0008-electron-shell-conventions.md) (CSP unchanged)
