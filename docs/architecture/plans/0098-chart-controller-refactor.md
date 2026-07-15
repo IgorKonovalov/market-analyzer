@@ -1,6 +1,6 @@
 # 0098 — CandlestickChart controller refactor (imperative chart core)
 
-> **Status:** approved — 2026-07-15. Ready to pick up: the chart chain is fully settled (0092, 0096, 0097, and 0104 all closed), so the controller extracts over the final surface exactly once, as designed. This is now the last chart-file plan in flight.
+> **Status:** in-progress — started 2026-07-15 (ui-builder). Approved 2026-07-15: the chart chain is fully settled (0092, 0096, 0097, and 0104 all closed), so the controller extracts over the final surface exactly once, as designed. This is now the last chart-file plan in flight.
 > **Created:** 2026-07-13
 > **Owner skill(s):** ui-builder, human
 > **Related ADRs:** [0092-chart-controller-imperative-core](../adrs/0092-chart-controller-imperative-core.md) (proposed; accepts at this plan's close), refines the Plan 0072 phase-8 decomposition, builds on [0088](../adrs/0088-lightweight-charts-v5-panes.md) (v5 `PaneRegistry`)
