@@ -37,11 +37,18 @@ export function nearestOhlc(bar: Bar, price: number): number {
 
 /**
  * Pure: resolve a fractional bar-logical index + a price to a `(time, price)`
- * anchor — round + clamp the logical to a real bar and take that bar's `event_ts`
- * (so the anchor always has a real timestamp). The price snaps to the bar's nearest
- * OHLC when `snapPrice` (the default, the 0097 line-tool magnet); with `snapPrice`
- * off it is the raw cursor price, so a Plan 0104 position/range places anywhere on
- * the price axis (ADR-0099 smoke follow-up). Returns `null` when there are no bars.
+ * anchor.
+ *
+ * - Over the loaded bars, the logical rounds to the nearest bar and takes its
+ *   `event_ts` (a drawing starts from a known bar); the price snaps to that bar's
+ *   nearest OHLC when `snapPrice` (the default, the 0097 line-tool magnet) or is the
+ *   raw cursor price otherwise (a Plan 0104 position/range places at any price).
+ * - PAST the last bar, the time is EXTRAPOLATED from the last bar spacing so a
+ *   drawing can extend into the future (the renderer maps off-grid times, ADR-0059);
+ *   there is no bar to snap to, so the price is the raw cursor price regardless of
+ *   `snapPrice`. This is the "draw anywhere into the future" smoke follow-up.
+ *
+ * Returns `null` only when there are no bars to resolve against.
  */
 export function snapAnchor(
   bars: ReadonlyArray<Bar>,
@@ -50,7 +57,17 @@ export function snapAnchor(
   snapPrice = true,
 ): TimePricePoint | null {
   if (bars.length === 0) return null
-  const idx = Math.min(bars.length - 1, Math.max(0, Math.round(logical)))
+  const last = bars.length - 1
+  // Future anchor: extrapolate a timestamp so the drawing can reach past the last
+  // candle. Needs two bars to know the spacing; a single-bar chart falls through to
+  // the clamp below.
+  if (logical > last && bars.length >= 2) {
+    const lastMs = new Date(bars[last].event_ts).getTime()
+    const stepMs = lastMs - new Date(bars[last - 1].event_ts).getTime()
+    const ts = new Date(lastMs + (logical - last) * stepMs).toISOString()
+    return { ts, price }
+  }
+  const idx = Math.min(last, Math.max(0, Math.round(logical)))
   const bar = bars[idx]
   return { ts: bar.event_ts, price: snapPrice ? nearestOhlc(bar, price) : price }
 }

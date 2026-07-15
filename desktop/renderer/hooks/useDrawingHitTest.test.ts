@@ -45,9 +45,19 @@ describe('snapAnchor', () => {
     expect(snapAnchor(BARS, 1.4, 119)).toEqual({ ts: '2026-05-02T00:00:00Z', price: 120 })
   })
 
-  it('clamps an out-of-range logical to the nearest bar', () => {
+  it('clamps a below-range logical to the first bar', () => {
     expect(snapAnchor(BARS, -3, 100)).toEqual({ ts: '2026-05-01T00:00:00Z', price: 100 })
-    expect(snapAnchor(BARS, 99, 113)).toEqual({ ts: '2026-05-03T00:00:00Z', price: 112 })
+  })
+
+  it('extrapolates a future timestamp past the last bar (draw into the future)', () => {
+    // logical 3 is one bar-step past the last bar (2026-05-03) → 2026-05-04; the
+    // price stays raw (no future bar to snap to) even with snapPrice on.
+    expect(snapAnchor(BARS, 3, 117)).toEqual({ ts: '2026-05-04T00:00:00.000Z', price: 117 })
+    // A fractional future logical interpolates the last bar spacing.
+    expect(snapAnchor(BARS, 4.5, 117, true)).toEqual({
+      ts: '2026-05-05T12:00:00.000Z',
+      price: 117,
+    })
   })
 
   it('returns null when there are no bars to snap to', () => {
@@ -61,8 +71,9 @@ describe('snapAnchor', () => {
       ts: '2026-05-02T00:00:00Z',
       price: 119,
     })
-    // The time still snaps to a real bar so the anchor keeps a valid timestamp.
-    expect(snapAnchor(BARS, 99, 113.5, false)).toEqual({
+    // The time still snaps to a real (in-range) bar so the anchor keeps a valid
+    // timestamp; the price is untouched.
+    expect(snapAnchor(BARS, 2, 113.5, false)).toEqual({
       ts: '2026-05-03T00:00:00Z',
       price: 113.5,
     })
