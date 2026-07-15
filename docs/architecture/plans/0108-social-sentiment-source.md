@@ -1,6 +1,6 @@
 # 0108 — X / social sentiment source
 
-> **Status:** draft
+> **Status:** approved
 > **Created:** 2026-07-15
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0103](../adrs/0103-social-x-sentiment-source.md) (paired, accepts at close), [0031](../adrs/0031-data-source-adapter-contract.md), [0019](../adrs/0019-external-http-adapter-resilience.md), [0038](../adrs/0038-third-party-api-key-storage.md), [0029](../adrs/0029-advisory-recommendation-boundary.md), [0098](../adrs/0098-reddit-keyless-crowd-sentiment.md)
