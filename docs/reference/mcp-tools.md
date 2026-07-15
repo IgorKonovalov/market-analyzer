@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 61 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 62 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -49,6 +49,7 @@ The 61 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`pivot_points`](#pivotpoints) | Compute classic pivot levels on one symbol's cached bars from the last completed bar's high/low/close (the prior-completed-period default). |
 | [`portfolio_summary`](#portfoliosummary) | Aggregate cross-venue holdings into one read-only view (facts only, no recommendation of any kind): the Binance account leg (spot balances + USDS-M futures positions, read via the read-only API key), the DeFi leg (wallet discovery across Ethereum/Base/Arbitrum/Optimism when a 0x wallet address is given, with average-cost basis joined from the reconstructed on-chain history), and the manual positions file (positions/portfolio.json). |
 | [`prediction_market_odds`](#predictionmarketodds) | Get one prediction market's current outcomes and implied probabilities by market_id (from search_prediction_markets). |
+| [`quality_rank`](#qualityrank) | Rank a supplied symbol list (watchlist) by a composite technical-quality score on cached bars. |
 | [`quote_for`](#quotefor) | Get a live quote for one symbol: price, change_pct, previous_close, day high/low, 52-week high/low, currency, market_state (REGULAR/PRE/POST/CLOSED) and volume. |
 | [`recommend`](#recommend) | ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single labeled trade recommendation: the technical condition snapshot, the named strategy's live signal on the current bar, its walk-forward out-of-sample edge, and the calibrated direction forecast. |
 | [`run_backtest`](#runbacktest) | Run a backtest for a single strategy/symbol/timeframe window. |
@@ -961,6 +962,28 @@ Get one prediction market's current outcomes and implied probabilities by market
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/prediction_markets.py`](../../src/market_analyser/api/mcp_tools/prediction_markets.py)
+
+## `quality_rank`
+
+Rank a supplied symbol list (watchlist) by a composite technical-quality score on cached bars. For each symbol a normalized 0..100 score is fused from its trailing condition snapshot and decomposed into four named factor contributions (trend, momentum, volume, volatility) that SUM to the score, plus a per-asset-class liquidity gate that flags/caps thin names. Returns {matches, skipped, scanned_at}: matches are the whole watchlist ranked by score descending (highest-quality setup first), each carrying its factors, liquidity_ok, and an optional liquidity_note, ties broken by symbol; skipped lists symbols with too short a history to score or no cached bars (backfill via get_ohlcv first). Max 25 symbols. Pass `as_of` for historical replay (trailing — no future leak). This is a SCREENING RANK, conditions only — NOT a recommendation (no buy/sell, no grade); use `recommend` for a directional call. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `symbols` | array[string] | yes | — |
+| `timeframe` | string | yes | — |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `QualityRankResponse`
+
+| Field | Type |
+| --- | --- |
+| `matches` | array[QualityScore] |
+| `skipped` | array[string] |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/quality_rank.py`](../../src/market_analyser/api/mcp_tools/quality_rank.py)
 
 ## `quote_for`
 

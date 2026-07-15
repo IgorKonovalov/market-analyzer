@@ -560,6 +560,7 @@ EXPECTED_FULL_TOOLSET = {
     "pivot_points",
     "portfolio_summary",
     "prediction_market_odds",
+    "quality_rank",
     "quote_for",
     "recommend",
     "run_backtest",

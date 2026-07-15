@@ -74,6 +74,7 @@ from market_analyser.api.mcp_tools.pool_discrepancies import register_pool_discr
 from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
 from market_analyser.api.mcp_tools.prediction_markets import register_prediction_market_tools
 from market_analyser.api.mcp_tools.prediction_screener import register_prediction_screener
+from market_analyser.api.mcp_tools.quality_rank import register_quality_rank
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.recommend import register_recommend
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
@@ -262,6 +263,11 @@ def create_mcp_components(
     register_squeeze_scan(server, provider=provider)
     register_gainers_losers(server, provider=provider)
     register_momentum_scan(server, provider=provider)
+    # Composite quality rank (Plan 0101, ADR-0096): a screening rank over the same
+    # `_scan_symbols` fan-out — a normalized 0..100 composite decomposed into named
+    # factor contributions with a liquidity gate. Conditions only (ADR-0029); a call
+    # goes through `recommend`, which may consume this rank.
+    register_quality_rank(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)
