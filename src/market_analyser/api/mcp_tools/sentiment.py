@@ -2,11 +2,12 @@
 
 One symbol-sentiment verb with a `source` discriminator, folding `sentiment_for_news`
 (Plan 0010 — RSS + VADER) and `stocktwits_sentiment` (Plan 0012 — StockTwits crowd
-labels) into modes of a single tool. `source` ∈ {`news`, `stocktwits`}. Each source is a
-handler bound in a **registry** (`DEFAULT_SENTIMENT_SOURCES`) that `register_sentiment`
-takes as an injectable dependency — so adding a source (the 0103 Reddit / 0108 social
-extension point, ADR-0104 §Notes) is one enum value on `SentimentSource` + one registry
-entry, with **no new module and no new `register_*` call**.
+labels) into modes of a single tool, and adding `reddit` (Plan 0103 — keyless crowd
+lexicon). `source` ∈ {`news`, `stocktwits`, `reddit`}. Each source is a handler bound in a
+**registry** (`DEFAULT_SENTIMENT_SOURCES`) that `register_sentiment` takes as an injectable
+dependency — so adding a source (the 0103 Reddit binding here, the 0108 social extension
+point next, ADR-0104 §Notes) is one enum value on `SentimentSource` + one registry entry,
+with **no new module and no new `register_*` call**.
 
 Both sources return `dict[str, Any]` (as the retired tools did) — FastMCP leaves the
 mapping as the structured content unchanged, so this consolidation is a zero-shape
@@ -35,9 +36,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from market_analyser.data import UnknownSymbolError
 from market_analyser.data._windows import SentimentWindow
+from market_analyser.data.adapters.reddit_sentiment import reddit_label
 from market_analyser.data.provider import MarketDataProvider
 
-SentimentSource = Literal["news", "stocktwits"]
+SentimentSource = Literal["news", "stocktwits", "reddit"]
 
 # A source handler maps (provider, symbol, window) to the source's payload dict. Each
 # handler owns its source-specific input normalisation (StockTwits upper-cases + rejects
@@ -61,7 +63,14 @@ SENTIMENT_DESCRIPTION = (
     "the upper-cased `symbol`; pass the exact StockTwits ticker (AAPL for stocks, the "
     "'.X' suffix for crypto like BTC.X/ETH.X); patchy small-cap coverage returns an "
     "all-zero breakdown (neutral, not unknown), a symbol StockTwits does not track is an "
-    "error. `window` is one of 1h/4h/24h/7d. Wall-clock-sensitive — no historical "
+    "error. "
+    "source='reddit': keyless upvote-weighted keyword-lexicon score over one fixed "
+    "multi-subreddit crowd group (r/CryptoCurrency+Bitcoin+wallstreetbets+stocks+"
+    "investing) searched for the symbol (source tag 'reddit'); the payload adds a "
+    "`label` (Strongly Bullish..Strongly Bearish) and `sample_size` (scored-post count); "
+    "Reddit rate-limits hard, so an empty result (score 0.0, all-zero breakdown) may be a "
+    "rate-limit rather than genuine silence — never fabricated. "
+    "`window` is one of 1h/4h/24h/7d. Wall-clock-sensitive — no historical "
     "replay (no as_of). This is a CONDITION (crowd/news mood), never buy/sell advice."
 )
 
@@ -113,9 +122,39 @@ async def _stocktwits_source(
     }
 
 
+async def _reddit_source(
+    provider: MarketDataProvider, symbol: str, window: SentimentWindow
+) -> dict[str, Any]:
+    """`source="reddit"` handler — keyless Reddit crowd lexicon (Plan 0103).
+
+    `label` and `sample_size` are derived here: the adapter returns a plain
+    `SentimentSample` (score + positive/negative/neutral `breakdown`), so the presentation
+    label stays out of the data layer. Reddit needs no special symbol rule (the symbol is a
+    free-text search query) and degrades to a neutral empty reading rather than erroring, so
+    there is no untracked-symbol mapping here."""
+
+    sample = await asyncio.to_thread(
+        provider.get_sentiment,
+        symbol=symbol,
+        window=window,
+        source="reddit",
+    )
+    return {
+        "symbol": sample.symbol,
+        "score": sample.score,
+        "label": reddit_label(sample.score),
+        "sample_size": sum(sample.breakdown.values()),
+        "breakdown": sample.breakdown,
+        "source": sample.source,
+        "window": sample.window,
+        "queried_at": datetime.now(tz=UTC).isoformat(),
+    }
+
+
 DEFAULT_SENTIMENT_SOURCES: dict[str, SentimentHandler] = {
     "news": _news_source,
     "stocktwits": _stocktwits_source,
+    "reddit": _reddit_source,
 }
 
 
@@ -177,6 +216,7 @@ __all__ = [
     "SentimentInput",
     "SentimentSource",
     "_news_source",
+    "_reddit_source",
     "_sentiment_response",
     "_stocktwits_source",
     "register_sentiment",

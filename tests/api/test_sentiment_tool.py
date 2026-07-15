@@ -28,7 +28,8 @@ from market_analyser.api.mcp_tools.sentiment import (
 )
 from market_analyser.data._http import HttpResponse, ResilientHttpClient
 from market_analyser.data._windows import SentimentWindow
-from market_analyser.data.adapters import rss_news, stocktwits
+from market_analyser.data.adapters import reddit_sentiment, rss_news, stocktwits
+from market_analyser.data.adapters.reddit_sentiment import RedditSentimentAdapter
 from market_analyser.data.adapters.rss_news import _FEED_CATALOG, RssNewsAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter, StockTwitsHttpClient
 from market_analyser.data.default_provider import DefaultMarketDataProvider
@@ -191,6 +192,62 @@ def test_stocktwits_untracked_symbol_is_clear_error(monkeypatch: pytest.MonkeyPa
 
 
 # --------------------------------------------------------------------------- #
+# source="reddit" (Plan 0103 — keyless crowd lexicon)                           #
+# --------------------------------------------------------------------------- #
+
+_REDDIT_BYTES = (_FIXTURES / "reddit_BTC_response.json").read_bytes()
+# The fixture's newest post is at 1780000000.0; freeze "now" 30 min later so all four
+# posts sit inside a 24h window (cf. tests/data/test_reddit_sentiment_adapter.py).
+_REDDIT_FROZEN_NOW = datetime.fromtimestamp(1780000000 + 1800, tz=UTC)
+_REDDIT_BREAKDOWN = {"positive": 2, "negative": 1, "neutral": 1}
+_REDDIT_SCORE = (500 + 300 - 50) / (500 + 300 + 50 + 20)
+
+
+def _reddit_server(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
+    monkeypatch.setattr(reddit_sentiment, "_now", lambda: _REDDIT_FROZEN_NOW)
+    client = ResilientHttpClient(source_name="reddit-test", max_retries=0)
+
+    def fake(method: str, url: str, body_: Any, headers: Any, *, proxy: Any) -> HttpResponse:
+        return HttpResponse(status_code=200, headers={}, body=_REDDIT_BYTES, elapsed_seconds=0.0)
+
+    monkeypatch.setattr(client, "_perform_request", fake)
+    provider = DefaultMarketDataProvider(reddit=RedditSentimentAdapter(http_client=client))
+    server = FastMCP(name="test", stateless_http=True, json_response=True)
+    register_sentiment(server, provider=provider)
+    return server
+
+
+def test_reddit_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _reddit_server(monkeypatch)
+    _content, structured = _call(server, {"params": {"source": "reddit", "symbol": "BTC"}})
+
+    assert structured["symbol"] == "BTC"
+    assert structured["source"] == "reddit"
+    assert structured["window"] == "24h"
+    assert structured["score"] == pytest.approx(_REDDIT_SCORE)
+    assert structured["breakdown"] == _REDDIT_BREAKDOWN
+    # label + sample_size are derived at the tool layer from score + breakdown.
+    assert structured["label"] == "Strongly Bullish"
+    assert structured["sample_size"] == 4
+    assert "queried_at" in structured
+
+
+def test_reddit_response_is_conditions_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    # ADR-0029: crowd sentiment is a condition — the payload carries no call-shaped key.
+    server = _reddit_server(monkeypatch)
+    _content, structured = _call(server, {"params": {"source": "reddit", "symbol": "BTC"}})
+
+    for forbidden in ("action", "signal", "recommendation"):
+        assert forbidden not in structured
+
+
+def test_reddit_rejects_unknown_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _reddit_server(monkeypatch)
+    with pytest.raises(ToolError):
+        _call(server, {"params": {"source": "reddit", "symbol": "BTC", "window": "12h"}})
+
+
+# --------------------------------------------------------------------------- #
 # Consolidation guards: unknown source + one-entry extensibility                #
 # --------------------------------------------------------------------------- #
 
@@ -200,7 +257,7 @@ def test_rejects_unknown_source(monkeypatch: pytest.MonkeyPatch) -> None:
 
     server = _news_server(monkeypatch)
     with pytest.raises(ToolError):
-        _call(server, {"params": {"source": "reddit", "symbol": "BTC"}})
+        _call(server, {"params": {"source": "myspace", "symbol": "BTC"}})
 
 
 def test_adding_a_source_is_one_registry_entry() -> None:
@@ -230,5 +287,5 @@ def test_adding_a_source_is_one_registry_entry() -> None:
     assert result == {"source": "stub", "symbol": "XYZ", "window": "24h", "score": 0.42}
     assert seen["symbol"] == "XYZ"
     # The built-ins are untouched by extending the registry.
-    assert set(DEFAULT_SENTIMENT_SOURCES) == {"news", "stocktwits"}
+    assert set(DEFAULT_SENTIMENT_SOURCES) == {"news", "stocktwits", "reddit"}
     assert DEFAULT_SENTIMENT_SOURCES["news"] is _news_source
