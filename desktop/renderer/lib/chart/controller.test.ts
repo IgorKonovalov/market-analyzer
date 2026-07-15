@@ -10,6 +10,7 @@ import { createChart } from 'lightweight-charts'
 
 import { ChartController } from './controller'
 import type { Bar } from '../../types/sidecar/bar'
+import type { OverlaySpec } from '../../types/events'
 
 interface FakeSeries {
   kind: string
@@ -220,6 +221,107 @@ describe('ChartController — lifecycle (Plan 0098 phase 1)', () => {
     const lineMains = mainSeries().filter((s) => s.kind === 'line')
     expect(lineMains).toHaveLength(1)
     expect(lineMains[0].attachPrimitive).toHaveBeenCalledTimes(5)
+  })
+})
+
+describe('ChartController — series creation across candle render modes (Plan 0098 phase 5)', () => {
+  it.each([
+    ['candles', 'candlestick'],
+    ['bars', 'bar'],
+    ['line', 'line'],
+    ['area', 'area'],
+  ] as const)('mounts a %s chart with a %s main series', (candleType, expectedKind) => {
+    const c = new ChartController()
+    c.mount(container, { candleType, theme: 'light' })
+    const mains = mainSeries()
+    expect(mains).toHaveLength(1)
+    expect(mains[0].kind).toBe(expectedKind)
+    expect(mains[0].attachPrimitive).toHaveBeenCalledTimes(5)
+  })
+})
+
+const EMA: OverlaySpec = { kind: 'ema', period: 20 } as OverlaySpec
+const RSI: OverlaySpec = { kind: 'rsi' } as OverlaySpec
+
+describe('ChartController — reconcilers through the facade (Plan 0098 phase 5)', () => {
+  it('setOverlays adds, reuses, then removes an overlay series without a remount', () => {
+    const c = new ChartController()
+    c.mount(container, { candleType: 'candles', theme: 'light' })
+    c.setBars(bars(30))
+
+    c.setOverlays({ bars: bars(30), overlays: [EMA], hidden: new Set(), theme: 'light' })
+    expect(c.overlaySeriesRef.current.size).toBe(1)
+    const entry = c.overlaySeriesRef.current.values().next().value as unknown as {
+      series: { setData: jest.Mock }
+    }
+    const afterAdd = entry.series.setData.mock.calls.length
+
+    // Reuse: same overlay again keeps the SAME series (size 1) and recomputes data.
+    c.setOverlays({ bars: bars(30), overlays: [EMA], hidden: new Set(), theme: 'light' })
+    expect(c.overlaySeriesRef.current.size).toBe(1)
+    expect(c.overlaySeriesRef.current.values().next().value).toBe(entry)
+    expect(entry.series.setData.mock.calls.length).toBeGreaterThan(afterAdd)
+
+    // Remove.
+    c.setOverlays({ bars: bars(30), overlays: [], hidden: new Set(), theme: 'light' })
+    expect(c.overlaySeriesRef.current.size).toBe(0)
+    // No remount happened through any of this.
+    expect(createChartMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('setOscillators creates, reuses, then tears down an oscillator pane', () => {
+    const c = new ChartController()
+    c.mount(container, { candleType: 'candles', theme: 'light' })
+    c.setBars(bars(30))
+    const empty = new Set<never>()
+
+    c.setOscillators({ bars: bars(30), overlays: [RSI], hidden: new Set(), requiredKinds: empty })
+    expect(c.oscillatorPanesRef.current.size).toBe(1)
+    const paneEntry = c.oscillatorPanesRef.current.values().next().value
+
+    // Reuse: the SAME pane entry survives a second reconcile.
+    c.setOscillators({ bars: bars(30), overlays: [RSI], hidden: new Set(), requiredKinds: empty })
+    expect(c.oscillatorPanesRef.current.size).toBe(1)
+    expect(c.oscillatorPanesRef.current.values().next().value).toBe(paneEntry)
+
+    // Teardown.
+    c.setOscillators({ bars: bars(30), overlays: [], hidden: new Set(), requiredKinds: empty })
+    expect(c.oscillatorPanesRef.current.size).toBe(0)
+  })
+
+  it('restyle recolours in place (no remount, chart identity stable)', () => {
+    const c = new ChartController()
+    c.mount(container, { candleType: 'candles', theme: 'light' })
+    const chart = charts[0]
+    const main = c.seriesRef.current as unknown as { applyOptions: jest.Mock }
+    main.applyOptions.mockClear()
+
+    c.restyle('dark', null)
+
+    expect(createChartMock).toHaveBeenCalledTimes(1) // no remount
+    expect((chart as unknown as { applyOptions: jest.Mock }).applyOptions).toHaveBeenCalled()
+    expect(main.applyOptions).toHaveBeenCalled()
+  })
+
+  it('dispose clears the overlay + oscillator reconciler maps', () => {
+    const c = new ChartController()
+    c.mount(container, { candleType: 'candles', theme: 'light' })
+    c.setBars(bars(30))
+    c.setOverlays({ bars: bars(30), overlays: [EMA], hidden: new Set(), theme: 'light' })
+    c.setOscillators({
+      bars: bars(30),
+      overlays: [RSI],
+      hidden: new Set(),
+      requiredKinds: new Set<never>(),
+    })
+    expect(c.overlaySeriesRef.current.size).toBe(1)
+    expect(c.oscillatorPanesRef.current.size).toBe(1)
+
+    c.dispose()
+
+    expect(c.overlaySeriesRef.current.size).toBe(0)
+    expect(c.oscillatorPanesRef.current.size).toBe(0)
+    expect(c.seriesRef.current).toBeNull()
   })
 })
 
