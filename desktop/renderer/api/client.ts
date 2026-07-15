@@ -392,13 +392,28 @@ export const api = {
       body: JSON.stringify(drawings),
     })
   },
-  /** Enable/disable one watch — the single viewer-owned mutation (Plan 0060). */
+  /** Enable/disable one watch. `POST /watches/{id}` is a partial update
+   * (Plan 0110): absent fields stay untouched, so this never wipes the note. */
   setWatchEnabled(watchId: number, enabled: boolean): Promise<WatchOut> {
     return callJson<WatchOut>(`/watches/${watchId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     })
+  },
+  /** Set or clear (`null`) a watch's free-text note — same partial update,
+   * `enabled` untouched (Plan 0110). The sidecar caps notes at 500 chars. */
+  setWatchNote(watchId: number, note: string | null): Promise<WatchOut> {
+    return callJson<WatchOut>(`/watches/${watchId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note }),
+    })
+  },
+  /** Delete a watch AND its alert history (Plan 0110) — the same cascade as
+   * MCP `delete_watch`. 404s on an unknown id. */
+  deleteWatch(watchId: number): Promise<{ deleted: boolean }> {
+    return callJson<{ deleted: boolean }>(`/watches/${watchId}`, { method: 'DELETE' })
   },
   /**
    * Newest-first fired-alert history (Plan 0060). Renderer-bearer-gated

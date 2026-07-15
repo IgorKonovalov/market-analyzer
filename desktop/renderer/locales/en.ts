@@ -87,6 +87,13 @@ export const en = {
   'alerts.kind.indicatorThreshold': 'indicator threshold',
   'alerts.kind.pattern': 'pattern',
   'alerts.kind.strategySignal': 'strategy signal',
+  'alerts.createdAt': 'created {when} UTC',
+  'alerts.deleteWatch': 'Delete watch {id}',
+  'alerts.deleteConfirm': 'Delete watch {id} ({symbol} {timeframe}) and its alert history?',
+  'alerts.editNote': 'Edit note for watch {id}',
+  'alerts.noteInputLabel': 'Note for watch {id}',
+  'alerts.saveNote': 'Save',
+  'alerts.cancelNote': 'Cancel',
 
   // ── Toast (Toast.tsx) ──
   'toast.dismiss': 'Dismiss notification',
