@@ -1,9 +1,10 @@
 # 0098 — CandlestickChart controller refactor (imperative chart core)
 
-> **Status:** draft
+> **Status:** approved — 2026-07-15. Ready to pick up: the chart chain is fully settled (0092, 0096, 0097, and 0104 all closed), so the controller extracts over the final surface exactly once, as designed. This is now the last chart-file plan in flight.
 > **Created:** 2026-07-13
 > **Owner skill(s):** ui-builder, human
 > **Related ADRs:** [0092-chart-controller-imperative-core](../adrs/0092-chart-controller-imperative-core.md) (proposed; accepts at this plan's close), refines the Plan 0072 phase-8 decomposition, builds on [0088](../adrs/0088-lightweight-charts-v5-panes.md) (v5 `PaneRegistry`)
+> **Baseline note (2026-07-15, architect):** the headline figures below — 905 lines, 22 refs, the 158-line creation effect, and every specific `CandlestickChart.tsx` line-number citation — are the 2026-07-13 draft-time snapshot. Plans 0096 / 0097 / 0104 / 0105 have since landed on the same file, which is now **1192 lines / 27 `useRef`s** — the god-component grew, strengthening the case. The strangler phase structure still holds, but the concrete line numbers are pre-0104; the `ui-builder` implementer re-derives the live anchors against the current file at Step 2 rather than trusting the citations (the plan already anticipates this — "inherit their structure").
 
 ## TL;DR
 
