@@ -20,6 +20,7 @@ from market_analyser.data.adapters.binance_klines import BinanceKlinesAdapter
 from market_analyser.data.adapters.coinbase import CoinbaseAdapter
 from market_analyser.data.adapters.coingecko import CoinGeckoAdapter
 from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapter
+from market_analyser.data.adapters.reddit_sentiment import RedditSentimentAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.rss_vader_sentiment import RssVaderSentimentAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
@@ -128,6 +129,7 @@ class DefaultMarketDataProvider:
         crypto_fng: CryptoFearGreedAdapter | None = None,
         coingecko: CoinGeckoAdapter | None = None,
         stocktwits: StockTwitsAdapter | None = None,
+        reddit: RedditSentimentAdapter | None = None,
         binance: BinanceKlinesAdapter | None = None,
         coinbase: CoinbaseAdapter | None = None,
         bar_repository: BarRepository | None = None,
@@ -150,6 +152,7 @@ class DefaultMarketDataProvider:
         self._crypto_fng = crypto_fng if crypto_fng is not None else CryptoFearGreedAdapter()
         self._coingecko = coingecko if coingecko is not None else CoinGeckoAdapter()
         self._stocktwits = stocktwits if stocktwits is not None else StockTwitsAdapter()
+        self._reddit = reddit if reddit is not None else RedditSentimentAdapter()
         self._repo = bar_repository
 
         # Selector registries (ADR-0031): adding a sentiment source or a
@@ -162,6 +165,7 @@ class DefaultMarketDataProvider:
         self._sentiment_sources: dict[str, SentimentSource] = {
             "rss-vader": RssVaderSentimentAdapter(self._news, now=lambda: _now()),
             "stocktwits": self._stocktwits,
+            "reddit": self._reddit,
         }
         self._market_sentiment_sources: dict[str, MarketSentimentSource] = {
             "crypto": self._crypto_fng,
@@ -459,7 +463,7 @@ class DefaultMarketDataProvider:
         self,
         symbol: str,
         window: str,
-        source: Literal["rss-vader", "stocktwits"] = "rss-vader",
+        source: Literal["rss-vader", "stocktwits", "reddit"] = "rss-vader",
         as_of: datetime | None = None,
     ) -> SentimentSample:
         # Sentiment is wall-clock-sensitive like the news/posts it derives from

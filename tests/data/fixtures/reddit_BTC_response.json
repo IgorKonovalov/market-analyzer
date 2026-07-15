@@ -1,0 +1,55 @@
+{
+  "kind": "Listing",
+  "data": {
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "title": "BTC breakout incoming - buying calls, moon soon",
+          "selftext": "",
+          "score": 500,
+          "ups": 500,
+          "created_utc": 1780000000.0,
+          "subreddit": "CryptoCurrency",
+          "permalink": "/r/CryptoCurrency/comments/aaa/btc_breakout/"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "Going long BTC, bullish - accumulate the dip",
+          "selftext": "",
+          "score": 300,
+          "ups": 300,
+          "created_utc": 1779999000.0,
+          "subreddit": "Bitcoin",
+          "permalink": "/r/Bitcoin/comments/bbb/long_btc/"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "BTC dump incoming bearish short puts crash",
+          "selftext": "",
+          "score": 50,
+          "ups": 50,
+          "created_utc": 1779998000.0,
+          "subreddit": "wallstreetbets",
+          "permalink": "/r/wallstreetbets/comments/ccc/btc_dump/"
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "title": "BTC just chopping sideways, waiting",
+          "selftext": "no clear view here",
+          "score": 20,
+          "ups": 20,
+          "created_utc": 1779997000.0,
+          "subreddit": "investing",
+          "permalink": "/r/investing/comments/ddd/btc_sideways/"
+        }
+      }
+    ]
+  }
+}
