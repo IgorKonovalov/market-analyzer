@@ -1,22 +1,21 @@
 /**
  * CandlestickChart — the thin React adapter over the imperative chart core
- * (Plan 0098 / ADR-0092). All lightweight-charts wiring — the chart instance, the
- * main + always-on series, the panes, the five main-series primitives, the overlay
- * and oscillator-pane reconcilers, restyle, the axis and the forming bar — lives in a
- * plain-TS `ChartController` (`lib/chart/`). This component builds the controller
- * once, drives it through declarative forward effects (mount / setBars / setOverlays /
- * setPriceLines / setOscillators / setTrendlines / setIchimoku / setDivergences /
- * setMarkers / restyle / setTimeframeAxis / setQuote), and keeps only what genuinely
- * produces React state + JSX: the gesture / tooltip / scan / lazy-history / legend /
- * candle-marker-group hooks, the user-overlay + layer-visibility + preset stores, and
- * the render tree.
- *
- * The reconcilers added after this plan was drafted — Plan 0092's fib/pivot price
- * lines + anchored VWAP + market-structure markers, Plan 0105's lazy OBV pane — are
- * folded in too (setStructureLevels / setAnchoredVwap / setMarketStructure / setObv),
- * so the component imports no `lightweight-charts` types at all. The two structure
- * reconciles return their drawn levels/points, which the component publishes to state
- * (change-detected) for the hover tooltip.
+ * (Plan 0098 / ADR-0092). All lightweight-charts wiring — the chart instance, series,
+ * panes, primitives, the overlay / oscillator / OBV / fib-pivot / anchored-VWAP /
+ * market-structure reconcilers, restyle, the axis and the forming bar — lives in a
+ * plain-TS `ChartController` (`lib/chart/`); the component imports no `lightweight-
+ * charts` types at all. It is decomposed into three concerns:
+ *   - `useLayersControl` — the layers-legend control surface: the user-overlay +
+ *     layer-visibility + preset stores, the candlestick-marker groups, the two-legend
+ *     routing, and the built layer descriptors / legend values. Produces the `hidden`
+ *     set every draw path consumes and the `<ChartLegend>` props.
+ *   - `useChartSync` — the declarative forward effects driving the controller (one per
+ *     method, in invariant order), returning the structure reconciles' drawn levels /
+ *     points for the tooltip.
+ *   - this component — builds the controller, calls the two hooks, keeps only the
+ *     React-state hooks that need the live chart (gestures / tooltip / scans / lazy-
+ *     history / drawing tools) + the `setMarkers` effect (which needs the gesture
+ *     hook's clicked-bar ts), and renders the JSX.
  *
  * Disposing on unmount is non-negotiable — without it every navigation leaks a
  * Canvas/WebGL context (`controller.dispose()`). See
@@ -27,7 +26,7 @@
  * and the renderer-side specs assert against that — NOT the reducer's overlay list —
  * so a render regression that loses a series cannot pass.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import { t } from '../lib/i18n'
 import { useChartGestures } from '../hooks/useChartGestures'
@@ -36,17 +35,16 @@ import { useChartScans } from '../hooks/useChartScans'
 import { useChartTooltip } from '../hooks/useChartTooltip'
 import { useLazyHistoryTrigger } from '../hooks/useLazyHistoryTrigger'
 import type { ChartMarker } from '../lib/markers'
-import type { HoverableLevel, StructureMarkerPoint } from '../lib/tooltip'
 import { ChartLegend } from './ChartLegend'
 import { ChartSidePanel } from './ChartSidePanel'
 import { ChartToolbar } from './ChartToolbar'
 import { ChartTooltip } from './ChartTooltip'
 import { MarketStructureBadge } from './MarketStructureBadge'
-import { MARKET_STRUCTURE_LAYER_ID, mainSeriesKind } from '../lib/chartSeries'
+import { MARKET_STRUCTURE_LAYER_ID } from '../lib/chartSeries'
 import { formatRangeLabel } from '../lib/chartAxis'
-import { requiredOscillatorKindsFor } from '../lib/divergences'
 import { useDrawingTools } from '../hooks/useDrawingTools'
 import { useLayersControl } from '../hooks/useLayersControl'
+import { useChartSync } from '../hooks/useChartSync'
 import { ChartController } from '../lib/chart/controller'
 import { DrawingRail } from './DrawingRail'
 import {
@@ -221,148 +219,28 @@ export function CandlestickChart({
     recomputeTrendlines,
   } = useChartScans(controller.chartRef, { symbol, timeframe })
 
-  // Reflect what's drawn into the test hook. Stable identity (reads only the stable
-  // controller + refs), so it can sit in the effect dep arrays without retriggering
-  // them. The controller owns the main + always-on series; OBV and the agent
-  // overlays are still reconciled by their hooks, so they're read from their refs.
-  const syncTestRenderHook = useCallback((): void => {
-    const kinds: Array<{ kind: string; period?: number | null }> = []
-    if (controller.seriesRef.current !== null) {
-      // Read the type from the store (not a dep) so this stays a stable callback;
-      // a candle-type change rebuilds via the creation effect, which calls this.
-      kinds.push({ kind: mainSeriesKind(getCandleType()) })
-    }
-    // Always-on volume series, between the candlestick and the agent overlays.
-    if (controller.volumeSeriesRef.current !== null) kinds.push({ kind: 'volume' })
-    if (controller.volumeMaSeriesRef.current !== null) kinds.push({ kind: 'volume_ma' })
-    if (controller.vwapSeriesRef.current !== null) kinds.push({ kind: 'vwap' })
-    if (controller.obvSeriesRef.current !== null) kinds.push({ kind: 'obv' })
-    for (const { spec } of controller.overlaySeriesRef.current.values()) {
-      kinds.push({ kind: spec.kind, period: spec.period ?? null })
-    }
-    window.__test_chart_render__ = {
-      seriesCount: kinds.length,
-      seriesKinds: kinds,
-      barCount: controller.barCount,
-    }
-  }, [controller])
-
-  // Create the chart on mount, dispose on unmount, rebuild on a candle-type change
-  // (the series type is fixed at creation, so `candleType` keys this effect). The
-  // controller owns the imperative wiring (chart, series, panes, primitives); this
-  // effect is the React lifecycle shell that drives it and clears the still-external
-  // reconciler bookkeeping the chart's own `remove()` already disposed, so their
-  // hooks rebuild on the fresh chart (Plan 0098 phase 1; later phases fold these
-  // reconcilers into the controller too). The theme ref gives the current theme
-  // without making this effect re-run — a flip recolours in place (restyle effect).
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    controller.mount(container, { candleType, theme: effectiveThemeRef.current })
-    syncTestRenderHook()
-    return () => {
-      // `controller.dispose()` (via chart.remove) disposes the chart, its series,
-      // panes and primitives, and clears every reconciler's bookkeeping.
-      controller.dispose()
-      syncTestRenderHook()
-    }
-    // `candleType` rebuilds the chart (series type is fixed at creation); the data
-    // / marker / primitive effects + chart-subscribing hooks key on it too, so they
-    // re-run and re-attach to the fresh series in the same commit (Plan 0068 ph4).
-  }, [controller, syncTestRenderHook, candleType])
-
-  // Push bar data through the controller: it fills the main + always-on series and
-  // handles the scroll-anchored left-edge prepend (Plan 0030) vs fit-on-genuine-
-  // -change (Plan 0049 ph11) internally. `candleType` re-runs this after a rebuild
-  // so the fresh main series gets its data (Plan 0068 ph4); overlay/supertrend
-  // reconcile lives in its own hook (Plan 0072 phase 8), so this doesn't key on
-  // overlays/hidden.
-  useEffect(() => {
-    controller.setBars(bars)
-    syncTestRenderHook()
-  }, [controller, bars, syncTestRenderHook, candleType])
-
-  // Price-pane overlay reconcile — ema/sma line series + the supertrend pair + the
-  // bbands triple — folded into the controller (Plan 0098 phase 2, ADR-0092). Keyed
-  // on bars/overlays/hidden (candleType is the rebuild token), NOT the theme: a
-  // created series takes the theme's colour, but existing series recolour in place
-  // via the restyle path, so a flip must not re-run this. The theme is read live off
-  // the ref. Runs after the bars effect so the main series has data on each commit.
-  useEffect(() => {
-    controller.setOverlays({
-      bars,
-      overlays: effectiveOverlays,
-      hidden,
-      theme: effectiveThemeRef.current,
-    })
-    syncTestRenderHook()
-  }, [controller, bars, effectiveOverlays, hidden, candleType, syncTestRenderHook])
-  // Ichimoku five-line + displaced filled cloud primitive (Plan 0073 phase 4) —
-  // folded into the controller (Plan 0098 phase 3). Feeds the primitive attached at
-  // creation + reserves right-edge space for the projected cloud. `effectiveTheme`
-  // re-reads the colour tokens on a flip.
-  useEffect(() => {
-    controller.setIchimoku({ bars, overlays: effectiveOverlays, hidden })
-  }, [controller, bars, effectiveOverlays, hidden, effectiveTheme, candleType])
-  // OBV pane lifecycle (Plan 0105 phase 3): lazy create/remove like the oscillator
-  // panes — toggling OBV off removes its pane (no empty ~30px band; a Clean chart
-  // is born without one), toggling on re-creates it as the FIRST sub-pane with its
-  // divergence primitive re-attached. An obv divergence keeps the pane (series
-  // hidden) so its oscillator segment always has a pane to draw on. Runs before
-  // `useOscillatorPanes`/`useDivergences` so the pane + primitive exist first.
-  useEffect(() => {
-    controller.setObv({ bars, hidden, divergences, theme: effectiveThemeRef.current })
-    syncTestRenderHook()
-  }, [controller, bars, hidden, divergences, candleType, syncTestRenderHook])
-  // Oscillator panes a divergence needs (Plan 0091 phase 9): ensured below even if
-  // the user hasn't added — or has toggled off — that oscillator, so the divergence's
-  // oscillator segment always has a pane. `obv` uses the OBV pane `useObvPane` owns.
-  const requiredOscillatorKinds = useMemo(
-    () => requiredOscillatorKindsFor(divergences),
-    [divergences],
-  )
-  // Oscillator sub-panes (Plan 0091 phase 6): each active oscillator overlay draws
-  // in its own real v5 pane (via the shared PaneRegistry), toggleable from the
-  // layers legend — reconcile create / reuse / teardown by stable pane id, folded
-  // into the controller (Plan 0098 phase 2). Runs after `useObvPane` (which claims
-  // pane slot 0) so oscillators take the slots below it.
-  useEffect(() => {
-    controller.setOscillators({
-      bars,
-      overlays: effectiveOverlays,
-      hidden,
-      requiredKinds: requiredOscillatorKinds,
-    })
-    syncTestRenderHook()
-  }, [
-    controller,
+  // Drive the imperative controller from React state (Plan 0098 thin-C:
+  // `useChartSync`): one forward effect per controller method, in the order the
+  // chart's invariants require. Returns the fib/pivot + market-structure reconciles'
+  // drawn levels/points for the hover tooltip. Called BEFORE the gesture hooks so its
+  // mount effect runs first (they read the chart on mount); `setMarkers` stays below
+  // because it needs the gesture hook's clicked-bar ts.
+  const { structureLevels, structureMarkerPoints } = useChartSync(controller, {
+    containerRef,
     bars,
     effectiveOverlays,
     hidden,
-    requiredOscillatorKinds,
+    divergences,
+    quote,
+    timeframe,
+    effectiveTheme,
+    effectiveThemeRef,
+    styleVersion,
     candleType,
-    syncTestRenderHook,
-  ])
-  // Divergence segments (Plan 0091 phase 9, ADR-0090): feed the price/OBV/oscillator
-  // divergence primitives their segments + colours — folded into the controller
-  // (Plan 0098 phase 3). Runs after the OBV + oscillator-pane reconciles so every
-  // pane's divergence primitive exists.
-  useEffect(() => {
-    controller.setDivergences(divergences)
-  }, [controller, divergences, candleType])
-
-  // Live forming-bar update (Plan 0049 phase 10) — folded into the controller
-  // (Plan 0098 phase 3).
-  useEffect(() => {
-    controller.setQuote(quote, bars, timeframe)
-  }, [controller, quote, bars, timeframe, candleType])
-
-  // Monthly axis ticks (Plan 0050 phase 7): the `1mo` timeframe needs month/year
-  // tick marks — folded into the controller (Plan 0098 phase 3). Re-applied on a
-  // rebuild (the fresh chart needs the formatter).
-  useEffect(() => {
-    controller.setTimeframeAxis(timeframe)
-  }, [controller, timeframe, candleType])
+    shownTrendlines,
+    highlightedTrendlineKey,
+    marketStructureResult,
+  })
 
   // Freeform-drawing tool mode (Plan 0097 phase 2, ADR-0091). The component owns
   // `activeTool` so it can coordinate the two pointer machines: `useChartGestures`
@@ -440,39 +318,11 @@ export function CandlestickChart({
     rebuildToken: candleType,
   })
 
-  // Trendline overlay primitive (Plan 0052 phase 4, ADR-0049): feed the primitive
-  // (attached at creation) its specs/colours/visibility — folded into the controller
-  // (Plan 0098 phase 3). `effectiveTheme` re-reads the colour tokens on a flip.
-  useEffect(() => {
-    controller.setTrendlines(shownTrendlines, highlightedTrendlineKey)
-  }, [controller, shownTrendlines, highlightedTrendlineKey, effectiveTheme, candleType])
-
-  // Market-structure markers (Plan 0092 phase 6, ADR-0084) — folded into the
-  // controller (Plan 0098 thin-A). Runs BEFORE the setMarkers effect so the
-  // candlestick-pattern markers own the last write to the series-markers capture.
-  // The reconcile returns the drawn points for the tooltip's structure hover;
-  // publish to state only when they move, so a no-op reconcile doesn't re-render.
-  const [structureMarkerPoints, setStructureMarkerPoints] = useState<StructureMarkerPoint[]>([])
-  useEffect(() => {
-    const points = controller.setMarketStructure({
-      structure: marketStructureResult,
-      bars,
-      hidden,
-      theme: effectiveTheme,
-    })
-    setStructureMarkerPoints((prev) =>
-      prev.length === points.length &&
-      prev.every((p, i) => p.time === points[i].time && p.label === points[i].label)
-        ? prev
-        : points,
-    )
-  }, [controller, marketStructureResult, bars, hidden, effectiveTheme, styleVersion, candleType])
-
   // Candlestick markers + pattern-span band (Plan 0049 phases 7 & 10 / Plan 0071
   // phase 2): draw only the enabled groups' markers + spans, themed, with the
-  // clicked-bar affordance and hover emphasis — folded into the controller (Plan
-  // 0098 phase 3). Runs after `useMarketStructureMarkers` so the candlestick markers
-  // own the last write to the shared series-markers capture.
+  // clicked-bar affordance and hover emphasis. Stays here (not in `useChartSync`)
+  // because it needs the gesture hook's `clickedBarTs`; runs after `useChartSync`'s
+  // market-structure feed so the candlestick markers own the last series-markers write.
   useEffect(() => {
     controller.setMarkers({
       drawnMarkers,
@@ -489,33 +339,6 @@ export function CandlestickChart({
     styleVersion,
     candleType,
   ])
-
-  // Price lines (Plan 0047 phase 9): reconcile horizontal `price_line` overlays
-  // (S/R levels the agent pushes) on the main series — folded into the controller
-  // (Plan 0098 phase 2). Recolours in place, so this DOES key on the theme +
-  // styleVersion (candleType is the rebuild token).
-  useEffect(() => {
-    controller.setPriceLines({ overlays: effectiveOverlays, hidden, theme: effectiveTheme })
-  }, [controller, effectiveOverlays, hidden, effectiveTheme, styleVersion, candleType])
-
-  // Fib/pivot horizontal price lines (Plan 0092 phase 5) — folded into the
-  // controller (Plan 0098 thin-A). The reconcile returns the drawn levels for the
-  // nearest-level-on-hover tooltip lookup; publish them to state only when they
-  // actually move, so a no-op reconcile doesn't re-render the chart.
-  const [structureLevels, setStructureLevels] = useState<HoverableLevel[]>([])
-  useEffect(() => {
-    const levels = controller.setStructureLevels({ bars, overlays: effectiveOverlays, hidden })
-    setStructureLevels((prev) =>
-      prev.length === levels.length &&
-      prev.every((l, i) => l.title === levels[i].title && l.price === levels[i].price)
-        ? prev
-        : levels,
-    )
-  }, [controller, bars, effectiveOverlays, hidden, candleType])
-  // Anchored-VWAP line series (Plan 0092 phase 5) — folded into the controller.
-  useEffect(() => {
-    controller.setAnchoredVwap({ bars, overlays: effectiveOverlays, hidden })
-  }, [controller, bars, effectiveOverlays, hidden, candleType])
 
   // Hover tooltip (Plan 0047 phase 8 / Plan 0067 phase 2): crosshair-driven
   // marker/overlay/trendline read-out + pattern-bar outline (Plan 0072 phase 8:
@@ -535,14 +358,6 @@ export function CandlestickChart({
       rebuildToken: candleType,
     },
   )
-
-  // Re-apply the EXISTING chart's colours + line widths on a theme flip or a
-  // chart-style store mutation (Plan 0068 phase 2) — in place via `applyOptions`, no
-  // remount, folded into the controller (Plan 0098 phase 3). The OBV series is still
-  // owned by `useObvPane` and passed in.
-  useEffect(() => {
-    controller.restyle(effectiveTheme)
-  }, [controller, effectiveTheme, styleVersion, candleType])
 
   // Track the effective theme; the subscription fires on an explicit theme
   // change and on an OS flip while in `system` mode. Unsubscribes on unmount.
