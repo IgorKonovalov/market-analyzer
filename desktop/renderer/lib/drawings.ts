@@ -80,6 +80,23 @@ export const POINT_COUNT_BY_KIND: Record<DrawingKind, number> = {
   date_price_range: 2,
 }
 
+/** Kinds whose anchors are placed at the RAW cursor price rather than snapped to a
+ * bar's OHLC (Plan 0104 smoke follow-up): a position's entry/stop/target and the
+ * range measures place anywhere on the price axis — a stop belongs at a chosen
+ * price, not a candle's OHLC. The time axis still snaps to a bar so the anchor keeps
+ * a real timestamp. The 0097 line tools keep the OHLC magnet. */
+export const FREE_PRICE_KINDS: ReadonlySet<DrawingKind> = new Set<DrawingKind>([
+  'long_position',
+  'short_position',
+  'date_range',
+  'price_range',
+  'date_price_range',
+])
+
+export function isFreePriceKind(kind: DrawingKind): boolean {
+  return FREE_PRICE_KINDS.has(kind)
+}
+
 function toUtcSeconds(iso: string): UTCTimestamp {
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp
 }

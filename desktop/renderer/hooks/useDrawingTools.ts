@@ -27,7 +27,7 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts'
 import type { DrawingKind, DrawingSpec, TimePricePoint } from '../types/events'
 import type { Bar } from '../types/sidecar/bar'
 import type { DrawingPrimitive } from '../lib/drawings'
-import { POINT_COUNT_BY_KIND } from '../lib/drawings'
+import { POINT_COUNT_BY_KIND, isFreePriceKind } from '../lib/drawings'
 import type { DrawingProvenance } from '../types/events'
 import {
   addUserDrawing,
@@ -288,10 +288,12 @@ export function useDrawingTools(
       const { x, y } = xy(e)
       const drag = dragRef.current
       if (drag !== null) {
-        const anchor = snapPixel(x, y)
-        if (anchor === null) return
         const spec = drawings.find((d) => d.id === drag.id)
         if (spec === undefined) return
+        // Position/range anchors place at the raw cursor price (no OHLC magnet);
+        // the 0097 line tools keep snapping (Plan 0104 smoke follow-up).
+        const anchor = snapPixel(x, y, !isFreePriceKind(spec.kind))
+        if (anchor === null) return
         // A position edits three coupled price handles under an ordering clamp; every
         // other kind re-anchors the dragged point directly (Plan 0104).
         const updated = isPositionKind(spec.kind)
@@ -302,7 +304,7 @@ export function useDrawingTools(
         return
       }
       if (activeTool !== null && pendingAnchorRef.current !== null) {
-        const anchor = snapPixel(x, y)
+        const anchor = snapPixel(x, y, !isFreePriceKind(activeTool))
         if (anchor === null) return
         primitive.setPreview({
           kind: activeTool,
@@ -321,8 +323,8 @@ export function useDrawingTools(
       if (drag !== null) {
         dragRef.current = null
         chart.applyOptions({ handleScroll: !selectRangeMode, handleScale: !selectRangeMode })
-        const anchor = snapPixel(x, y)
         const spec = drawings.find((d) => d.id === drag.id)
+        const anchor = snapPixel(x, y, spec === undefined ? true : !isFreePriceKind(spec.kind))
         if (anchor !== null && spec !== undefined) {
           const updated = isPositionKind(spec.kind)
             ? applyPositionHandleDrag(spec, drag.handleIndex, anchor)
@@ -337,7 +339,7 @@ export function useDrawingTools(
       if (activeTool === null) return
       // Placement click: ignore a drag-sized movement (that isn't a click).
       if (down !== null && Math.hypot(x - down.x, y - down.y) > CLICK_SLOP_PX) return
-      const anchor = snapPixel(x, y)
+      const anchor = snapPixel(x, y, !isFreePriceKind(activeTool))
       if (anchor === null) return
       commitPlacement(anchor)
     }

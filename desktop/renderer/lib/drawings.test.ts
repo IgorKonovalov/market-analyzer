@@ -11,7 +11,12 @@
 import type { SeriesAttachedParameter, Time, UTCTimestamp } from 'lightweight-charts'
 
 import type { DrawingSpec, TimePricePoint } from '../types/events'
-import { DrawingPrimitive, computeDrawingGeometry, computeRayFarPoint } from './drawings'
+import {
+  DrawingPrimitive,
+  computeDrawingGeometry,
+  computeRayFarPoint,
+  isFreePriceKind,
+} from './drawings'
 import { FIB_ANCHOR_COLOR, fibLevelColor } from './overlays'
 
 const T1 = '2026-05-13T00:00:00Z'
@@ -195,6 +200,23 @@ describe('computeDrawingGeometry — phase-3 kinds', () => {
     // segment carries its own colour — all fall back to the drawing's g.color.
     for (const s of g!.segments) expect(s.color).toBeUndefined()
     expect(g!.color).toBe('#ff0000')
+  })
+})
+
+describe('isFreePriceKind (Plan 0104 free placement)', () => {
+  it('is true for the trade-idea kinds (placed at any price), false for the 0097 line tools', () => {
+    for (const kind of [
+      'long_position',
+      'short_position',
+      'date_range',
+      'price_range',
+      'date_price_range',
+    ] as const) {
+      expect(isFreePriceKind(kind)).toBe(true)
+    }
+    for (const kind of ['trendline', 'ray', 'hline', 'vline', 'rect', 'fib'] as const) {
+      expect(isFreePriceKind(kind)).toBe(false)
+    }
   })
 })
 

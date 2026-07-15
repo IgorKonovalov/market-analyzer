@@ -53,4 +53,18 @@ describe('snapAnchor', () => {
   it('returns null when there are no bars to snap to', () => {
     expect(snapAnchor([], 0, 100)).toBeNull()
   })
+
+  it('keeps the raw cursor price when snapPrice is off (Plan 0104 free placement)', () => {
+    // Same bar resolution, but the price is left at 119 (not snapped to the 120 high)
+    // so a position/range anchors anywhere on the price axis.
+    expect(snapAnchor(BARS, 1.4, 119, false)).toEqual({
+      ts: '2026-05-02T00:00:00Z',
+      price: 119,
+    })
+    // The time still snaps to a real bar so the anchor keeps a valid timestamp.
+    expect(snapAnchor(BARS, 99, 113.5, false)).toEqual({
+      ts: '2026-05-03T00:00:00Z',
+      price: 113.5,
+    })
+  })
 })

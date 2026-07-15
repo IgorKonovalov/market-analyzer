@@ -36,26 +36,31 @@ export function nearestOhlc(bar: Bar, price: number): number {
 }
 
 /**
- * Pure: resolve a fractional bar-logical index + a price to a snapped
- * `(time, price)` anchor — round + clamp the logical to a real bar, take that
- * bar's `event_ts`, and snap the price to the bar's nearest OHLC. Returns `null`
- * when there are no bars to snap to.
+ * Pure: resolve a fractional bar-logical index + a price to a `(time, price)`
+ * anchor — round + clamp the logical to a real bar and take that bar's `event_ts`
+ * (so the anchor always has a real timestamp). The price snaps to the bar's nearest
+ * OHLC when `snapPrice` (the default, the 0097 line-tool magnet); with `snapPrice`
+ * off it is the raw cursor price, so a Plan 0104 position/range places anywhere on
+ * the price axis (ADR-0099 smoke follow-up). Returns `null` when there are no bars.
  */
 export function snapAnchor(
   bars: ReadonlyArray<Bar>,
   logical: number,
   price: number,
+  snapPrice = true,
 ): TimePricePoint | null {
   if (bars.length === 0) return null
   const idx = Math.min(bars.length - 1, Math.max(0, Math.round(logical)))
   const bar = bars[idx]
-  return { ts: bar.event_ts, price: nearestOhlc(bar, price) }
+  return { ts: bar.event_ts, price: snapPrice ? nearestOhlc(bar, price) : price }
 }
 
 export interface UseDrawingHitTestResult {
-  /** Convert a container-relative pixel to a snapped `(time, price)` anchor on the
-   * nearest bar's OHLC, or `null` when the chart/series/bars can't resolve it. */
-  snapPixel: (x: number, y: number) => TimePricePoint | null
+  /** Convert a container-relative pixel to a `(time, price)` anchor whose time is
+   * on the nearest bar — with the price snapped to that bar's OHLC (`snapPrice`,
+   * the default) or left at the raw cursor price (`snapPrice=false`, the position/
+   * range tools). `null` when the chart/series/bars can't resolve it. */
+  snapPixel: (x: number, y: number, snapPrice?: boolean) => TimePricePoint | null
 }
 
 export function useDrawingHitTest(
@@ -64,14 +69,14 @@ export function useDrawingHitTest(
   bars: ReadonlyArray<Bar>,
 ): UseDrawingHitTestResult {
   const snapPixel = useCallback(
-    (x: number, y: number): TimePricePoint | null => {
+    (x: number, y: number, snapPrice = true): TimePricePoint | null => {
       const chart = chartRef.current
       const series = seriesRef.current
       if (!chart || !series) return null
       const logical = chart.timeScale().coordinateToLogical(x)
       const price = series.coordinateToPrice(y)
       if (logical === null || price === null) return null
-      return snapAnchor(bars, logical, price)
+      return snapAnchor(bars, logical, price, snapPrice)
     },
     [chartRef, seriesRef, bars],
   )
