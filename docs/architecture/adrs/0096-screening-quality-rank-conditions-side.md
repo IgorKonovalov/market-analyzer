@@ -1,6 +1,6 @@
 # ADR-0096 — Screening quality rank stays on the conditions side of ADR-0029
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0101 closed 2026-07-15 — the composite ships as a screening rank with factor decomposition + liquidity gate and no call-shaped field, guarded at model + serialized-JSON level; the advisor may consume it)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0101](../plans/0101-composite-quality-rank.md)
 

@@ -1,6 +1,6 @@
 # 0101 — Composite quality/momentum screening rank
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-07-15 (ADR-0096 accepted). Phases 1–2 (`dev`) shipped in `e6816e4` (`analysis/quality.py` pure composite scorer + per-asset-class liquidity gate) + `0f96e47` (`quality_rank` MCP tool on the `_scan_symbols` harness, `EXPECTED_FULL_TOOLSET` +1, apiref regenerated). Clean Mode 4 — no blockers/majors, two nits (partial-factor neutral-0.5 fallback undisclosed; daily-calibrated liquidity floors flag more on finer TFs, documented in-code). Verified at assertion level: contribution-sum invariant (liquid + capped), monotonicity, liquidity cap, no-call-shaped-field (model + serialized-JSON, scorer + tool), and no-lookahead via genuine `as_of=t`-vs-pre-truncated field-by-field comparison — 27 phase-1/2 tests green. Reuses `condition_snapshot` (ADR-0023, no drift from `analyze_symbol`) + the Plan 0100 harness (ADR-0095); conditions-only (ADR-0029). Implemented directly in this working tree — no branch/worktree to merge or prune. Version bumped 0.15.0→0.16.0. Phase 3 (`human` live smoke) outstanding — deferrable like the sibling read-only scanner smokes; does not gate close.
 > **Created:** 2026-07-13
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0096](../adrs/0096-screening-quality-rank-conditions-side.md) (paired, accepts at close), [0095](../adrs/0095-watchlist-scan-fanout-harness.md), [0029](../adrs/0029-advisory-recommendation-boundary.md), [0023](../adrs/0023-technical-analysis-surface.md)
