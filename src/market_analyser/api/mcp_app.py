@@ -73,6 +73,7 @@ from market_analyser.api.mcp_tools.prediction_screener import register_predictio
 from market_analyser.api.mcp_tools.price_structure import register_price_structure
 from market_analyser.api.mcp_tools.quote_for import register_quote_for
 from market_analyser.api.mcp_tools.recommend import register_recommend
+from market_analyser.api.mcp_tools.recommend_rebalance import register_recommend_rebalance
 from market_analyser.api.mcp_tools.run_backtest import register_run_backtest
 from market_analyser.api.mcp_tools.scan_patterns import register_scan_patterns
 from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
@@ -499,6 +500,16 @@ def create_mcp_components(
     # history. Legacy callers without persistence keep the smaller toolset.
     if position_watches_repository is not None and position_alerts_repository is not None:
         register_position_watch_tools(
+            server,
+            position_watches_repository=position_watches_repository,
+            position_alerts_repository=position_alerts_repository,
+        )
+        # `recommend_rebalance` (Plan 0099 phase 3, ADR-0029): the advisor's
+        # DeFi sibling of `recommend` — fuses a stored out-of-range alert (+ the
+        # watch's current dwell state) into a labeled advisory recenter/widen/
+        # exit/hold. Reads only the persisted facts above, so it shares their
+        # registration gate; no network, no keys, no order path (asserted).
+        register_recommend_rebalance(
             server,
             position_watches_repository=position_watches_repository,
             position_alerts_repository=position_alerts_repository,

@@ -231,6 +231,13 @@ class DefiPositionAlertsRepository:
             session.commit()
             return _row_to_alert(row)
 
+    def get(self, alert_id: int) -> DefiPositionAlert | None:
+        """One alert by id — the advisor's rebalance hook resolves an
+        `alert_id` argument through this (Plan 0099 phase 3)."""
+        with self._session_factory() as session:
+            row = session.get(DefiPositionAlertRow, alert_id)
+            return _row_to_alert(row) if row is not None else None
+
     def list(
         self,
         *,

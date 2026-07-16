@@ -559,6 +559,7 @@ EXPECTED_FULL_TOOLSET = {
     "price_structure",
     "quote_for",
     "recommend",
+    "recommend_rebalance",
     "run_backtest",
     "scan_patterns",
     "scan_pool_discrepancies",

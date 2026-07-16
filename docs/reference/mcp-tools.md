@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 56 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -48,6 +48,7 @@ The 56 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`price_structure`](#pricestructure) | Read a single-symbol price-structure overlay on cached bars; `kind` selects the read. |
 | [`quote_for`](#quotefor) | Get a live quote for one symbol: price, change_pct, previous_close, day high/low, 52-week high/low, currency, market_state (REGULAR/PRE/POST/CLOSED) and volume. |
 | [`recommend`](#recommend) | ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single labeled trade recommendation: the technical condition snapshot, the named strategy's live signal on the current bar, its walk-forward out-of-sample edge, and the calibrated direction forecast. |
+| [`recommend_rebalance`](#recommendrebalance) | ADVISORY ONLY - turn a DeFi LP out-of-range alert into a single labeled rebalance recommendation: recenter / widen / exit, or an honest 'hold'. |
 | [`run_backtest`](#runbacktest) | Run a backtest for a single strategy/symbol/timeframe window. |
 | [`scan_patterns`](#scanpatterns) | Sweep a time range for EVERY candlestick pattern on the cached bars and highlight them all at once: publishes a single `chart.highlight v1` event carrying one marker per detected pattern (multi-bar patterns carry a bar span; doji/neutral patterns are included). |
 | [`scan_pool_discrepancies`](#scanpooldiscrepancies) | Screen configured DEX pools for cross-pool price discrepancies, NET OF COST, for one or more canonical pairs (e.g. |
@@ -936,6 +937,33 @@ ADVISORY ONLY — fuse the four analyst outputs for one symbol into a single lab
 | `direction_leg` | DirectionLegStatus \| null |
 
 **Source:** [`src/market_analyser/api/mcp_tools/recommend.py`](../../src/market_analyser/api/mcp_tools/recommend.py)
+
+## `recommend_rebalance`
+
+ADVISORY ONLY - turn a DeFi LP out-of-range alert into a single labeled rebalance recommendation: recenter / widen / exit, or an honest 'hold'. Pass watch_id (uses that watch's newest alert, qualified by its CURRENT dwell state - a position that re-entered its range yields hold/no-action) or alert_id (scores that specific fired alert). The direction comes from a stated excursion-depth heuristic (how many range-widths price sits beyond the bound) and every recommendation carries its rationale and the numeric basis behind it (ADR-0029). A healthy in-range position yields 'hold - no action'; missing on-chain detail yields 'hold - insufficient basis', never a guessed direction. This tool holds no trade key, builds no transaction, places no order, and moves no funds - on-chain rebalancing is out of scope by decision (ADR-0072 BA-1 / ADR-0025); the user decides and acts.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `watch_id` | integer \| null | no | `None` |
+| `alert_id` | integer \| null | no | `None` |
+
+**Returns:** `RebalanceRecommendation`
+
+| Field | Type |
+| --- | --- |
+| `wallet` | string |
+| `chain` | string |
+| `pool_address` | string |
+| `nft_token_id` | integer \| null |
+| `action` | enum["recenter", "widen", "exit", "hold"] |
+| `rationale` | array[string] |
+| `basis` | object |
+| `label` | string |
+| `as_of` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/recommend_rebalance.py`](../../src/market_analyser/api/mcp_tools/recommend_rebalance.py)
 
 ## `run_backtest`
 
