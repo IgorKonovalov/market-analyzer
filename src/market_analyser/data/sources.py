@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     # from `data/`, so there is no import cycle.
     from market_analyser.defi.models import (
         Chain,
+        DefiFundamentals,
         DefiPosition,
         ExecutableQuote,
         LpPositionDetail,
@@ -364,6 +365,29 @@ class AccountHoldingsSource(Protocol):
     composition root (ADR-0031)."""
 
     def fetch_account_holdings(self) -> AccountHoldings: ...
+
+
+@runtime_checkable
+class DefiFundamentalsSource(Protocol):
+    """A read-only source of DeFi-native token/protocol fundamentals (Plan 0107 /
+    ADR-0102) — TVL + short history, DEX volume, fee/reward APR, token mcap/FDV,
+    and the unlock/dilution calendar — surfaced as a `DefiFundamentals` **condition
+    read** (ADR-0029: conditions only, never a call/score).
+
+    Honest-degrade by charter (ADR-0019): a field the source cannot cover comes
+    back `None` with a `notes` entry, and a whole-source failure (rate-limit, 4xx,
+    transport exhaustion) degrades to a `DefiFundamentals` of honest nulls + a
+    note — **never** an exception, never a fabricated number. Wall-clock-sensitive
+    with **no `as_of`** parameter: these are current-state reads with no
+    reconstructable point-in-time series (ADR-0102), so `query` is the only input
+    and each result stamps its own read time.
+
+    `query` is a token symbol or a protocol slug ("AERO", "aerodrome",
+    "uniswap"); the source resolves it to the upstream's key. Members of the
+    DeFi-fundamentals selector registry, keyed by source name ("defillama"), built
+    in the composition root (ADR-0031)."""
+
+    def fetch_fundamentals(self, query: str) -> DefiFundamentals: ...
 
 
 @runtime_checkable

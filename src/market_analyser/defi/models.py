@@ -239,12 +239,132 @@ class ExecutableQuote(BaseModel):
         return v
 
 
+class FundamentalsPoint(BaseModel):
+    """One `(date, value)` sample in a DeFi fundamentals time-series — a point on
+    the TVL history a `DefiFundamentalsSource` returns (Plan 0107 / ADR-0102).
+
+    `date` is a UTC epoch-second timestamp (DefiLlama's `tvl[].date` currency);
+    `value` is finite and non-negative USD. Boundary-validated in the house style:
+    a NaN / Inf / negative measurement is rejected at construction, never coerced."""
+
+    model_config = ConfigDict(frozen=True)
+
+    date: int
+    value: float = Field(ge=0)
+
+    @field_validator("value")
+    @classmethod
+    def _value_must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("fundamentals point value must be finite (no NaN/Inf)")
+        return v
+
+
+class VolumeSummary(BaseModel):
+    """Rolling DEX-volume windows in USD (Plan 0107) — DefiLlama's
+    `total24h/7d/30d` for a protocol, each `| None` where the upstream omits the
+    window. `change_1d_pct` is the signed percent change DefiLlama reports. Each
+    present value is finite and non-negative (volume cannot be negative)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    volume_24h: float | None = Field(default=None, ge=0)
+    volume_7d: float | None = Field(default=None, ge=0)
+    volume_30d: float | None = Field(default=None, ge=0)
+    change_1d_pct: float | None = None
+
+    @field_validator("volume_24h", "volume_7d", "volume_30d")
+    @classmethod
+    def _volume_must_be_finite(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("volume must be finite (no NaN/Inf)")
+        return v
+
+
+class UnlockEvent(BaseModel):
+    """One token unlock / emission event on a protocol's dilution calendar
+    (Plan 0107) — when, how many tokens, and (best-effort) the USD value at
+    DefiLlama's reference price. Present only where DefiLlama covers the
+    emissions-unlocks dataset for the protocol; the keyless `/emission/{slug}`
+    endpoint is frequently Pro-gated (AERO returns HTTP 402), in which case the
+    calendar degrades to an honest "not covered" note rather than a fabricated
+    schedule (ADR-0102 risk #1). `tokens` is finite and non-negative."""
+
+    model_config = ConfigDict(frozen=True)
+
+    date: int  # epoch seconds
+    tokens: float = Field(ge=0)
+    usd_value: float | None = None
+    category: str | None = None  # e.g. "publicSale" | "team" | "liquidity"
+
+    @field_validator("tokens")
+    @classmethod
+    def _tokens_must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("unlock token amount must be finite (no NaN/Inf)")
+        return v
+
+
+class DefiFundamentals(BaseModel):
+    """DeFi-native token/protocol fundamentals as a **condition read** (Plan 0107 /
+    ADR-0102) — the fundamentals surface that price/structure is blind to for a
+    small-cap DeFi token: TVL + short history, DEX volume, fee/reward APR, token
+    mcap/FDV, and the unlock/dilution calendar. Conditions only (ADR-0029): the
+    model carries **no** `action`/`signal`/`recommendation` field, by design.
+
+    Every substantive field is `| None` and **honest-null** on miss: a field the
+    source cannot cover returns `None` with a `notes` entry naming the gap, never a
+    zero or a fabricated value (ADR-0019). `notes` is the running provenance /
+    coverage log; `source` names the primary tier ("defillama"); `as_of` is the
+    read (wall-clock) time — these reads are wall-clock-sensitive with **no `as_of`
+    historical replay** (ADR-0102), and each figure carries the upstream's own
+    recency in `notes` where relevant.
+
+    The Aerodrome-native deep tier (Plan 0107 phases 4-5) folds its
+    emission-decay + veAERO/gauge fields onto this model additively; at the
+    DefiLlama tier those deep fields are absent."""
+
+    model_config = ConfigDict(frozen=True)
+
+    query: str = Field(min_length=1)  # the echoed input symbol/protocol
+    protocol_slug: str | None = None  # resolved DefiLlama slug (provenance)
+    tvl: float | None = Field(default=None, ge=0)
+    tvl_trend: list[FundamentalsPoint] | None = None
+    dex_volume: VolumeSummary | None = None
+    fee_apr: float | None = None  # annualized %, TVL-weighted across the protocol's pools
+    reward_apr: float | None = None  # annualized %, emissions/reward APR
+    mcap: float | None = Field(default=None, ge=0)  # circulating market cap, USD
+    fdv: float | None = Field(default=None, ge=0)  # fully-diluted valuation, USD
+    unlocks: list[UnlockEvent] | None = None
+    as_of: datetime
+    source: str = Field(default="defillama", min_length=1)
+    notes: list[str] = Field(default_factory=list)
+
+    @field_validator("tvl", "mcap", "fdv")
+    @classmethod
+    def _usd_must_be_finite(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("USD measurement must be finite (no NaN/Inf)")
+        return v
+
+    @field_validator("fee_apr", "reward_apr")
+    @classmethod
+    def _apr_must_be_finite(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("APR must be finite (no NaN/Inf)")
+        return v
+
+
 __all__ = [
     "Chain",
+    "DefiFundamentals",
     "DefiPosition",
     "ExecutableQuote",
+    "FundamentalsPoint",
     "LpPositionDetail",
     "PositionKind",
     "PositionToken",
     "RewardAmount",
+    "UnlockEvent",
+    "VolumeSummary",
 ]

@@ -1,0 +1,35 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "chain": "Base",
+      "project": "aerodrome-v1",
+      "symbol": "USDC-AERO",
+      "tvlUsd": 1000000,
+      "apyBase": 10.0,
+      "apyReward": 20.0,
+      "apy": 30.0,
+      "pool": "aero-pool-1"
+    },
+    {
+      "chain": "Base",
+      "project": "aerodrome-slipstream",
+      "symbol": "WETH-USDC",
+      "tvlUsd": 3000000,
+      "apyBase": 5.0,
+      "apyReward": 8.0,
+      "apy": 13.0,
+      "pool": "aero-pool-2"
+    },
+    {
+      "chain": "Base",
+      "project": "uniswap-v3",
+      "symbol": "WETH-USDC",
+      "tvlUsd": 9999999,
+      "apyBase": 99.0,
+      "apyReward": 99.0,
+      "apy": 198.0,
+      "pool": "uni-pool-x"
+    }
+  ]
+}

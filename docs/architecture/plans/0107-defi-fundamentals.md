@@ -1,6 +1,6 @@
 # 0107 — DeFi token & protocol fundamentals
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-15
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0102](../adrs/0102-defi-token-fundamentals-source.md) (paired, accepts at close), [0031](../adrs/0031-data-source-adapter-contract.md), [0019](../adrs/0019-external-http-adapter-resilience.md), [0038](../adrs/0038-third-party-api-key-storage.md), [0029](../adrs/0029-advisory-recommendation-boundary.md), [0069](../adrs/0069-crypto-first-asset-class-positioning.md)
