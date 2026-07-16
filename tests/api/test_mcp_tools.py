@@ -563,6 +563,7 @@ EXPECTED_FULL_TOOLSET = {
     "screener_query",
     "search_prediction_markets",
     "search_symbols",
+    "sector_rotation",
     "sentiment",
     "show_chart",
     "technical_read",

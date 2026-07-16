@@ -78,6 +78,7 @@ from market_analyser.api.mcp_tools.scan_wallet import register_scan_wallet
 from market_analyser.api.mcp_tools.scan_watchlist import register_scan_watchlist
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
+from market_analyser.api.mcp_tools.sector_rotation import register_sector_rotation
 from market_analyser.api.mcp_tools.sentiment import register_sentiment
 from market_analyser.api.mcp_tools.show_chart import register_show_chart
 from market_analyser.api.mcp_tools.technical_read import register_technical_read
@@ -258,6 +259,11 @@ def create_mcp_components(
     # ADR-0096 screening rank; a call goes through `recommend`, which consumes the
     # underlying quality scorer directly, not this tool).
     register_scan_watchlist(server, provider=provider)
+    # Crypto sector rotation (Plan 0102, ADR-0097): rank a versioned in-house sector
+    # taxonomy by equal-weighted constituent momentum over cached bars, through the
+    # `analysis/sectors.py` engine on the same `_scan_symbols` fan-out. Provider-only,
+    # conditions only — a rotation reading is a fact, never a call (use `recommend`).
+    register_sector_rotation(server, provider=provider)
     register_search_symbols(server, provider=provider)
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)

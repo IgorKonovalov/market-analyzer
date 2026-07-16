@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -52,6 +52,7 @@ The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`screener_query`](#screenerquery) | Screen a market universe for symbols matching indicator/price filters (e.g. |
 | [`search_prediction_markets`](#searchpredictionmarkets) | Search prediction markets by free text and get each match with its current odds. |
 | [`search_symbols`](#searchsymbols) | Resolve a loose or free-text name/ticker to fetchable symbols (e.g. |
+| [`sector_rotation`](#sectorrotation) | Rank a self-defined set of crypto sectors (Layer-1, Layer-2, DeFi, Memecoins, AI, DePIN, ...) by equal-weighted constituent momentum over cached bars — the classic 'where is capital rotating' read, for crypto. |
 | [`sentiment`](#sentiment) | Summarise crowd/news sentiment for a symbol over a window; `source` selects the feed. |
 | [`show_chart`](#showchart) | Render a chart in the Electron viewer. |
 | [`technical_read`](#technicalread) | ADVISORY ONLY, LESSER TIER — a single-indicator technical read: the mechanical direction (long/short/flat) of ONE curated regime indicator by its textbook rule, with NO conviction and NO entry/stop/target levels. |
@@ -974,6 +975,30 @@ Resolve a loose or free-text name/ticker to fetchable symbols (e.g. 'bitcoin' or
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/search_symbols.py`](../../src/market_analyser/api/mcp_tools/search_symbols.py)
+
+## `sector_rotation`
+
+Rank a self-defined set of crypto sectors (Layer-1, Layer-2, DeFi, Memecoins, AI, DePIN, ...) by equal-weighted constituent momentum over cached bars — the classic 'where is capital rotating' read, for crypto. Crypto has no canonical sector index, so the taxonomy is an in-house versioned config (sector -> a basket of liquid USD-native constituents) and each sector's momentum is the equal-weighted mean of its constituents' trailing `lookback`-bar close-to-close returns. Returns {taxonomy_version, timeframe, lookback, sectors, scanned_at}: `sectors` are ranked hottest-first (complete sectors before incomplete ones, momentum descending), each carrying its equal-weight momentum, n_priced, a `complete` flag (>= the priced floor), its best/worst constituents (`leaders` / `laggards`, return %), and any `skipped` constituents (no cached bars / too short a history). A sector with too few priced constituents is reported `complete=false` and ranked last rather than silently mixed in; `momentum` is null when nothing priced. Pass `lookback` (bars, default 30) and `as_of` for historical replay (trailing — no future leak). Conditions only — a rotation reading is a fact about relative momentum, never a buy/sell call; use `recommend` for a directional call. Constituents are priced through the existing USD-native sources; backfill via get_ohlcv if a sector reports many skipped. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `timeframe` | string | yes | — |
+| `lookback` | integer | no | `30` |
+| `as_of` | string (date-time) \| null | no | `None` |
+
+**Returns:** `SectorRotationResponse`
+
+| Field | Type |
+| --- | --- |
+| `taxonomy_version` | string |
+| `timeframe` | string |
+| `lookback` | integer |
+| `sectors` | array[SectorMomentum] |
+| `scanned_at` | string (date-time) |
+
+**Source:** [`src/market_analyser/api/mcp_tools/sector_rotation.py`](../../src/market_analyser/api/mcp_tools/sector_rotation.py)
 
 ## `sentiment`
 
