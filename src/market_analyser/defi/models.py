@@ -305,6 +305,60 @@ class UnlockEvent(BaseModel):
         return v
 
 
+class EmissionsDetail(BaseModel):
+    """Aerodrome-native weekly-emission snapshot (Plan 0107 phase 4 / ADR-0102),
+    read from the Minter contract over the Base RPC — the deep-tier fact DefiLlama
+    does not expose: the current epoch's AERO emission and its decay. Populated
+    **only** for Aerodrome-on-Base; `None` at the DefiLlama tier.
+
+    `weekly_emission` is AERO tokens this epoch (scaled from wei, strictly
+    positive). `weekly_decay_pct` is the per-epoch decay in percent derived from the
+    Minter's `WEEKLY_DECAY` basis-points constant (9900 → 1.0%/epoch), best-effort
+    `None` if that read fails. `epoch` is the Minter's `epochCount`;
+    `tail_emission_rate` is the raw `tailEmissionRate` (relevant once the schedule
+    reaches tail emission). Boundary-validated: every present number is finite."""
+
+    model_config = ConfigDict(frozen=True)
+
+    weekly_emission: float = Field(gt=0)  # AERO tokens emitted this epoch
+    weekly_decay_pct: float | None = Field(default=None, ge=0)  # % decay per epoch
+    epoch: int | None = Field(default=None, ge=0)
+    tail_emission_rate: float | None = Field(default=None, ge=0)
+
+    @field_validator("weekly_emission", "weekly_decay_pct", "tail_emission_rate")
+    @classmethod
+    def _must_be_finite(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("emissions measurement must be finite (no NaN/Inf)")
+        return v
+
+
+class VeGaugeStats(BaseModel):
+    """Aerodrome veAERO + Voter snapshot (Plan 0107 phase 4 / ADR-0102), read from
+    the VotingEscrow + Voter contracts over the Base RPC — the ve-lock and
+    vote-weight facts that drive AERO's emissions distribution. Populated **only**
+    for Aerodrome-on-Base; `None` at the DefiLlama tier.
+
+    `ve_total_locked` is the total AERO locked in the VotingEscrow (`supply()`,
+    scaled from wei); `ve_total_voting_power` is the current total veAERO voting
+    power (`totalSupply()`, which decays with time); `total_vote_weight` is the
+    Voter's aggregate gauge vote weight (`totalWeight()`). Each is best-effort
+    `None` when its read fails; every present number is finite and non-negative."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ve_total_locked: float | None = Field(default=None, ge=0)  # AERO locked in ve
+    ve_total_voting_power: float | None = Field(default=None, ge=0)  # veAERO (decaying)
+    total_vote_weight: float | None = Field(default=None, ge=0)  # Voter.totalWeight()
+
+    @field_validator("ve_total_locked", "ve_total_voting_power", "total_vote_weight")
+    @classmethod
+    def _must_be_finite(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("ve/gauge measurement must be finite (no NaN/Inf)")
+        return v
+
+
 class DefiFundamentals(BaseModel):
     """DeFi-native token/protocol fundamentals as a **condition read** (Plan 0107 /
     ADR-0102) — the fundamentals surface that price/structure is blind to for a
@@ -336,6 +390,10 @@ class DefiFundamentals(BaseModel):
     mcap: float | None = Field(default=None, ge=0)  # circulating market cap, USD
     fdv: float | None = Field(default=None, ge=0)  # fully-diluted valuation, USD
     unlocks: list[UnlockEvent] | None = None
+    # Deep-tier fields (Plan 0107 phases 4-5): the Aerodrome-native reader folds
+    # these onto the DefiLlama payload for Aerodrome-on-Base; honest-null elsewhere.
+    emissions_detail: EmissionsDetail | None = None
+    ve_gauge: VeGaugeStats | None = None
     as_of: datetime
     source: str = Field(default="defillama", min_length=1)
     notes: list[str] = Field(default_factory=list)
@@ -359,6 +417,7 @@ __all__ = [
     "Chain",
     "DefiFundamentals",
     "DefiPosition",
+    "EmissionsDetail",
     "ExecutableQuote",
     "FundamentalsPoint",
     "LpPositionDetail",
@@ -366,5 +425,6 @@ __all__ = [
     "PositionToken",
     "RewardAmount",
     "UnlockEvent",
+    "VeGaugeStats",
     "VolumeSummary",
 ]
