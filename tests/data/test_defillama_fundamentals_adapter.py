@@ -126,6 +126,7 @@ def test_yields_excludes_non_matching_projects(monkeypatch: pytest.MonkeyPatch) 
     # The uniswap-v3 pool (apyBase/apyReward 99, huge TVL) must not leak into the
     # aerodrome APRs — proves the project filter, not just an average of everything.
     assert f.fee_apr == pytest.approx(_EXPECT_FEE_APR)
+    assert f.fee_apr is not None
     assert f.fee_apr < 99.0
 
 
