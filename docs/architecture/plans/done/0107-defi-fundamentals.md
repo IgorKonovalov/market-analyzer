@@ -1,6 +1,6 @@
 # 0107 — DeFi token & protocol fundamentals
 
-> **Status:** in-progress
+> **Status:** done — closed 2026-07-16. Shipped in 5 dev commits (d0ddf13 source+`DefiFundamentals` model, 4f41a3c tool+registry, ecfeb14 skill docs, 240410f Aerodrome-native reader, a5317b6 deep-tier fold). Mode 4 clean: all done-when verified against real assertions (not the pass list), the three plan test files ran green (32 passed), `test_full_toolset_registration_is_exhaustive` green, `apiref --check` exit 0. Layering clean (structural `AerodromeDeepReader` Protocol; no api→data coupling), read-only by construction (eth_call-only + selector self-check), conditions-only guarded at model + wire (ADR-0029). Toolset **50 → 51** (the +1 for `defi_fundamentals` per phase-2 done-when; the handoff's "unchanged at 50" mis-stated the absolute). Nits (non-blocking): phase-4 file list omitted `models.py` (self-disclosed); no AST-level read-only assertion (proven by construction instead). ADR-0102 accepted at close. Phase 6 (human live smoke on AERO) is `human`-owned and does not gate close.
 > **Created:** 2026-07-15
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0102](../adrs/0102-defi-token-fundamentals-source.md) (paired, accepts at close), [0031](../adrs/0031-data-source-adapter-contract.md), [0019](../adrs/0019-external-http-adapter-resilience.md), [0038](../adrs/0038-third-party-api-key-storage.md), [0029](../adrs/0029-advisory-recommendation-boundary.md), [0069](../adrs/0069-crypto-first-asset-class-positioning.md)

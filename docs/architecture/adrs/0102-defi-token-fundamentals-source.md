@@ -1,8 +1,10 @@
 # ADR-0102 — DeFi token & protocol fundamentals as a data source
 
-> **Status:** proposed
+> **Status:** accepted (Plan 0107 close, 2026-07-16)
 > **Date:** 2026-07-15
 > **Related plan(s):** [0107](../plans/0107-defi-fundamentals.md)
+
+> **Acceptance note (2026-07-16).** Accepted as-built. The keyless DefiLlama tier plus the best-effort Aerodrome-native deep tier shipped as `defi_fundamentals`, conditions-only, honest-degrade. Coverage confirmed against upstream reality: **AERO's `mcap` (no `gecko_id`), `fdv` (no keyless total-supply source at this tier), and the `unlocks` calendar (DefiLlama `/emission` is Pro-gated → HTTP 402) are genuine keyless gaps handled by honest-null-with-note**, exactly the negative consequence recorded below — not a defect. The deep tier's composition point is the tool (the reader is injected and folded for Aerodrome off the resolved `protocol_slug`), not a composite `DefiFundamentalsSource`, keeping the registry a single `{"defillama": …}` entry.
 
 ## Context
 
