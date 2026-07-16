@@ -608,10 +608,53 @@ class QualityScore(BaseModel):
     liquidity_note: str | None = None  # why the gate flagged/capped the name, if it did
 
 
+class ConstituentReturn(BaseModel):
+    """One constituent's trailing return inside a sector-rotation read (Plan 0102).
+
+    `return_pct` is the signed close-to-close percentage change over the requested
+    `lookback` window — the latest close against the close `lookback` bars earlier
+    (a +12.0 is a 12% gain). Trailing by construction — both closes sit at-or-before
+    the read's `as_of`. Conditions only — a raw return is a fact, never a call.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    return_pct: float
+
+
+class SectorMomentum(BaseModel):
+    """One crypto sector's equal-weighted momentum read (Plan 0102, ADR-0097).
+
+    `momentum` is the equal-weighted mean of the priced constituents' trailing
+    `return_pct` — every constituent is one voter (cap-weighting is a future
+    refinement, ADR-0097). It is ``None`` only when no constituent priced
+    (`n_priced == 0`): an honest "no read", never a fabricated 0. `n_priced` is how
+    many constituents had enough cached bars to compute a return; `complete` is
+    `n_priced >= MIN_PRICED_TO_RANK` (the skip-and-flag floor) — an incomplete sector
+    is reported but ranked below every complete one rather than silently mixed in.
+    `leaders` / `laggards` are the best- and worst-performing priced constituents
+    (disjoint; up to a small cap each), `skipped` the constituents with too few cached
+    bars or a fetch error. Conditions only — a rotation reading is a fact, never a
+    buy/sell call (ADR-0029).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    sector: str
+    momentum: float | None  # equal-weight mean of constituent return_pct; None iff n_priced == 0
+    n_priced: int
+    complete: bool  # n_priced >= MIN_PRICED_TO_RANK
+    leaders: list[ConstituentReturn]  # best performers, return descending
+    laggards: list[ConstituentReturn]  # worst performers, return ascending
+    skipped: list[str]  # constituents with no cached bars / too short a history / a fetch error
+
+
 __all__ = [
     "AnchoredVwapValue",
     "ChartPatternHit",
     "ConditionSnapshot",
+    "ConstituentReturn",
     "CounterTrendBar",
     "CounterTrendVolume",
     "Direction",
@@ -630,6 +673,7 @@ __all__ = [
     "PivotPoint",
     "PivotPoints",
     "QualityScore",
+    "SectorMomentum",
     "SmartVolumeHit",
     "StructureEvent",
     "StructureEventKind",
