@@ -40,7 +40,10 @@ from market_analyser.api.mcp_tools.compare_strategies import register_compare_st
 from market_analyser.api.mcp_tools.compute_wallet_pnl import register_compute_wallet_pnl
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.cycle_snapshot import register_btc_cycle_snapshot
-from market_analyser.api.mcp_tools.defi_fundamentals import register_defi_fundamentals
+from market_analyser.api.mcp_tools.defi_fundamentals import (
+    AerodromeDeepReader,
+    register_defi_fundamentals,
+)
 from market_analyser.api.mcp_tools.derivatives_snapshot import (
     DerivativesSource,
     register_derivatives_snapshot,
@@ -145,6 +148,7 @@ def create_mcp_components(
     manual_positions_path: Path | None = None,
     prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
     defi_fundamentals_sources: Mapping[str, DefiFundamentalsSource] | None = None,
+    aerodrome_deep_reader: AerodromeDeepReader | None = None,
     executable_quote_sources: Mapping[str, ExecutableQuoteSource] | None = None,
     gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
@@ -319,6 +323,10 @@ def create_mcp_components(
     register_defi_fundamentals(
         server,
         fundamentals_sources=resolved_defi_fundamentals_sources,
+        # The Aerodrome-native deep tier (Plan 0107 phases 4-5) enriches an
+        # Aerodrome query with on-chain emission/veAERO fields; wired from the Base
+        # RPC in create_app when a secrets store exists, else None (DefiLlama depth).
+        deep_reader=aerodrome_deep_reader,
     )
 
     # `forecast` (Plan 0036, multi-horizon per Plan 0059): direction-as-probability

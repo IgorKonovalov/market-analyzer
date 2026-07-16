@@ -56,6 +56,7 @@ from market_analyser.attribution.scoring_job import (
 )
 from market_analyser.attribution.scoring_job import RecommendationScoringJob
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.aerodrome_native import AerodromeNativeReader
 from market_analyser.data.adapters.alchemy_historical_price import (
     AlchemyHistoricalPriceAdapter,
 )
@@ -377,6 +378,15 @@ def create_app(
         }
     else:
         effective_unclaimed_sources = {}
+    # The Aerodrome-native fundamentals deep tier (Plan 0107 phases 4-5): built from
+    # the secrets store (it reads the Base RPC), so the `defi_fundamentals` tool
+    # enriches an Aerodrome query with on-chain emission/veAERO fields. Construction
+    # is network-free (only builds the resilient client); it reaches the RPC on an
+    # actual call, and degrades to DefiLlama depth when the Base URL is unset. Absent
+    # a store, no reader — the keyless DefiLlama tier stands alone.
+    aerodrome_deep_reader = (
+        AerodromeNativeReader(secrets_store=secrets_store) if secrets_store is not None else None
+    )
     mcp_components = (
         create_mcp_components(
             provider=effective_provider,
@@ -402,6 +412,7 @@ def create_app(
             account_holdings_sources=effective_account_sources,
             manual_positions_path=manual_positions_path,
             defi_dust_tokens=frozenset(defi_dust_tokens),
+            aerodrome_deep_reader=aerodrome_deep_reader,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None

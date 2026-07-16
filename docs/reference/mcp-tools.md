@@ -243,7 +243,7 @@ Get the current crypto Fear & Greed index (Alternative.me): a single 0-100 value
 
 ## `defi_fundamentals`
 
-Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g. 'AERO', 'aerodrome', 'uniswap') — the fundamentals price/structure is blind to for a DeFi token. Returns {query, protocol_slug, tvl (USD), tvl_trend (trailing [date, value] history), dex_volume (24h/7d/30d USD + change_1d_pct), fee_apr, reward_apr (annualized %, TVL-weighted over the protocol's pools), mcap, fdv (USD), unlocks (token-unlock calendar), as_of, source, notes}. Keyless (DefiLlama); any field DefiLlama does not cover comes back null with a `notes` entry explaining the gap (e.g. a token with no gecko_id has null mcap; the unlock calendar is DefiLlama-Pro-gated for many small caps) — never a fabricated or zeroed number. Wall-clock-sensitive: current-state only, no historical replay (no as_of). This is a CONDITION read, never buy/sell advice.
+Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g. 'AERO', 'aerodrome', 'uniswap') — the fundamentals price/structure is blind to for a DeFi token. Returns {query, protocol_slug, tvl (USD), tvl_trend (trailing [date, value] history), dex_volume (24h/7d/30d USD + change_1d_pct), fee_apr, reward_apr (annualized %, TVL-weighted over the protocol's pools), mcap, fdv (USD), unlocks (token-unlock calendar), emissions_detail + ve_gauge (Aerodrome-only deep tier: weekly emission/decay + veAERO lock/vote weight, read on-chain; null for other protocols), as_of, source, notes}. Keyless (DefiLlama); any field DefiLlama does not cover comes back null with a `notes` entry explaining the gap (e.g. a token with no gecko_id has null mcap; the unlock calendar is DefiLlama-Pro-gated for many small caps) — never a fabricated or zeroed number. Wall-clock-sensitive: current-state only, no historical replay (no as_of). This is a CONDITION read, never buy/sell advice.
 
 **Parameters**
 
@@ -265,6 +265,8 @@ Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g.
 | `mcap` | number \| null |
 | `fdv` | number \| null |
 | `unlocks` | array[UnlockEvent] \| null |
+| `emissions_detail` | EmissionsDetail \| null |
+| `ve_gauge` | VeGaugeStats \| null |
 | `as_of` | string (date-time) |
 | `source` | string |
 | `notes` | array[string] |

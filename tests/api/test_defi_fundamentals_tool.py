@@ -31,8 +31,10 @@ from market_analyser.api.mcp_tools.defi_fundamentals import (
 )
 from market_analyser.defi.models import (
     DefiFundamentals,
+    EmissionsDetail,
     FundamentalsPoint,
     UnlockEvent,
+    VeGaugeStats,
     VolumeSummary,
 )
 
@@ -69,6 +71,37 @@ def _covered() -> DefiFundamentals:
         source="defillama",
         notes=["fdv: no keyless DefiLlama source at this tier (honest-null)"],
     )
+
+
+def _covered_non_aerodrome() -> DefiFundamentals:
+    return DefiFundamentals(
+        query="uniswap",
+        protocol_slug="uniswap",
+        tvl=5_000_000_000.0,
+        as_of=_NOW,
+        source="defillama",
+        notes=[],
+    )
+
+
+class _FakeDeepReader:
+    """An `AerodromeDeepReader` stub that records calls and appends a note."""
+
+    def __init__(
+        self,
+        emissions: EmissionsDetail | None,
+        ve_gauge: VeGaugeStats | None,
+    ) -> None:
+        self._emissions = emissions
+        self._ve_gauge = ve_gauge
+        self.calls = 0
+
+    def read_aerodrome(
+        self, notes: list[str]
+    ) -> tuple[EmissionsDetail | None, VeGaugeStats | None]:
+        self.calls += 1
+        notes.append("aerodrome deep tier read")
+        return self._emissions, self._ve_gauge
 
 
 def _uncovered() -> DefiFundamentals:
@@ -140,6 +173,90 @@ def test_response_has_no_call_shaped_field() -> None:
         assert forbidden not in dumped
     # The tool description advertises the conditions-only boundary.
     assert "never buy/sell advice" in DEFI_FUNDAMENTALS_DESCRIPTION
+
+
+# -- deep tier fold (Plan 0107 phase 5) -------------------------------------
+
+
+def test_aerodrome_query_folds_deep_fields() -> None:
+    source = _FakeSource(_covered())  # protocol_slug "aerodrome-v1"
+    reader = _FakeDeepReader(
+        EmissionsDetail(weekly_emission=10_000_000.0, weekly_decay_pct=1.0),
+        VeGaugeStats(ve_total_locked=500_000_000.0),
+    )
+
+    result = asyncio.run(
+        _defi_fundamentals_response(
+            sources={"defillama": source},
+            source="defillama",
+            symbol_or_protocol="AERO",
+            deep_reader=reader,
+        )
+    )
+
+    assert reader.calls == 1
+    assert result.emissions_detail is not None
+    assert result.emissions_detail.weekly_emission == pytest.approx(10_000_000.0)
+    assert result.ve_gauge is not None
+    assert result.ve_gauge.ve_total_locked == pytest.approx(500_000_000.0)
+    # The deep tier's provenance note is merged onto the DefiLlama notes.
+    assert "aerodrome deep tier read" in result.notes
+    # DefiLlama-tier fields are preserved through the fold.
+    assert result.tvl == pytest.approx(1_000_000_000.0)
+
+
+def test_non_aerodrome_query_skips_deep_reader() -> None:
+    source = _FakeSource(_covered_non_aerodrome())  # protocol_slug "uniswap"
+    reader = _FakeDeepReader(EmissionsDetail(weekly_emission=1.0), VeGaugeStats())
+
+    result = asyncio.run(
+        _defi_fundamentals_response(
+            sources={"defillama": source},
+            source="defillama",
+            symbol_or_protocol="uniswap",
+            deep_reader=reader,
+        )
+    )
+
+    assert reader.calls == 0  # the deep reader is Aerodrome-only
+    assert result.emissions_detail is None
+    assert result.ve_gauge is None
+
+
+def test_aerodrome_query_without_reader_has_null_deep_fields() -> None:
+    source = _FakeSource(_covered())
+
+    result = asyncio.run(
+        _defi_fundamentals_response(
+            sources={"defillama": source},
+            source="defillama",
+            symbol_or_protocol="AERO",
+        )
+    )
+
+    assert result.emissions_detail is None
+    assert result.ve_gauge is None
+
+
+def test_deep_reader_returning_none_leaves_fields_null_no_error() -> None:
+    # A best-effort deep read that finds nothing (both None) must not error and
+    # must leave the deep fields null while still merging its note.
+    source = _FakeSource(_covered())
+    reader = _FakeDeepReader(None, None)
+
+    result = asyncio.run(
+        _defi_fundamentals_response(
+            sources={"defillama": source},
+            source="defillama",
+            symbol_or_protocol="AERO",
+            deep_reader=reader,
+        )
+    )
+
+    assert reader.calls == 1
+    assert result.emissions_detail is None
+    assert result.ve_gauge is None
+    assert "aerodrome deep tier read" in result.notes
 
 
 # -- (c) unregistered source is a clear error -------------------------------
