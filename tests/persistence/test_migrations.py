@@ -444,9 +444,10 @@ def test_purge_migration_deletes_only_orphaned_yahoo_crypto_bars() -> None:
 
 def test_purge_migration_downgrade_leaves_schema_identical() -> None:
     """0009 is a one-way DATA purge, not a schema change — its `downgrade` is a
-    documented no-op. Descending from head to 0008 also passes through 0010
-    (which drops `watches.note`), so the expected post-downgrade schema is head
-    minus that one column; the 0009 step itself must change nothing."""
+    documented no-op. Descending from head to 0008 also passes through 0011
+    (which drops the two Plan 0099 position-watch tables) and 0010 (which drops
+    `watches.note`), so the expected post-downgrade schema is head minus those;
+    the 0009 step itself must change nothing."""
     engine = make_engine(":memory:")
     try:
         config = _alembic_config(engine)
@@ -465,7 +466,10 @@ def test_purge_migration_downgrade_leaves_schema_identical() -> None:
             command.downgrade(config, "0008_advice_ledger")
         expected_after_down = {t: set(cols) for t, cols in head_first.items()}
         expected_after_down["watches"] = expected_after_down["watches"] - {"note"}
-        assert snapshot() == expected_after_down  # only 0010's column gone; 0009 was a no-op
+        del expected_after_down["defi_position_watches"]
+        del expected_after_down["defi_position_alerts"]
+        # Only 0011's tables and 0010's column gone; 0009 was a no-op.
+        assert snapshot() == expected_after_down
 
         with engine.begin() as connection:
             config.attributes["connection"] = connection

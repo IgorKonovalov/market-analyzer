@@ -25,6 +25,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from market_analyser.persistence.models._base import Base
 from market_analyser.persistence.models.advice_ledger import AdviceLedgerRow
 from market_analyser.persistence.models.backtest_runs import BacktestRunRow
+from market_analyser.persistence.models.defi_position_watches import (
+    DefiPositionAlertRow,
+    DefiPositionWatchRow,
+)
 from market_analyser.persistence.models.defi_tx import DefiTxRow
 from market_analyser.persistence.models.metric_points import MetricPointRow
 from market_analyser.persistence.models.price_snapshots import PriceSnapshotRow
@@ -79,6 +83,8 @@ __all__ = [
     "BacktestRunRow",
     "BarRow",
     "Base",
+    "DefiPositionAlertRow",
+    "DefiPositionWatchRow",
     "DefiTxRow",
     "MetricPointRow",
     "PriceSnapshotRow",
