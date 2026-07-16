@@ -2,6 +2,17 @@
 
 Four sources, used in this order of preference. The principle is **simplest source that answers the question accurately** — paying complexity (auth, schema-per-protocol, RPC plumbing) only when the simpler tier doesn't have what you need.
 
+## 0. `defi_fundamentals` MCP tool — the packaged fundamentals read (Plan 0107)
+
+Before hitting DefiLlama's raw endpoints by hand, reach for the **`defi_fundamentals(symbol_or_protocol)`** MCP tool (ADR-0102). It is the in-app, keyless path to a token/protocol's **fundamentals** — the layer price/structure and the LP scanners are blind to: `tvl` + `tvl_trend`, `dex_volume` (24h/7d/30d), `fee_apr` + `reward_apr` (TVL-weighted over the protocol's pools), `mcap`/`fdv`, and the `unlocks` (emissions/dilution) calendar. It rides the resilient HTTP path and packages the same DefiLlama endpoints section 1 documents, so use it for a wallet-holding's forward supply/yield picture and **surface TVL/APR/unlocks alongside a health report**.
+
+- **Conditions only (ADR-0029).** The tool reports what IS — it carries no `action`/`signal`/`recommendation` field and never says buy/sell/rebalance. A rebalance call on a drifting position is the `advisor`'s job, not this read.
+- **Honest-null, never fabricated (ADR-0019).** Any field DefiLlama doesn't cover comes back `null` with a `notes` entry naming the gap. Known thin spots: a token with no `gecko_id` has null `mcap` (AERO today); `fdv` has no keyless source at the DefiLlama tier (honest-null); the `unlocks` calendar is DefiLlama-Pro-gated for many small caps (AERO's `/emission` returns HTTP 402) → "unlocks not covered". Read the `notes` — a null is a real gap, not zero.
+- **Aerodrome deep tier.** For AERO specifically, the tool folds an Aerodrome-native deep read (exact emission decay + veAERO/gauge weights over the Base RPC) onto the DefiLlama payload; other protocols stay at DefiLlama depth.
+- **Wall-clock-sensitive — no `as_of`.** Current-state only; not reproducible after the fact (like the sentiment tools).
+
+Reach for the raw sources below only when you need a field or a per-pool granularity the tool doesn't surface.
+
 ## 1. DefiLlama — default for cross-protocol queries
 
 **Base URL:** `https://api.llama.fi` and `https://yields.llama.fi` (yields lives on its own subdomain). No auth.

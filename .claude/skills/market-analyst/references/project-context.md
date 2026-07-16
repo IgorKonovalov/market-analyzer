@@ -52,6 +52,8 @@ Your backend is **live** (Plan 0018 closed 2026-05-30). You don't glob for it to
 
 The TradFi/DeFi split is enforced by the skill descriptions. If the user is asking about a stock or an index, that's you. If they're asking about an LP or a lending position, that's `defi-analyst`. Don't reach across.
 
+> **DeFi-native fundamentals** (TVL, DEX volume, fee/reward APR, mcap/FDV, token unlock/emissions calendar) live in the `defi_fundamentals` MCP tool — `defi-analyst`'s surface, not yours. It's a conditions-only read (ADR-0102/0029); if a user asks these of an on-chain token, route to `defi-analyst`.
+
 ## How you run analysis
 
 **Primary path — the MCP tool.** Almost everything you do is one call to `analyze_symbol` on the `market-analyser` sidecar, then narrating the returned `snapshot` and writing the `runs/analysis/` artifacts. You don't import Python for the common case. The tool dispatches through the provider (which reads the cache) and runs `condition_snapshot` off-thread.
