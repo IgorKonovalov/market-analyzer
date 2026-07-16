@@ -1,6 +1,6 @@
 # ADR-0097 — Crypto sector taxonomy and representative baskets
 
-> **Status:** proposed
+> **Status:** accepted (2026-07-16, at Plan 0102 close)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0102](../plans/0102-crypto-sector-rotation.md)
 
