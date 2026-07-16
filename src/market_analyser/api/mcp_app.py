@@ -40,6 +40,7 @@ from market_analyser.api.mcp_tools.compare_strategies import register_compare_st
 from market_analyser.api.mcp_tools.compute_wallet_pnl import register_compute_wallet_pnl
 from market_analyser.api.mcp_tools.crypto_fear_greed import register_crypto_fear_greed
 from market_analyser.api.mcp_tools.cycle_snapshot import register_btc_cycle_snapshot
+from market_analyser.api.mcp_tools.defi_fundamentals import register_defi_fundamentals
 from market_analyser.api.mcp_tools.derivatives_snapshot import (
     DerivativesSource,
     register_derivatives_snapshot,
@@ -85,11 +86,13 @@ from market_analyser.api.mcp_tools.watches import register_watch_tools
 from market_analyser.api.mcp_tools.write_annotation import register_write_annotation
 from market_analyser.data.adapters.binance_derivatives import BinanceDerivativesAdapter
 from market_analyser.data.adapters.coinmetrics import CoinMetricsCommunityAdapter
+from market_analyser.data.adapters.defillama_fundamentals import DefiLlamaFundamentalsAdapter
 from market_analyser.data.adapters.polymarket import PolymarketOddsAdapter
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
     AccountHoldingsSource,
+    DefiFundamentalsSource,
     ExecutableQuoteSource,
     GaugeResolutionSource,
     HistoricalPriceSource,
@@ -141,6 +144,7 @@ def create_mcp_components(
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
     manual_positions_path: Path | None = None,
     prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
+    defi_fundamentals_sources: Mapping[str, DefiFundamentalsSource] | None = None,
     executable_quote_sources: Mapping[str, ExecutableQuoteSource] | None = None,
     gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
@@ -297,6 +301,25 @@ def create_mcp_components(
     # sources are wired by create_app). Reports net-of-cost discrepancies as facts;
     # signs nothing, moves no funds.
     register_pool_discrepancies(server, executable_quote_sources=executable_quote_sources or {})
+
+    # `defi_fundamentals` (Plan 0107, ADR-0102): DeFi-native token/protocol
+    # fundamentals (TVL/volume/APR/mcap/unlocks) as a conditions-only read over the
+    # ADR-0031 selector registry. Keyless (DefiLlama public endpoints — no secret,
+    # no signing, no funds), so it is always registered: an explicit registry wins
+    # (tests inject a spy); otherwise the keyless DefiLlama adapter is the default.
+    # Construction is network-free (it only builds the resilient client), so the
+    # default reaches the network only on an actual fundamentals call. The
+    # Aerodrome-native deep tier (Plan 0107 phases 4-5) enriches this same source's
+    # payload rather than adding a registry entry — same tool, richer payload.
+    resolved_defi_fundamentals_sources = (
+        defi_fundamentals_sources
+        if defi_fundamentals_sources is not None
+        else {"defillama": DefiLlamaFundamentalsAdapter()}
+    )
+    register_defi_fundamentals(
+        server,
+        fundamentals_sources=resolved_defi_fundamentals_sources,
+    )
 
     # `forecast` (Plan 0036, multi-horizon per Plan 0059): direction-as-probability
     # over cached bars, per-horizon gated on beating a naive baseline

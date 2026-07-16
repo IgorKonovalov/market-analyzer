@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 50 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 51 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -17,6 +17,7 @@ The 50 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`compute_wallet_pnl`](#computewalletpnl) | Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction history (Ethereum, Base, Arbitrum, Optimism): per-position and total realized/unrealized P&L under average-cost lots, every leg valued at its own block timestamp - never trusting an aggregator's number. |
 | [`create_watch`](#createwatch) | Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). |
 | [`crypto_fear_greed`](#cryptofeargreed) | Get the current crypto Fear & Greed index (Alternative.me): a single 0-100 value with a label (Extreme Fear / Fear / Neutral / Greed / Extreme Greed). |
+| [`defi_fundamentals`](#defifundamentals) | Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g. |
 | [`delete_watch`](#deletewatch) | Delete a watch by id, including its alert history. |
 | [`derivatives_snapshot`](#derivativessnapshot) | Get the Binance USDS-M derivatives picture for one contract symbol (e.g. |
 | [`detect_chart_patterns`](#detectchartpatterns) | Detect classical chart patterns on the cached bars and draw them on the chart in one call: recognises head & shoulders (+inverse), double top/bottom, ascending/descending/symmetrical triangles, and rising/falling wedges over confirmed swing pivots, returns the typed hits as data (pattern, forming/confirmed state, direction, pivots, defining lines, measured-move target, strength), AND publishes a single `chart.trendlines v1` event carrying one trendline per hit line (dashed = forming, solid = confirmed) onto the chart already showing that symbol/timeframe. |
@@ -239,6 +240,36 @@ Get the current crypto Fear & Greed index (Alternative.me): a single 0-100 value
 **Returns:** `dict[str, Any]`
 
 **Source:** [`src/market_analyser/api/mcp_tools/crypto_fear_greed.py`](../../src/market_analyser/api/mcp_tools/crypto_fear_greed.py)
+
+## `defi_fundamentals`
+
+Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g. 'AERO', 'aerodrome', 'uniswap') — the fundamentals price/structure is blind to for a DeFi token. Returns {query, protocol_slug, tvl (USD), tvl_trend (trailing [date, value] history), dex_volume (24h/7d/30d USD + change_1d_pct), fee_apr, reward_apr (annualized %, TVL-weighted over the protocol's pools), mcap, fdv (USD), unlocks (token-unlock calendar), as_of, source, notes}. Keyless (DefiLlama); any field DefiLlama does not cover comes back null with a `notes` entry explaining the gap (e.g. a token with no gecko_id has null mcap; the unlock calendar is DefiLlama-Pro-gated for many small caps) — never a fabricated or zeroed number. Wall-clock-sensitive: current-state only, no historical replay (no as_of). This is a CONDITION read, never buy/sell advice.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `params` | DefiFundamentalsInput | yes | — |
+
+**Returns:** `DefiFundamentals`
+
+| Field | Type |
+| --- | --- |
+| `query` | string |
+| `protocol_slug` | string \| null |
+| `tvl` | number \| null |
+| `tvl_trend` | array[FundamentalsPoint] \| null |
+| `dex_volume` | VolumeSummary \| null |
+| `fee_apr` | number \| null |
+| `reward_apr` | number \| null |
+| `mcap` | number \| null |
+| `fdv` | number \| null |
+| `unlocks` | array[UnlockEvent] \| null |
+| `as_of` | string (date-time) |
+| `source` | string |
+| `notes` | array[string] |
+
+**Source:** [`src/market_analyser/api/mcp_tools/defi_fundamentals.py`](../../src/market_analyser/api/mcp_tools/defi_fundamentals.py)
 
 ## `delete_watch`
 

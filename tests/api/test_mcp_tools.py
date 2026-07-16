@@ -528,6 +528,7 @@ EXPECTED_FULL_TOOLSET = {
     "compute_wallet_pnl",
     "create_watch",
     "crypto_fear_greed",
+    "defi_fundamentals",
     "delete_watch",
     "derivatives_snapshot",
     "detect_chart_patterns",
