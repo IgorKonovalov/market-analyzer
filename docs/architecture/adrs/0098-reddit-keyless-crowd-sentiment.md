@@ -4,6 +4,8 @@
 > **Date:** 2026-07-13
 > **Related plan(s):** [0103](../plans/0103-reddit-crowd-sentiment.md)
 
+> **Amended 2026-07-16 by [ADR-0105](0105-reddit-keyed-oauth-access-path.md):** the access path is amended — a 2026-07-16 live investigation proved keyless Reddit JSON 403-blocked (anti-bot wall, all endpoints/User-Agents) from this machine, so ADR-0105 reverses this ADR's Alternative A rejection and adds a keyed app-only OAuth path (`SecretsStore` `reddit_client_id`/`reddit_client_secret`, `oauth.reddit.com`) used when configured; absent keys, the keyless path below stands unchanged. Scoring, group, seam, and tool mode are untouched.
+
 > **Amended 2026-07-15 (pre-acceptance):** the original decision named per-category subreddit groups (crypto / stocks / all), a `top_posts` payload, and a standalone `reddit_sentiment` tool. Reconciled with the surface that has since landed — Plan 0109's unified `sentiment(source=…)` tool ([ADR-0104](0104-mcp-tool-surface-granularity.md)) and Plan 0108's `SentimentSource`-conformant direction: Reddit conforms to the existing `SentimentSample` (no `top_posts`, no `category` input; `label`/`sample_size` derived at the tool layer), reaches the tool via `provider.get_sentiment(source="reddit")`, and queries a **single fixed multi-subreddit group**. The Decision and the "Neutral" consequence below are updated to match; the core (keyless JSON, keyword lexicon, upvote-weighted, honest-degrade, condition-only) is unchanged. See [Plan 0103](../plans/0103-reddit-crowd-sentiment.md) Phase 2.
 
 ## Context
