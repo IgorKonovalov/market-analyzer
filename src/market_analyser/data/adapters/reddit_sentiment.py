@@ -4,7 +4,7 @@ Reddit exposes a keyless search JSON endpoint. This adapter queries **one fixed
 multi-subreddit crowd group** (`r/CryptoCurrency+Bitcoin+wallstreetbets+stocks+investing`)
 for a symbol in a single request, scores each post with a transparent bullish/bearish
 **keyword lexicon**, weights each post's polarity by its upvote score, and aggregates to a
-signed −1..+1 reading. Unlike the authenticated Reddit API it needs no key, matching the
+signed -1..+1 reading. Unlike the authenticated Reddit API it needs no key, matching the
 project's keyless-first posture (ADR-0069); the `category` routing an earlier draft carried
 is dropped (Plan 0103 amendment) in favour of the single group — one request is the lightest
 footprint under Reddit's aggressive public rate-limit, and Reddit's own search relevance
@@ -147,7 +147,7 @@ _TOKEN_RE = re.compile(r"[a-z]+")
 
 
 def reddit_label(score: float) -> str:
-    """Map an upvote-weighted −1..+1 score to a five-bucket crowd-tone label.
+    """Map an upvote-weighted -1..+1 score to a five-bucket crowd-tone label.
 
     The pure ladder shared by the adapter's tests and the `sentiment` tool's `reddit`
     handler (which derives the label at the tool layer, keeping `SentimentSample` free of a
