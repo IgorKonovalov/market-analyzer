@@ -67,6 +67,7 @@ from market_analyser.api.mcp_tools.multi_timeframe_analysis import (
 from market_analyser.api.mcp_tools.news_for import register_news_for
 from market_analyser.api.mcp_tools.pool_discrepancies import register_pool_discrepancies
 from market_analyser.api.mcp_tools.portfolio import register_portfolio_summary
+from market_analyser.api.mcp_tools.position_watches import register_position_watch_tools
 from market_analyser.api.mcp_tools.prediction_markets import register_prediction_market_tools
 from market_analyser.api.mcp_tools.prediction_screener import register_prediction_screener
 from market_analyser.api.mcp_tools.price_structure import register_price_structure
@@ -114,6 +115,10 @@ from market_analyser.persistence.defi_tx_repository import DefiTxRepository
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
 )
+from market_analyser.persistence.repositories.defi_position_watches import (
+    DefiPositionAlertsRepository,
+    DefiPositionWatchesRepository,
+)
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
@@ -145,6 +150,8 @@ def create_mcp_components(
     mvrv_source: MetricSeriesSource | None = None,
     watches_repository: WatchesRepository | None = None,
     alerts_repository: AlertsRepository | None = None,
+    position_watches_repository: DefiPositionWatchesRepository | None = None,
+    position_alerts_repository: DefiPositionAlertsRepository | None = None,
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
     manual_positions_path: Path | None = None,
     prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
@@ -483,6 +490,18 @@ def create_mcp_components(
             server,
             watches_repository=watches_repository,
             alerts_repository=alerts_repository,
+        )
+
+    # The position-watch toolset (Plan 0099, ADR-0093) is registered when both
+    # position-watch repositories are wired (create_app builds them from the
+    # SQLite engine). The monitor that reads the chain lives in the app
+    # lifespan, not here — these tools only manage definitions and read
+    # history. Legacy callers without persistence keep the smaller toolset.
+    if position_watches_repository is not None and position_alerts_repository is not None:
+        register_position_watch_tools(
+            server,
+            position_watches_repository=position_watches_repository,
+            position_alerts_repository=position_alerts_repository,
         )
 
     # `scan_wallet` (Plan 0032) is registered only when a wallet-positions source

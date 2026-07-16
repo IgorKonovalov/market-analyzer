@@ -68,6 +68,10 @@ from market_analyser.persistence.engine import (
     make_session_factory,
 )
 from market_analyser.persistence.repositories.backtest_runs import BacktestRunsRepository
+from market_analyser.persistence.repositories.defi_position_watches import (
+    DefiPositionAlertsRepository,
+    DefiPositionWatchesRepository,
+)
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
@@ -215,6 +219,8 @@ def build_wired_mcp_server(runs_dir: Path) -> FastMCP:
             metric_points_repository=MetricPointsRepository(session_factory),
             watches_repository=WatchesRepository(session_factory),
             alerts_repository=AlertsRepository(session_factory),
+            position_watches_repository=DefiPositionWatchesRepository(session_factory),
+            position_alerts_repository=DefiPositionAlertsRepository(session_factory),
             account_holdings_sources={"binance": _NullAccountSource()},
             manual_positions_path=runs_dir / "portfolio.json",
         )

@@ -4,7 +4,7 @@
 
 # REST API
 
-The 27 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
+The 29 renderer-facing REST operations, from the FastAPI OpenAPI document. Every route is renderer-bearer gated by the central middleware except the auth-exempt `/healthz` liveness probe. Route handlers live under [`src/market_analyser/api/routes/`](../../src/market_analyser/api/routes).
 
 | Route | Summary |
 | --- | --- |
@@ -14,6 +14,8 @@ The 27 renderer-facing REST operations, from the FastAPI OpenAPI document. Every
 | [`GET /backtests`](#get-backtests) | List Backtests |
 | [`GET /backtests/{run_id}`](#get-backtestsrunid) | Get Backtest |
 | [`POST /defi/pnl`](#post-defipnl) | Post Defi Pnl |
+| [`GET /defi/position_alerts`](#get-defipositionalerts) | List Position Alerts |
+| [`GET /defi/position_watches`](#get-defipositionwatches) | List Position Watches |
 | [`POST /defi/scan`](#post-defiscan) | Post Defi Scan |
 | [`GET /events`](#get-events) | Get Events |
 | [`POST /events/ticket`](#post-eventsticket) | Mint Events Ticket |
@@ -128,6 +130,34 @@ No parameters.
 
 **Request body:** `PnlRequest`
 **Response:** `PnlResponse`
+
+## `GET /defi/position_alerts`
+
+List Position Alerts
+
+**Auth:** renderer bearer
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `watch_id` | integer \| null | no | — |
+| `offset` | integer | no | `0` |
+| `limit` | integer | no | `50` |
+
+**Response:** `PositionAlertsPage`
+
+## `GET /defi/position_watches`
+
+List Position Watches
+
+**Auth:** renderer bearer
+
+**Parameters**
+
+No parameters.
+
+**Response:** `array[PositionWatchOut]`
 
 ## `POST /defi/scan`
 

@@ -40,6 +40,7 @@ from market_analyser.api.routes.defi import router as defi_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.news import router as news_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
+from market_analyser.api.routes.position_alerts import router as position_alerts_router
 from market_analyser.api.routes.quote import router as quote_router
 from market_analyser.api.routes.scan_chart_patterns import router as scan_chart_patterns_router
 from market_analyser.api.routes.scan_patterns import router as scan_patterns_router
@@ -96,6 +97,7 @@ from market_analyser.data.sources import (
     UnclaimedRewardsSource,
     WalletPositionsSource,
 )
+from market_analyser.defi.position_monitor import DefiPositionMonitor
 from market_analyser.events import EventBus
 from market_analyser.persistence.advice_ledger_repository import AdviceLedgerRepository
 from market_analyser.persistence.annotations_repository import AnnotationsRepository
@@ -104,6 +106,10 @@ from market_analyser.persistence.engine import apply_migrations, make_session_fa
 from market_analyser.persistence.price_snapshot_repository import PriceSnapshotRepository
 from market_analyser.persistence.repositories.backtest_runs import (
     BacktestRunsRepository,
+)
+from market_analyser.persistence.repositories.defi_position_watches import (
+    DefiPositionAlertsRepository,
+    DefiPositionWatchesRepository,
 )
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from market_analyser.persistence.repositories.watches import (
@@ -148,6 +154,8 @@ def create_app(
     metric_accrual_sources: MetricAccrualSources | None = None,
     recommendation_scoring_enabled: bool = False,
     recommendation_scoring_interval_seconds: int = SCORING_DEFAULT_INTERVAL_SECONDS,
+    position_monitor_enabled: bool = False,
+    position_monitor_wallets: Sequence[str] = (),
     defi_dust_tokens: Sequence[str] = (),
     on_shutdown: Sequence[Callable[[], None]] | None = None,
 ) -> FastAPI:
@@ -182,6 +190,8 @@ def create_app(
     metric_points_repository: MetricPointsRepository | None = None
     watches_repository: WatchesRepository | None = None
     alerts_repository: AlertsRepository | None = None
+    position_watches_repository: DefiPositionWatchesRepository | None = None
+    position_alerts_repository: DefiPositionAlertsRepository | None = None
     defi_tx_repository: DefiTxRepository | None = None
     advice_ledger_repository: AdviceLedgerRepository | None = None
     if engine is not None:
@@ -197,6 +207,13 @@ def create_app(
         # scheduler both key off these.
         watches_repository = WatchesRepository(session_factory)
         alerts_repository = AlertsRepository(session_factory)
+        # The DeFi position-watch stores (Plan 0099, ADR-0093): the LP watch
+        # definitions the lifespan position monitor ticks + the append-only
+        # out-of-range fire history. A dedicated subsystem, sibling to the
+        # ADR-0055 pair above (which is untouched). Built whenever persistence
+        # exists — the position-watch MCP toolset and the monitor key off these.
+        position_watches_repository = DefiPositionWatchesRepository(session_factory)
+        position_alerts_repository = DefiPositionAlertsRepository(session_factory)
         # The P&L caches (Plan 0035, ADR-0036): the immutable decoded-tx store
         # behind the gap-fetch ingestion, and the first-write-wins price
         # snapshots that make a replay revision-proof. Both price adapters are
@@ -409,6 +426,8 @@ def create_app(
             metric_points_repository=metric_points_repository,
             watches_repository=watches_repository,
             alerts_repository=alerts_repository,
+            position_watches_repository=position_watches_repository,
+            position_alerts_repository=position_alerts_repository,
             account_holdings_sources=effective_account_sources,
             manual_positions_path=manual_positions_path,
             defi_dust_tokens=frozenset(defi_dust_tokens),
@@ -432,6 +451,33 @@ def create_app(
             backfill_coordinator=backfill_coordinator,
         )
         if watches_repository is not None and alerts_repository is not None
+        else None
+    )
+
+    # The DeFi position monitor (Plan 0099, ADR-0093): the LP out-of-range
+    # clock, started and stopped with the app lifespan below — a dedicated
+    # subsystem beside (never inside) the ADR-0055 scheduler. Constructed only
+    # when its repositories exist (persistence wired) AND the caller opted in —
+    # this factory's parameter defaults to False (like the accrual job's)
+    # because the monitor ticks the chain: an engine-wired test app that never
+    # asked for monitoring must never reach the network. The product-level
+    # on-by-default lives in `AppConfig.position_monitor_enabled` (__main__
+    # passes it through). Reads ride the same RPC LP-detail source the
+    # enrichment path uses; config-pinned wallets seed through the discovery
+    # source at startup.
+    position_monitor = (
+        DefiPositionMonitor(
+            watches_repository=position_watches_repository,
+            alerts_repository=position_alerts_repository,
+            lp_detail_source=effective_lp_detail_sources.get("rpc"),
+            event_bus=effective_event_bus,
+            ui_event_buffer=ui_event_buffer,
+            wallet_positions_source=effective_wallet_sources.get("zerion"),
+            pinned_wallets=position_monitor_wallets,
+        )
+        if position_monitor_enabled
+        and position_watches_repository is not None
+        and position_alerts_repository is not None
         else None
     )
 
@@ -517,6 +563,22 @@ def create_app(
                 await task
 
     @asynccontextmanager
+    async def _position_monitor_running() -> AsyncIterator[None]:
+        # The DeFi position monitor rides the lifespan (ADR-0093 via the
+        # ADR-0055 pattern): separate duty, separate clock, same start/cancel
+        # discipline.
+        if position_monitor is None:
+            yield
+            return
+        task = asyncio.create_task(position_monitor.run())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    @asynccontextmanager
     async def _scoring_running() -> AsyncIterator[None]:
         # The recommendation scorer rides the lifespan (ADR-0075 via the ADR-0056
         # pattern): separate duty, separate clock, same start/cancel discipline.
@@ -540,7 +602,12 @@ def create_app(
         # on SIGTERM; this seam is the fix (ADR-0022).
         try:
             if mcp_components is None:
-                async with _scheduler_running(), _accrual_running(), _scoring_running():
+                async with (
+                    _scheduler_running(),
+                    _accrual_running(),
+                    _scoring_running(),
+                    _position_monitor_running(),
+                ):
                     yield
             else:
                 session_manager, _asgi_app = mcp_components
@@ -549,6 +616,7 @@ def create_app(
                     _scheduler_running(),
                     _accrual_running(),
                     _scoring_running(),
+                    _position_monitor_running(),
                 ):
                     yield
         finally:
@@ -637,6 +705,12 @@ def create_app(
     # routes below (watch list, enable/disable, alert history).
     app.state.watches_repository = watches_repository
     app.state.alerts_repository = alerts_repository
+    # The DeFi position monitor + its repositories (Plan 0099, ADR-0093) —
+    # monitor None when disabled or persistence-free; /healthz reads its
+    # heartbeat, the read-only /defi/position_* routes read the repositories.
+    app.state.position_monitor = position_monitor
+    app.state.position_watches_repository = position_watches_repository
+    app.state.position_alerts_repository = position_alerts_repository
 
     @app.middleware("http")
     async def bearer_auth(
@@ -723,6 +797,13 @@ def create_app(
             body["recommendation_scoring"] = recommendation_scoring_job.heartbeat().model_dump(
                 mode="json"
             )
+        if position_monitor is not None:
+            # The DeFi position-monitor heartbeat (Plan 0099, ADR-0093): a
+            # wedged monitor must degrade loudly, and "unreadable — never
+            # evaluated" watches must be visible, not mistaken for in-range.
+            # Liveness + error metadata only — no wallet addresses, no alert
+            # payloads (error strings name exception types and watch ids).
+            body["position_monitor"] = position_monitor.heartbeat().model_dump(mode="json")
         if authorization:
             scheme, _, token = authorization.partition(" ")
             if scheme.lower() == "bearer" and token and secrets.compare_digest(token, secret):
@@ -786,6 +867,13 @@ def create_app(
     # middleware; mounted only when the alerting repositories exist.
     if watches_repository is not None and alerts_repository is not None:
         app.include_router(watches_router)
+
+    # The DeFi position-watch read routes (Plan 0099 phase 2): watch list +
+    # paged out-of-range alert history for the viewer's Alerts surface
+    # (phase 4). Read-only; renderer-bearer-gated by the central middleware;
+    # mounted only when the position-watch repositories exist.
+    if position_watches_repository is not None and position_alerts_repository is not None:
+        app.include_router(position_alerts_router)
 
     # `POST /settings/stop` is always registered (no MCP-secret dependency).
     # Renderer-bearer-gated by the central middleware; an agent on `/mcp`

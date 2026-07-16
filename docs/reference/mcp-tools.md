@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 56 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -15,9 +15,11 @@ The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`btc_cycle_snapshot`](#btccyclesnapshot) | Get the current BTC cycle picture in one call: days since the 2024-04-19 halving, ESTIMATED days to the next (the next-halving date is an estimate, hence the _est suffix), the cycle phase fraction (0.0 just after a halving, 1.0 at the estimated next), Mayer Multiple (close / 200-day SMA) and distance to the 200-week MA (close / SMA1400 - 1) from cached daily BTC-USD bars, plus the latest Fear & Greed and BTC dominance with 7/30-day deltas from the stored metric series, plus on-chain MVRV (market value / realized value) with its trailing full-history percentile. |
 | [`compare_strategies`](#comparestrategies) | Run every reference strategy on one symbol/timeframe/window at its default parameters and return a leaderboard ranked by a chosen metric. |
 | [`compute_wallet_pnl`](#computewalletpnl) | Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction history (Ethereum, Base, Arbitrum, Optimism): per-position and total realized/unrealized P&L under average-cost lots, every leg valued at its own block timestamp - never trusting an aggregator's number. |
+| [`create_position_watch`](#createpositionwatch) | Create a persisted watch over one concentrated-liquidity LP position the sidecar's DeFi position monitor re-reads on-chain on an interval (ADR-0093). |
 | [`create_watch`](#createwatch) | Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). |
 | [`crypto_fear_greed`](#cryptofeargreed) | Get the current crypto Fear & Greed index (Alternative.me): a single 0-100 value with a label (Extreme Fear / Fear / Neutral / Greed / Extreme Greed). |
 | [`defi_fundamentals`](#defifundamentals) | Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g. |
+| [`delete_position_watch`](#deletepositionwatch) | Delete a DeFi position watch by id, including its alert history. |
 | [`delete_watch`](#deletewatch) | Delete a watch by id, including its alert history. |
 | [`derivatives_snapshot`](#derivativessnapshot) | Get the Binance USDS-M derivatives picture for one contract symbol (e.g. |
 | [`detect_chart_patterns`](#detectchartpatterns) | Detect classical chart patterns on the cached bars and draw them on the chart in one call: recognises head & shoulders (+inverse), double top/bottom, ascending/descending/symmetrical triangles, and rising/falling wedges over confirmed swing pivots, returns the typed hits as data (pattern, forming/confirmed state, direction, pivots, defining lines, measured-move target, strength), AND publishes a single `chart.trendlines v1` event carrying one trendline per hit line (dashed = forming, solid = confirmed) onto the chart already showing that symbol/timeframe. |
@@ -35,6 +37,8 @@ The 52 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`highlight_pattern`](#highlightpattern) | Highlight a pattern on a chart. |
 | [`list_alerts`](#listalerts) | Read fired-alert history, newest first, optionally scoped to one watch_id. |
 | [`list_annotations`](#listannotations) | List annotations for a symbol/timeframe over a [start, end] window. |
+| [`list_position_alerts`](#listpositionalerts) | Read fired DeFi position-alert history, newest first, optionally scoped to one watch_id. |
+| [`list_position_watches`](#listpositionwatches) | List the persisted DeFi position watches (id, wallet, chain, pool_address, nft_token_id, dwell_hours, interval_seconds, enabled, source config\|agent, dwell_state), ordered by id. |
 | [`list_watches`](#listwatches) | List the persisted watches (id, symbol, timeframe, kind, params, interval_seconds, enabled, last_state, created_at), ordered by id. |
 | [`market_snapshot`](#marketsnapshot) | Get a point-in-time global market snapshot: live quotes for a fixed basket — S&P 500 (^GSPC), NASDAQ (^IXIC), VIX (^VIX), Bitcoin (BTC-USD), Ethereum (ETH-USD), EUR/USD (EURUSD=X), SPY, and GLD. |
 | [`multi_timeframe_analysis`](#multitimeframeanalysis) | Report whether one symbol's trend is aligned across a ladder of timeframes. |
@@ -195,6 +199,40 @@ Reconstruct a wallet's DeFi profitability from its decoded on-chain transaction 
 
 **Source:** [`src/market_analyser/api/mcp_tools/compute_wallet_pnl.py`](../../src/market_analyser/api/mcp_tools/compute_wallet_pnl.py)
 
+## `create_position_watch`
+
+Create a persisted watch over one concentrated-liquidity LP position the sidecar's DeFi position monitor re-reads on-chain on an interval (ADR-0093). Identify the position by wallet (0x address), chain (ethereum/base/arbitrum/optimism; deep reads need that chain's RPC URL secret), pool_address, and optionally nft_token_id (omit to match the wallet's CL position in the pool). The alert is DWELL-QUALIFIED: it fires exactly once after the position has been continuously out of its tick range for >= dwell_hours (default 6.0), then re-arms when price re-enters the range. A one-tick excursion never fires. Alerts are condition facts (ticks, hours out, uncollected fees) - never rebalance advice (use `recommend` for that). Delivery: `defi.position_alert v1` SSE event (viewer toast + OS notification) + the pending-events poll + `list_position_alerts` history. interval_seconds defaults to 900 (15 min - LP ranges move on the timescale of hours; each check is an RPC read).
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `wallet` | string | yes | — |
+| `chain` | string | yes | — |
+| `pool_address` | string | yes | — |
+| `nft_token_id` | integer \| null | no | `None` |
+| `dwell_hours` | number | no | `6.0` |
+| `interval_seconds` | integer | no | `900` |
+| `enabled` | boolean | no | `True` |
+
+**Returns:** `DefiPositionWatch`
+
+| Field | Type |
+| --- | --- |
+| `id` | integer |
+| `wallet` | string |
+| `chain` | enum["ethereum", "base", "arbitrum", "optimism"] |
+| `pool_address` | string |
+| `nft_token_id` | integer \| null |
+| `dwell_hours` | number |
+| `interval_seconds` | integer |
+| `enabled` | boolean |
+| `source` | enum["config", "agent"] |
+| `created_at` | string (date-time) |
+| `dwell_state` | DwellState |
+
+**Source:** [`src/market_analyser/api/mcp_tools/position_watches.py`](../../src/market_analyser/api/mcp_tools/position_watches.py)
+
 ## `create_watch`
 
 Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). Three kinds: 'indicator_threshold' (params: {indicator, operator, level} with operator one of < <= > >= and indicator one of adx, atr, bb_lower, bb_middle, bb_pct_b, bb_upper, close, macd, macd_hist, macd_signal, minus_di, obv, obv_slope, plus_di, rel_volume, rsi, supertrend, supertrend_direction, vol_pct90, vol_sma20, volume, vwap), 'pattern' (params: {pattern} one of bearish_engulfing, bearish_harami, bullish_engulfing, bullish_harami, dark_cloud_cover, doji, evening_star, hammer, hanging_man, marubozu, morning_star, piercing_line, three_black_crows, three_white_soldiers), and 'strategy_signal' (params: {strategy_id, params} — fires when the strategy emits a fresh signal on the latest closed bar). Alerts are EDGE-TRIGGERED: one alert per false->true transition of the condition, evaluated on closed bars only. interval_seconds defaults to the timeframe's bar period. Alerts are condition facts, never buy/sell advice. Delivery: `alert.triggered v1` SSE event (viewer toast) + the pending-events poll + `list_alerts` history. Supported timeframes: 15m, 1h, 4h, 1d, 1w, 1mo. Optional `note` (<= 500 chars): free-text context for WHY the watch exists (e.g. 'ETH long scenario A - neckline retest'), shown in the viewer's watch list and editable there.
@@ -273,6 +311,24 @@ Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g.
 | `notes` | array[string] |
 
 **Source:** [`src/market_analyser/api/mcp_tools/defi_fundamentals.py`](../../src/market_analyser/api/mcp_tools/defi_fundamentals.py)
+
+## `delete_position_watch`
+
+Delete a DeFi position watch by id, including its alert history. Returns {deleted: bool} - false when the id does not exist (idempotent).
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `watch_id` | integer | yes | — |
+
+**Returns:** `DeletePositionWatchResponse`
+
+| Field | Type |
+| --- | --- |
+| `deleted` | boolean |
+
+**Source:** [`src/market_analyser/api/mcp_tools/position_watches.py`](../../src/market_analyser/api/mcp_tools/position_watches.py)
 
 ## `delete_watch`
 
@@ -661,6 +717,49 @@ List annotations for a symbol/timeframe over a [start, end] window. Boundary-inc
 | `result` | array[Annotation] |
 
 **Source:** [`src/market_analyser/api/mcp_tools/list_annotations.py`](../../src/market_analyser/api/mcp_tools/list_annotations.py)
+
+## `list_position_alerts`
+
+Read fired DeFi position-alert history, newest first, optionally scoped to one watch_id. Each alert is the condition-only out-of-range fact (pool, tick range vs current tick, hours out of range, uncollected fees at fire) - never a recommendation; ask `recommend` for the advisory rebalance call. The inline result is bounded to 100 alerts per page: when more match, partial_reason='too_large' and total_available/offset/returned tell you how to page (call again with offset=offset+returned).
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `watch_id` | integer \| null | no | `None` |
+| `offset` | integer | no | `0` |
+| `max_alerts` | integer \| null | no | `None` |
+
+**Returns:** `ListPositionAlertsResponse`
+
+| Field | Type |
+| --- | --- |
+| `alerts` | array[DefiPositionAlert] |
+| `partial_reason` | string \| null |
+| `message` | string \| null |
+| `total_available` | integer |
+| `offset` | integer |
+| `returned` | integer |
+
+**Source:** [`src/market_analyser/api/mcp_tools/position_watches.py`](../../src/market_analyser/api/mcp_tools/position_watches.py)
+
+## `list_position_watches`
+
+List the persisted DeFi position watches (id, wallet, chain, pool_address, nft_token_id, dwell_hours, interval_seconds, enabled, source config|agent, dwell_state), ordered by id. `enabled_only=true` filters to the watches the monitor is ticking. A watch whose pool the RPC adapter cannot deep-read never fires - the monitor's /healthz heartbeat surfaces it as 'unreadable'.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `enabled_only` | boolean | no | `False` |
+
+**Returns:** `list_position_watchesOutput`
+
+| Field | Type |
+| --- | --- |
+| `result` | array[DefiPositionWatch] |
+
+**Source:** [`src/market_analyser/api/mcp_tools/position_watches.py`](../../src/market_analyser/api/mcp_tools/position_watches.py)
 
 ## `list_watches`
 

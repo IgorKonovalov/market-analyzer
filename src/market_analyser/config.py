@@ -42,6 +42,15 @@ class AppConfig(BaseModel):
     # no value ticking faster.
     recommendation_scoring_enabled: bool = True
     recommendation_scoring_interval_seconds: int = Field(default=3600, ge=1)
+    # DeFi LP position monitor (Plan 0099, ADR-0093): on by default like the
+    # accrual clock — with no watches the monitor reads nothing (a tick over an
+    # empty watch list is a repository read, no network), so a fresh deployment
+    # is inert until a watch exists; the off-switch covers the offline/debug
+    # case. `position_monitor_wallets` is the config-pinned wallet set: each
+    # listed 0x address has ALL its discovered LP pools watched (source=
+    # "config") at startup, beside any agent-created watches.
+    position_monitor_enabled: bool = True
+    position_monitor_wallets: list[str] = Field(default_factory=list)
     # DeFi P&L user-attested dust tokens (Plan 0093 / ADR-0085): `token_key`-form
     # `chain:address` keys the wallet-P&L replay values at $0 instead of failing on
     # a missing price, so a token the user attests is negligible stops blocking an

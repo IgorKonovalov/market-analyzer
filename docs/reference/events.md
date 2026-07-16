@@ -4,7 +4,7 @@
 
 # SSE events
 
-The 27 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
+The 28 SSE envelope kinds published on `/events`, from the event type registry. Each kind carries a versioned, validated payload.
 
 | Event | Summary |
 | --- | --- |
@@ -19,6 +19,7 @@ The 27 SSE envelope kinds published on `/events`, from the event type registry. 
 | [`defi.pnl_completed`](#defipnlcompleted) | `defi.pnl_completed v1`: the reconstruction finished. |
 | [`defi.pnl_failed`](#defipnlfailed) | `defi.pnl_failed v1`: the reconstruction failed with a typed reason (the scan-failed literal set — same closed vocabulary, same neutrality: the precise auth error reaches the caller through the job's re-raised typed exception, not the wire). |
 | [`defi.pnl_started`](#defipnlstarted) | `defi.pnl_started v1`: a wallet P&L reconstruction began (Plan 0035). `wallet` is the **masked** address — the full address never reaches the wire (ADR-0038 discipline). |
+| [`defi.position_alert`](#defipositionalert) | `defi.position_alert v1` (Plan 0099, ADR-0093): a watched concentrated-liquidity LP has been continuously out of its tick range for at least the watch's dwell threshold — fees idle since `out_since`. |
 | [`defi.scan_completed`](#defiscancompleted) | `defi.scan_completed v1`: the scan finished. |
 | [`defi.scan_failed`](#defiscanfailed) | `defi.scan_failed v1`: the scan failed with a typed reason. |
 | [`defi.scan_progress`](#defiscanprogress) | `defi.scan_progress v1`: positions decoded for one chain. |
@@ -266,6 +267,44 @@ wire (ADR-0038 discipline).
 | Name | Type | Required | Default |
 | --- | --- | --- | --- |
 | `wallet` | string | yes | — |
+
+**Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
+
+## `defi.position_alert`
+
+**Version:** 1
+
+`defi.position_alert v1` (Plan 0099, ADR-0093): a watched
+concentrated-liquidity LP has been continuously out of its tick range for
+at least the watch's dwell threshold — fees idle since `out_since`.
+
+**Condition-only** by construction (ADR-0029/0093): where the range is
+(`tick_lower`/`tick_upper`), where the pool's tick is (`current_tick`,
+`in_range=False` at fire), how long the position has been idle
+(`hours_out`), and the forgone-fee context. Deliberately absent:
+direction, action, recenter/widen/exit, size — the advisory rebalance
+layer is a separate downstream consumer, never part of the alert
+(`extra="forbid"` plus the schema test in
+`tests/defi/test_position_monitor.py` pin this). `wallet` is masked
+(`0x1234…abcd`) — full addresses never ride an event payload.
+
+**Payload fields**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `watch_id` | integer | yes | — |
+| `wallet` | string | yes | — |
+| `chain` | string | yes | — |
+| `pool_address` | string | yes | — |
+| `nft_token_id` | integer \| null | yes | — |
+| `fired_at` | string (date-time) | yes | — |
+| `out_since` | string (date-time) | yes | — |
+| `hours_out` | number | yes | — |
+| `tick_lower` | integer | yes | — |
+| `tick_upper` | integer | yes | — |
+| `current_tick` | integer | yes | — |
+| `in_range` | boolean | yes | — |
+| `uncollected_fees` | array[PositionAlertFeeV1] \| null | yes | — |
 
 **Source:** [`src/market_analyser/events/payloads.py`](../../src/market_analyser/events/payloads.py)
 

@@ -494,6 +494,52 @@ class AlertTriggeredPayloadV1(BaseModel):
     values: dict[str, float]
 
 
+class PositionAlertFeeV1(BaseModel):
+    """One uncollected-fee token on a `defi.position_alert v1` — the forgone-fee
+    context (`tokensOwed` words, Plan 0048 semantics: under-reports between
+    pokes). A value shape, kept primitive so the wire vocabulary stays
+    self-contained like the other `defi.*` payloads."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    symbol: str
+    amount: float
+
+
+class DefiPositionAlertPayloadV1(BaseModel):
+    """`defi.position_alert v1` (Plan 0099, ADR-0093): a watched
+    concentrated-liquidity LP has been continuously out of its tick range for
+    at least the watch's dwell threshold — fees idle since `out_since`.
+
+    **Condition-only** by construction (ADR-0029/0093): where the range is
+    (`tick_lower`/`tick_upper`), where the pool's tick is (`current_tick`,
+    `in_range=False` at fire), how long the position has been idle
+    (`hours_out`), and the forgone-fee context. Deliberately absent:
+    direction, action, recenter/widen/exit, size — the advisory rebalance
+    layer is a separate downstream consumer, never part of the alert
+    (`extra="forbid"` plus the schema test in
+    `tests/defi/test_position_monitor.py` pin this). `wallet` is masked
+    (`0x1234…abcd`) — full addresses never ride an event payload."""
+
+    VERSION: ClassVar[int] = 1
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    watch_id: int
+    wallet: str
+    chain: str
+    pool_address: str
+    nft_token_id: int | None
+    fired_at: datetime
+    out_since: datetime
+    hours_out: float
+    tick_lower: int
+    tick_upper: int
+    current_tick: int
+    in_range: bool
+    uncollected_fees: list[PositionAlertFeeV1] | None
+
+
 TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "chart.show": ChartShowPayloadV1,
     "chart.update": ChartUpdatePayloadV1,
@@ -521,6 +567,7 @@ TYPE_REGISTRY: dict[str, type[BaseModel]] = {
     "defi.pnl_started": DefiPnlStartedPayloadV1,
     "defi.pnl_completed": DefiPnlCompletedPayloadV1,
     "defi.pnl_failed": DefiPnlFailedPayloadV1,
+    "defi.position_alert": DefiPositionAlertPayloadV1,
     "alert.triggered": AlertTriggeredPayloadV1,
 }
 
@@ -538,6 +585,7 @@ __all__ = [
     "DefiPnlCompletedPayloadV1",
     "DefiPnlFailedPayloadV1",
     "DefiPnlStartedPayloadV1",
+    "DefiPositionAlertPayloadV1",
     "DefiScanCompletedPayloadV1",
     "DefiScanFailedPayloadV1",
     "DefiScanProgressPayloadV1",
@@ -547,6 +595,7 @@ __all__ = [
     "OhlcvBackfillFailedPayloadV1",
     "OhlcvBackfillStartedPayloadV1",
     "OhlcvBackfilledPayloadV1",
+    "PositionAlertFeeV1",
     "PredictionScreenCompletedPayloadV1",
     "RecommendationCompletedPayloadV1",
     "RecommendationScoredPayloadV1",

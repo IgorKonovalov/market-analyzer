@@ -231,6 +231,10 @@ async def _serve(
         # off-switch and interval reach the lifespan scorer here.
         recommendation_scoring_enabled=config.recommendation_scoring_enabled,
         recommendation_scoring_interval_seconds=config.recommendation_scoring_interval_seconds,
+        # DeFi LP position monitor (Plan 0099, ADR-0093): the config.json
+        # off-switch and the pinned wallet set reach the lifespan monitor here.
+        position_monitor_enabled=config.position_monitor_enabled,
+        position_monitor_wallets=config.position_monitor_wallets,
         # DeFi P&L user-attested dust tokens (Plan 0093, ADR-0085): the config.json
         # list reaches the engine (route + MCP tool) here.
         defi_dust_tokens=config.defi_dust_tokens,
