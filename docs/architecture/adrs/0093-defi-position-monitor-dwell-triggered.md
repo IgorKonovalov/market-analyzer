@@ -1,6 +1,6 @@
 # ADR-0093 — DeFi LP position monitoring runs as a dedicated dwell-triggered scheduler
 
-> **Status:** proposed
+> **Status:** accepted (2026-07-17, at Plan 0099 close — the monitor is live: dwell reducer + `defi.position_alert v1` + MCP watch CRUD shipped `1b018e9`/`1a8df6c`, proven on the real wallet in the phase-5 smoke)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0099-defi-position-out-of-range-monitor](../plans/0099-defi-position-out-of-range-monitor.md) (implements)
 > **Related ADRs:** [ADR-0055](0055-in-sidecar-watch-scheduler.md) (the market-alert scheduler this is a sibling to), [ADR-0016](0016-standalone-sidecar-mode.md) (the long-lived process it rides), [ADR-0017](0017-live-ui-updates-via-sse.md) / [ADR-0094](0094-os-native-notification-transport.md) (delivery), [ADR-0021](0021-renderer-to-agent-feedback.md) (the agent-pollable pending-events path it reuses), [ADR-0029](0029-advisory-recommendation-boundary.md) (the boundary its payloads must not cross), [ADR-0035](0035-defi-domain-placement.md) (the `defi/` domain it lives in)

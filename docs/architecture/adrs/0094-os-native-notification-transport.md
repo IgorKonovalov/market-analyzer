@@ -1,6 +1,6 @@
 # ADR-0094 — OS-native desktop notifications via a renderer→main IPC channel
 
-> **Status:** proposed
+> **Status:** accepted (2026-07-17, at Plan 0099 close — the `notification:show` channel shipped `b403c3c`: main-process `Notification` + typed preload bridge, Zod-validated + length-capped, focused-window suppression asserted)
 > **Date:** 2026-07-13
 > **Related plan(s):** [0099-defi-position-out-of-range-monitor](../plans/0099-defi-position-out-of-range-monitor.md) (first consumer)
 > **Related ADRs:** [ADR-0017](0017-live-ui-updates-via-sse.md) (the SSE delivery this extends; it scoped system notifications as future), [ADR-0016](0016-standalone-sidecar-mode.md) (why "notify while fully closed" stays deferred), [ADR-0008](0008-electron-shell-conventions.md) (the IPC discipline this channel obeys), [ADR-0055](0055-in-sidecar-watch-scheduler.md) / [ADR-0093](0093-defi-position-monitor-dwell-triggered.md) (the alert sources that feed it)
