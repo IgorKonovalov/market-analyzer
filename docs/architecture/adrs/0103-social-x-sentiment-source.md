@@ -1,6 +1,6 @@
 # ADR-0103 — X (Twitter) / social sentiment as a keyed source
 
-> **Status:** proposed
+> **Status:** accepted (2026-07-17, Plan 0108 close — seam shipped inert per the decision; spend paused at close, Reddit-first until X coverage is proven needed)
 > **Date:** 2026-07-15
 > **Amended:** 2026-07-17 — live probe: the $0 LunarCrush tier has zero v4 API access; minimum spend is Individual (see §Amendment)
 > **Related plan(s):** [0108](../plans/0108-social-sentiment-source.md)
