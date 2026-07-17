@@ -134,8 +134,8 @@ const ELEMENT_FALLBACK: Record<ChartStyleElement, string> = {
   obv: '#0891b2',
   ema: '#2563eb',
   sma: '#f97316',
-  markerBullish: '#16a34a',
-  markerBearish: '#dc2626',
+  markerBullish: '#10b981',
+  markerBearish: '#f43f5e',
   markerNeutral: '#64748b',
 }
 

@@ -140,7 +140,7 @@ export const OVERLAY_REGISTRY: Partial<Record<OverlayKind, OverlayDefinition>> =
   // never the generic single-line path — this `compute` returns `[]` and is never
   // the actual draw path (the generic overlay hook skips `ichimoku`).
   ichimoku: {
-    color: '#16a34a',
+    color: '#52c187',
     colorToken: '--ichimoku-span-a',
     compute: () => [],
   },

@@ -190,7 +190,9 @@ export class OverlayReconciler {
     for (const [key, spec] of desiredSt) {
       let entry = supertrendSeries.get(key)
       if (entry === undefined) {
-        const lineOpts = { lineWidth: 2 as const, priceLineVisible: false, lastValueVisible: false }
+        // Width 3 (vs the overlays' 2): supertrend is the flip-signal line and must
+        // read over candles that share its hue family.
+        const lineOpts = { lineWidth: 3 as const, priceLineVisible: false, lastValueVisible: false }
         const up = chart.addSeries(LineSeries, { color: upColor, ...lineOpts })
         const down = chart.addSeries(LineSeries, { color: downColor, ...lineOpts })
         entry = { up, down }

@@ -88,8 +88,8 @@
   --overlay-ema: #2563eb;
   --overlay-sma: #f97316;
   --marker-clicked: #2563eb;
-  --marker-bullish: #16a34a;
-  --marker-bearish: #dc2626;
+  --marker-bullish: #10b981;
+  --marker-bearish: #f43f5e;
   --marker-neutral: #64748b;
 
   /* Ichimoku palette (Plan 0073 / ADR-0067) — light. The five lines plus the
@@ -99,10 +99,10 @@
   --ichimoku-tenkan: #2563eb;
   --ichimoku-kijun: #b91c1c;
   --ichimoku-chikou: #7c3aed;
-  --ichimoku-span-a: #16a34a;
-  --ichimoku-span-b: #dc2626;
-  --ichimoku-cloud-bull: rgba(22, 163, 74, 0.18);
-  --ichimoku-cloud-bear: rgba(220, 38, 38, 0.18);
+  --ichimoku-span-a: #52c187;
+  --ichimoku-span-b: #ea9284;
+  --ichimoku-cloud-bull: rgba(82, 193, 135, 0.2);
+  --ichimoku-cloud-bear: rgba(234, 146, 132, 0.2);
 
   /* Trendline categorical palette (Plan 0067 / ADR-0061): one distinct hue per
    * chart-pattern type so a pattern's lines read as one shape. Light values —
@@ -156,8 +156,8 @@
   /* Chart palette — dark. Brighter lines/candles read against dark surfaces.
    * Plan 0049 phase 12: green/red (matching the bull/bear tokens) for clear
    * up/down legibility, replacing the muted teal. */
-  --chart-up: #4ade80;
-  --chart-down: #f87171;
+  --chart-up: #3ba873;
+  --chart-down: #bd5a51;
   --chart-volume: #334155;
   --overlay-volume-ma: #94a3b8;
   --overlay-vwap: #c084fc;
@@ -165,8 +165,8 @@
   --overlay-ema: #60a5fa;
   --overlay-sma: #fb923c;
   --marker-clicked: #60a5fa;
-  --marker-bullish: #4ade80;
-  --marker-bearish: #f87171;
+  --marker-bullish: #2ee6a8;
+  --marker-bearish: #ff6b9d;
   --marker-neutral: #94a3b8;
 
   /* Ichimoku palette — dark (mirror of the light block; brighter lines, and the
@@ -174,10 +174,10 @@
   --ichimoku-tenkan: #60a5fa;
   --ichimoku-kijun: #f87171;
   --ichimoku-chikou: #b197fc;
-  --ichimoku-span-a: #4ade80;
-  --ichimoku-span-b: #f87171;
-  --ichimoku-cloud-bull: rgba(74, 222, 128, 0.22);
-  --ichimoku-cloud-bear: rgba(248, 113, 113, 0.22);
+  --ichimoku-span-a: #206348;
+  --ichimoku-span-b: #733631;
+  --ichimoku-cloud-bull: rgba(32, 99, 72, 0.3);
+  --ichimoku-cloud-bear: rgba(115, 54, 49, 0.3);
 
   /* Trendline categorical palette — dark (mirror of the light block). Lighter,
    * brighter shades read against the dark chart background. */

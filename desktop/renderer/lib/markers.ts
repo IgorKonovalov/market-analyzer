@@ -33,8 +33,8 @@ export interface ChartMarker {
  * light-theme values; the chart overrides them with theme tokens (Plan 0033
  * phase 4). Kept as the default so non-DOM unit tests stay color-stable. */
 export const DEFAULT_MARKER_COLORS: MarkerColors = {
-  bullish: '#16a34a',
-  bearish: '#dc2626',
+  bullish: '#10b981',
+  bearish: '#f43f5e',
   neutral: '#64748b',
 }
 

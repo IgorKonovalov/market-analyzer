@@ -31,14 +31,14 @@ describe('annotationsToMarkers', () => {
       kind: 'bullish_marker' as const,
       position: 'belowBar',
       shape: 'arrowUp',
-      color: '#16a34a',
+      color: '#10b981',
     },
     {
       name: 'bearish_marker → aboveBar + arrowDown + red',
       kind: 'bearish_marker' as const,
       position: 'aboveBar',
       shape: 'arrowDown',
-      color: '#dc2626',
+      color: '#f43f5e',
     },
   ])('$name', ({ kind, position, shape, color }) => {
     const [marker] = annotationsToMarkers([annotation({ kind })])
