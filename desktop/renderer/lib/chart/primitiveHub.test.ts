@@ -61,8 +61,16 @@ describe('PrimitiveHub — feed methods', () => {
     expect(spy).toHaveBeenCalledWith(divs)
   })
 
+  function fakeTimeScale(range: { from: number; to: number } | null = null) {
+    return {
+      applyOptions: jest.fn(),
+      getVisibleLogicalRange: jest.fn(() => range),
+      setVisibleLogicalRange: jest.fn(),
+    }
+  }
+
   it('reserves trailing axis space for a visible Ichimoku cloud and resets it when gone', () => {
-    const timeScale = { applyOptions: jest.fn() }
+    const timeScale = fakeTimeScale()
     const chart = { timeScale: () => timeScale } as unknown as IChartApi
     const hub = new PrimitiveHub()
     const c = container()
@@ -79,6 +87,46 @@ describe('PrimitiveHub — feed methods', () => {
     // Overlay removed → the reserved offset resets to 0.
     hub.setIchimoku(chart, c, BARS, [], new Set())
     expect(timeScale.applyOptions).toHaveBeenLastCalledWith({ rightOffset: 0 })
+  })
+
+  it('does not re-apply an unchanged rightOffset on reconcile (no viewport jump)', () => {
+    const timeScale = fakeTimeScale()
+    const chart = { timeScale: () => timeScale } as unknown as IChartApi
+    const hub = new PrimitiveHub()
+    const c = container()
+    hub.attach(fakeSeries(), c, colorsFor(c))
+
+    const ichimoku = [{ kind: 'ichimoku' }] as unknown as OverlaySpec[]
+    hub.setIchimoku(chart, c, BARS, ichimoku, new Set())
+    const applies = timeScale.applyOptions.mock.calls.length
+
+    // Same overlays reconciled again (e.g. the user toggled an unrelated
+    // indicator, or bars refreshed) → the time scale must not be touched.
+    hub.setIchimoku(chart, c, BARS, ichimoku, new Set())
+    hub.setIchimoku(chart, c, BARS, ichimoku, new Set())
+    expect(timeScale.applyOptions.mock.calls.length).toBe(applies)
+  })
+
+  it('pins the visible range across a rightOffset change (toggling ichimoku itself)', () => {
+    const range = { from: 12, to: 55 }
+    const timeScale = fakeTimeScale(range)
+    const chart = { timeScale: () => timeScale } as unknown as IChartApi
+    const hub = new PrimitiveHub()
+    const c = container()
+    hub.attach(fakeSeries(), c, colorsFor(c))
+
+    const ichimoku = [{ kind: 'ichimoku' }] as unknown as OverlaySpec[]
+    // Reserve (on), hide (offset back to 0), show again — every apply restores
+    // the pre-apply visible range, so the viewport never moves.
+    hub.setIchimoku(chart, c, BARS, ichimoku, new Set())
+    hub.setIchimoku(chart, c, BARS, ichimoku, new Set(['overlay:ichimoku:na']))
+    hub.setIchimoku(chart, c, BARS, ichimoku, new Set())
+    expect(timeScale.setVisibleLogicalRange.mock.calls.length).toBe(
+      timeScale.applyOptions.mock.calls.length,
+    )
+    for (const call of timeScale.setVisibleLogicalRange.mock.calls) {
+      expect(call[0]).toEqual(range)
+    }
   })
 
   it('drives the candlestick markers plugin, adding the clicked-bar affordance', () => {

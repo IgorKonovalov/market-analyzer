@@ -92,6 +92,9 @@ export class PrimitiveHub {
   // Whether a non-default Ichimoku `rightOffset` is currently reserved, so it resets
   // exactly once when the last Ichimoku overlay goes away.
   private ichimokuReserved = false
+  // The `rightOffset` we last applied (null = never applied), so a reconcile that
+  // doesn't change the required reservation never touches the time scale.
+  private appliedRightOffset: number | null = null
 
   /** Create + attach all five primitives to the freshly-created main series. Order
    * is the creation-effect order (span → trendline → ichimoku → price-divergence →
@@ -165,14 +168,33 @@ export class PrimitiveHub {
     }
     primitive.setGeometries(geometries)
 
+    // Apply the reservation ONLY when the required offset changes, and pin the
+    // visible range across the apply. This reconcile re-runs on every
+    // bars/overlays/hidden change, and lightweight-charts treats a `rightOffset`
+    // apply as a scroll — without both guards the viewport jumped on every
+    // indicator toggle. The reserved space still shows the projected cloud when
+    // the user scrolls to the right edge; it just never moves the view for them.
     if (hasSpec) {
       const offset = geometries.length > 0 ? maxDisplacement : 0
-      chart.timeScale().applyOptions({ rightOffset: offset })
+      if (offset !== this.appliedRightOffset) {
+        this.applyRightOffsetInPlace(chart, offset)
+        this.appliedRightOffset = offset
+      }
       this.ichimokuReserved = offset > 0
     } else if (this.ichimokuReserved) {
-      chart.timeScale().applyOptions({ rightOffset: 0 })
+      this.applyRightOffsetInPlace(chart, 0)
+      this.appliedRightOffset = 0
       this.ichimokuReserved = false
     }
+  }
+
+  /** Change the time scale's `rightOffset` option without moving the viewport:
+   * snapshot the visible logical range, apply, restore. */
+  private applyRightOffsetInPlace(chart: IChartApi, offset: number): void {
+    const timeScale = chart.timeScale()
+    const range = timeScale.getVisibleLogicalRange()
+    timeScale.applyOptions({ rightOffset: offset })
+    if (range !== null) timeScale.setVisibleLogicalRange(range)
   }
 
   /** Feed the price / OBV / oscillator-pane divergence primitives their segments +
@@ -313,5 +335,6 @@ export class PrimitiveHub {
     this.structurePlugin = null
     this.structureSeries = null
     this.ichimokuReserved = false
+    this.appliedRightOffset = null
   }
 }
