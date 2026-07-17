@@ -16,7 +16,13 @@
  */
 import { useEffect, useState } from 'react'
 import type { RefObject } from 'react'
-import type { LineData, IChartApi, MouseEventParams, UTCTimestamp } from 'lightweight-charts'
+import type {
+  ISeriesApi,
+  LineData,
+  IChartApi,
+  MouseEventParams,
+  UTCTimestamp,
+} from 'lightweight-charts'
 
 import type { MainSeries, OverlayEntry } from '../lib/chartSeries'
 import type { ChartMarker } from '../lib/markers'
@@ -24,6 +30,7 @@ import { PatternSpanPrimitive, markerHighlightSpan } from '../lib/spans'
 import { TrendlinePrimitive } from '../lib/trendlines'
 import { DivergencePrimitive } from '../lib/divergences'
 import type { DrawingPrimitive } from '../lib/drawings'
+import type { IchimokuPrimitive } from '../lib/ichimoku'
 import {
   type HoverableLevel,
   type OverlayReading,
@@ -31,10 +38,12 @@ import {
   type TooltipContent,
   divergenceTooltipText,
   drawingAdvisoryTooltip,
+  ichimokuTooltipLines,
   levelTooltipText,
   nearestLevelAtY,
   overlayLabel,
   structureTooltipText,
+  supertrendReading,
   tooltipAtTime,
   trendlineTooltipText,
 } from '../lib/tooltip'
@@ -58,6 +67,15 @@ export interface UseChartTooltipParams {
    * time-keyed structure hover (Plan 0105 phase 7) — a toggled-off layer
    * publishes none, so it shows no hover (the `drawnMarkers` gate, mirrored). */
   structureMarkers?: ReadonlyArray<StructureMarkerPoint>
+  /** The supertrend up/down masked series, for the flip line's per-bar hover
+   * reading (value + active band). Optional: charts without supertrend skip it. */
+  supertrendSeriesRef?: RefObject<Map<string, { up: ISeriesApi<'Line'>; down: ISeriesApi<'Line'> }>>
+  /** The ichimoku primitive, for the near-line / inside-cloud hover read-out. */
+  ichimokuPrimitiveRef?: RefObject<IchimokuPrimitive | null>
+  /** Visible agent `price_line` S/R levels for the nearest-level-by-Y hover —
+   * merged with the fib/pivot structure levels so hovering a resistance line
+   * shows its label + price. */
+  priceLineLevels?: ReadonlyArray<HoverableLevel>
   rebuildToken: unknown
 }
 
@@ -73,6 +91,9 @@ export function useChartTooltip(
     structureLevels,
     seriesRef,
     structureMarkers,
+    supertrendSeriesRef,
+    ichimokuPrimitiveRef,
+    priceLineLevels,
     rebuildToken,
   }: UseChartTooltipParams,
 ): TooltipState | null {
@@ -100,6 +121,15 @@ export function useChartTooltip(
           if (typeof value === 'number') {
             readings.push({ label: overlayLabel(spec), value })
           }
+        }
+        // Supertrend's flip line: whichever masked series (up/down) carries a
+        // value at the hovered bar names the active band.
+        for (const pair of supertrendSeriesRef?.current?.values() ?? []) {
+          const upValue = (param.seriesData.get(pair.up) as LineData | undefined)?.value
+          const downValue = (param.seriesData.get(pair.down) as LineData | undefined)?.value
+          if (typeof upValue === 'number') readings.push(supertrendReading(upValue, 'up'))
+          else if (typeof downValue === 'number')
+            readings.push(supertrendReading(downValue, 'down'))
         }
       }
       // The DRAWN markers on the hovered bar (only enabled groups) — drives both
@@ -133,14 +163,23 @@ export function useChartTooltip(
       // hit-test primitives. `priceToCoordinate` maps in the price pane, the
       // pane every structure level lives on.
       const mainSeries = seriesRef?.current ?? null
+      const hoverableLevels = [...(structureLevels ?? []), ...(priceLineLevels ?? [])]
       const hoveredLevel =
-        mainSeries !== null && structureLevels !== undefined && structureLevels.length > 0
-          ? nearestLevelAtY(param.point.y, structureLevels, (price) => {
+        mainSeries !== null && hoverableLevels.length > 0
+          ? nearestLevelAtY(param.point.y, hoverableLevels, (price) => {
               const coordinate = mainSeries.priceToCoordinate?.(price)
               return coordinate == null ? null : coordinate
             })
           : null
       const levels = hoveredLevel ? [levelTooltipText(hoveredLevel)] : []
+      // Ichimoku under the cursor: near one of the five lines or inside the
+      // cloud → the stance line + the numeric readings at that logical position.
+      const ichimokuReadout =
+        ichimokuPrimitiveRef?.current?.hoverReadings(param.point.x, param.point.y) ?? null
+      const ichimokuContent =
+        ichimokuReadout !== null ? ichimokuTooltipLines(ichimokuReadout) : null
+      const ichimoku = ichimokuContent?.stance != null ? [ichimokuContent.stance] : []
+      if (ichimokuContent !== null) readings.push(...ichimokuContent.readings)
       // Agent-position advisory under the cursor (Plan 0104 phase 4): the drawing
       // primitive returns the hovered spec; an agent position with a rationale
       // yields the `Advisory — <rationale>` line (ADR-0029/0099).
@@ -157,7 +196,10 @@ export function useChartTooltip(
               .map((m) => structureTooltipText(m.label, locale))
           : []
       const markers = timeContent?.markers ?? []
-      const overlays = timeContent?.overlays ?? []
+      // `readings` (not `timeContent.overlays`) so the ichimoku readings survive
+      // past the last bar, where `param.time` is undefined but the displaced
+      // cloud still renders.
+      const overlays = readings
       const markerMeaning = timeContent?.markerMeaning
       if (
         markers.length === 0 &&
@@ -166,7 +208,8 @@ export function useChartTooltip(
         divergences.length === 0 &&
         levels.length === 0 &&
         structures.length === 0 &&
-        advisory.length === 0
+        advisory.length === 0 &&
+        ichimoku.length === 0
       ) {
         setTooltip(null)
         return
@@ -180,6 +223,7 @@ export function useChartTooltip(
           levels,
           structures,
           advisory,
+          ichimoku,
           markerMeaning,
         },
         x: param.point.x,
@@ -200,6 +244,9 @@ export function useChartTooltip(
     structureLevels,
     seriesRef,
     structureMarkers,
+    supertrendSeriesRef,
+    ichimokuPrimitiveRef,
+    priceLineLevels,
     rebuildToken,
     locale,
   ])

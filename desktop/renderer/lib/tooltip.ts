@@ -22,7 +22,7 @@ import type { ChartMarker } from './markers'
 import { candlePatternDisplayName } from './candleGroups'
 import { patternDisplayName, trendlineStateLabel } from './trendlines'
 import { divergenceGlossaryKey, divergenceLabel } from './divergences'
-import { isPositionKind } from './positions'
+import type { IchimokuHoverReadout } from './ichimoku'
 import { localize, term } from '../glossary/types'
 import { t, type Locale } from './i18n'
 
@@ -61,6 +61,10 @@ export interface TooltipContent {
    * for a hovered agent-placed position box (Plan 0104 phase 4 / ADR-0029/0099).
    * Absent when the cursor isn't over one, or it carries no rationale. */
   advisory?: string[]
+  /** Hovered ichimoku read-out — the cloud-stance line when the cursor is inside
+   * the cloud or near one of the five lines (the numeric line values ride the
+   * `overlays` readings). Absent when not hovering ichimoku ink. */
+  ichimoku?: string[]
 }
 
 /** A DRAWN market-structure marker exposed for the time-keyed hover match
@@ -150,17 +154,46 @@ export function divergenceTooltipText(divergence: Divergence, locale: Locale = '
 
 /**
  * Advisory read-out for a hovered drawing (Plan 0104 phase 4): the `Advisory —
- * <rationale>` line for an AGENT-placed position box that carries a rationale
- * (ADR-0029/0099). Returns `null` for a user drawing, a non-position kind, or a
- * position with no rationale — those show no advisory line. `locale` is accepted
+ * <rationale>` line for ANY agent-placed drawing that carries a rationale
+ * (ADR-0029/0099 — positions must; other kinds may, and when they do the hover
+ * discloses why the line was placed). Returns `null` for a user drawing or a
+ * drawing with no rationale — those show no advisory line. `locale` is accepted
  * for signature symmetry with the other tooltip builders; `t()` resolves the
  * active locale (the same one `useLocale` drives the re-render on).
  */
 export function drawingAdvisoryTooltip(spec: DrawingSpec, _locale: Locale = 'en'): string | null {
-  if (spec.provenance !== 'agent' || !isPositionKind(spec.kind)) return null
+  if (spec.provenance !== 'agent') return null
   const rationale = spec.rationale?.trim()
   if (!rationale) return null
   return t('chart.draw.advisoryTooltip', { rationale })
+}
+
+/** Hovered supertrend reading: the flip line's value at the bar plus which band
+ * is active — the up (support) or down (resistance) masked series. */
+export function supertrendReading(value: number, direction: 'up' | 'down'): OverlayReading {
+  return {
+    label: direction === 'up' ? 'Supertrend (uptrend)' : 'Supertrend (downtrend)',
+    value,
+  }
+}
+
+/** Hovered ichimoku content: the numeric line readings at the pointer's logical
+ * position (only lines that plot there) + the cloud-stance text line. */
+export function ichimokuTooltipLines(readout: IchimokuHoverReadout): {
+  readings: OverlayReading[]
+  stance: string | null
+} {
+  const readings: OverlayReading[] = []
+  if (readout.tenkan !== undefined) readings.push({ label: 'Tenkan', value: readout.tenkan })
+  if (readout.kijun !== undefined) readings.push({ label: 'Kijun', value: readout.kijun })
+  if (readout.spanA !== undefined) readings.push({ label: 'Senkou A', value: readout.spanA })
+  if (readout.spanB !== undefined) readings.push({ label: 'Senkou B', value: readout.spanB })
+  if (readout.chikou !== undefined) readings.push({ label: 'Chikou', value: readout.chikou })
+  const stance =
+    readout.cloud !== undefined
+      ? `Ichimoku cloud — ${readout.cloud === 'bullish' ? 'bullish (Senkou A above B)' : 'bearish (Senkou A below B)'}`
+      : null
+  return { readings, stance }
 }
 
 /** Default gap (px) between the crosshair and the tooltip box. */

@@ -9,10 +9,12 @@ import type { DrawingSpec, OverlaySpec, TrendlineSpec } from '../types/events'
 import { localize, term } from '../glossary/types'
 import {
   drawingAdvisoryTooltip,
+  ichimokuTooltipLines,
   levelTooltipText,
   nearestLevelAtY,
   overlayLabel,
   structureTooltipText,
+  supertrendReading,
   tooltipAtTime,
   tooltipPosition,
   trendlineTooltipText,
@@ -307,7 +309,8 @@ describe('drawingAdvisoryTooltip (Plan 0104 phase 4, ADR-0029/0099)', () => {
     expect(drawingAdvisoryTooltip({ ...agentPos('mine'), provenance: 'user' })).toBeNull()
   })
 
-  it('is null for a non-position agent drawing', () => {
+  it('returns the Advisory line for a NON-position agent drawing carrying a rationale', () => {
+    // A level/line's rationale is the "why it was placed" hover context.
     const line: DrawingSpec = {
       kind: 'hline',
       points: [{ ts: '2026-05-01T00:00:00Z', price: 100 }],
@@ -315,6 +318,63 @@ describe('drawingAdvisoryTooltip (Plan 0104 phase 4, ADR-0029/0099)', () => {
       provenance: 'agent',
       id: 'l1',
     }
+    expect(drawingAdvisoryTooltip(line)).toBe('Advisory — resistance')
+  })
+
+  it('is null for a non-position agent drawing with no rationale', () => {
+    const line: DrawingSpec = {
+      kind: 'hline',
+      points: [{ ts: '2026-05-01T00:00:00Z', price: 100 }],
+      provenance: 'agent',
+      id: 'l2',
+    }
     expect(drawingAdvisoryTooltip(line)).toBeNull()
+  })
+})
+
+describe('supertrendReading', () => {
+  it('names the active band with the value', () => {
+    expect(supertrendReading(101.5, 'up')).toEqual({
+      label: 'Supertrend (uptrend)',
+      value: 101.5,
+    })
+    expect(supertrendReading(99.25, 'down')).toEqual({
+      label: 'Supertrend (downtrend)',
+      value: 99.25,
+    })
+  })
+})
+
+describe('ichimokuTooltipLines', () => {
+  it('maps present line values to readings and derives the cloud stance', () => {
+    const { readings, stance } = ichimokuTooltipLines({
+      tenkan: 10,
+      kijun: 11,
+      spanA: 12,
+      spanB: 9,
+      chikou: 10.5,
+      cloud: 'bullish',
+    })
+    expect(readings).toEqual([
+      { label: 'Tenkan', value: 10 },
+      { label: 'Kijun', value: 11 },
+      { label: 'Senkou A', value: 12 },
+      { label: 'Senkou B', value: 9 },
+      { label: 'Chikou', value: 10.5 },
+    ])
+    expect(stance).toBe('Ichimoku cloud — bullish (Senkou A above B)')
+  })
+
+  it('omits absent lines and ships no stance without both spans', () => {
+    const { readings, stance } = ichimokuTooltipLines({
+      tenkan: undefined,
+      kijun: undefined,
+      spanA: 12,
+      spanB: undefined,
+      chikou: undefined,
+      cloud: undefined,
+    })
+    expect(readings).toEqual([{ label: 'Senkou A', value: 12 }])
+    expect(stance).toBeNull()
   })
 })

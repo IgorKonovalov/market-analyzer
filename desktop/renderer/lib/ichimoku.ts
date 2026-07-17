@@ -66,10 +66,10 @@ export const ICHIMOKU_COLOR_FALLBACK: IchimokuColors = {
   tenkan: '#2563eb',
   kijun: '#b91c1c',
   chikou: '#7c3aed',
-  spanA: '#16a34a',
-  spanB: '#dc2626',
-  cloudBull: 'rgba(22, 163, 74, 0.18)',
-  cloudBear: 'rgba(220, 38, 38, 0.18)',
+  spanA: '#52c187',
+  spanB: '#ea9284',
+  cloudBull: 'rgba(82, 193, 135, 0.2)',
+  cloudBear: 'rgba(234, 146, 132, 0.2)',
 }
 
 /** Resolve the Ichimoku palette off the themed DOM, falling back to the light
@@ -161,6 +161,19 @@ export function computeIchimoku(
 export interface IchimokuLinePoint {
   logical: number
   value: number
+}
+
+/** Hovered ichimoku read-out: the values PLOTTED at the pointer's logical
+ * position (each `undefined` when that line has no point there) plus the cloud
+ * stance. Fields are `| undefined` (not optional) so builders can assign
+ * lookups directly. */
+export interface IchimokuHoverReadout {
+  tenkan: number | undefined
+  kijun: number | undefined
+  spanA: number | undefined
+  spanB: number | undefined
+  chikou: number | undefined
+  cloud: 'bullish' | 'bearish' | undefined
 }
 
 /** A cloud sample: the two Senkou spans at one displaced logical position. */
@@ -414,6 +427,64 @@ export class IchimokuPrimitive implements ISeriesPrimitive<Time> {
   setVisible(visible: boolean): void {
     this.visible = visible
     this.requestUpdate?.()
+  }
+
+  /**
+   * Hover read-out at a pixel point: resolve the pointer's logical index, gate on
+   * proximity to one of the five lines (`thresholdPx`) or the pointer being inside
+   * the cloud, and return every line value plotted at that logical position plus
+   * the cloud stance (A vs B). `null` when the pointer isn't over any ichimoku
+   * ink, the primitive is hidden, or the chart isn't attached yet.
+   */
+  hoverReadings(x: number, y: number, thresholdPx = 5): IchimokuHoverReadout | null {
+    const timeScale = this.chart?.timeScale()
+    const series = this.series
+    if (!timeScale || !series || !this.visible) return null
+    // Degrade to no-hover on a partial chart double (jsdom tests mock timeScale
+    // narrowly) — same tolerance as the other primitives' optional-API reads.
+    if (typeof timeScale.coordinateToLogical !== 'function') return null
+    const logicalRaw = timeScale.coordinateToLogical(x)
+    if (logicalRaw === null) return null
+    const logical = Math.round(logicalRaw)
+    const yOf = (price: number): number | null => series.priceToCoordinate(price)
+    for (const geom of this.geometries) {
+      const at = (pts: ReadonlyArray<IchimokuLinePoint>): number | undefined =>
+        pts.find((p) => p.logical === logical)?.value
+      const tenkan = at(geom.tenkan)
+      const kijun = at(geom.kijun)
+      const spanA = at(geom.spanA)
+      const spanB = at(geom.spanB)
+      const chikou = at(geom.chikou)
+      const near = (value: number | undefined): boolean => {
+        if (value === undefined) return false
+        const lineY = yOf(value)
+        return lineY !== null && Math.abs(lineY - y) <= thresholdPx
+      }
+      let inCloud = false
+      if (spanA !== undefined && spanB !== undefined) {
+        const ya = yOf(spanA)
+        const yb = yOf(spanB)
+        if (ya !== null && yb !== null) inCloud = y >= Math.min(ya, yb) && y <= Math.max(ya, yb)
+      }
+      if (
+        !inCloud &&
+        !near(tenkan) &&
+        !near(kijun) &&
+        !near(spanA) &&
+        !near(spanB) &&
+        !near(chikou)
+      ) {
+        continue
+      }
+      const cloud =
+        spanA !== undefined && spanB !== undefined
+          ? spanA > spanB
+            ? ('bullish' as const)
+            : ('bearish' as const)
+          : undefined
+      return { tenkan, kijun, spanA, spanB, chikou, cloud }
+    }
+    return null
   }
 
   /** Current pixel fills + lines (media coords). Empty until attached. */

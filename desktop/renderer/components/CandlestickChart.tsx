@@ -26,7 +26,7 @@
  * and the renderer-side specs assert against that — NOT the reducer's overlay list —
  * so a render regression that loses a series cannot pass.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import { t } from '../lib/i18n'
 import { useChartGestures } from '../hooks/useChartGestures'
@@ -41,6 +41,7 @@ import { ChartToolbar } from './ChartToolbar'
 import { ChartTooltip } from './ChartTooltip'
 import { MarketStructureBadge } from './MarketStructureBadge'
 import { MARKET_STRUCTURE_LAYER_ID } from '../lib/chartSeries'
+import { priceLineId } from '../lib/priceLines'
 import { formatRangeLabel } from '../lib/chartAxis'
 import { useDrawingTools } from '../hooks/useDrawingTools'
 import { useLayersControl } from '../hooks/useLayersControl'
@@ -343,6 +344,15 @@ export function CandlestickChart({
   // Hover tooltip (Plan 0047 phase 8 / Plan 0067 phase 2): crosshair-driven
   // marker/overlay/trendline read-out + pattern-bar outline (Plan 0072 phase 8:
   // `useChartTooltip` owns the state and returns it).
+  // Visible agent `price_line` levels feed the nearest-level hover, so a
+  // resistance/support line discloses its label + price.
+  const priceLineLevels = useMemo(
+    () =>
+      effectiveOverlays
+        .filter((o) => o.kind === 'price_line' && o.price != null && !hidden.has(priceLineId(o)))
+        .map((o) => ({ title: o.label ?? 'Level', price: o.price as number })),
+    [effectiveOverlays, hidden],
+  )
   const tooltip = useChartTooltip(
     controller.chartRef,
     controller.overlaySeriesRef,
@@ -355,6 +365,9 @@ export function CandlestickChart({
       structureLevels,
       seriesRef: controller.seriesRef,
       structureMarkers: structureMarkerPoints,
+      supertrendSeriesRef: controller.supertrendSeriesRef,
+      ichimokuPrimitiveRef: controller.ichimokuPrimitiveRef,
+      priceLineLevels,
       rebuildToken: candleType,
     },
   )
