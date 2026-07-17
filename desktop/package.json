@@ -1,6 +1,6 @@
 {
   "name": "@market-analyser/desktop",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "private": true,
   "packageManager": "pnpm@11.1.2",
   "description": "Electron + React desktop shell for the market-analyser sidecar.",
