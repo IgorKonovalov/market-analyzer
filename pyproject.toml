@@ -10,7 +10,7 @@ dependencies = [
     "alembic==1.18.4",
     "fastapi==0.136.1",
     "feedparser==6.0.11",
-    "mcp==1.27.1",
+    "mcp==1.28.1",
     "psutil==7.2.2",
     "pydantic==2.13.3",
     "python-dotenv==1.2.2",
