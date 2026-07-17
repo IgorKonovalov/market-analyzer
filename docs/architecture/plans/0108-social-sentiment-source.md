@@ -1,6 +1,6 @@
 # 0108 — X / social sentiment source
 
-> **Status:** approved
+> **Status:** implemented (phases 1–2, `4a98cbe` + `104b8ac`, 2026-07-17) — pending close ceremony; phase 3 gated on a funded key (see phase-3 amendment)
 > **Created:** 2026-07-15
 > **Owner skill(s):** dev, human
 > **Related ADRs:** [0103](../adrs/0103-social-x-sentiment-source.md) (paired, accepts at close), [0031](../adrs/0031-data-source-adapter-contract.md), [0019](../adrs/0019-external-http-adapter-resilience.md), [0038](../adrs/0038-third-party-api-key-storage.md), [0029](../adrs/0029-advisory-recommendation-boundary.md), [0098](../adrs/0098-reddit-keyless-crowd-sentiment.md)
@@ -51,6 +51,7 @@ flowchart LR
 
 ### Phase 3 — Live smoke (deferred until a key is funded)
 - **Owner skill:** human
+> **Amended 2026-07-17 ([ADR-0103 §Amendment](../adrs/0103-social-x-sentiment-source.md)):** "a funded key" means an **Individual ($90/mo) or higher** LunarCrush subscription — a live probe showed the $0 tier carries zero v4 API access (nine endpoint families, all HTTP 402 "Individual or higher"). A first smoke attempt on the $0 key (2026-07-17) proved the honest-empty degrade live on BTC + AERO (empty result, no note — key present, upstream 402) but could not attest coherent sentiment, so the phase remains outstanding until the spend is funded — or the user declines the spend, in which case the X-coverage question returns to architect and Reddit (Plan 0111) stays the $0 crowd path. Still does not gate close.
 - **What:** with a funded LunarCrush key in `secrets.json`, run `sentiment(source="x", symbol="BTC")` and `sentiment(source="x", symbol="AERO")` against the live sidecar. Verify the majors score coherently and check whether the **small-cap the user holds (AERO)** has usable coverage or comes back thin/empty — the coverage question ADR-0103 flags.
 - **Files touched:** none (smoke).
 - **Done when:** user-attested that the tool returns coherent social sentiment for majors, with an honest read on small-cap coverage. **This phase does not gate the plan's close** — phases 1–2 ship the seam; phase 3 runs whenever a key is funded.
