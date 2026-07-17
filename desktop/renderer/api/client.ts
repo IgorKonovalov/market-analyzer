@@ -39,6 +39,8 @@ import type { ScanPatternsResponse } from '../types/sidecar/scan-patterns-respon
 import type { SseTicketResponse } from '../types/sidecar/sse-ticket-response'
 import type { SymbolInfo } from '../types/sidecar/symbol-info'
 import type { AlertsPage } from '../types/sidecar/alerts-page'
+import type { PositionAlertsPage } from '../types/sidecar/position-alerts-page'
+import type { PositionWatchOut } from '../types/sidecar/position-watch-out'
 import type { WatchOut } from '../types/sidecar/watch-out'
 import type { WalletPnlResponse } from '../types/defiPnl'
 
@@ -429,6 +431,32 @@ export const api = {
     if (params.limit !== undefined) search.set('limit', String(params.limit))
     const query = search.toString()
     return callJson<AlertsPage>(query ? `/alerts?${query}` : '/alerts')
+  },
+  /**
+   * The persisted DeFi position watches (Plan 0099, ADR-0093). Read-only:
+   * position watches are config-pinned or agent-created; the viewer only
+   * lists. Wallets arrive masked. Renderer-bearer-gated
+   * `GET /defi/position_watches`.
+   */
+  getPositionWatches(): Promise<PositionWatchOut[]> {
+    return callJson<PositionWatchOut[]>('/defi/position_watches')
+  },
+  /**
+   * Newest-first DeFi out-of-range alert history (Plan 0099, ADR-0093).
+   * Renderer-bearer-gated `GET /defi/position_alerts`; each row is the
+   * condition-only out-of-range fact (ticks, hours out) — never advice.
+   */
+  getPositionAlerts(
+    params: { watchId?: number; offset?: number; limit?: number } = {},
+  ): Promise<PositionAlertsPage> {
+    const search = new URLSearchParams()
+    if (params.watchId !== undefined) search.set('watch_id', String(params.watchId))
+    if (params.offset !== undefined) search.set('offset', String(params.offset))
+    if (params.limit !== undefined) search.set('limit', String(params.limit))
+    const query = search.toString()
+    return callJson<PositionAlertsPage>(
+      query ? `/defi/position_alerts?${query}` : '/defi/position_alerts',
+    )
   },
   getMcpSecret(): Promise<McpSecretRecord> {
     return callJson<McpSecretRecord>('/settings/mcp-secret')

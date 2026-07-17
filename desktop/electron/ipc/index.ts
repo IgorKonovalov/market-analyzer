@@ -8,10 +8,20 @@ import { registerAppHandlers, cleanupAppHandlers } from './appHandlers'
 import { registerSidecarHandlers, cleanupSidecarHandlers } from './sidecarHandlers'
 import { registerDialogHandlers, cleanupDialogHandlers } from './dialogHandlers'
 import { registerShellHandlers, cleanupShellHandlers } from './shellHandlers'
+import {
+  registerNotificationHandlers,
+  cleanupNotificationHandlers,
+  type GetMainWindow,
+} from './notificationHandlers'
 
 export interface IpcDeps {
   supervisor: SidecarSupervisor
   info: SidecarInfo
+  /** Live main-window getter (Plan 0099 / ADR-0094) — the notification
+   * handler reads focus state and focuses on click through this; a getter
+   * (not a captured reference) because handlers register before the window
+   * is created in `main.ts`. */
+  getMainWindow: GetMainWindow
 }
 
 export function registerIpcHandlers(deps: IpcDeps): void {
@@ -19,6 +29,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   registerSidecarHandlers(deps.supervisor)
   registerDialogHandlers()
   registerShellHandlers()
+  registerNotificationHandlers(deps.getMainWindow)
 }
 
 export function cleanupServices(): void {
@@ -26,4 +37,5 @@ export function cleanupServices(): void {
   cleanupSidecarHandlers()
   cleanupDialogHandlers()
   cleanupShellHandlers()
+  cleanupNotificationHandlers()
 }

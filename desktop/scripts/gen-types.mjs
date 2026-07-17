@@ -60,6 +60,11 @@ const EMIT = new Set([
   'WatchOut',
   'AlertOut',
   'AlertsPage',
+  // Plan 0099 phase 4: the DeFi position-watch read surface the Alerts view's
+  // DeFi panel consumes (GET /defi/position_watches + /defi/position_alerts).
+  'PositionWatchOut',
+  'PositionAlertOut',
+  'PositionAlertsPage',
   'SseTicketResponse',
   // Plan 0080 phase 5: the advisor track-record aggregate the renderer reads via
   // GET /track_record. GetTrackRecordResponse nests TrackRecord (+ its

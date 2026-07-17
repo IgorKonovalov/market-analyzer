@@ -39,6 +39,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { api, subscribeToConfigChanges } from '../api/client'
 import { parseAlertTriggered } from '../schemas/alertTriggered'
+import { parseDefiPositionAlert } from '../schemas/defiPositionAlert'
 import { chartAnnotationsPayloadSchema } from '../schemas/chartAnnotations'
 import { chartDivergencesPayloadSchema } from '../schemas/chartDivergences'
 import { forecastCompletedPayloadSchema } from '../schemas/forecastCompleted'
@@ -56,6 +57,7 @@ import type {
   ChartShowPayloadV1,
   ChartTrendlinesPayloadV1,
   ChartUpdatePayloadV1,
+  DefiPositionAlertPayloadV1,
   Envelope,
   ForecastCompletedPayloadV1,
   OhlcvBackfilledPayloadV1,
@@ -94,6 +96,7 @@ export interface EventStreamHandlers {
   onOhlcvBackfillFailed?: (payload: OhlcvBackfillFailedPayloadV1) => void
   onUpdateDropped?: () => void
   onAlertTriggered?: (payload: AlertTriggeredPayloadV1) => void
+  onDefiPositionAlert?: (payload: DefiPositionAlertPayloadV1) => void
 }
 
 export interface UseEventStreamResult {
@@ -124,6 +127,7 @@ const KNOWN_VERSIONS: Record<string, number> = {
   'ohlcv.backfilled': 1,
   'ohlcv.backfill_failed': 1,
   'alert.triggered': 1,
+  'defi.position_alert': 1,
 }
 
 // Phase 4.4 failure-driven recovery thresholds. 3 errors within a 10-second
@@ -482,6 +486,14 @@ export function dispatchEnvelope(envelope: Envelope<unknown>, handlers: EventStr
       // logged warning inside `parseAlertTriggered`, never rendered.
       const alert = parseAlertTriggered(envelope.payload)
       if (alert !== null) handlers.onAlertTriggered?.(alert)
+      return
+    }
+    case 'defi.position_alert': {
+      // Zod-validated at the boundary (Plan 0099 phase 4): a malformed payload
+      // is dropped with a logged warning inside `parseDefiPositionAlert` —
+      // never rendered and never forwarded to the OS-notification bridge.
+      const positionAlert = parseDefiPositionAlert(envelope.payload)
+      if (positionAlert !== null) handlers.onDefiPositionAlert?.(positionAlert)
       return
     }
     case 'chart.update_dropped':

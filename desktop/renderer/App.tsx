@@ -21,6 +21,8 @@ import { useEffect, useReducer, useState } from 'react'
 
 import { notifyAlert } from './handlers/alertBus'
 import { notifyBackfill } from './handlers/backfillBus'
+import { notifyDefiPositionAlert } from './handlers/defiPositionAlertBus'
+import { defiAlertMessage } from './lib/defiPositionAlert'
 import { chartReducer, initialChartState, DEFAULT_LOOKBACK_DAYS } from './handlers/chartHandlers'
 import { notifyRunCompleted } from './handlers/runCompletedBus'
 import { useBacktestResult } from './hooks/useBacktestResult'
@@ -238,6 +240,18 @@ export function App(): JSX.Element {
     // Plan 0060: validated alert payloads fan out on the alertBus — the
     // AlertToaster (any view) and AlertsView's live-prepend both subscribe.
     onAlertTriggered: (payload) => notifyAlert(payload),
+    // Plan 0099 phase 4 (ADR-0094): a DeFi position alert fans out in-app
+    // (toast + Alerts view DeFi panel) AND asks main for an OS notification.
+    // Main shows it only when the window is UNFOCUSED — the focused case has
+    // the toast, so the same event never double-signals. Condition text only.
+    onDefiPositionAlert: (payload) => {
+      notifyDefiPositionAlert(payload)
+      void window.api.notification
+        .show({ title: t('alerts.defi.osTitle'), body: defiAlertMessage(payload) })
+        .catch((err: unknown) => {
+          console.warn('[App] OS notification failed', err)
+        })
+    },
     onUpdateDropped: () => {
       console.warn('[App] chart.update_dropped — sidecar queue was full')
     },

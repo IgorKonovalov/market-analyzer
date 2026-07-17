@@ -8,12 +8,14 @@ import { appApi } from './api/app'
 import { sidecarApi } from './api/sidecar'
 import { dialogApi } from './api/dialog'
 import { shellApi } from './api/shell'
+import { notificationApi } from './api/notification'
 
 const api = {
   app: appApi,
   sidecar: sidecarApi,
   dialog: dialogApi,
   shell: shellApi,
+  notification: notificationApi,
 } as const
 
 contextBridge.exposeInMainWorld('api', api)

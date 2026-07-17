@@ -22,12 +22,15 @@ import { useEffect, useState } from 'react'
 
 import { api, ApiError } from '../api/client'
 import { subscribeAlerts } from '../handlers/alertBus'
+import { subscribeDefiPositionAlerts } from '../handlers/defiPositionAlertBus'
+import { shortAddress } from '../lib/defiPositionAlert'
 import { formatDateTime } from '../lib/format'
 import { t } from '../lib/i18n'
 import { formatWatchCondition } from '../lib/watchCondition'
 import type { AlertOut } from '../types/sidecar/alert-out'
+import type { PositionAlertOut } from '../types/sidecar/position-alert-out'
 import type { WatchOut } from '../types/sidecar/watch-out'
-import type { AlertTriggeredPayloadV1 } from '../types/events'
+import type { AlertTriggeredPayloadV1, DefiPositionAlertPayloadV1 } from '../types/events'
 import styles from './AlertsView.module.css'
 
 /** Mirror of the sidecar's note cap — the input refuses what the API would 422. */
@@ -82,6 +85,46 @@ export function rowFromLivePayload(payload: AlertTriggeredPayloadV1): AlertRow {
   }
 }
 
+/** One normalized DeFi out-of-range row (Plan 0099 phase 4) — fetched history
+ * and live SSE fires render identically. Condition facts only (ADR-0029). */
+interface DefiAlertRow {
+  /** `(watch_id, fired_at)` — dedup key between the live and fetched sources. */
+  key: string
+  firedAt: string
+  chain: string
+  poolAddress: string
+  hoursOut: number
+  tickLower: number
+  tickUpper: number
+  currentTick: number
+}
+
+export function rowFromPositionAlertOut(alert: PositionAlertOut): DefiAlertRow {
+  return {
+    key: rowKey(alert.watch_id, alert.fired_at),
+    firedAt: alert.fired_at,
+    chain: alert.chain,
+    poolAddress: alert.pool_address,
+    hoursOut: alert.hours_out,
+    tickLower: alert.tick_lower,
+    tickUpper: alert.tick_upper,
+    currentTick: alert.current_tick,
+  }
+}
+
+export function rowFromLiveDefiPayload(payload: DefiPositionAlertPayloadV1): DefiAlertRow {
+  return {
+    key: rowKey(payload.watch_id, payload.fired_at),
+    firedAt: payload.fired_at,
+    chain: payload.chain,
+    poolAddress: payload.pool_address,
+    hoursOut: payload.hours_out,
+    tickLower: payload.tick_lower,
+    tickUpper: payload.tick_upper,
+    currentTick: payload.current_tick,
+  }
+}
+
 type WatchesState =
   | { status: 'loading' }
   | { status: 'ready'; watches: WatchOut[] }
@@ -90,6 +133,11 @@ type WatchesState =
 type HistoryState =
   | { status: 'loading' }
   | { status: 'ready'; rows: AlertRow[]; total: number }
+  | { status: 'error'; message: string }
+
+type DefiHistoryState =
+  | { status: 'loading' }
+  | { status: 'ready'; rows: DefiAlertRow[]; total: number }
   | { status: 'error'; message: string }
 
 /** Inline note-editor state: which watch is being edited, and the draft text. */
@@ -101,7 +149,9 @@ interface NoteEdit {
 export function AlertsView(): JSX.Element {
   const [watchesState, setWatchesState] = useState<WatchesState>({ status: 'loading' })
   const [historyState, setHistoryState] = useState<HistoryState>({ status: 'loading' })
+  const [defiHistoryState, setDefiHistoryState] = useState<DefiHistoryState>({ status: 'loading' })
   const [liveRows, setLiveRows] = useState<AlertRow[]>([])
+  const [liveDefiRows, setLiveDefiRows] = useState<DefiAlertRow[]>([])
   const [actionError, setActionError] = useState<string | null>(null)
   const [noteEdit, setNoteEdit] = useState<NoteEdit | null>(null)
 
@@ -128,6 +178,21 @@ export function AlertsView(): JSX.Element {
       .catch((err: unknown) => {
         if (!cancelled) setHistoryState({ status: 'error', message: describeError(err) })
       })
+    // The DeFi out-of-range history (Plan 0099 phase 4) — SSE only carries
+    // this session's live fires; the persisted page fills in the rest.
+    api
+      .getPositionAlerts({ limit: HISTORY_PAGE_LIMIT })
+      .then((page) => {
+        if (!cancelled)
+          setDefiHistoryState({
+            status: 'ready',
+            rows: page.alerts.map(rowFromPositionAlertOut),
+            total: page.total,
+          })
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setDefiHistoryState({ status: 'error', message: describeError(err) })
+      })
     return () => {
       cancelled = true
     }
@@ -138,6 +203,13 @@ export function AlertsView(): JSX.Element {
     () =>
       subscribeAlerts((payload) => {
         setLiveRows((rows) => [rowFromLivePayload(payload), ...rows])
+      }),
+    [],
+  )
+  useEffect(
+    () =>
+      subscribeDefiPositionAlerts((payload) => {
+        setLiveDefiRows((rows) => [rowFromLiveDefiPayload(payload), ...rows])
       }),
     [],
   )
@@ -232,8 +304,71 @@ export function AlertsView(): JSX.Element {
           <HistoryPanel state={historyState} liveRows={liveRows} watches={watches} />
         </section>
       </div>
+      <section className={styles.panel} aria-label={t('alerts.defi.title')}>
+        <h2 className={styles.panelTitle}>{t('alerts.defi.title')}</h2>
+        <DefiHistoryPanel state={defiHistoryState} liveRows={liveDefiRows} />
+      </section>
       <p className={styles.disclaimer}>{t('alerts.disclaimer')}</p>
     </section>
+  )
+}
+
+interface DefiHistoryPanelProps {
+  state: DefiHistoryState
+  liveRows: DefiAlertRow[]
+}
+
+/** The DeFi out-of-range panel (Plan 0099 phase 4): persisted history merged
+ * with this session's live fires, deduped on `(watch_id, fired_at)` like the
+ * market-alert panel. Rows are condition FACTS — pool, tick range vs current
+ * tick, hours idle — never rebalance advice (ADR-0029/0093). */
+function DefiHistoryPanel({ state, liveRows }: DefiHistoryPanelProps): JSX.Element {
+  if (state.status === 'loading') {
+    return (
+      <p className={styles.muted} role="status" data-testid="defi-alerts-loading">
+        {t('alerts.defi.loading')}
+      </p>
+    )
+  }
+  if (state.status === 'error') {
+    return (
+      <p className={styles.error} role="alert" data-testid="defi-alerts-error">
+        {t('alerts.defi.historyError')} {state.message}
+      </p>
+    )
+  }
+
+  const fetchedKeys = new Set(state.rows.map((r) => r.key))
+  const rows = [...liveRows.filter((r) => !fetchedKeys.has(r.key)), ...state.rows]
+
+  if (rows.length === 0) {
+    return (
+      <p className={styles.muted} data-testid="defi-alerts-empty">
+        {t('alerts.defi.nothingFired')}
+      </p>
+    )
+  }
+  return (
+    <ol className={styles.alertList} data-testid="defi-alert-list">
+      {rows.map((row) => (
+        <li key={row.key} className={styles.alertRow}>
+          <span className={styles.alertWhen}>{formatDateTime(row.firedAt)} UTC</span>
+          <span className={styles.alertWhat}>
+            <span className={styles.alertSymbol}>
+              {row.chain} · {shortAddress(row.poolAddress)}
+            </span>
+            <span className={styles.alertCondition}>
+              {t('alerts.defi.rowCondition', {
+                hours: row.hoursOut.toFixed(1),
+                tick: row.currentTick,
+                lower: row.tickLower,
+                upper: row.tickUpper,
+              })}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
   )
 }
 

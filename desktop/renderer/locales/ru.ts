@@ -95,6 +95,12 @@ export const ru = {
   'alerts.kind.pattern': 'паттерн',
   'alerts.kind.strategySignal': 'сигнал стратегии',
   'alerts.createdAt': 'создано {when} UTC',
+  'alerts.defi.title': 'DeFi-оповещения по позициям',
+  'alerts.defi.loading': 'Загрузка DeFi-оповещений…',
+  'alerts.defi.historyError': 'Не удалось загрузить DeFi-оповещения:',
+  'alerts.defi.nothingFired': 'Пока нет оповещений о выходе из диапазона.',
+  'alerts.defi.rowCondition': 'вне диапазона {hours}ч — тик {tick} за пределами [{lower}, {upper})',
+  'alerts.defi.osTitle': 'LP-позиция вне диапазона',
   'alerts.deleteWatch': 'Удалить наблюдение {id}',
   'alerts.deleteConfirm':
     'Удалить наблюдение {id} ({symbol} {timeframe}) и его историю оповещений?',

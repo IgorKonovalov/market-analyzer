@@ -28,6 +28,7 @@ jest.mock('../api/client', () => ({
     setWatchNote: jest.fn(),
     deleteWatch: jest.fn(),
     getAlerts: jest.fn(),
+    getPositionAlerts: jest.fn(),
   },
   ApiError: class ApiError extends Error {},
 }))
@@ -39,8 +40,9 @@ jest.mock('./OhlcvView', () => ({ OhlcvView: () => <div data-testid="ohlcv-stub"
 import { api } from '../api/client'
 import { App } from '../App'
 import { notifyAlert } from '../handlers/alertBus'
+import { notifyDefiPositionAlert } from '../handlers/defiPositionAlertBus'
 import { setLocale } from '../lib/i18n'
-import type { AlertTriggeredPayloadV1 } from '../types/events'
+import type { AlertTriggeredPayloadV1, DefiPositionAlertPayloadV1 } from '../types/events'
 import { AlertsView } from './AlertsView'
 
 const getWatches = api.getWatches as jest.Mock
@@ -48,6 +50,7 @@ const setWatchEnabled = api.setWatchEnabled as jest.Mock
 const setWatchNote = api.setWatchNote as jest.Mock
 const deleteWatch = api.deleteWatch as jest.Mock
 const getAlerts = api.getAlerts as jest.Mock
+const getPositionAlerts = api.getPositionAlerts as jest.Mock
 
 function watch(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -102,8 +105,10 @@ beforeEach(() => {
   setWatchNote.mockReset()
   deleteWatch.mockReset()
   getAlerts.mockReset()
+  getPositionAlerts.mockReset()
   getWatches.mockResolvedValue([])
   getAlerts.mockResolvedValue({ alerts: [], total: 0 })
+  getPositionAlerts.mockResolvedValue({ alerts: [], total: 0 })
 })
 
 afterEach(() => {
@@ -329,6 +334,53 @@ it('renders empty and error states honestly', async () => {
   expect(await screen.findByTestId('alerts-error')).toHaveTextContent('upstream down')
 })
 
+it('renders the DeFi out-of-range history with condition facts (Plan 0099)', async () => {
+  getPositionAlerts.mockResolvedValue({
+    alerts: [positionAlertOut()],
+    total: 1,
+  })
+  render(<AlertsView />)
+  const list = await screen.findByTestId('defi-alert-list')
+  expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+  expect(list).toHaveTextContent('base · 0xcdcd…cdcd')
+  expect(list).toHaveTextContent('out of range 6.0h — tick 150 outside [-100, 100)')
+})
+
+it('prepends live DeFi fires and dedupes against the fetched page', async () => {
+  getPositionAlerts.mockResolvedValue({
+    alerts: [positionAlertOut({ fired_at: '2026-07-16T09:00:00Z' })],
+    total: 1,
+  })
+  render(<AlertsView />)
+  const list = await screen.findByTestId('defi-alert-list')
+
+  // A fresh live fire prepends...
+  act(() => {
+    notifyDefiPositionAlert(defiPayload({ fired_at: '2026-07-16T10:00:00Z' }))
+  })
+  expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+
+  // ...but a live fire already in the fetched page (the sidecar persists
+  // before it publishes) is deduped on (watch_id, fired_at).
+  act(() => {
+    notifyDefiPositionAlert(defiPayload({ fired_at: '2026-07-16T09:00:00Z' }))
+  })
+  expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+})
+
+it('renders the DeFi empty and error states honestly', async () => {
+  render(<AlertsView />)
+  expect(await screen.findByTestId('defi-alerts-empty')).toHaveTextContent(
+    'No out-of-range alerts yet.',
+  )
+
+  getPositionAlerts.mockRejectedValue(new Error('position persistence down'))
+  render(<AlertsView />)
+  expect(await screen.findByTestId('defi-alerts-error')).toHaveTextContent(
+    'position persistence down',
+  )
+})
+
 it('is reachable from the nav', async () => {
   render(<App />)
   fireEvent.click(screen.getByTestId('nav-alerts'))
@@ -345,5 +397,47 @@ function condition(text: string, firedAt = '2026-07-02T00:00:00Z'): Record<strin
     fired_at: firedAt,
     condition: text,
     values: {},
+  }
+}
+
+/** A PositionAlertOut row (Plan 0099) — wallet masked, synthetic pool. */
+function positionAlertOut(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 1,
+    watch_id: 7,
+    wallet: '0x1234…abcd',
+    chain: 'base',
+    pool_address: `0x${'cd'.repeat(20)}`,
+    nft_token_id: 42,
+    fired_at: '2026-07-16T09:00:00Z',
+    out_since: '2026-07-16T03:00:00Z',
+    hours_out: 6.0,
+    tick_lower: -100,
+    tick_upper: 100,
+    current_tick: 150,
+    ...overrides,
+  }
+}
+
+/** A live `defi.position_alert v1` payload with the same identity as
+ * `positionAlertOut` so dedup keys line up. */
+function defiPayload(
+  overrides: Partial<DefiPositionAlertPayloadV1> = {},
+): DefiPositionAlertPayloadV1 {
+  return {
+    watch_id: 7,
+    wallet: '0x1234…abcd',
+    chain: 'base',
+    pool_address: `0x${'cd'.repeat(20)}`,
+    nft_token_id: 42,
+    fired_at: '2026-07-16T09:00:00Z',
+    out_since: '2026-07-16T03:00:00Z',
+    hours_out: 6.0,
+    tick_lower: -100,
+    tick_upper: 100,
+    current_tick: 150,
+    in_range: false,
+    uncollected_fees: null,
+    ...overrides,
   }
 }

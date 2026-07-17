@@ -64,7 +64,7 @@ if (isPrimaryInstance) {
       // the actual sidecar port rather than the broader http://127.0.0.1:*.
       installCsp(isDev, info.port)
       const paths = getRendererPaths()
-      registerIpcHandlers({ supervisor, info })
+      registerIpcHandlers({ supervisor, info, getMainWindow: () => mainWindow })
       const window = createWindow({
         preloadPath: paths.preloadPath,
         rendererUrl,

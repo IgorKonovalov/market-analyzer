@@ -16,6 +16,11 @@ export const IPC_CHANNELS = {
   SIDECAR_REFRESH: 'sidecar:refresh',
   DIALOG_OPEN_DIRECTORY: 'dialog:open-directory',
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
+  // Plan 0099 phase 4 (ADR-0094): OS-native notification transport. The
+  // renderer's SSE subscriber asks main to raise a native Notification for a
+  // condition-only alert; main shows it ONLY when the window is unfocused
+  // (the focused case already has the in-app toast — no double-signal).
+  NOTIFICATION_SHOW: 'notification:show',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

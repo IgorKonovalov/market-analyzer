@@ -898,6 +898,38 @@ export interface AlertTriggeredPayloadV1 {
   values: Record<string, number>
 }
 
+/** One uncollected-fee token on a `defi.position_alert v1` — mirror of the
+ * pydantic `PositionAlertFeeV1` (Plan 0099 / ADR-0093). */
+export interface PositionAlertFeeV1 {
+  symbol: string
+  amount: number
+}
+
+/** Mirror of the pydantic `DefiPositionAlertPayloadV1` (Plan 0099 / ADR-0093):
+ * a watched concentrated-liquidity LP has been continuously out of its tick
+ * range for at least the watch's dwell threshold — fees idle since
+ * `out_since`. Condition-only by construction (ADR-0029): there is
+ * deliberately no direction/action/recommendation field, and `wallet` is
+ * masked (`0x1234…abcd`) — a full address never rides an event payload.
+ * Zod-validated at the SSE boundary (`schemas/defiPositionAlert.ts`). */
+export interface DefiPositionAlertPayloadV1 {
+  watch_id: number
+  wallet: string
+  chain: string
+  pool_address: string
+  nft_token_id: number | null
+  /** ISO 8601 UTC timestamps. */
+  fired_at: string
+  out_since: string
+  hours_out: number
+  tick_lower: number
+  tick_upper: number
+  current_tick: number
+  /** Always false at fire — an alert IS the out-of-range fact. */
+  in_range: boolean
+  uncollected_fees: PositionAlertFeeV1[] | null
+}
+
 export type EnvelopeType =
   | 'chart.show'
   | 'chart.update'
@@ -919,6 +951,7 @@ export type EnvelopeType =
   | 'ohlcv.backfilled'
   | 'ohlcv.backfill_failed'
   | 'alert.triggered'
+  | 'defi.position_alert'
 
 export interface Envelope<T = unknown> {
   type: string
@@ -998,5 +1031,9 @@ export type OhlcvBackfillFailedEnvelope = Envelope<OhlcvBackfillFailedPayloadV1>
 }
 export type AlertTriggeredEnvelope = Envelope<AlertTriggeredPayloadV1> & {
   type: 'alert.triggered'
+  version: 1
+}
+export type DefiPositionAlertEnvelope = Envelope<DefiPositionAlertPayloadV1> & {
+  type: 'defi.position_alert'
   version: 1
 }

@@ -1,6 +1,6 @@
 # 0099 — DeFi LP out-of-range monitor + notification (+ advisory rebalance hook)
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-13
 > **Owner skill(s):** dev, ui-builder, human
 > **Related ADRs:** [ADR-0093](../adrs/0093-defi-position-monitor-dwell-triggered.md) (dedicated dwell-triggered monitor — accepts at close), [ADR-0094](../adrs/0094-os-native-notification-transport.md) (OS-native notification transport — accepts at close); realizes [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (advisor DeFi-rebalance recommendation) and follows [ADR-0055](../adrs/0055-in-sidecar-watch-scheduler.md) (the market-alert scheduler this is a sibling to)
