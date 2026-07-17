@@ -21,6 +21,8 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { navigateViaMenu } from './nav-helper'
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(__dirname, '..', '..')
 
@@ -265,7 +267,7 @@ test('RecentBacktestsView lists seeded runs and click-through opens BacktestView
     dataDir,
   )
 
-  await window.getByTestId('nav-backtests').click()
+  await navigateViaMenu(window, 'nav-backtests')
   await expect(window.getByRole('region', { name: 'Recent backtests' })).toBeVisible({
     timeout: 5_000,
   })

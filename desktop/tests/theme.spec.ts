@@ -16,6 +16,8 @@ import { _electron as electron, expect, test } from '@playwright/test'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { navigateViaMenu } from './nav-helper'
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 test('Appearance control changes the theme and the choice persists across reload', async () => {
@@ -25,9 +27,8 @@ test('Appearance control changes the theme and the choice persists across reload
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
 
-  // Navigate to Settings.
-  await expect(window.getByTestId('nav-settings')).toBeVisible({ timeout: 15_000 })
-  await window.getByTestId('nav-settings').click()
+  // Navigate to Settings (folded behind the collapsed nav menu since Plan 0096).
+  await navigateViaMenu(window, 'nav-settings')
   await expect(window.getByTestId('theme-option-dark')).toBeVisible({ timeout: 15_000 })
 
   // Pin Light first so the comparison is deterministic regardless of the OS

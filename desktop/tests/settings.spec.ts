@@ -20,6 +20,8 @@ import { _electron as electron, expect, test } from '@playwright/test'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { navigateViaMenu } from './nav-helper'
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 test('reveal → copy → rotate → old bearer is rejected by /mcp', async () => {
@@ -29,9 +31,8 @@ test('reveal → copy → rotate → old bearer is rejected by /mcp', async () =
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
 
-  // Navigate to Settings.
-  await expect(window.getByTestId('nav-settings')).toBeVisible({ timeout: 15_000 })
-  await window.getByTestId('nav-settings').click()
+  // Navigate to Settings (folded behind the collapsed nav menu since Plan 0096).
+  await navigateViaMenu(window, 'nav-settings')
 
   // Endpoint URL is rendered with the live sidecar port (not '<loading>').
   const endpointInput = window.getByLabel('Endpoint URL')
@@ -111,7 +112,7 @@ test('toggling between Chart and Settings preserves Chart state', async () => {
   await window.waitForLoadState('domcontentloaded')
 
   await expect(window.getByRole('region', { name: /OHLCV view/ })).toBeVisible({ timeout: 15_000 })
-  await window.getByTestId('nav-settings').click()
+  await navigateViaMenu(window, 'nav-settings')
   await expect(window.getByText('MCP access')).toBeVisible({ timeout: 15_000 })
   await expect(window.getByRole('region', { name: /OHLCV view/ })).toHaveCount(0)
 

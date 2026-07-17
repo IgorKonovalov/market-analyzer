@@ -115,6 +115,14 @@ interface ChartRenderSnapshot {
  * so `load_config(None).db_path` resolves to the sidecar's file). Every calendar
  * day is seeded so the requested window is cache-covered with no rim gaps.
  * Returns the bar count written.
+ *
+ * Bars are seeded under `source="yahoo"` — NOT a test-identifiable label. The
+ * provider's cache read is provenance-scoped (Plan 0081 / ADR-0076):
+ * `get_ohlcv` routes the unlisted `SEEDCO` to Yahoo and reads
+ * `get_bars(..., source="yahoo")`, so rows written under any other source are
+ * invisible and the window reads as an uncovered gap — which then triggers a
+ * live Yahoo fetch that 404s (unlisted symbol) and the chart never renders.
+ * The source MUST match where the symbol routes.
  */
 function seedBars(startIso: string, endIso: string, dataDir: string): number {
   const script = [
@@ -141,7 +149,7 @@ function seedBars(startIso: string, endIso: string, dataDir: string): number {
     '    c = base + 0.75',
     '    hi = c + 0.5',
     '    lo = o - 0.5',
-    '    bars.append(Bar(symbol=symbol, timeframe=timeframe, event_ts=day, open=o, high=hi, low=lo, close=c, volume=1000.0 + i, source="e2e-seed"))',
+    '    bars.append(Bar(symbol=symbol, timeframe=timeframe, event_ts=day, open=o, high=hi, low=lo, close=c, volume=1000.0 + i, source="yahoo"))',
     '    i += 1',
     '    day = day + timedelta(days=1)',
     'written = repo.upsert_bars(bars)',
