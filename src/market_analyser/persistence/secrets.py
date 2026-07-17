@@ -51,6 +51,10 @@ ENV_VAR_PREFIX = "MARKET_ANALYSER_"
 # Plan 0087 / ADR-0081 keyed historical-price fallback's credential (the DeFi P&L
 # leg DefiLlama cannot price); read-only, injected server-side via the Alchemy
 # Prices `Authorization` header, never the URL path (secret-hygiene note there).
+# `lunarcrush_api_key` is the Plan 0108 / ADR-0103 X-social sentiment source's
+# credential (LunarCrush reference provider); read-only, injected server-side via
+# a Bearer `Authorization` header — absent the key the source is inert and
+# returns honest-empty, so the key is optional by design.
 SecretKey = Literal[
     "zerion_api_key",
     "graph_api_key",
@@ -59,6 +63,7 @@ SecretKey = Literal[
     "binance_read_api_key",
     "binance_read_api_secret",
     "alchemy_prices_key",
+    "lunarcrush_api_key",
 ]
 KNOWN_SECRET_KEYS: tuple[SecretKey, ...] = get_args(SecretKey)
 SecretStatus = Literal["set", "unset"]
@@ -80,6 +85,7 @@ class SecretsFile(BaseModel):
     binance_read_api_key: str | None = None
     binance_read_api_secret: str | None = None
     alchemy_prices_key: str | None = None
+    lunarcrush_api_key: str | None = None
 
 
 class SecretsStore:

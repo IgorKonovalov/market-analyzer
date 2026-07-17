@@ -73,7 +73,7 @@ class MarketDataProvider(Protocol):
         self,
         symbol: str,
         window: str,
-        source: Literal["rss-vader", "stocktwits", "reddit"] = "rss-vader",
+        source: Literal["rss-vader", "stocktwits", "reddit", "x"] = "rss-vader",
         as_of: datetime | None = None,
     ) -> SentimentSample: ...
 

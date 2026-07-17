@@ -1,0 +1,43 @@
+{
+  "config": {
+    "topic": "btc",
+    "type": "topic",
+    "id": "btc",
+    "name": "btc",
+    "generated": 1780000000
+  },
+  "data": {
+    "topic": "btc",
+    "title": "Bitcoin",
+    "topic_rank": 1,
+    "related_topics": ["crypto", "eth"],
+    "num_contributors": 39481,
+    "num_posts": 12874,
+    "interactions_24h": 118234567,
+    "types_count": {
+      "tweet": 9800,
+      "reddit-post": 2100,
+      "youtube-video": 640,
+      "news": 334
+    },
+    "types_interactions": {
+      "tweet": 850000,
+      "reddit-post": 71000,
+      "youtube-video": 46000,
+      "news": 13000
+    },
+    "types_sentiment": {
+      "tweet": 82,
+      "reddit-post": 71,
+      "youtube-video": 76,
+      "news": 68
+    },
+    "types_sentiment_detail": {
+      "tweet": { "positive": 620000, "neutral": 150000, "negative": 80000 },
+      "reddit-post": { "positive": 42000, "neutral": 18000, "negative": 11000 },
+      "youtube-video": { "positive": 31000, "neutral": 9000, "negative": 6000 },
+      "news": { "positive": 7000, "neutral": 4000, "negative": 2000 }
+    },
+    "sentiment": 78
+  }
+}

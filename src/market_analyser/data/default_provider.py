@@ -23,6 +23,7 @@ from market_analyser.data.adapters.crypto_fear_greed import CryptoFearGreedAdapt
 from market_analyser.data.adapters.reddit_sentiment import RedditSentimentAdapter
 from market_analyser.data.adapters.rss_news import RssNewsAdapter
 from market_analyser.data.adapters.rss_vader_sentiment import RssVaderSentimentAdapter
+from market_analyser.data.adapters.social_sentiment import SocialSentimentAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter
 from market_analyser.data.adapters.tradingview_screener import TradingViewScreenerAdapter
 from market_analyser.data.adapters.yahoo import YahooAdapter
@@ -130,6 +131,7 @@ class DefaultMarketDataProvider:
         coingecko: CoinGeckoAdapter | None = None,
         stocktwits: StockTwitsAdapter | None = None,
         reddit: RedditSentimentAdapter | None = None,
+        social: SocialSentimentAdapter | None = None,
         binance: BinanceKlinesAdapter | None = None,
         coinbase: CoinbaseAdapter | None = None,
         bar_repository: BarRepository | None = None,
@@ -153,6 +155,11 @@ class DefaultMarketDataProvider:
         self._coingecko = coingecko if coingecko is not None else CoinGeckoAdapter()
         self._stocktwits = stocktwits if stocktwits is not None else StockTwitsAdapter()
         self._reddit = reddit if reddit is not None else RedditSentimentAdapter()
+        # Default-constructed WITHOUT a secrets store (Plan 0108 / ADR-0103): the
+        # unkeyed adapter is inert — no request is ever issued — so offline tests
+        # and an unwired provider never reach lunarcrush.com. Only the composition
+        # root (api/app.py) injects the real store.
+        self._social = social if social is not None else SocialSentimentAdapter()
         self._repo = bar_repository
 
         # Selector registries (ADR-0031): adding a sentiment source or a
@@ -166,6 +173,7 @@ class DefaultMarketDataProvider:
             "rss-vader": RssVaderSentimentAdapter(self._news, now=lambda: _now()),
             "stocktwits": self._stocktwits,
             "reddit": self._reddit,
+            "x": self._social,
         }
         self._market_sentiment_sources: dict[str, MarketSentimentSource] = {
             "crypto": self._crypto_fng,
@@ -463,7 +471,7 @@ class DefaultMarketDataProvider:
         self,
         symbol: str,
         window: str,
-        source: Literal["rss-vader", "stocktwits", "reddit"] = "rss-vader",
+        source: Literal["rss-vader", "stocktwits", "reddit", "x"] = "rss-vader",
         as_of: datetime | None = None,
     ) -> SentimentSample:
         # Sentiment is wall-clock-sensitive like the news/posts it derives from
