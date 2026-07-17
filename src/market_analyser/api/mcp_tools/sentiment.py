@@ -2,12 +2,17 @@
 
 One symbol-sentiment verb with a `source` discriminator, folding `sentiment_for_news`
 (Plan 0010 — RSS + VADER) and `stocktwits_sentiment` (Plan 0012 — StockTwits crowd
-labels) into modes of a single tool, and adding `reddit` (Plan 0103 — keyless crowd
-lexicon). `source` ∈ {`news`, `stocktwits`, `reddit`}. Each source is a handler bound in a
-**registry** (`DEFAULT_SENTIMENT_SOURCES`) that `register_sentiment` takes as an injectable
-dependency — so adding a source (the 0103 Reddit binding here, the 0108 social extension
-point next, ADR-0104 §Notes) is one enum value on `SentimentSource` + one registry entry,
-with **no new module and no new `register_*` call**.
+labels) into modes of a single tool, plus `reddit` (Plan 0103 — keyless crowd lexicon)
+and `x` (Plan 0108 — keyed LunarCrush X/social aggregate). `source` ∈ {`news`,
+`stocktwits`, `reddit`, `x`}. Each source is a handler bound in a **registry**
+(`DEFAULT_SENTIMENT_SOURCES`) that `register_sentiment` takes as an injectable
+dependency — so adding a source (the 0103 Reddit binding, then the 0108 social one,
+ADR-0104 §Notes) is one enum value on `SentimentSource` + one registry entry, with
+**no new module and no new `register_*` call**. The `x` entry is factory-built
+(`make_x_source`): the composition root closes it over the `SecretsStore` so the
+handler can honestly say "no key configured" (ADR-0103 honest-empty posture) instead
+of a bare empty; the default registry carries the store-less variant, which reports
+exactly that.
 
 Both sources return `dict[str, Any]` (as the retired tools did) — FastMCP leaves the
 mapping as the structured content unchanged, so this consolidation is a zero-shape
@@ -37,9 +42,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from market_analyser.data import UnknownSymbolError
 from market_analyser.data._windows import SentimentWindow
 from market_analyser.data.adapters.reddit_sentiment import reddit_label
+from market_analyser.data.adapters.social_sentiment import social_label
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.persistence.secrets import SecretsStore
 
-SentimentSource = Literal["news", "stocktwits", "reddit"]
+SentimentSource = Literal["news", "stocktwits", "reddit", "x"]
 
 # A source handler maps (provider, symbol, window) to the source's payload dict. Each
 # handler owns its source-specific input normalisation (StockTwits upper-cases + rejects
@@ -70,6 +77,16 @@ SENTIMENT_DESCRIPTION = (
     "`label` (Strongly Bullish..Strongly Bearish) and `sample_size` (scored-post count); "
     "Reddit rate-limits hard, so an empty result (score 0.0, all-zero breakdown) may be a "
     "rate-limit rather than genuine silence — never fabricated. "
+    "source='x': KEYED X (Twitter) / social crowd sentiment via the LunarCrush "
+    "aggregator (source tag 'x'): the vendor's 0..100 aggregate maps linearly to the "
+    "signed score, per-network polarity interaction counts form the breakdown, and the "
+    "payload adds `label` and `sample_size` (polarity-classified interactions) like the "
+    "reddit mode. Requires the `lunarcrush_api_key` secret — absent it the source is "
+    "inert and returns an honest-empty result with a `note` (not an error). The upstream "
+    "read is a current social snapshot (roughly 24h), so `window` does not narrow it; "
+    "the funded tier budget is small (~100 requests/day, 4/min — responses are cached "
+    "~15 min), so a keyed empty result may be a rate-limit rather than silence — never "
+    "fabricated. "
     "`window` is one of 1h/4h/24h/7d. Wall-clock-sensitive — no historical "
     "replay (no as_of). This is a CONDITION (crowd/news mood), never buy/sell advice."
 )
@@ -151,10 +168,63 @@ async def _reddit_source(
     }
 
 
+def make_x_source(secrets_store: SecretsStore | None) -> SentimentHandler:
+    """Build the `source="x"` handler — keyed LunarCrush X/social aggregate (Plan 0108).
+
+    Factory rather than a plain handler so the composition root can close it over the
+    real `SecretsStore`: when the key is absent the handler answers honest-empty **with
+    a "no key configured" note** and issues no provider call at all (the adapter is
+    inert too — this just names the reason at the payload level, ADR-0103). With a key,
+    `label`/`sample_size` are derived here exactly like the reddit handler, keeping the
+    presentation fields out of the data layer. A keyed-but-empty result stays bare —
+    the description discloses that it may be a rate-limit or thin coverage."""
+
+    async def _x_source(
+        provider: MarketDataProvider, symbol: str, window: SentimentWindow
+    ) -> dict[str, Any]:
+        key = secrets_store.get("lunarcrush_api_key") if secrets_store is not None else None
+        if not key:
+            return {
+                "symbol": symbol.strip().upper(),
+                "score": 0.0,
+                "label": social_label(0.0),
+                "sample_size": 0,
+                "breakdown": {"positive": 0, "negative": 0, "neutral": 0},
+                "source": "x",
+                "window": window,
+                "note": (
+                    "no LunarCrush key configured (lunarcrush_api_key) — "
+                    "the x/social source is inert until a key is set"
+                ),
+                "queried_at": datetime.now(tz=UTC).isoformat(),
+            }
+        sample = await asyncio.to_thread(
+            provider.get_sentiment,
+            symbol=symbol,
+            window=window,
+            source="x",
+        )
+        return {
+            "symbol": sample.symbol,
+            "score": sample.score,
+            "label": social_label(sample.score),
+            "sample_size": sum(sample.breakdown.values()),
+            "breakdown": sample.breakdown,
+            "source": sample.source,
+            "window": sample.window,
+            "queried_at": datetime.now(tz=UTC).isoformat(),
+        }
+
+    return _x_source
+
+
 DEFAULT_SENTIMENT_SOURCES: dict[str, SentimentHandler] = {
     "news": _news_source,
     "stocktwits": _stocktwits_source,
     "reddit": _reddit_source,
+    # Store-less default: honestly reports "no key configured". The composition
+    # root overrides this entry with `make_x_source(secrets_store)` (mcp_app).
+    "x": make_x_source(None),
 }
 
 
@@ -219,5 +289,6 @@ __all__ = [
     "_reddit_source",
     "_sentiment_response",
     "_stocktwits_source",
+    "make_x_source",
     "register_sentiment",
 ]

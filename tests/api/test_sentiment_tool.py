@@ -24,6 +24,7 @@ from market_analyser.api.mcp_tools.sentiment import (
     DEFAULT_SENTIMENT_SOURCES,
     _news_source,
     _sentiment_response,
+    make_x_source,
     register_sentiment,
 )
 from market_analyser.data._http import HttpResponse, ResilientHttpClient
@@ -31,9 +32,11 @@ from market_analyser.data._windows import SentimentWindow
 from market_analyser.data.adapters import reddit_sentiment, rss_news, stocktwits
 from market_analyser.data.adapters.reddit_sentiment import RedditSentimentAdapter
 from market_analyser.data.adapters.rss_news import _FEED_CATALOG, RssNewsAdapter
+from market_analyser.data.adapters.social_sentiment import SocialSentimentAdapter
 from market_analyser.data.adapters.stocktwits import StockTwitsAdapter, StockTwitsHttpClient
 from market_analyser.data.default_provider import DefaultMarketDataProvider
 from market_analyser.data.provider import MarketDataProvider
+from market_analyser.persistence.secrets import SecretsStore
 
 _FIXTURES = Path(__file__).parents[1] / "data" / "fixtures"
 
@@ -248,6 +251,104 @@ def test_reddit_rejects_unknown_window(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# source="x" (Plan 0108 — keyed LunarCrush X/social aggregate)                  #
+# --------------------------------------------------------------------------- #
+
+_X_BYTES = (_FIXTURES / "lunarcrush_BTC_topic.json").read_bytes()
+# Hand-computed over the committed fixture (cf. tests/data/test_social_sentiment_adapter.py):
+# vendor aggregate 78 → (78 - 50) / 50; polarity interaction counts summed per network.
+_X_SCORE = (78 - 50) / 50
+_X_BREAKDOWN = {"positive": 700_000, "neutral": 181_000, "negative": 99_000}
+_X_KEY_ENV = "MARKET_ANALYSER_LUNARCRUSH_API_KEY"
+
+
+def _x_server(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, keyed: bool) -> FastMCP:
+    """The mcp_app wiring in miniature: the `x` registry entry rebound over a real
+    SecretsStore (keyed via the env override, or empty)."""
+    environ = {_X_KEY_ENV: "test-lunarcrush-key"} if keyed else {}
+    store = SecretsStore(tmp_path / "secrets.json", environ=environ)
+    client = ResilientHttpClient(source_name="lunarcrush-test", max_retries=0)
+
+    def fake(method: str, url: str, body_: Any, headers: Any, *, proxy: Any) -> HttpResponse:
+        return HttpResponse(status_code=200, headers={}, body=_X_BYTES, elapsed_seconds=0.0)
+
+    monkeypatch.setattr(client, "_perform_request", fake)
+    provider = DefaultMarketDataProvider(
+        social=SocialSentimentAdapter(secrets_store=store, http_client=client)
+    )
+    server = FastMCP(name="test", stateless_http=True, json_response=True)
+    register_sentiment(
+        server,
+        provider=provider,
+        sources={**DEFAULT_SENTIMENT_SOURCES, "x": make_x_source(store)},
+    )
+    return server
+
+
+def test_x_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    server = _x_server(monkeypatch, tmp_path, keyed=True)
+    _content, structured = _call(server, {"params": {"source": "x", "symbol": "btc"}})
+
+    assert structured["symbol"] == "BTC"
+    assert structured["source"] == "x"
+    assert structured["window"] == "24h"
+    assert structured["score"] == pytest.approx(_X_SCORE)
+    assert structured["breakdown"] == _X_BREAKDOWN
+    # label + sample_size are derived at the tool layer from score + breakdown.
+    assert structured["label"] == "Strongly Bullish"
+    assert structured["sample_size"] == 980_000
+    assert "queried_at" in structured
+    assert "note" not in structured  # keyed reads carry no inertness note
+
+
+def test_x_no_key_is_honest_empty_with_note(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The phase-2 done-when: the no-key path is a RESULT (honest-empty + note),
+    # never a tool error.
+    server = _x_server(monkeypatch, tmp_path, keyed=False)
+    _content, structured = _call(server, {"params": {"source": "x", "symbol": "BTC"}})
+
+    assert structured["symbol"] == "BTC"
+    assert structured["source"] == "x"
+    assert structured["score"] == 0.0
+    assert structured["label"] == "Neutral"
+    assert structured["sample_size"] == 0
+    assert structured["breakdown"] == {"positive": 0, "negative": 0, "neutral": 0}
+    assert "no LunarCrush key configured" in structured["note"]
+
+
+def test_x_default_registry_reports_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An app wired without a secrets store (the default registry) answers the same
+    # honest-empty + note — the store-less factory default.
+    provider = DefaultMarketDataProvider()
+    server = FastMCP(name="test", stateless_http=True, json_response=True)
+    register_sentiment(server, provider=provider)
+
+    _content, structured = _call(server, {"params": {"source": "x", "symbol": "BTC"}})
+
+    assert structured["score"] == 0.0
+    assert structured["sample_size"] == 0
+    assert "no LunarCrush key configured" in structured["note"]
+
+
+def test_x_response_is_conditions_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # ADR-0029: crowd sentiment is a condition — the payload carries no call-shaped key,
+    # keyed or not.
+    for keyed in (True, False):
+        server = _x_server(monkeypatch, tmp_path, keyed=keyed)
+        _content, structured = _call(server, {"params": {"source": "x", "symbol": "BTC"}})
+        for forbidden in ("action", "signal", "recommendation"):
+            assert forbidden not in structured
+
+
+def test_x_rejects_unknown_window(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    server = _x_server(monkeypatch, tmp_path, keyed=True)
+    with pytest.raises(ToolError):
+        _call(server, {"params": {"source": "x", "symbol": "BTC", "window": "12h"}})
+
+
+# --------------------------------------------------------------------------- #
 # Consolidation guards: unknown source + one-entry extensibility                #
 # --------------------------------------------------------------------------- #
 
@@ -287,5 +388,5 @@ def test_adding_a_source_is_one_registry_entry() -> None:
     assert result == {"source": "stub", "symbol": "XYZ", "window": "24h", "score": 0.42}
     assert seen["symbol"] == "XYZ"
     # The built-ins are untouched by extending the registry.
-    assert set(DEFAULT_SENTIMENT_SOURCES) == {"news", "stocktwits", "reddit"}
+    assert set(DEFAULT_SENTIMENT_SOURCES) == {"news", "stocktwits", "reddit", "x"}
     assert DEFAULT_SENTIMENT_SOURCES["news"] is _news_source

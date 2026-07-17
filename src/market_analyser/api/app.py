@@ -432,6 +432,7 @@ def create_app(
             manual_positions_path=manual_positions_path,
             defi_dust_tokens=frozenset(defi_dust_tokens),
             aerodrome_deep_reader=aerodrome_deep_reader,
+            secrets_store=secrets_store,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None

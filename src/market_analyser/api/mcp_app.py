@@ -81,7 +81,11 @@ from market_analyser.api.mcp_tools.scan_watchlist import register_scan_watchlist
 from market_analyser.api.mcp_tools.screener_query import register_screener_query
 from market_analyser.api.mcp_tools.search_symbols import register_search_symbols
 from market_analyser.api.mcp_tools.sector_rotation import register_sector_rotation
-from market_analyser.api.mcp_tools.sentiment import register_sentiment
+from market_analyser.api.mcp_tools.sentiment import (
+    DEFAULT_SENTIMENT_SOURCES,
+    make_x_source,
+    register_sentiment,
+)
 from market_analyser.api.mcp_tools.show_chart import register_show_chart
 from market_analyser.api.mcp_tools.technical_read import register_technical_read
 from market_analyser.api.mcp_tools.track_record import register_get_track_record
@@ -125,6 +129,7 @@ from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
     WatchesRepository,
 )
+from market_analyser.persistence.secrets import SecretsStore
 from market_analyser.portfolio.sources import MANUAL_POSITIONS_FILENAME
 from market_analyser.ui_events.buffer import UIEventBuffer
 from market_analyser.user_drawings import UserDrawingsMirror
@@ -162,6 +167,7 @@ def create_mcp_components(
     gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
     defi_dust_tokens: frozenset[str] = frozenset(),
+    secrets_store: SecretsStore | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -276,9 +282,15 @@ def create_mcp_components(
     register_quote_for(server, provider=provider)
     register_news_for(server, provider=provider)
     # Unified sentiment tool (Plan 0109, ADR-0104): one `sentiment(source=…)` verb over
-    # a source registry — `news` (RSS + VADER) and `stocktwits` (crowd labels) today; a
-    # new source (0103 Reddit / 0108 social) binds as one enum value + one registry entry.
-    register_sentiment(server, provider=provider)
+    # a source registry — a new source (0103 Reddit, 0108 social) binds as one enum
+    # value + one registry entry. The `x` entry is rebound with the real secrets store
+    # (Plan 0108) so its no-key note reflects actual key presence; everything else is
+    # the default registry unchanged.
+    register_sentiment(
+        server,
+        provider=provider,
+        sources={**DEFAULT_SENTIMENT_SOURCES, "x": make_x_source(secrets_store)},
+    )
     register_crypto_fear_greed(server, provider=provider)
     register_bitcoin_market_pulse(server, provider=provider)
     register_market_snapshot(server, provider=provider)
