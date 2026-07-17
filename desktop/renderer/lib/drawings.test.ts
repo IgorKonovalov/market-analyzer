@@ -240,7 +240,14 @@ describe('computeDrawingGeometry — Plan 0104 position & range kinds', () => {
       { x: 100, y: 180 }, // target
     ])
     // Entry line carries the derived R:R (|120-100|/|100-90| = 2.00).
-    expect(g!.segments[0]).toEqual({ x1: 100, y1: 200, x2: 400, y2: 200, label: 'R:R 2.00' })
+    expect(g!.segments[0]).toEqual({
+      x1: 100,
+      y1: 200,
+      x2: 400,
+      y2: 200,
+      label: 'R:R 2.00',
+      labelChip: true,
+    })
     expect(g!.segments[1].color).toBe('#e03131') // stop leg red
     expect(g!.segments[2].color).toBe('#2f9e44') // target leg green
     // Two coloured fill zones (stop leg red, target leg green).

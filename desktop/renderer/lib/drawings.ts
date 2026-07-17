@@ -51,6 +51,14 @@ export const POSITION_TARGET_COLOR = '#2f9e44'
 /** Fill opacity for a position's stop/target zones — low enough candles read through. */
 export const POSITION_FILL_ALPHA = 0.1
 
+/** Backing chip behind position/measure captions (`labelChip` segments). A fixed
+ * near-black at ~0.78 alpha reads on both themes (the caption text keeps the
+ * drawing's colour, which is bright against it), so no theme plumbing is needed
+ * in the canvas path. */
+export const LABEL_CHIP_BG = 'rgba(9, 12, 18, 0.78)'
+const LABEL_CHIP_HEIGHT = 16
+const LABEL_CHIP_PAD_X = 4
+
 /** Half-side (px) of the square endpoint handle drawn on the selected drawing. */
 export const HANDLE_HALF_PX = 4
 /** Pixel tolerance for grabbing a drawing's line (select) — matches the
@@ -104,13 +112,16 @@ function toUtcSeconds(iso: string): UTCTimestamp {
 /** A stroked line segment in media (pixel) coordinates. An optional `label`
  * (the fib-ratio caption) is drawn at the segment's left end. An optional
  * `color` overrides the drawing's stroke for THIS segment (the per-level fib
- * palette uses it); segments without it fall back to the drawing's `color`. */
+ * palette uses it); segments without it fall back to the drawing's `color`.
+ * `labelChip` backs the label with a dark chip (position/measure readouts,
+ * which must stay legible over candles); fib captions stay bare. */
 export interface DrawingSegment {
   x1: number
   y1: number
   x2: number
   y2: number
   label?: string
+  labelChip?: boolean
   color?: string
 }
 
@@ -326,7 +337,7 @@ export function computeDrawingGeometry(
         { x: entryX, y: targetY },
       ],
       segments: [
-        { x1: entryX, y1: entryY, x2: right, y2: entryY, label: entryLabel },
+        { x1: entryX, y1: entryY, x2: right, y2: entryY, label: entryLabel, labelChip: true },
         { x1: entryX, y1: stopY, x2: right, y2: stopY, color: POSITION_STOP_COLOR },
         { x1: entryX, y1: targetY, x2: right, y2: targetY, color: POSITION_TARGET_COLOR },
         { x1: entryX, y1: stopY, x2: entryX, y2: targetY },
@@ -366,7 +377,7 @@ export function computeDrawingGeometry(
       segments: [
         { x1: xa, y1: 0, x2: xa, y2: mediaHeight },
         { x1: xb, y1: 0, x2: xb, y2: mediaHeight },
-        { x1: Math.min(xa, xb), y1: midY, x2: Math.max(xa, xb), y2: midY, label },
+        { x1: Math.min(xa, xb), y1: midY, x2: Math.max(xa, xb), y2: midY, label, labelChip: true },
       ],
     }
   }
@@ -390,7 +401,7 @@ export function computeDrawingGeometry(
       segments: [
         { x1: 0, y1: ya, x2: mediaWidth, y2: ya },
         { x1: 0, y1: yb, x2: mediaWidth, y2: yb },
-        { x1: midX, y1: Math.min(ya, yb), x2: midX, y2: Math.max(ya, yb), label },
+        { x1: midX, y1: Math.min(ya, yb), x2: midX, y2: Math.max(ya, yb), label, labelChip: true },
       ],
     }
   }
@@ -442,7 +453,10 @@ export function computeDrawingGeometry(
     const segments: DrawingSegment[] = corners.map((c, i) => {
       const n = corners[(i + 1) % corners.length]
       const seg: DrawingSegment = { x1: c.x, y1: c.y, x2: n.x, y2: n.y }
-      if (i === 0) seg.label = label // caption on the top edge
+      if (i === 0) {
+        seg.label = label // caption on the top edge
+        seg.labelChip = true
+      }
       return seg
     })
     return { ...style, handles, segments, fillPolygon: corners }
@@ -531,13 +545,32 @@ function strokeGeometry(
     ctx.moveTo(seg.x1, seg.y1)
     ctx.lineTo(seg.x2, seg.y2)
     ctx.stroke()
-    // A fib line's ratio caption, above its left end, in its own line colour.
+    // A caption above the segment's left end. Chipped labels (position/measure
+    // readouts) get a dark backing so they read over candles on either theme;
+    // bare labels (fib ratios) keep the light-touch line-coloured text.
     if (seg.label !== undefined) {
       ctx.save()
-      ctx.fillStyle = segColor
-      ctx.font = '10px sans-serif'
+      ctx.font = seg.labelChip ? '11px sans-serif' : '10px sans-serif'
       ctx.textBaseline = 'bottom'
-      ctx.fillText(seg.label, seg.x1 + 2, seg.y1 - 1)
+      if (seg.labelChip) {
+        const textWidth = ctx.measureText(seg.label).width
+        const chipX = seg.x1
+        const chipY = seg.y1 - LABEL_CHIP_HEIGHT - 1
+        const chipWidth = textWidth + 2 * LABEL_CHIP_PAD_X
+        ctx.fillStyle = LABEL_CHIP_BG
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath()
+          ctx.roundRect(chipX, chipY, chipWidth, LABEL_CHIP_HEIGHT, 3)
+          ctx.fill()
+        } else {
+          ctx.fillRect(chipX, chipY, chipWidth, LABEL_CHIP_HEIGHT)
+        }
+        ctx.fillStyle = segColor
+        ctx.fillText(seg.label, chipX + LABEL_CHIP_PAD_X, seg.y1 - 4)
+      } else {
+        ctx.fillStyle = segColor
+        ctx.fillText(seg.label, seg.x1 + 2, seg.y1 - 1)
+      }
       ctx.restore()
     }
   }
