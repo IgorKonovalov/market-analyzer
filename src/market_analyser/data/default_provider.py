@@ -59,6 +59,7 @@ from market_analyser.data.types import (
     SymbolInfo,
 )
 from market_analyser.persistence.repository import BarRepository
+from market_analyser.persistence.secrets import SecretsStore
 
 # A between-bars gap counts as a real hole (worth a fetch) only when it spans
 # more than this many bars of the timeframe's own cadence; below it the gap is a
@@ -134,6 +135,7 @@ class DefaultMarketDataProvider:
         social: SocialSentimentAdapter | None = None,
         binance: BinanceKlinesAdapter | None = None,
         coinbase: CoinbaseAdapter | None = None,
+        secrets_store: SecretsStore | None = None,
         bar_repository: BarRepository | None = None,
     ) -> None:
         self._yahoo = yahoo if yahoo is not None else YahooAdapter()
@@ -154,7 +156,13 @@ class DefaultMarketDataProvider:
         self._crypto_fng = crypto_fng if crypto_fng is not None else CryptoFearGreedAdapter()
         self._coingecko = coingecko if coingecko is not None else CoinGeckoAdapter()
         self._stocktwits = stocktwits if stocktwits is not None else StockTwitsAdapter()
-        self._reddit = reddit if reddit is not None else RedditSentimentAdapter()
+        # Keyed OAuth is injected at the *adapter* level (Plan 0111 / ADR-0105): the
+        # provider hands the reddit adapter the secrets store so `get_sentiment(source=
+        # "reddit")` can climb the anti-bot wall when both Reddit keys are configured.
+        # Absent a store (offline tests, unwired provider) the adapter stays keyless.
+        self._reddit = (
+            reddit if reddit is not None else RedditSentimentAdapter(secrets_store=secrets_store)
+        )
         # Default-constructed WITHOUT a secrets store (Plan 0108 / ADR-0103): the
         # unkeyed adapter is inert — no request is ever issued — so offline tests
         # and an unwired provider never reach lunarcrush.com. Only the composition

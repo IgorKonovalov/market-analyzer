@@ -257,6 +257,10 @@ def create_app(
                 coinbase=CoinbaseAdapter(
                     symbol_cache_path=default_app_data_dir() / "coinbase_products.json",
                 ),
+                # Keyed Reddit OAuth (Plan 0111 / ADR-0105): the store reaches the reddit
+                # sentiment adapter here so a configured client_id/secret enables the keyed
+                # search path; absent the keys the adapter stays keyless.
+                secrets_store=secrets_store,
             )
         if annotations_repository is None:
             annotations_repository = AnnotationsRepository(session_factory)

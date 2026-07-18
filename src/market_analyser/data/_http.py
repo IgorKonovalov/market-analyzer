@@ -227,16 +227,25 @@ class ResilientHttpClient:
         url: str,
         *,
         json: Mapping[str, Any] | None = None,
+        data: bytes | None = None,
         params: Mapping[str, str | int | float] | None = None,
         headers: Mapping[str, str] | None = None,
         cache_key: str | None = None,
         expect_json: bool = False,
     ) -> HttpResponse:
+        # `json=` JSON-encodes a mapping; `data=` sends raw bytes verbatim (the form
+        # body an OAuth2 token endpoint needs). They are mutually exclusive — passing
+        # both is a caller bug, not a body to guess between.
+        if json is not None and data is not None:
+            raise ValueError("post() accepts json= or data=, not both")
         body: bytes | None = None
         merged_headers: dict[str, str] = dict(headers or {})
         if json is not None:
             body = json_lib.dumps(json, sort_keys=True, separators=(",", ":")).encode("utf-8")
             merged_headers.setdefault("Content-Type", "application/json")
+        elif data is not None:
+            body = data
+            merged_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
         # The default cache key (method, url, params) ignores the request body;
         # body-sensitive POST caching must pass an explicit cache_key.
         return self._request(

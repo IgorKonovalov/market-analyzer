@@ -426,3 +426,70 @@ def test_http_response_json_and_text() -> None:
     resp = HttpResponse(status_code=200, headers={}, body=b'{"a": 1}', elapsed_seconds=0.0)
     assert resp.json() == {"a": 1}
     assert resp.text == '{"a": 1}'
+
+
+# -- post(data=) form-body passthrough (Plan 0111 / ADR-0105) ------------------
+
+
+def _capture_transport(sink: dict[str, Any]) -> Transport:
+    """A transport that records the outgoing body + headers and returns a 200."""
+
+    def fake(
+        method: str,
+        url: str,
+        body: bytes | None,
+        headers: Mapping[str, str] | None,
+        *,
+        proxy: ProxyConfig | None,
+    ) -> HttpResponse:
+        sink["method"] = method
+        sink["body"] = body
+        sink["headers"] = dict(headers or {})
+        return _ok()
+
+    return fake
+
+
+def test_post_data_sends_raw_body_with_form_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ResilientHttpClient(source_name="t")
+    sink: dict[str, Any] = {}
+    monkeypatch.setattr(client, "_perform_request", _capture_transport(sink))
+
+    client.post("https://x/token", data=b"grant_type=client_credentials")
+
+    assert sink["method"] == "POST"
+    # The raw bytes are sent verbatim — not JSON-encoded.
+    assert sink["body"] == b"grant_type=client_credentials"
+    assert sink["headers"]["Content-Type"] == "application/x-www-form-urlencoded"
+
+
+def test_post_data_content_type_is_overridable_via_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ResilientHttpClient(source_name="t")
+    sink: dict[str, Any] = {}
+    monkeypatch.setattr(client, "_perform_request", _capture_transport(sink))
+
+    client.post(
+        "https://x/token",
+        data=b"a=1",
+        headers={"Content-Type": "text/plain"},
+    )
+
+    assert sink["headers"]["Content-Type"] == "text/plain"  # caller wins (setdefault)
+
+
+def test_post_rejects_json_and_data_together() -> None:
+    client = ResilientHttpClient(source_name="t")
+    with pytest.raises(ValueError, match="json= or data="):
+        client.post("https://x/token", json={"a": 1}, data=b"a=1")
+
+
+def test_post_json_still_defaults_to_application_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pre-existing json= path is unchanged by the data= addition."""
+    client = ResilientHttpClient(source_name="t")
+    sink: dict[str, Any] = {}
+    monkeypatch.setattr(client, "_perform_request", _capture_transport(sink))
+
+    client.post("https://x/j", json={"a": 1})
+
+    assert sink["body"] == b'{"a":1}'
+    assert sink["headers"]["Content-Type"] == "application/json"

@@ -14,8 +14,10 @@ Pins the phase-1 done-when: (a) score sign for a bullish vs a bearish post set,
 
 from __future__ import annotations
 
+import base64
 import json
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,7 @@ from market_analyser.data._http import HttpResponse, ResilientHttpClient
 from market_analyser.data.adapters import reddit_sentiment
 from market_analyser.data.adapters.reddit_sentiment import RedditSentimentAdapter, reddit_label
 from market_analyser.data.default_provider import DefaultMarketDataProvider
+from market_analyser.persistence.secrets import SecretsStore
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _BTC_BYTES = (_FIXTURES / "reddit_BTC_response.json").read_bytes()
@@ -319,3 +322,273 @@ def test_live_fetch_returns_valid_reading() -> None:
     assert -1.0 <= sample.score <= 1.0
     assert sample.source == "reddit"
     assert sum(sample.breakdown.values()) >= 0
+
+
+# -- keyed OAuth path (Plan 0111 / ADR-0105) --------------------------------
+
+_TOKEN_MARKER = "api/v1/access_token"
+_OAUTH_HOST = "https://oauth.reddit.com/r/"
+_EXPECTED_BASIC = base64.b64encode(b"cid:csecret").decode("ascii")
+
+
+class _Dispatch:
+    """A transport seam that dispatches on URL: token URL → the token queue, anything
+    else → the search queue. Records every call (method, url, headers, body). A queued
+    `BaseException` is raised; an `HttpResponse` is returned."""
+
+    def __init__(self, *, tokens: list[Any], searches: list[Any]) -> None:
+        self._tokens = list(tokens)
+        self._searches = list(searches)
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(
+        self, method: str, url: str, body: Any, headers: Any, *, proxy: Any
+    ) -> HttpResponse:
+        self.calls.append(
+            {"method": method, "url": url, "headers": dict(headers or {}), "body": body}
+        )
+        queue = self._tokens if _TOKEN_MARKER in url else self._searches
+        item = queue.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item  # type: ignore[no-any-return]
+
+    def token_calls(self) -> list[dict[str, Any]]:
+        return [c for c in self.calls if _TOKEN_MARKER in c["url"]]
+
+    def search_calls(self) -> list[dict[str, Any]]:
+        return [c for c in self.calls if _TOKEN_MARKER not in c["url"]]
+
+
+def _token_ok(access_token: str = "tok-abc", expires_in: int = 3600) -> HttpResponse:
+    body = json.dumps(
+        {"access_token": access_token, "token_type": "bearer", "expires_in": expires_in}
+    ).encode("utf-8")
+    return HttpResponse(status_code=200, headers={}, body=body, elapsed_seconds=0.0)
+
+
+def _search_ok(posts: list[dict[str, Any]]) -> HttpResponse:
+    return HttpResponse(status_code=200, headers={}, body=_listing(posts), elapsed_seconds=0.0)
+
+
+def _http_status(status: int, body: bytes = b'{"message":"err"}') -> HttpResponse:
+    return HttpResponse(status_code=status, headers={}, body=body, elapsed_seconds=0.0)
+
+
+def _store(
+    tmp_path: Path, *, cid: str | None = "cid", csecret: str | None = "csecret"
+) -> SecretsStore:
+    env: dict[str, str] = {}
+    if cid is not None:
+        env["MARKET_ANALYSER_REDDIT_CLIENT_ID"] = cid
+    if csecret is not None:
+        env["MARKET_ANALYSER_REDDIT_CLIENT_SECRET"] = csecret
+    return SecretsStore(tmp_path / "secrets.json", environ=env)
+
+
+def _keyed_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    dispatch: _Dispatch,
+    store: SecretsStore,
+    *,
+    search_cache_ttl: float = 0.0,
+) -> RedditSentimentAdapter:
+    """Wire both the search and token clients to one dispatching transport."""
+    search = ResilientHttpClient(
+        source_name="reddit-test", max_retries=0, cache_ttl_seconds=search_cache_ttl
+    )
+    token = ResilientHttpClient(
+        source_name="reddit-token-test", max_retries=0, cache_ttl_seconds=0.0
+    )
+    monkeypatch.setattr(search, "_perform_request", dispatch)
+    monkeypatch.setattr(token, "_perform_request", dispatch)
+    return RedditSentimentAdapter(http_client=search, secrets_store=store, token_http_client=token)
+
+
+def test_keyed_path_mints_token_then_bearer_searches_oauth_host(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _freeze(monkeypatch)
+    posts = [
+        _post("bullish breakout, buying calls", score=10),
+        _post("long and strong, accumulate", score=10),
+    ]
+    dispatch = _Dispatch(tokens=[_token_ok("tok-abc")], searches=[_search_ok(posts)])
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path))
+
+    sample = adapter.fetch_sentiment(symbol="BTC", window="24h")
+
+    # Exactly one token POST then one bearer GET, in that order.
+    token_calls = dispatch.token_calls()
+    search_calls = dispatch.search_calls()
+    assert len(token_calls) == 1
+    assert len(search_calls) == 1
+    # Token POST: HTTP Basic + the form body, to the token endpoint.
+    assert token_calls[0]["method"] == "POST"
+    assert token_calls[0]["headers"]["Authorization"] == f"Basic {_EXPECTED_BASIC}"
+    assert token_calls[0]["body"] == b"grant_type=client_credentials"
+    # Search GET: bearer header, oauth host, identical search params as the keyless path.
+    assert search_calls[0]["method"] == "GET"
+    assert search_calls[0]["headers"]["Authorization"] == "bearer tok-abc"
+    assert search_calls[0]["url"].startswith(
+        f"{_OAUTH_HOST}CryptoCurrency+Bitcoin+wallstreetbets+stocks+investing/search"
+    )
+    assert "q=BTC" in search_calls[0]["url"]
+    assert "restrict_sr=1" in search_calls[0]["url"]
+    # And it scored the returned listing.
+    assert sample.source == "reddit"
+    assert sample.score > 0
+    assert sample.breakdown == {"positive": 2, "negative": 0, "neutral": 0}
+
+
+def test_no_keys_uses_keyless_path_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _freeze(monkeypatch)
+    dispatch = _Dispatch(tokens=[], searches=[_search_ok([_post("bullish moon", score=10)])])
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path, cid=None, csecret=None))
+
+    sample = adapter.fetch_sentiment(symbol="BTC", window="24h")
+
+    # No token minted; the single request is the keyless www host with search.json.
+    assert dispatch.token_calls() == []
+    assert len(dispatch.search_calls()) == 1
+    assert dispatch.search_calls()[0]["url"].startswith(
+        "https://www.reddit.com/r/CryptoCurrency+Bitcoin+wallstreetbets+stocks+investing/search.json"
+    )
+    assert "Authorization" not in dispatch.search_calls()[0]["headers"]
+    assert sample.score == 1.0
+
+
+def test_single_key_present_still_keyless(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _freeze(monkeypatch)
+    dispatch = _Dispatch(tokens=[], searches=[_search_ok([_post("bullish moon", score=10)])])
+    # Only the id is set; the gate requires BOTH keys, so this stays keyless.
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path, csecret=None))
+
+    adapter.fetch_sentiment(symbol="BTC", window="24h")
+
+    assert dispatch.token_calls() == []
+    assert dispatch.search_calls()[0]["url"].startswith("https://www.reddit.com/")
+
+
+def test_expired_token_triggers_reauth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    clock = {"now": _FROZEN_NOW}
+    monkeypatch.setattr(reddit_sentiment, "_now", lambda: clock["now"])
+    posts = [_post("bullish moon", score=10)]
+    dispatch = _Dispatch(
+        tokens=[_token_ok("tok-1", expires_in=3600), _token_ok("tok-2", expires_in=3600)],
+        searches=[_search_ok(posts), _search_ok(posts)],
+    )
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path))
+
+    adapter.fetch_sentiment(symbol="BTC", window="24h")  # mints tok-1 (expires now+3540)
+    # Advance past the margin-adjusted expiry so the cached bearer is stale.
+    clock["now"] = _FROZEN_NOW + timedelta(seconds=3600)
+    adapter.fetch_sentiment(symbol="BTC", window="24h")  # must re-auth
+
+    assert len(dispatch.token_calls()) == 2
+    # The second search rode the refreshed bearer.
+    assert dispatch.search_calls()[1]["headers"]["Authorization"] == "bearer tok-2"
+
+
+def test_cached_token_reused_within_expiry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _freeze(monkeypatch)
+    posts = [_post("bullish moon", score=10)]
+    dispatch = _Dispatch(
+        tokens=[_token_ok("tok-1", expires_in=3600)],
+        searches=[_search_ok(posts), _search_ok(posts)],
+    )
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path))
+
+    adapter.fetch_sentiment(symbol="BTC", window="24h")
+    adapter.fetch_sentiment(symbol="BTC", window="24h")  # same frozen time → token still valid
+
+    assert len(dispatch.token_calls()) == 1  # minted once, reused
+    assert len(dispatch.search_calls()) == 2
+
+
+def test_search_401_refreshes_token_once_and_retries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _freeze(monkeypatch)
+    posts = [_post("bullish moon", score=10)]
+    dispatch = _Dispatch(
+        tokens=[_token_ok("tok-1"), _token_ok("tok-2")],
+        searches=[_http_status(401), _search_ok(posts)],
+    )
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path))
+
+    sample = adapter.fetch_sentiment(symbol="BTC", window="24h")
+
+    assert len(dispatch.token_calls()) == 2  # exactly one refresh
+    assert len(dispatch.search_calls()) == 2  # original + one retry
+    assert dispatch.search_calls()[1]["headers"]["Authorization"] == "bearer tok-2"
+    assert sample.score == 1.0
+
+
+def test_persistent_401_after_one_refresh_degrades_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _freeze(monkeypatch)
+    dispatch = _Dispatch(
+        tokens=[_token_ok("tok-1"), _token_ok("tok-2")],
+        searches=[_http_status(401), _http_status(401)],
+    )
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path))
+
+    _assert_neutral_empty(adapter.fetch_sentiment(symbol="BTC", window="24h"))
+    # Refresh happens once; the retry's 401 is not chased further.
+    assert len(dispatch.token_calls()) == 2
+    assert len(dispatch.search_calls()) == 2
+
+
+def test_token_failure_degrades_to_honest_empty_without_searching(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _freeze(monkeypatch)
+    dispatch = _Dispatch(tokens=[_http_status(500)], searches=[])
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path))
+
+    _assert_neutral_empty(adapter.fetch_sentiment(symbol="BTC", window="24h"))
+    assert len(dispatch.token_calls()) == 1
+    assert dispatch.search_calls() == []  # never reached the search
+
+
+def test_secrets_never_enter_cache_keys_or_logs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _freeze(monkeypatch)
+    # A search failure exercises the failure-log path; a caching search client lets us
+    # inspect the cache keys. The bearer and the basic credential must appear in neither.
+    dispatch = _Dispatch(tokens=[_token_ok("tok-secret-abc")], searches=[_http_status(500)])
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path), search_cache_ttl=300.0)
+
+    with caplog.at_level(logging.WARNING):
+        adapter.fetch_sentiment(symbol="BTC", window="24h")
+
+    # No cache entry keyed on the bearer or the basic credential.
+    for key in adapter._http._cache:  # asserting an internal invariant
+        assert "tok-secret-abc" not in key
+        assert _EXPECTED_BASIC not in key
+    # The path-only failure log carries neither the bearer nor the credential.
+    assert "tok-secret-abc" not in caplog.text
+    assert _EXPECTED_BASIC not in caplog.text
+
+
+def test_provider_injects_secrets_store_into_reddit_adapter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _freeze(monkeypatch)
+    posts = [_post("bullish moon", score=10)]
+    dispatch = _Dispatch(tokens=[_token_ok("tok-abc")], searches=[_search_ok(posts)])
+    adapter = _keyed_adapter(monkeypatch, dispatch, _store(tmp_path))
+    # The provider hands the store to the adapter it default-constructs; here we pass the
+    # pre-wired adapter, but the routing + keyed dispatch is what this pins end-to-end.
+    provider = DefaultMarketDataProvider(reddit=adapter)
+
+    sample = provider.get_sentiment(symbol="BTC", window="24h", source="reddit")
+
+    assert sample.source == "reddit"
+    assert len(dispatch.token_calls()) == 1
+    assert dispatch.search_calls()[0]["headers"]["Authorization"] == "bearer tok-abc"

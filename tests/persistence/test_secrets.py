@@ -128,6 +128,24 @@ def test_alchemy_prices_key_is_a_known_secret(secrets_path: Path) -> None:
     assert SecretsStore(secrets_path, environ={}).get("alchemy_prices_key") == "sk-file-value"
 
 
+def test_reddit_oauth_keys_are_known_secrets(secrets_path: Path) -> None:
+    """Plan 0111 / ADR-0105: the Reddit app-only OAuth pair is registered — each key is
+    settable, retrievable, env-overridable, and default-unset — so a `secrets.json` carrying
+    them loads (the store is `extra="forbid"`)."""
+    for key, env_var in (
+        ("reddit_client_id", "MARKET_ANALYSER_REDDIT_CLIENT_ID"),
+        ("reddit_client_secret", "MARKET_ANALYSER_REDDIT_CLIENT_SECRET"),
+    ):
+        assert SecretsStore(secrets_path, environ={}).get(key) is None
+        assert SecretsStore(secrets_path, environ={}).status()[key] == "unset"
+        env_store = SecretsStore(secrets_path, environ={env_var: "env_reddit"})
+        assert env_store.get(key) == "env_reddit"
+        assert env_store.status()[key] == "set"
+        file_store = SecretsStore(secrets_path, environ={})
+        file_store.set(key, f"file-{key}")
+        assert SecretsStore(secrets_path, environ={}).get(key) == f"file-{key}"
+
+
 def test_repr_redacts_the_value(secrets_path: Path) -> None:
     store = SecretsStore(secrets_path, environ={})
     store.set("zerion_api_key", ZERION_KEY)

@@ -55,6 +55,11 @@ ENV_VAR_PREFIX = "MARKET_ANALYSER_"
 # credential (LunarCrush reference provider); read-only, injected server-side via
 # a Bearer `Authorization` header — absent the key the source is inert and
 # returns honest-empty, so the key is optional by design.
+# `reddit_client_id` / `reddit_client_secret` are the Plan 0111 / ADR-0105 pair
+# for the Reddit sentiment adapter's keyed app-only OAuth path: both present →
+# the adapter obtains a `client_credentials` bearer and searches `oauth.reddit.com`
+# to climb over the keyless-JSON anti-bot wall; either absent → today's keyless
+# path stands unchanged (honest-empty when blocked), so the pair is optional.
 SecretKey = Literal[
     "zerion_api_key",
     "graph_api_key",
@@ -64,6 +69,8 @@ SecretKey = Literal[
     "binance_read_api_secret",
     "alchemy_prices_key",
     "lunarcrush_api_key",
+    "reddit_client_id",
+    "reddit_client_secret",
 ]
 KNOWN_SECRET_KEYS: tuple[SecretKey, ...] = get_args(SecretKey)
 SecretStatus = Literal["set", "unset"]
@@ -86,6 +93,8 @@ class SecretsFile(BaseModel):
     binance_read_api_secret: str | None = None
     alchemy_prices_key: str | None = None
     lunarcrush_api_key: str | None = None
+    reddit_client_id: str | None = None
+    reddit_client_secret: str | None = None
 
 
 class SecretsStore:
