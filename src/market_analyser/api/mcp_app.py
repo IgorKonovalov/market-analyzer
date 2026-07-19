@@ -44,6 +44,7 @@ from market_analyser.api.mcp_tools.defi_fundamentals import (
     AerodromeDeepReader,
     register_defi_fundamentals,
 )
+from market_analyser.api.mcp_tools.defi_risk import register_defi_risk
 from market_analyser.api.mcp_tools.derivatives_snapshot import (
     DerivativesSource,
     register_derivatives_snapshot,
@@ -101,6 +102,7 @@ from market_analyser.data.adapters.polymarket import PolymarketOddsAdapter
 from market_analyser.data.backfill import BackfillCoordinator
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
+    AaveAccountSource,
     AccountHoldingsSource,
     DefiFundamentalsSource,
     ExecutableQuoteSource,
@@ -159,6 +161,7 @@ def create_mcp_components(
     position_watches_repository: DefiPositionWatchesRepository | None = None,
     position_alerts_repository: DefiPositionAlertsRepository | None = None,
     account_holdings_sources: Mapping[str, AccountHoldingsSource] | None = None,
+    aave_account_sources: Mapping[str, AaveAccountSource] | None = None,
     manual_positions_path: Path | None = None,
     prediction_market_sources: Mapping[str, PredictionMarketSource] | None = None,
     defi_fundamentals_sources: Mapping[str, DefiFundamentalsSource] | None = None,
@@ -559,6 +562,16 @@ def create_mcp_components(
             unclaimed_rewards_source=(unclaimed_rewards_sources or {}).get("rpc"),
             dust_tokens=defi_dust_tokens,
         )
+
+    # `defi_risk` (Plan 0042, ADR-0037): read-only conditional-fact risk — scenario
+    # sensitivity + conditional probability, discriminated by `kind`. Registered
+    # unconditionally: the LP leg needs no source (numbers are supplied), and the Aave
+    # leg reports a typed config error when no `AaveAccountSource` (RPC URL) is wired.
+    register_defi_risk(
+        server,
+        provider=provider,
+        aave_account_sources=aave_account_sources,
+    )
 
     # `portfolio_summary` (Plan 0041, ADR-0042): the cross-venue read-only
     # holdings view. Registered when an account-holdings source is wired (the

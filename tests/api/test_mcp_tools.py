@@ -530,6 +530,7 @@ EXPECTED_FULL_TOOLSET = {
     "create_watch",
     "crypto_fear_greed",
     "defi_fundamentals",
+    "defi_risk",
     "delete_position_watch",
     "delete_watch",
     "derivatives_snapshot",

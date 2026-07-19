@@ -57,6 +57,7 @@ from market_analyser.attribution.scoring_job import (
 )
 from market_analyser.attribution.scoring_job import RecommendationScoringJob
 from market_analyser.config import default_app_data_dir
+from market_analyser.data.adapters.aave_account import AaveAccountAdapter
 from market_analyser.data.adapters.aerodrome_native import AerodromeNativeReader
 from market_analyser.data.adapters.alchemy_historical_price import (
     AlchemyHistoricalPriceAdapter,
@@ -88,6 +89,7 @@ from market_analyser.data.metric_accrual import (
 )
 from market_analyser.data.provider import MarketDataProvider
 from market_analyser.data.sources import (
+    AaveAccountSource,
     AccountHoldingsSource,
     ExecutableQuoteSource,
     GaugeResolutionSource,
@@ -134,6 +136,7 @@ def create_app(
     secrets_store: SecretsStore | None = None,
     wallet_positions_sources: Mapping[str, WalletPositionsSource] | None = None,
     lp_detail_sources: Mapping[str, LpPositionDetailSource] | None = None,
+    aave_account_sources: Mapping[str, AaveAccountSource] | None = None,
     executable_quote_sources: Mapping[str, ExecutableQuoteSource] | None = None,
     gauge_resolution_sources: Mapping[str, GaugeResolutionSource] | None = None,
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
@@ -325,6 +328,17 @@ def create_app(
         effective_lp_detail_sources = {"rpc": RpcLpDetailAdapter(secrets_store=secrets_store)}
     else:
         effective_lp_detail_sources = {}
+    # DeFi Aave-account sources (Plan 0042, ADR-0037/0031): the lending-depth selector
+    # registry the `defi_risk` tool reads for HF/collateral/debt. An explicit map wins
+    # (tests inject a fake); otherwise the RPC adapter is built from the secrets store
+    # (base / ethereum only). Empty without a store — the tool then reports the Aave leg
+    # as unavailable (a typed config error), never fabricated.
+    if aave_account_sources is not None:
+        effective_aave_account_sources: dict[str, AaveAccountSource] = dict(aave_account_sources)
+    elif secrets_store is not None:
+        effective_aave_account_sources = {"rpc": AaveAccountAdapter(secrets_store=secrets_store)}
+    else:
+        effective_aave_account_sources = {}
     # DeFi executable-quote sources (Plan 0079/0086, ADR-0031/0072/0080): the
     # read-only selector registry behind the cross-pool discrepancy scanner v2 (the
     # arb-viability evidence layer). Both families are wired behind one Protocol —
@@ -433,6 +447,7 @@ def create_app(
             position_watches_repository=position_watches_repository,
             position_alerts_repository=position_alerts_repository,
             account_holdings_sources=effective_account_sources,
+            aave_account_sources=effective_aave_account_sources,
             manual_positions_path=manual_positions_path,
             defi_dust_tokens=frozenset(defi_dust_tokens),
             aerodrome_deep_reader=aerodrome_deep_reader,
