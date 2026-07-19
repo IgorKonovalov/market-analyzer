@@ -22,6 +22,7 @@ import pytest
 
 from market_analyser.persistence.secrets import (
     SECRETS_FILENAME,
+    SecretKey,
     SecretsFile,
     SecretsStore,
 )
@@ -132,10 +133,11 @@ def test_reddit_oauth_keys_are_known_secrets(secrets_path: Path) -> None:
     """Plan 0111 / ADR-0105: the Reddit app-only OAuth pair is registered — each key is
     settable, retrievable, env-overridable, and default-unset — so a `secrets.json` carrying
     them loads (the store is `extra="forbid"`)."""
-    for key, env_var in (
+    cases: tuple[tuple[SecretKey, str], ...] = (
         ("reddit_client_id", "MARKET_ANALYSER_REDDIT_CLIENT_ID"),
         ("reddit_client_secret", "MARKET_ANALYSER_REDDIT_CLIENT_SECRET"),
-    ):
+    )
+    for key, env_var in cases:
         assert SecretsStore(secrets_path, environ={}).get(key) is None
         assert SecretsStore(secrets_path, environ={}).status()[key] == "unset"
         env_store = SecretsStore(secrets_path, environ={env_var: "env_reddit"})

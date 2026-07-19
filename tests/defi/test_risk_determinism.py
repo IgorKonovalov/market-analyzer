@@ -17,26 +17,23 @@ _RATIO_RETURNS = [0.04, -0.03, 0.02, -0.05] * 25
 
 
 def test_liquidation_probability_same_seed_is_identical() -> None:
-    kwargs = {
-        "liquidation_distance": 0.5,
-        "log_returns": _RETURNS,
-        "horizon_days": 30,
-        "seed": 7,
-        "n_paths": 5_000,
-    }
-    first = liquidation_probability(**kwargs)
-    second = liquidation_probability(**kwargs)
+    first = liquidation_probability(
+        liquidation_distance=0.5, log_returns=_RETURNS, horizon_days=30, seed=7, n_paths=5_000
+    )
+    second = liquidation_probability(
+        liquidation_distance=0.5, log_returns=_RETURNS, horizon_days=30, seed=7, n_paths=5_000
+    )
     assert first == second  # full dataclass equality (probability + assumption + all)
 
 
 def test_il_distribution_same_seed_is_identical() -> None:
-    kwargs = {
-        "ratio_log_returns": _RATIO_RETURNS,
-        "horizon_days": 30,
-        "seed": 7,
-        "n_paths": 5_000,
-    }
-    assert impermanent_loss_distribution(**kwargs) == impermanent_loss_distribution(**kwargs)
+    first = impermanent_loss_distribution(
+        ratio_log_returns=_RATIO_RETURNS, horizon_days=30, seed=7, n_paths=5_000
+    )
+    second = impermanent_loss_distribution(
+        ratio_log_returns=_RATIO_RETURNS, horizon_days=30, seed=7, n_paths=5_000
+    )
+    assert first == second
 
 
 def test_different_seed_changes_the_draw_but_not_the_vol_fit() -> None:
