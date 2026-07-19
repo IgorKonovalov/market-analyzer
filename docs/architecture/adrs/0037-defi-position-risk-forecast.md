@@ -1,6 +1,6 @@
 # ADR-0037 — DeFi position risk & forecast: conditional facts, not market prediction
 
-> **Status:** proposed — accepts at [Plan 0042](../plans/0042-defi-position-risk-forecast.md)'s close
+> **Status:** accepted (2026-07-19, at [Plan 0042](../plans/done/0042-defi-position-risk-forecast.md)'s close) — the four invariants held as the plan's acceptance criteria: no directional market view (zero-drift MC + supplied-shock-only scenarios), determinism (seeded MC, byte-identical re-runs), honest uncertainty (every probability carries its vol assumption inline), conditional-facts boundary (no exit/rebalance, scanned in test)
 > **Date:** 2026-06-03
 > **Related plan(s):** [Plan 0042](../plans/0042-defi-position-risk-forecast.md) (implements this; approved 2026-06-05 — prereq Plan 0034 closed, Plan 0035 active)
 > **Related ADRs:** [ADR-0030](0030-forecasting-subsystem.md) (the market-forecasting subsystem this is deliberately distinguished from), [ADR-0029](0029-advisory-recommendation-boundary.md) (the recommend-vs-report line this stays on the report side of), [ADR-0015](0015-claude-code-primary-control-surface.md) ("conditions are facts" charter), [ADR-0018](0018-backtest-result-schema.md) (the determinism contract the simulation mirrors), [ADR-0035](0035-defi-domain-placement.md) (the `defi/` home), [ADR-0036](0036-defi-pnl-reconstruction.md) (the cost basis scenarios value against)
