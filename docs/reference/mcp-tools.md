@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 58 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -19,6 +19,7 @@ The 57 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`create_watch`](#createwatch) | Create a persisted watch the sidecar's alerting scheduler evaluates on an interval (ADR-0055). |
 | [`crypto_fear_greed`](#cryptofeargreed) | Get the current crypto Fear & Greed index (Alternative.me): a single 0-100 value with a label (Extreme Fear / Fear / Neutral / Greed / Extreme Greed). |
 | [`defi_fundamentals`](#defifundamentals) | Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g. |
+| [`defi_risk`](#defirisk) | Read-only DeFi position risk as CONDITIONAL FACTS (a condition read, never investment advice or an action), discriminated by `kind`. |
 | [`delete_position_watch`](#deletepositionwatch) | Delete a DeFi position watch by id, including its alert history. |
 | [`delete_watch`](#deletewatch) | Delete a watch by id, including its alert history. |
 | [`derivatives_snapshot`](#derivativessnapshot) | Get the Binance USDS-M derivatives picture for one contract symbol (e.g. |
@@ -312,6 +313,20 @@ Read DeFi-native token/protocol fundamentals for a symbol or protocol slug (e.g.
 | `notes` | array[string] |
 
 **Source:** [`src/market_analyser/api/mcp_tools/defi_fundamentals.py`](../../src/market_analyser/api/mcp_tools/defi_fundamentals.py)
+
+## `defi_risk`
+
+Read-only DeFi position risk as CONDITIONAL FACTS (a condition read, never investment advice or an action), discriminated by `kind`. Two independent, optional legs: an Aave account (fetched on-chain from `address` + `chain`) and a constant-product LP (numbers supplied in `lp`). Pass either or both. kind='scenario' (deterministic sensitivity to a SUPPLIED price move): the Aave leg returns {account, scenario:{collateral_shock, health_factor_before/after, liquidation_distance_before/after (fractional collateral drop that reaches HF=1), collateral/net value before/after}} for a supplied `collateral_shock` (e.g. -0.30); the LP leg returns {value_before, hodl_value_after, lp_value_after, impermanent_loss} from a supplied lp={amount0,price0,shock0,amount1,price1,shock1}. kind='conditional' (likelihood under a STATED vol model): the Aave leg returns {account, liquidation:{probability, horizon_days, daily_vol, seed, assumption}} — a seeded Monte Carlo of `collateral_symbol`'s trailing realized vol over `lookback_days` (a no-debt account returns liquidation=null with a note); the LP leg returns {quantiles, mean, daily_vol, assumption} from supplied lp={ratio_log_returns:[...]}. Every probabilistic figure carries its volatility assumption inline and is reproducible from `seed`; a trailing-vol fit cannot see a future regime shift (stated, not hidden). `horizon_days` (default 30), `seed` (default 0), `lookback_days` (default 90) control the Monte Carlo. On an Aave read failure the aave leg carries {error, message} (config/rate_limited/upstream_unavailable/malformed_response); the LP leg needs no network. `address` must be a raw 0x EVM address.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `params` | DefiRiskInput | yes | — |
+
+**Returns:** `dict[str, Any]`
+
+**Source:** [`src/market_analyser/api/mcp_tools/defi_risk.py`](../../src/market_analyser/api/mcp_tools/defi_risk.py)
 
 ## `delete_position_watch`
 
