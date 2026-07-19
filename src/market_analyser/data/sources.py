@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     # this Protocol only names the return type). `defi/models` imports nothing
     # from `data/`, so there is no import cycle.
     from market_analyser.defi.models import (
+        AaveAccountDetail,
         Chain,
         DefiFundamentals,
         DefiPosition,
@@ -252,6 +253,28 @@ class LpPositionDetailSource(Protocol):
         A one-hop-only source returns `None`; the enrichment step calls this only
         for Uni-v3-class positions, then passes the id to `fetch_lp_detail`."""
         ...
+
+
+@runtime_checkable
+class AaveAccountSource(Protocol):
+    """A read-only source of a wallet's **aggregate Aave v3 account health** on one
+    chain — the lending *depth* half of the DeFi program (Plan 0042 / ADR-0037,
+    ADR-0034), the analogue of `LpPositionDetailSource` for money-market positions.
+    `Pool.getUserAccountData(user)` is a per-`(wallet, chain)` aggregate read, so the
+    returned `AaveAccountDetail` summarises all of the wallet's supply/borrow on that
+    chain (not one position); the scenario engine consumes it to recompute the health
+    factor and liquidation distance under a supplied collateral shock.
+
+    Read-only by charter: a conforming source holds no key, signs nothing, and issues
+    only `eth_call`. It surfaces typed errors (a config error when no RPC URL is set
+    for the chain, the shared rate-limit/unavailable errors on transport failure, a
+    decode error on a shape-broken result) rather than degrading silently — the caller
+    (the `defi_risk` tool) decides how to present an unavailable Aave leg.
+
+    Members of an Aave-account selector registry keyed by source name ("rpc"), built in
+    the composition root (ADR-0031)."""
+
+    def fetch_account_detail(self, *, chain: Chain, owner: str) -> AaveAccountDetail: ...
 
 
 @runtime_checkable

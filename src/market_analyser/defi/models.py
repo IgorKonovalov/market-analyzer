@@ -143,6 +143,63 @@ class LpPositionDetail(BaseModel):
         return self
 
 
+class AaveAccountDetail(BaseModel):
+    """Aave v3 aggregate account health for one `(wallet, chain)`, read on-chain via
+    `Pool.getUserAccountData(user)` (Plan 0042 phase 1 / ADR-0037, ADR-0034) — the
+    lending *depth* that discovery does not expose and that the scenario engine needs
+    to recompute a health factor + liquidation distance under a supplied collateral
+    shock. It is a per-`(wallet, chain)` **aggregate** fact, not a per-position fold:
+    `getUserAccountData` returns the account-wide totals, so one detail summarises all
+    of a wallet's Aave supply/borrow on a chain.
+
+    `total_collateral_base` / `total_debt_base` / `available_borrows_base` are Aave's
+    base-currency amounts (USD on the target markets) already scaled to float USD.
+    `liquidation_threshold` and `ltv` are fractions in `[0, 1]` (Aave returns basis
+    points; scaled here). `health_factor` is the collateral-weighted ratio, or `None`
+    for a **no-debt** account (Aave returns `type(uint256).max` when there is no debt —
+    an undefined HF, carried as `None`, never a fabricated number).
+
+    Boundary-validated in the `DefiPosition` house style: every measurement is finite,
+    the USD amounts and the two fractions are non-negative, and a present
+    `health_factor` is finite and strictly positive. Downstream (the scenario engine)
+    may trust the fields."""
+
+    model_config = ConfigDict(frozen=True)
+
+    chain: Chain
+    total_collateral_base: float = Field(ge=0)  # USD (base currency)
+    total_debt_base: float = Field(ge=0)  # USD
+    available_borrows_base: float = Field(ge=0)  # USD
+    liquidation_threshold: float = Field(ge=0)  # fraction, currentLiquidationThreshold / 1e4
+    ltv: float = Field(ge=0)  # fraction, ltv / 1e4
+    health_factor: float | None = None  # WAD / 1e18; None when the account has no debt
+    as_of: datetime
+
+    @field_validator(
+        "total_collateral_base",
+        "total_debt_base",
+        "available_borrows_base",
+        "liquidation_threshold",
+        "ltv",
+    )
+    @classmethod
+    def _must_be_finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("Aave account measurement must be finite (no NaN/Inf)")
+        return v
+
+    @field_validator("health_factor")
+    @classmethod
+    def _health_factor_finite_and_positive(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if not math.isfinite(v):
+            raise ValueError("health_factor must be finite (no NaN/Inf)")
+        if v <= 0:
+            raise ValueError("health_factor must be strictly positive when present")
+        return v
+
+
 class RewardAmount(BaseModel):
     """One reward token currently owed-but-unclaimed to a position (Plan 0084 /
     ADR-0079), read on-chain via the gauge's `earned()`.
@@ -414,6 +471,7 @@ class DefiFundamentals(BaseModel):
 
 
 __all__ = [
+    "AaveAccountDetail",
     "Chain",
     "DefiFundamentals",
     "DefiPosition",
