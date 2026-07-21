@@ -1,6 +1,6 @@
 # 0043 — Portfolio UI surface
 
-> **Status:** approved (2026-06-05)
+> **Status:** in-progress (2026-07-21)
 > **Created:** 2026-06-05
 > **Owner skill(s):** dev, ui-builder
 > **Related ADRs:** [ADR-0042](../adrs/0042-cross-venue-portfolio-aggregation.md) (the aggregation this renders), [ADR-0037](../adrs/0037-defi-position-risk-forecast.md) (the conditional-risk framing the UI must preserve), [ADR-0017](../adrs/0017-live-ui-updates-via-sse.md) (SSE), [ADR-0029](../adrs/0029-advisory-recommendation-boundary.md) (no advice in a facts view)

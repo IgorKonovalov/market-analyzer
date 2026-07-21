@@ -40,6 +40,7 @@ from market_analyser.api.routes.defi import router as defi_router
 from market_analyser.api.routes.events import router as events_router
 from market_analyser.api.routes.news import router as news_router
 from market_analyser.api.routes.ohlcv import router as ohlcv_router
+from market_analyser.api.routes.portfolio import router as portfolio_router
 from market_analyser.api.routes.position_alerts import router as position_alerts_router
 from market_analyser.api.routes.quote import router as quote_router
 from market_analyser.api.routes.scan_chart_patterns import router as scan_chart_patterns_router
@@ -688,6 +689,14 @@ def create_app(
     # an engine — the /defi/pnl route answers 503 rather than crashing.
     app.state.defi_tx_repository = defi_tx_repository
     app.state.historical_price_source = historical_price_source
+    # The portfolio surface (Plan 0043, ADR-0042/0037): the account-holdings +
+    # Aave-account registries and the manual-positions path the renderer's
+    # `GET /portfolio` + `POST /portfolio/risk` routes read — the REST twins of
+    # the `portfolio_summary` / `defi_risk` MCP tools, reusing their factored
+    # bodies. The DeFi/tx/price registries above are shared verbatim.
+    app.state.account_holdings_sources = effective_account_sources
+    app.state.aave_account_sources = effective_aave_account_sources
+    app.state.manual_positions_path = manual_positions_path
     # User-attested dust tokens (Plan 0093 / ADR-0085) for the /defi/pnl route;
     # the engine lowercases, so the raw frozenset is stored. Empty ⇒ no override.
     app.state.defi_dust_tokens = frozenset(defi_dust_tokens)
@@ -881,6 +890,14 @@ def create_app(
     # reaches the same scan job through the `scan_wallet` MCP tool instead.
     if effective_wallet_sources:
         app.include_router(defi_router)
+
+    # `GET /portfolio` + `POST /portfolio/risk` (Plan 0043 phase 1): the renderer's
+    # portfolio surface — REST twins of the `portfolio_summary` / `defi_risk` MCP
+    # tools. Mounted only when an account-holdings source is wired (the same gate
+    # the `portfolio_summary` tool registration uses), so the account leg always
+    # has a source. Renderer-bearer-gated by the central middleware.
+    if effective_account_sources:
+        app.include_router(portfolio_router)
 
     # The Alerts surface routes (Plan 0060 phase 4): watch list +
     # enable/disable + alert history. Renderer-bearer-gated by the central

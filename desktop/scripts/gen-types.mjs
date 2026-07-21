@@ -74,6 +74,11 @@ const EMIT = new Set([
   'ScoredCallOut',
   'BucketStat',
   'ReliabilityBucket',
+  // Plan 0043 phase 1: the portfolio surface the renderer reads via GET /portfolio.
+  // PortfolioSurfaceResponse nests PortfolioSummary (+ its Holding list) via $ref.
+  'PortfolioSurfaceResponse',
+  'PortfolioSummary',
+  'Holding',
 ])
 
 const HEADER = [
@@ -97,17 +102,22 @@ const PYTHON_DUMP_SCRIPT = [
   'from market_analyser.persistence.annotations_repository import AnnotationsRepository',
   'from market_analyser.persistence.repositories.backtest_runs import BacktestRunsRepository',
   'from market_analyser.persistence.engine import apply_migrations, make_engine, make_session_factory',
+  'from market_analyser.persistence.secrets import SecretsStore',
   'engine = make_engine(":memory:")',
   'apply_migrations(engine)',
   'session_factory = make_session_factory(engine)',
   'annotations_repo = AnnotationsRepository(session_factory)',
   'backtest_repo = BacktestRunsRepository(session_factory)',
   'runs_dir = pathlib.Path(tempfile.mkdtemp(prefix="gen-types-runs-"))',
+  // A tmp secrets store (no keys) wires the network-free account/DeFi adapters so
+  // the account-source-gated /portfolio route mounts and its PortfolioSurfaceResponse
+  // lands in components.schemas (Plan 0043). Construction-only — no key, no network.
+  'secrets_store = SecretsStore(pathlib.Path(tempfile.mkdtemp(prefix="gen-types-secrets-")) / "secrets.json")',
   // `engine=engine` mounts the persistence-gated routers (Plan 0060's
   // /watches + /alerts among them) so their response_models land in
   // components.schemas. The explicit repos still win over the engine-built
   // defaults, and no network adapter is exercised (construction-only).
-  "app = create_app(secret='gen-types-placeholder', mcp_secret='gen-types-placeholder', mcp_secret_path=pathlib.Path(tempfile.gettempdir())/'gen-types-placeholder.json', annotations_repository=annotations_repo, backtest_runs_repository=backtest_repo, runs_dir=runs_dir, engine=engine)",
+  "app = create_app(secret='gen-types-placeholder', mcp_secret='gen-types-placeholder', mcp_secret_path=pathlib.Path(tempfile.gettempdir())/'gen-types-placeholder.json', annotations_repository=annotations_repo, backtest_runs_repository=backtest_repo, runs_dir=runs_dir, engine=engine, secrets_store=secrets_store)",
   'print(json.dumps(app.openapi()))',
 ].join('; ')
 

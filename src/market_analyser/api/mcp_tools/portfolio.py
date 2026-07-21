@@ -73,7 +73,7 @@ from market_analyser.portfolio.aggregate import (
     aggregate_portfolio,
     unrealized_contributor_count,
 )
-from market_analyser.portfolio.models import Holding
+from market_analyser.portfolio.models import Holding, PortfolioSummary
 from market_analyser.portfolio.sources import ManualPositionsError, ManualPositionsSource
 
 _DEFAULT_ACCOUNT_SOURCE = "binance"
@@ -115,6 +115,112 @@ class PortfolioSummaryInput(BaseModel):
     include_defi_basis: bool = True
 
 
+class PortfolioSurfaceResponse(BaseModel):
+    """The `portfolio_summary` payload, shared verbatim by the MCP tool (agent
+    surface) and the renderer's `GET /portfolio` route (viewer surface) so the
+    two can never disagree — the track-record / backtests precedent. `summary`
+    is the aggregated `PortfolioSummary`; `leg_errors` contains one typed reason
+    per failed venue leg (the others still aggregate); `notes` flag partial
+    coverage. `error`/`message` are reserved for a whole-call failure and are
+    always `None` today (per-leg containment means the call itself does not fail)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: PortfolioSummary
+    leg_errors: dict[str, str]
+    notes: list[str]
+    error: str | None = None
+    message: str | None = None
+
+
+async def _portfolio_summary_response(
+    *,
+    provider: MarketDataProvider,
+    account_source: AccountHoldingsSource,
+    positions_source: WalletPositionsSource | None,
+    tx_source: TxHistorySource | None,
+    defi_tx_repository: DefiTxRepository | None,
+    historical_price_source: HistoricalPriceSource | None,
+    manual_positions_path: Path,
+    params: PortfolioSummaryInput,
+) -> PortfolioSurfaceResponse:
+    """Aggregate the cross-venue portfolio: the Binance account leg, the optional
+    DeFi leg (+ ADR-0036 basis join), and the manual file, each contained so a
+    failing leg lands in `leg_errors` while the others aggregate. The factored
+    body both the tool and the route call verbatim."""
+    queried_at = datetime.now(tz=UTC)
+    leg_errors: dict[str, str] = {}
+    notes: list[str] = []
+
+    binance_account: AccountHoldings | None = None
+    try:
+        binance_account = await asyncio.to_thread(account_source.fetch_account_holdings)
+    except UpstreamDataError as err:
+        leg_errors["binance"] = f"{_binance_reason(err)}: {err}"
+    except (BinanceAccountError, ValidationError) as err:
+        leg_errors["binance"] = f"malformed_response: {err}"
+
+    defi_positions: list[DefiPosition] | None = None
+    defi_as_of: datetime | None = None
+    defi_basis: dict[str, float] | None = None
+    if params.wallet is not None:
+        defi_positions, defi_as_of = await _read_defi_leg(
+            positions_source, params.wallet, leg_errors
+        )
+    if defi_positions is not None and params.wallet is not None:
+        if not params.include_defi_basis:
+            notes.append("defi cost basis skipped (include_defi_basis=false)")
+        elif tx_source is None or defi_tx_repository is None or historical_price_source is None:
+            notes.append("defi cost basis unavailable: the P&L pipeline is not wired")
+        else:
+            defi_basis = await _read_defi_basis(
+                tx_source,
+                defi_tx_repository,
+                historical_price_source,
+                params.wallet,
+                defi_positions,
+                notes,
+            )
+
+    manual_holdings: list[Holding] = []
+    try:
+        manual_holdings = ManualPositionsSource(manual_positions_path).load_holdings()
+    except ManualPositionsError as err:
+        leg_errors["manual"] = f"malformed_file: {err}"
+    else:
+        if not manual_holdings:
+            notes.append(
+                f"manual leg empty: no rows in {manual_positions_path.name} "
+                "(or the file is absent)",
+            )
+
+    prices: dict[tuple[str, str], PricePoint] = {}
+    if binance_account is not None:
+        for balance in binance_account.spot:
+            await _quote_into(
+                prices, ("binance", balance.asset), f"{balance.asset}-USD", provider, notes
+            )
+    for holding in manual_holdings:
+        await _quote_into(prices, ("manual", holding.symbol), holding.symbol, provider, notes)
+
+    summary = aggregate_portfolio(
+        binance=binance_account,
+        defi_positions=defi_positions,
+        defi_as_of=defi_as_of,
+        defi_basis=defi_basis,
+        manual=manual_holdings,
+        prices=prices,
+        queried_at=queried_at,
+    )
+    contributors = unrealized_contributor_count(summary)
+    if summary.unrealized_pnl_usd is not None and contributors < len(summary.holdings):
+        notes.append(
+            f"unrealized_pnl_usd covers {contributors} of {len(summary.holdings)} "
+            "holdings (the rest lack a price or a basis)",
+        )
+    return PortfolioSurfaceResponse(summary=summary, leg_errors=leg_errors, notes=notes)
+
+
 def register_portfolio_summary(
     server: FastMCP,
     *,
@@ -129,7 +235,8 @@ def register_portfolio_summary(
     """Bind the `portfolio_summary` tool to `server`. Dependencies are captured
     by closure so the tool body keeps its single declared parameter (FastMCP
     introspects it for the input schema). The DeFi dependencies are optional:
-    absent ones degrade to `leg_errors`/`notes`, never a crash."""
+    absent ones degrade to `leg_errors`/`notes`, never a crash. The body is the
+    factored `_portfolio_summary_response`, reused verbatim by `GET /portfolio`."""
     account_source = account_holdings_sources[_DEFAULT_ACCOUNT_SOURCE]
     positions_source = (
         wallet_positions_sources.get(_DEFAULT_DEFI_SOURCE) if wallet_positions_sources else None
@@ -138,83 +245,17 @@ def register_portfolio_summary(
 
     @server.tool(description=PORTFOLIO_SUMMARY_DESCRIPTION)
     async def portfolio_summary(params: PortfolioSummaryInput) -> dict[str, Any]:
-        queried_at = datetime.now(tz=UTC)
-        leg_errors: dict[str, str] = {}
-        notes: list[str] = []
-
-        binance_account: AccountHoldings | None = None
-        try:
-            binance_account = await asyncio.to_thread(account_source.fetch_account_holdings)
-        except UpstreamDataError as err:
-            leg_errors["binance"] = f"{_binance_reason(err)}: {err}"
-        except (BinanceAccountError, ValidationError) as err:
-            leg_errors["binance"] = f"malformed_response: {err}"
-
-        defi_positions: list[DefiPosition] | None = None
-        defi_as_of: datetime | None = None
-        defi_basis: dict[str, float] | None = None
-        if params.wallet is not None:
-            defi_positions, defi_as_of = await _read_defi_leg(
-                positions_source, params.wallet, leg_errors
-            )
-        if defi_positions is not None and params.wallet is not None:
-            if not params.include_defi_basis:
-                notes.append("defi cost basis skipped (include_defi_basis=false)")
-            elif tx_source is None or defi_tx_repository is None or historical_price_source is None:
-                notes.append("defi cost basis unavailable: the P&L pipeline is not wired")
-            else:
-                defi_basis = await _read_defi_basis(
-                    tx_source,
-                    defi_tx_repository,
-                    historical_price_source,
-                    params.wallet,
-                    defi_positions,
-                    notes,
-                )
-
-        manual_holdings: list[Holding] = []
-        try:
-            manual_holdings = ManualPositionsSource(manual_positions_path).load_holdings()
-        except ManualPositionsError as err:
-            leg_errors["manual"] = f"malformed_file: {err}"
-        else:
-            if not manual_holdings:
-                notes.append(
-                    f"manual leg empty: no rows in {manual_positions_path.name} "
-                    "(or the file is absent)",
-                )
-
-        prices: dict[tuple[str, str], PricePoint] = {}
-        if binance_account is not None:
-            for balance in binance_account.spot:
-                await _quote_into(
-                    prices, ("binance", balance.asset), f"{balance.asset}-USD", provider, notes
-                )
-        for holding in manual_holdings:
-            await _quote_into(prices, ("manual", holding.symbol), holding.symbol, provider, notes)
-
-        summary = aggregate_portfolio(
-            binance=binance_account,
-            defi_positions=defi_positions,
-            defi_as_of=defi_as_of,
-            defi_basis=defi_basis,
-            manual=manual_holdings,
-            prices=prices,
-            queried_at=queried_at,
+        response = await _portfolio_summary_response(
+            provider=provider,
+            account_source=account_source,
+            positions_source=positions_source,
+            tx_source=tx_source,
+            defi_tx_repository=defi_tx_repository,
+            historical_price_source=historical_price_source,
+            manual_positions_path=manual_positions_path,
+            params=params,
         )
-        contributors = unrealized_contributor_count(summary)
-        if summary.unrealized_pnl_usd is not None and contributors < len(summary.holdings):
-            notes.append(
-                f"unrealized_pnl_usd covers {contributors} of {len(summary.holdings)} "
-                "holdings (the rest lack a price or a basis)",
-            )
-        return {
-            "summary": summary.model_dump(mode="json"),
-            "leg_errors": leg_errors,
-            "notes": notes,
-            "error": None,
-            "message": None,
-        }
+        return response.model_dump(mode="json")
 
 
 async def _read_defi_leg(
@@ -342,5 +383,7 @@ def _binance_reason(err: UpstreamDataError) -> str:
 __all__ = [
     "PORTFOLIO_SUMMARY_DESCRIPTION",
     "PortfolioSummaryInput",
+    "PortfolioSurfaceResponse",
+    "_portfolio_summary_response",
     "register_portfolio_summary",
 ]
