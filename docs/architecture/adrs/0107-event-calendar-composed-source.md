@@ -1,6 +1,6 @@
 # ADR-0107 — Event / economic calendar as a composed, keyless-first data source
 
-> **Status:** proposed | accepted (Plan 0113 accepts at close)
+> **Status:** accepted (2026-07-21, Plan 0113 close)
 > **Date:** 2026-07-21
 > **Related plan(s):** 0113-event-calendar-source
 
