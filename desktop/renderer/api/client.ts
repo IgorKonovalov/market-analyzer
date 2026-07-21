@@ -43,6 +43,13 @@ import type { PositionAlertsPage } from '../types/sidecar/position-alerts-page'
 import type { PositionWatchOut } from '../types/sidecar/position-watch-out'
 import type { WatchOut } from '../types/sidecar/watch-out'
 import type { WalletPnlResponse } from '../types/defiPnl'
+import {
+  portfolioRiskSchema,
+  portfolioSurfaceSchema,
+  type PortfolioRiskResponse,
+  type PortfolioSurface,
+  type RiskRequest,
+} from '../schemas/portfolio'
 
 let cached: SidecarPort | null = null
 const configChangeSubscribers = new Set<() => void>()
@@ -355,6 +362,44 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, refresh }),
     })
+  },
+  /**
+   * The cross-venue portfolio (Plan 0043 phase 2, ADR-0042). Renderer-bearer-
+   * gated `GET /portfolio` — the REST twin of the `portfolio_summary` MCP tool.
+   * Returns unified holdings + average-cost basis + unrealized P&L + exposure,
+   * each venue leg stamped with its OWN as-of (freshness never blended), plus
+   * `leg_errors`/`notes`. `wallet` is optional and switches the DeFi leg on. The
+   * payload is Zod-validated before it reaches any view state (facts only, no
+   * advice — ADR-0029). A `503` surfaces as an `ApiError` the view maps to a hint.
+   */
+  async getPortfolio(
+    params: { wallet?: string; includeDefiBasis?: boolean } = {},
+  ): Promise<PortfolioSurface> {
+    const query = new URLSearchParams()
+    if (params.wallet) query.set('wallet', params.wallet)
+    if (params.includeDefiBasis !== undefined) {
+      query.set('include_defi_basis', String(params.includeDefiBasis))
+    }
+    const qs = query.toString()
+    return portfolioSurfaceSchema.parse(await callJson<unknown>(`/portfolio${qs ? `?${qs}` : ''}`))
+  },
+  /**
+   * Recompute a DeFi position's risk under a supplied shock or stated volatility
+   * model (Plan 0043 phase 2, ADR-0037). Renderer-bearer-gated
+   * `POST /portfolio/risk` — the REST twin of the `defi_risk` MCP tool. Returns
+   * CONDITIONAL FACTS about the position (health factor / liquidation distance /
+   * impermanent loss for a dialed shock; a probability under a stated vol model
+   * with its assumption inline) — never a recommendation. The payload is
+   * Zod-validated; a leg-less body 422s upstream.
+   */
+  async recomputeRisk(request: RiskRequest): Promise<PortfolioRiskResponse> {
+    return portfolioRiskSchema.parse(
+      await callJson<unknown>('/portfolio/risk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      }),
+    )
   },
   /**
    * Recent headlines + aggregate tone (Plan 0023). Hits the renderer-bearer-

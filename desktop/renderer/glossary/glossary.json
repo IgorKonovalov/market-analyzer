@@ -1728,5 +1728,65 @@
       "en": "A decline losing force — each push down gains less range than the last. Classically leans toward an upside resolution, but that lean is a base rate, not this chart's outcome; only a confirmed break is a fact. A condition, not a call.",
       "ru": "Снижение теряет силу — каждый рывок вниз даёт меньше диапазона, чем предыдущий. Классически склоняется к разрешению вверх, но эта склонность — базовая статистика, а не исход данного графика; фактом является только подтверждённый пробой. Это состояние, а не рекомендация."
     }
+  },
+  "portfolio_health_factor": {
+    "term": {
+      "en": "Health factor",
+      "ru": "Health factor"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "A lending account's safety ratio: the liquidation-threshold-weighted collateral divided by the borrowed debt, read live from the protocol. Above 1 the account is safe; at or below 1 it becomes liquidatable.",
+      "ru": "Коэффициент безопасности кредитного аккаунта: залог, взвешенный по порогу ликвидации, делённый на заём. Читается вживую из протокола. Выше 1 — аккаунт в безопасности; на уровне 1 или ниже он подлежит ликвидации."
+    },
+    "whatItMeans": {
+      "en": "How close the account is to forced liquidation. The 'after' figure shows where a dialed price shock would leave it — a what-if, not a prediction.",
+      "ru": "Насколько аккаунт близок к принудительной ликвидации. Значение «после» показывает, куда его приведёт заданный ценовой шок — это допущение, а не прогноз."
+    }
+  },
+  "portfolio_liquidation_distance": {
+    "term": {
+      "en": "Liquidation distance",
+      "ru": "Дистанция до ликвидации"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "The fractional drop in collateral value that would drive the health factor to 1 — the liquidation edge. Derived from the current collateral, debt, and liquidation threshold; null when the account carries no debt.",
+      "ru": "Доля падения стоимости залога, которая опустила бы health factor до 1 — грань ликвидации. Выводится из текущего залога, долга и порога ликвидации; отсутствует, если у аккаунта нет долга."
+    },
+    "whatItMeans": {
+      "en": "How much of a price drop the position can absorb before it is liquidated. Smaller means more fragile.",
+      "ru": "Какое падение цены позиция способна выдержать до ликвидации. Меньше — значит уязвимее."
+    }
+  },
+  "portfolio_impermanent_loss": {
+    "term": {
+      "en": "Impermanent loss",
+      "ru": "Непостоянные потери"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "The shortfall of a constant-product LP position versus simply holding the two tokens, after a price move: 2·sqrt(R)/(1+R) − 1 for a price ratio R. Computed here from the supplied amounts, prices, and dialed shock.",
+      "ru": "Отставание позиции LP с постоянным произведением от простого удержания двух токенов после движения цены: 2·sqrt(R)/(1+R) − 1 для отношения цен R. Здесь рассчитывается из заданных количеств, цен и шока."
+    },
+    "whatItMeans": {
+      "en": "What providing liquidity costs versus just holding, at the dialed shock. It is a condition of the price move, not a realized loss until you withdraw.",
+      "ru": "Во что обходится предоставление ликвидности по сравнению с простым удержанием при заданном шоке. Это следствие движения цены, а не реализованный убыток до вывода средств."
+    }
+  },
+  "portfolio_liq_probability": {
+    "term": {
+      "en": "Liquidation probability",
+      "ru": "Вероятность ликвидации"
+    },
+    "category": "defi",
+    "howComputed": {
+      "en": "A seeded Monte-Carlo estimate of the chance the account is liquidated within the horizon, simulating the collateral's trailing realized volatility. Reproducible from its seed; the volatility assumption is stated alongside it.",
+      "ru": "Оценка методом Монте-Карло (с фиксированным сидом) вероятности ликвидации аккаунта в пределах горизонта, моделирующая скользящую реализованную волатильность залога. Воспроизводима по сиду; допущение о волатильности указывается рядом."
+    },
+    "whatItMeans": {
+      "en": "The likelihood of liquidation under the stated volatility model — never a bare number: it is only as good as that assumption, which a trailing fit cannot see a future regime shift in.",
+      "ru": "Вероятность ликвидации при заявленной модели волатильности — никогда не голое число: она хороша ровно настолько, насколько верно это допущение, а скользящая оценка не видит будущей смены режима."
+    }
   }
 }

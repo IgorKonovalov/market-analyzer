@@ -51,6 +51,7 @@ import { ForecastView } from './views/ForecastView'
 import { LiveSignalView } from './views/LiveSignalView'
 import { NewsView } from './views/NewsView'
 import { OhlcvView } from './views/OhlcvView'
+import { PortfolioView } from './views/PortfolioView'
 import { RecentBacktestsView } from './views/RecentBacktestsView'
 import { RecommendationsView } from './views/RecommendationsView'
 import { SettingsView } from './views/SettingsView'
@@ -66,6 +67,7 @@ type View =
   | 'track-record'
   | 'forecast'
   | 'convergence'
+  | 'portfolio'
   | 'defi'
   | 'settings'
   | 'backtest'
@@ -102,6 +104,7 @@ const NAV_GROUPS: ReadonlyArray<{
   {
     labelKey: 'app.nav.group.portfolio',
     items: [
+      { view: 'portfolio', labelKey: 'app.nav.portfolio', testid: 'nav-portfolio' },
       { view: 'defi', labelKey: 'app.nav.defi', testid: 'nav-defi' },
       { view: 'track-record', labelKey: 'app.nav.trackRecord', testid: 'nav-track-record' },
     ],
@@ -360,6 +363,7 @@ export function App(): JSX.Element {
         />
       )}
       {view === 'convergence' && <ConvergenceView screen={latestScreen} />}
+      {view === 'portfolio' && <PortfolioView />}
       {view === 'defi' && <DefiPnlView />}
       {view === 'alerts' && <AlertsView />}
       {view === 'news' && <NewsView />}
