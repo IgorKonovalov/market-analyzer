@@ -65,7 +65,7 @@ export function PortfolioView(): JSX.Element {
       </header>
 
       <form className={styles.controls} onSubmit={onSubmit}>
-        <div className={styles.field}>
+        <div className={`${styles.field} ${styles.walletField}`}>
           <label htmlFor="portfolio-wallet">{t('portfolio.walletLabel')}</label>
           <input
             id="portfolio-wallet"

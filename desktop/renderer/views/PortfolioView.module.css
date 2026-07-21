@@ -58,9 +58,17 @@
   outline-offset: 1px;
 }
 
+/* The wallet field grows to fill the controls ROW; the flex must sit on the
+ * field wrapper (a row item), never on the input — the input lives in a COLUMN
+ * flex container, where `flex-basis` would size its HEIGHT and stretch it into
+ * a tall box. */
+.walletField {
+  flex: 1 1 24rem;
+}
+
 .wallet {
   font-family: var(--font-mono);
-  flex: 1 1 24rem;
+  width: 100%;
 }
 
 .checkbox {
