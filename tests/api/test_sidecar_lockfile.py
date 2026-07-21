@@ -56,7 +56,13 @@ SIGTERM_WAIT_S = 5.0
 # the whole suite runs under pre-push/CI contention. Wait longer for the
 # graceful path so it isn't a timeout flake.
 GRACEFUL_SHUTDOWN_WAIT_S = 15.0
-SECOND_STARTUP_TIMEOUT_S = 5.0
+# The second sidecar has to cold-start an interpreter, import the app, hit the
+# lockfile check, and exit. Under full-suite pre-push/CI contention that cold
+# start can tail past a tight 5s window even though the refusal itself is
+# immediate — the assertion is about behaviour (refuses, exits non-zero, names
+# the live PID), not speed. Wait as long as the other load-sensitive paths so it
+# isn't a timeout flake.
+SECOND_STARTUP_TIMEOUT_S = 15.0
 
 
 def _repo_root() -> Path:
