@@ -1,6 +1,6 @@
 # ADR-0106 — Documentation-system posture: keep bespoke plans + ADRs, add a native living-spec layer, decline OpenSpec for the core repo
 
-> **Status:** proposed | accepted (Plan 0112 accepts at close)
+> **Status:** accepted (Plan 0112 closed 2026-07-21)
 > **Date:** 2026-07-21
 > **Related plan(s):** 0112-living-behavioral-specs
 
