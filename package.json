@@ -12,7 +12,8 @@
     "test:dev-scripts": "node --test scripts/dev/__tests__/write-mcp-config.test.mjs scripts/dev/__tests__/spawn-sidecar.test.mjs",
     "typecheck": "pnpm --filter desktop typecheck",
     "gen:api-docs": "uv run python -m market_analyser.apiref",
-    "gen:api-docs:check": "uv run python -m market_analyser.apiref --check"
+    "gen:api-docs:check": "uv run python -m market_analyser.apiref --check",
+    "specs:check": "uv run python -m market_analyser.specs --check"
   },
   "devDependencies": {
     "concurrently": "9.0.1",

@@ -68,6 +68,11 @@ jobs:
         # any drift, exactly like gen-types:check does for the renderer types.
         run: uv run python -m market_analyser.apiref --check
 
+      - name: Living-spec freshness --check (Plan 0112)
+        # Structural gate over docs/architecture/specs/: fails on a spec missing a
+        # required section or carrying a dangling Reconciled-through plan ref.
+        run: uv run python -m market_analyser.specs --check
+
       - name: Pytest with coverage (excludes @pytest.mark.network per Plan 0001)
         run: uv run pytest -m "not network" --cov=src --cov-fail-under=85
 
