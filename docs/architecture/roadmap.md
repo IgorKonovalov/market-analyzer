@@ -2,13 +2,13 @@
 
 > **Status:** living document, aspirational. **This is not a plan.** Plans (under [`plans/`](plans/)) commit; this document describes direction. ADRs (under [`adrs/`](adrs/)) decide; this document anticipates what decisions are coming. Specific timelines, orderings, and capability cuts will move; the *shape* is the durable part.
 >
-> Last refreshed: 2026-07-14 (app at **v0.9.0**; added the [At a glance](#at-a-glance--shipped-vs-planned) plan ledger and caught the tier bodies up through the Plan 0072–0096 close batch — the remediation audit, lightweight-charts v5 migration, i18n, the API-reference generator, the momentum/divergence/money-flow + price-structure analysis clusters, the DeFi P&L completeness arc, the Polymarket screener, and the chart/app declutter). Prior refresh 2026-07-10 (crypto-first positioning stated — [ADR-0069](adrs/0069-crypto-first-asset-class-positioning.md)). Prior substantive refresh 2026-07-03, post Plan 0060 close — forecasting foundation, advisor layer + UI, crypto data half 0055–0058, chart-pattern initiative 0051–0054, and the watchlist alerting loop.
+> Last refreshed: 2026-07-21 (app at **v0.23.0**; refreshed the top-of-document trust signals — the [At a glance](#at-a-glance--shipped-vs-planned) ledger and the [In flight / approved](#in-flight--approved-the-open-plans) table, which had drifted badly: the entire 0097–0110 close batch (chart chain completion + drawing tools, the watchlist-scanner / quality-rank / sector-rotation upstream-parity batch, DeFi fundamentals + position risk, the Reddit/X sentiment sources, the MCP tool-surface consolidation, and the watch-management UX) plus the 0111/0112 additions had shipped or been drafted since the last refresh. Also threaded in the new Tier-5 event-calendar direction (Plan 0113) and the docs living-spec layer (Plan 0112). **Honesty note: the tier bodies below still narrate the pre-0096 close batch** — several inline `approved`/`in flight` tags in the Tier sections name plans that have since closed. The [At a glance](#at-a-glance--shipped-vs-planned) ledger and the plan files are the current truth; the tier prose is the durable *why*, not a live status board, and a full tier-body catch-up is owed as its own pass. Prior refresh 2026-07-14 (v0.9.0, through the 0072–0096 batch). Prior substantive refresh 2026-07-03, post Plan 0060 close.
 
 ## At a glance — shipped vs. planned
 
 A one-screen ledger of where the plan program stands. The tiers below narrate *why*; this is the *what*. Source of truth is each plan's `Status:` line and the [plans index](plans/README.md); if this disagrees, the plan file wins.
 
-**As of 2026-07-14 (v0.9.0): 96 plans shipped (0001–0096, in [`plans/done/`](plans/done)), 13 in flight or approved.** The two read-only pillars of the 2026-06-05 program — forecasting and the advisory layer — are live; the crypto-intelligence and DeFi-analytics programs shipped in full; the execution arc is designed but unbuilt.
+**As of 2026-07-21 (v0.23.0): ~106 plans shipped (through the Plan 0042 close, in [`plans/done/`](plans/done)), 7 in flight or approved.** The two read-only pillars of the 2026-06-05 program — forecasting and the advisory layer — are live; the crypto-intelligence and DeFi-analytics programs shipped in full; the portfolio arc's data + risk halves shipped (0041/0042) with its UI (0043) in flight; the **execution arc (0044–0046) remains designed but unbuilt** and is the most-gated work on the critical path. The read-only decision-support surface is essentially saturated, so new direction now goes to **Tier 5 (news & market investigation)** — the event-calendar first slice is committed (Plan 0113).
 
 ### Shipped (thematic digest of the 96 closed plans)
 
@@ -27,26 +27,21 @@ A one-screen ledger of where the plan program stands. The tiers below narrate *w
 | **Alerting** | Watchlist alerting loop — in-sidecar scheduler, edge-triggered `alert.triggered`, Alerts view + toast | 0060 |
 | **Platform hardening** | Russian localization + reason codes; generated CI-gated API reference; 2026-07 remediation audit; versioning cadence | 0069, 0070, 0072, 0087 |
 
-### In flight / approved (the 13 open plans)
+### In flight / approved (the open plans)
+
+The full authoritative roster (with per-plan close notes) is the [plans index](plans/README.md); this is the one-screen view.
 
 | # | Plan | Status | One-liner |
 |---|------|--------|-----------|
-| 0106 | [remove-agent-mode](plans/0106-remove-agent-mode.md) | approved | Delete the agent-mode consent gate — gestures forward unconditionally ([ADR-0101](adrs/0101-remove-agent-mode-gate.md)). |
-| 0105 | [chart-legibility](plans/0105-chart-legibility.md) | draft | On-chart labels + primitive hover ([ADR-0100](adrs/0100-on-chart-legibility-labels-and-primitive-hover.md)). |
-| 0104 | [drawing-readback-and-position-tools](plans/0104-drawing-readback-and-position-tools.md) | approved | Read the user's chart drawings back to the agent + advisory position tools ([ADR-0099](adrs/0099-user-drawing-readback-and-advisory-positions.md)). |
-| 0103 | [reddit-crowd-sentiment](plans/0103-reddit-crowd-sentiment.md) | approved | Keyless Reddit crowd-sentiment source ([ADR-0098](adrs/0098-reddit-keyless-crowd-sentiment.md)). |
-| 0102 | [crypto-sector-rotation](plans/0102-crypto-sector-rotation.md) | approved | Crypto sector taxonomy + baskets for rotation reads ([ADR-0097](adrs/0097-crypto-sector-taxonomy-and-baskets.md)). |
-| 0101 | [composite-quality-rank](plans/0101-composite-quality-rank.md) | approved | Composite conditions-side screening quality rank ([ADR-0096](adrs/0096-screening-quality-rank-conditions-side.md)). |
-| 0100 | [watchlist-condition-scanners](plans/0100-watchlist-condition-scanners.md) | approved | Fan-out watchlist condition scanners ([ADR-0095](adrs/0095-watchlist-scan-fanout-harness.md)). |
-| 0099 | [defi-position-out-of-range-monitor](plans/0099-defi-position-out-of-range-monitor.md) | draft | Dwell-triggered LP out-of-range alerts ([ADR-0093](adrs/0093-defi-position-monitor-dwell-triggered.md)). |
-| 0098 | [chart-controller-refactor](plans/0098-chart-controller-refactor.md) | draft | Imperative chart-controller core ([ADR-0092](adrs/0092-chart-controller-imperative-core.md)). |
-| 0097 | [chart-drawing-dock](plans/0097-chart-drawing-dock.md) | approved | Consolidate chart drawing tools into a dock. |
-| 0045 | [binance-futures-testnet-adapter](plans/0045-binance-futures-testnet-adapter.md) | approved | Execution arc: Binance USDⓈ-M **testnet** adapter. |
-| 0044 | [execution-skeleton](plans/0044-execution-skeleton.md) | approved | Execution arc: `ExecutionVenue` Protocol + order/position FSM ([ADR-0043](adrs/0043-execution-venue-protocol.md)). |
-| 0043 | [portfolio-ui-surface](plans/0043-portfolio-ui-surface.md) | approved | Portfolio view over the cross-venue aggregator ([ADR-0042](adrs/0042-cross-venue-portfolio-aggregation.md)). |
-| 0042 | [defi-position-risk-forecast](plans/0042-defi-position-risk-forecast.md) | approved | Scenario sensitivity + conditional liquidation/IL probability ([ADR-0037](adrs/0037-defi-position-risk-forecast.md)). |
+| 0113 | [event-calendar-source](plans/0113-event-calendar-source.md) | approved | **Tier-5 first slice.** Composed keyless-first event calendar — FOMC/FRED macro + Finnhub earnings (free-key-inert) + Binance/Coinbase listings self-diff — behind one `event_calendar(category)` tool; token unlocks deferred ([ADR-0107](adrs/0107-event-calendar-composed-source.md)). |
+| 0112 | [living-behavioral-specs](plans/0112-living-behavioral-specs.md) | approved | Docs living-spec layer under `docs/architecture/specs/` — per-subsystem behavioral contracts reconciled at close ([ADR-0106](adrs/0106-spec-system-posture-and-living-specs.md); the OpenSpec-evaluation outcome). |
+| 0111 | [reddit-oauth-access-path](plans/0111-reddit-oauth-access-path.md) | approved (**paused**) | Keyed Reddit OAuth after keyless proved IP-blocked ([ADR-0105](adrs/0105-reddit-keyed-oauth-access-path.md)). **Human gate blocked** — can't obtain app credentials. |
+| 0046 | [pending-order-confirm-ux](plans/0046-pending-order-confirm-ux.md) | approved | **Execution arc.** Assisted-confirm pending-order queue + kill switch; no order without confirmation ([ADR-0025](adrs/0025-trade-execution-feasibility.md) invariant 1). |
+| 0045 | [binance-futures-testnet-adapter](plans/0045-binance-futures-testnet-adapter.md) | approved | **Execution arc.** Binance USDⓈ-M **testnet** adapter. |
+| 0044 | [execution-skeleton](plans/0044-execution-skeleton.md) | approved | **Execution arc core.** `ExecutionVenue` Protocol + order/position FSM + idempotency + reconciliation + risk guard + kill switch ([ADR-0043](adrs/0043-execution-venue-protocol.md)). Adds a migration. |
+| 0043 | [portfolio-ui-surface](plans/0043-portfolio-ui-surface.md) | approved (**in progress**) | Portfolio view + DeFi risk panel over the cross-venue aggregator ([ADR-0042](adrs/0042-cross-venue-portfolio-aggregation.md)). Being implemented now. |
 
-The chart chain (0105 → 0106 → 0097 → 0104 → 0098) is sequenced in the [plans index](plans/README.md); the execution arc (0042–0045) is the most-gated remaining work and sits last on the critical path.
+The **execution arc (0044 → 0045 → 0046)** is the most-gated remaining committed work and sits last on the critical path (testnet-first, assisted-confirm — ADR-0025). Everything read-only through Tier 4 has closed; new direction goes to **Tier 5** (Plan 0113) and platform (Plan 0112).
 
 ## Vision
 
@@ -138,9 +133,9 @@ This arc realizes [ADR-0025](adrs/0025-trade-execution-feasibility.md)'s six inv
 
 ### Tier 5 — News and market investigation
 
-The "be a news source and market investigation app" piece of the vision, layered on top of Tier 2's news adapter.
+The "be a news source and market investigation app" piece of the vision, layered on top of Tier 2's news adapter. **This tier is now active** — with the read-only decision-support surface saturated, it holds the next new direction (2026-07-21).
 
-- **Event detection** — earnings dates, FOMC, crypto unlock schedules, listing announcements. Calendar-shaped data that drives notifications.
+- **Event detection — first slice committed** ([Plan 0113](plans/0113-event-calendar-source.md)/[ADR-0107](adrs/0107-event-calendar-composed-source.md), approved): a composed keyless-first `EventCalendarSource` behind one `event_calendar(category)` tool — FOMC + FRED release dates (macro), Finnhub earnings (free-key-inert), and Binance/Coinbase listings self-diff. **Token unlocks deferred** (no keyless JSON — DefiLlama emissions confirmed paid-only; spend paused). Calendar-shaped data that will drive notifications via the existing dwell scheduler + OS-notification path (follow-on). Timeline, corroboration, and digest below remain unbuilt.
 - **Multi-source corroboration** — when multiple feeds report the same story, dedup and rank by source quality. Agent task surface: "investigate this rumour."
 - **Timeline view per symbol** — chronologically ordered news + sentiment + price moves for a chosen symbol over a chosen window. Designed for the "what actually happened on this day" workflow.
 - **Agent-curated digest** — daily/weekly summary the agent produces, written into a `digests` table and surfaced as a left-panel feed.
