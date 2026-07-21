@@ -97,7 +97,9 @@ class FredReleasesSource(EventCalendarSource):
             )
         )
 
-    def fetch_events(self, *, symbol: str | None = None) -> CalendarFetch:
+    def fetch_events(
+        self, *, symbol: str | None = None, window: str | None = None
+    ) -> CalendarFetch:
         key = self._secrets.get("fred_api_key") if self._secrets is not None else None
         if not key:
             return CalendarFetch(events=[], notes=(_UNCONFIGURED_NOTE,))

@@ -429,14 +429,18 @@ class EventCalendarSource(Protocol):
     silently narrows coverage instead of breaking the call.
 
     `symbol` narrows a per-symbol source (equity earnings); category-wide sources
-    (FOMC seed, FRED releases, listings diff) ignore it. Wall-clock-sensitive with
+    (FOMC seed, FRED releases, listings diff) ignore it. `window` is an optional
+    forward look-ahead horizon (e.g. "90d") the earnings source uses to bound its
+    calendar query; the date-driven sources ignore it. Wall-clock-sensitive with
     **no `as_of`**: these are forward-looking scheduled facts and repeated calls
     legitimately differ as the calendar advances (ADR-0107, the sentiment-source
     posture). Members of the event-calendar registry, keyed by category and composed
     behind the `event_calendar` tool, built in the composition root (ADR-0031) —
     adding a provider is one registry entry."""
 
-    def fetch_events(self, *, symbol: str | None = None) -> CalendarFetch: ...
+    def fetch_events(
+        self, *, symbol: str | None = None, window: str | None = None
+    ) -> CalendarFetch: ...
 
 
 @runtime_checkable

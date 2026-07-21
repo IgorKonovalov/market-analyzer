@@ -73,7 +73,9 @@ class FomcSeedSource(EventCalendarSource):
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self._clock = clock if clock is not None else _utcnow
 
-    def fetch_events(self, *, symbol: str | None = None) -> CalendarFetch:
+    def fetch_events(
+        self, *, symbol: str | None = None, window: str | None = None
+    ) -> CalendarFetch:
         now = self._clock()
         events = [
             MarketEvent(

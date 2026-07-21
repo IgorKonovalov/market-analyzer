@@ -65,6 +65,10 @@ ENV_VAR_PREFIX = "MARKET_ANALYSER_"
 # injected server-side as a query param (path-only failure logging keeps it out of
 # logs) — absent the key the FRED provider is inert and the macro read is FOMC-only,
 # so the key is optional by design.
+# `finnhub_api_key` is the Plan 0113 / ADR-0107 event-calendar earnings provider's
+# free self-serve credential (Finnhub earnings calendar); read-only, injected
+# server-side via the `X-Finnhub-Token` header (never the URL) — absent the key the
+# earnings category is inert and honest-empty, so the key is optional by design.
 SecretKey = Literal[
     "zerion_api_key",
     "graph_api_key",
@@ -77,6 +81,7 @@ SecretKey = Literal[
     "reddit_client_id",
     "reddit_client_secret",
     "fred_api_key",
+    "finnhub_api_key",
 ]
 KNOWN_SECRET_KEYS: tuple[SecretKey, ...] = get_args(SecretKey)
 SecretStatus = Literal["set", "unset"]
@@ -102,6 +107,7 @@ class SecretsFile(BaseModel):
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
     fred_api_key: str | None = None
+    finnhub_api_key: str | None = None
 
 
 class SecretsStore:

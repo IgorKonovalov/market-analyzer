@@ -37,15 +37,20 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict
 
+from market_analyser.data.adapters.finnhub_earnings import FinnhubEarningsSource
 from market_analyser.data.adapters.fomc_seed import FomcSeedSource
 from market_analyser.data.adapters.fred_releases import FredReleasesSource
 from market_analyser.data.sources import EventCalendarSource
 from market_analyser.data.types import MarketEvent
 from market_analyser.persistence.secrets import SecretsStore
 
-# Phase 1 exposes only `macro`; phases 2/3 extend this to include `earnings` and
-# `listings` (one registry entry + one enum value each).
-EventCalendarCategory = Literal["macro"]
+# Phase 1 exposed `macro`; phase 2 adds `earnings`. Phase 3 extends this to `listings`
+# (one registry entry + one enum value each).
+EventCalendarCategory = Literal["macro", "earnings"]
+
+# The forward look-ahead horizon the `earnings` category bounds its calendar query by
+# (ignored by the date-driven macro sources). Default 90d.
+EarningsWindow = Literal["7d", "30d", "90d", "180d", "1y"]
 
 # The registry the tool dispatches on: a category maps to the ordered list of
 # `EventCalendarSource`s composed behind it. The ADR-0104 extension point.
@@ -62,8 +67,16 @@ EVENT_CALENDAR_DESCRIPTION = (
     "FRED. FRED needs a free `fred_api_key` secret; WITHOUT the key the macro read is "
     "FOMC-only and a `notes` entry says FRED is unconfigured (inert — zero requests). "
     "Coverage is honestly incomplete: release DATES, not the printed figures, and the "
-    "curated FOMC seed can lag a Fed reschedule. Each degraded or unconfigured "
-    "provider adds a `notes` entry rather than failing the call. "
+    "curated FOMC seed can lag a Fed reschedule. "
+    "category='earnings': upcoming equity earnings dates from Finnhub over a forward "
+    "`window` (7d/30d/90d/180d/1y, default 90d); pass `symbol` (e.g. 'TSLA') to narrow "
+    "to one company, or omit it for the whole window. Each event's `magnitude` is the "
+    "EPS estimate where the free tier serves it (null when gated), and the `note` "
+    "carries the session (before/after market), quarter/year, revenue estimate, and "
+    "any gated field. Finnhub needs a free `finnhub_api_key` secret; WITHOUT the key "
+    "the earnings read is honest-empty with a `notes` entry (inert — zero requests). "
+    "Each degraded or unconfigured provider adds a `notes` entry rather than failing "
+    "the call. "
     "Wall-clock-sensitive: forward-looking, no historical replay (no as_of) — "
     "repeated calls legitimately differ as the calendar advances."
 )
@@ -73,25 +86,31 @@ def build_event_calendar_registry(
     secrets_store: SecretsStore | None,
 ) -> dict[str, list[EventCalendarSource]]:
     """Build the default `category → [sources]` registry (Plan 0113). `secrets_store`
-    is threaded to the keyed providers (FRED), which stay inert until their key is
-    present; it may be `None` (the apiref wiring / a store-less test), in which case
-    the keyed providers report unconfigured. Constructed network-free — the providers
-    reach out only on an actual call."""
+    is threaded to the keyed providers (FRED, Finnhub), which stay inert until their
+    key is present; it may be `None` (the apiref wiring / a store-less test), in which
+    case the keyed providers report unconfigured. Constructed network-free — the
+    providers reach out only on an actual call."""
     return {
         "macro": [
             FomcSeedSource(),
             FredReleasesSource(secrets_store=secrets_store),
+        ],
+        "earnings": [
+            FinnhubEarningsSource(secrets_store=secrets_store),
         ],
     }
 
 
 class EventCalendarInput(BaseModel):
     """MCP-boundary input. Unknown keys are rejected (`extra="forbid"`). `category`
-    is the required discriminator selecting the calendar (ADR-0104)."""
+    is the required discriminator selecting the calendar (ADR-0104); `symbol` and
+    `window` narrow the `earnings` category (ignored by macro)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     category: EventCalendarCategory
+    symbol: str | None = None
+    window: EarningsWindow = "90d"
 
 
 async def _event_calendar_response(
@@ -99,6 +118,7 @@ async def _event_calendar_response(
     registry: EventCalendarRegistry,
     category: str,
     symbol: str | None = None,
+    window: str | None = None,
 ) -> dict[str, Any]:
     """Body of the `event_calendar` tool: resolve the category's providers from the
     registry, fan out (each honest-degrades independently), union the events sorted by
@@ -113,7 +133,7 @@ async def _event_calendar_response(
     events: list[MarketEvent] = []
     notes: list[str] = []
     for source in sources:
-        fetch = await asyncio.to_thread(source.fetch_events, symbol=symbol)
+        fetch = await asyncio.to_thread(source.fetch_events, symbol=symbol, window=window)
         events.extend(fetch.events)
         notes.extend(fetch.notes)
     events.sort(key=lambda event: event.scheduled_at)
@@ -138,11 +158,17 @@ def register_event_calendar(
 
     @server.tool(name="event_calendar", description=EVENT_CALENDAR_DESCRIPTION)
     async def event_calendar(params: EventCalendarInput) -> dict[str, Any]:
-        return await _event_calendar_response(registry=registry, category=params.category)
+        return await _event_calendar_response(
+            registry=registry,
+            category=params.category,
+            symbol=params.symbol,
+            window=params.window,
+        )
 
 
 __all__ = [
     "EVENT_CALENDAR_DESCRIPTION",
+    "EarningsWindow",
     "EventCalendarCategory",
     "EventCalendarInput",
     "EventCalendarRegistry",

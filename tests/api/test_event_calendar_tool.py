@@ -1,11 +1,12 @@
-"""Done-when for Plan 0113 phase 1: the `event_calendar(category=…)` tool (ADR-0107, ADR-0104).
+"""Done-when for Plan 0113 phases 1-2: the `event_calendar(category=…)` tool (ADR-0107, ADR-0104).
 
 Drives `_event_calendar_response` (the factored body) and the registered tool
-(via `FastMCP.call_tool`) over a registry of pinned providers — the FOMC seed plus a
-FRED adapter wired to a spy transport. Pins: with a FRED key the macro read unions
-FOMC + CPI/PCE sorted by `scheduled_at`; **without the key** it is FOMC-only with an
-unconfigured note (inert); conditions-only holds at the model and serialized-wire
-level; an unregistered category is a clear error.
+(via `FastMCP.call_tool`) over a registry of pinned providers — the FOMC seed, a FRED
+adapter, and a Finnhub earnings adapter, each wired to a spy transport. Pins: with a
+FRED key the macro read unions FOMC + CPI/PCE sorted by `scheduled_at`; **without the
+key** macro is FOMC-only with an unconfigured note (inert); `earnings` returns Finnhub
+events with a key and is inert without one; conditions-only holds at the model and
+serialized-wire level; an unregistered category is a clear error.
 """
 
 from __future__ import annotations
@@ -24,15 +25,30 @@ from market_analyser.api.mcp_tools.event_calendar import (
     register_event_calendar,
 )
 from market_analyser.data._http import HttpResponse, ResilientHttpClient
+from market_analyser.data.adapters.finnhub_earnings import FinnhubEarningsSource
 from market_analyser.data.adapters.fomc_seed import FomcSeedSource
 from market_analyser.data.adapters.fred_releases import FredReleasesSource
 from market_analyser.data.sources import EventCalendarSource
 from market_analyser.persistence.secrets import SecretsStore
 
 _FROZEN_NOW = datetime(2026, 7, 21, 0, 0, tzinfo=UTC)
-_KEY_ENV = "MARKET_ANALYSER_FRED_API_KEY"
+_FRED_KEY_ENV = "MARKET_ANALYSER_FRED_API_KEY"
+_FINNHUB_KEY_ENV = "MARKET_ANALYSER_FINNHUB_API_KEY"
 _CPI = {"release_dates": [{"release_id": 10, "date": "2026-08-12"}]}
 _PCE = {"release_dates": [{"release_id": 54, "date": "2026-07-31"}]}
+_EARNINGS = {
+    "earningsCalendar": [
+        {
+            "date": "2026-07-24",
+            "symbol": "TSLA",
+            "epsEstimate": 2.5,
+            "revenueEstimate": 25_000_000_000,
+            "hour": "amc",
+            "quarter": 2,
+            "year": 2026,
+        }
+    ]
+}
 
 _ACTION_KEYS = {"action", "signal", "side", "direction", "recommendation", "call"}
 
@@ -49,9 +65,28 @@ def _fred(
         )
 
     monkeypatch.setattr(client, "_perform_request", fake)
-    environ = {_KEY_ENV: key} if key is not None else {}
+    environ = {_FRED_KEY_ENV: key} if key is not None else {}
     return FredReleasesSource(
-        secrets_store=SecretsStore(tmp_path / "secrets.json", environ=environ),
+        secrets_store=SecretsStore(tmp_path / "fred.json", environ=environ),
+        http_client=client,
+        clock=lambda: _FROZEN_NOW,
+    )
+
+
+def _finnhub(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, key: str | None
+) -> FinnhubEarningsSource:
+    client = ResilientHttpClient(source_name="finnhub-test", max_retries=0)
+
+    def fake(method: str, url: str, body_: Any, headers: Any, *, proxy: Any) -> HttpResponse:
+        return HttpResponse(
+            status_code=200, headers={}, body=json.dumps(_EARNINGS).encode(), elapsed_seconds=0.0
+        )
+
+    monkeypatch.setattr(client, "_perform_request", fake)
+    environ = {_FINNHUB_KEY_ENV: key} if key is not None else {}
+    return FinnhubEarningsSource(
+        secrets_store=SecretsStore(tmp_path / "finnhub.json", environ=environ),
         http_client=client,
         clock=lambda: _FROZEN_NOW,
     )
@@ -64,6 +99,9 @@ def _registry(
         "macro": [
             FomcSeedSource(clock=lambda: _FROZEN_NOW),
             _fred(monkeypatch, tmp_path, key=key),
+        ],
+        "earnings": [
+            _finnhub(monkeypatch, tmp_path, key=key),
         ],
     }
 
@@ -113,11 +151,43 @@ def test_conditions_only_no_action_keys(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert not _ACTION_KEYS & set(payload)
 
 
+def test_earnings_with_key_returns_events(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    registry = _registry(monkeypatch, tmp_path, key="k")
+
+    payload = anyio.run(
+        lambda: _event_calendar_response(
+            registry=registry, category="earnings", symbol="TSLA", window="90d"
+        )
+    )
+
+    assert payload["category"] == "earnings"
+    assert [event["source"] for event in payload["events"]] == ["finnhub"]
+    event = payload["events"][0]
+    assert event["symbol"] == "TSLA"
+    assert event["title"] == "TSLA earnings"
+    assert event["magnitude"] == 2.5
+    assert not _ACTION_KEYS & set(event)  # conditions-only on the wire
+
+
+def test_earnings_without_key_is_inert_with_note(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    registry = _registry(monkeypatch, tmp_path, key=None)
+
+    payload = anyio.run(
+        lambda: _event_calendar_response(registry=registry, category="earnings", symbol="TSLA")
+    )
+
+    assert payload["events"] == []
+    assert any("finnhub_api_key" in note for note in payload["notes"])
+
+
 def test_unregistered_category_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     registry = _registry(monkeypatch, tmp_path, key="k")
 
+    # 'unlocks' is the ADR-0107 deferred category — never registered.
     with pytest.raises(ValueError, match="not supported"):
-        anyio.run(lambda: _event_calendar_response(registry=registry, category="earnings"))
+        anyio.run(lambda: _event_calendar_response(registry=registry, category="unlocks"))
 
 
 def test_registered_tool_is_callable_in_process(

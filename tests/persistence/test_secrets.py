@@ -162,6 +162,22 @@ def test_fred_api_key_is_a_known_secret(secrets_path: Path) -> None:
     assert SecretsStore(secrets_path, environ={}).get("fred_api_key") == "sk-file-fred"
 
 
+def test_finnhub_api_key_is_a_known_secret(secrets_path: Path) -> None:
+    """Plan 0113 / ADR-0107: the event-calendar earnings provider's Finnhub credential
+    is a registered key — settable, retrievable, env-overridable, and default-unset —
+    so a `secrets.json` carrying it loads (the store is `extra="forbid"`)."""
+    assert SecretsStore(secrets_path, environ={}).get("finnhub_api_key") is None
+    assert SecretsStore(secrets_path, environ={}).status()["finnhub_api_key"] == "unset"
+    env_store = SecretsStore(
+        secrets_path, environ={"MARKET_ANALYSER_FINNHUB_API_KEY": "env_finnhub"}
+    )
+    assert env_store.get("finnhub_api_key") == "env_finnhub"
+    assert env_store.status()["finnhub_api_key"] == "set"
+    file_store = SecretsStore(secrets_path, environ={})
+    file_store.set("finnhub_api_key", "sk-file-finnhub")
+    assert SecretsStore(secrets_path, environ={}).get("finnhub_api_key") == "sk-file-finnhub"
+
+
 def test_repr_redacts_the_value(secrets_path: Path) -> None:
     store = SecretsStore(secrets_path, environ={})
     store.set("zerion_api_key", ZERION_KEY)
