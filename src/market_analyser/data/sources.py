@@ -32,6 +32,7 @@ from market_analyser.data.metric_series import MetricPoint
 from market_analyser.data.types import (
     AccountHoldings,
     Bar,
+    CalendarFetch,
     MarketSentimentSample,
     NewsItem,
     PredictionMarket,
@@ -411,6 +412,31 @@ class DefiFundamentalsSource(Protocol):
     in the composition root (ADR-0031)."""
 
     def fetch_fundamentals(self, query: str) -> DefiFundamentals: ...
+
+
+@runtime_checkable
+class EventCalendarSource(Protocol):
+    """A read-only source of scheduled forward market events for one category
+    (Plan 0113 / ADR-0107) — FOMC/CPI/PCE release dates, equity earnings dates, or
+    crypto listings/delistings, surfaced as `MarketEvent`s (dated future facts,
+    ADR-0029 conditions only — never a call).
+
+    Honest-degrade by charter (ADR-0019): a dead, blocked, or shape-broken source
+    returns an empty `CalendarFetch` (optionally with a note), never an exception
+    and never a fabricated event. A **key-gated** source (FRED, Finnhub) is *inert
+    without its key* — it issues no request and returns an empty fetch with a "not
+    configured" note (the ADR-0103/0105 free-key-inert pattern), so an absent key
+    silently narrows coverage instead of breaking the call.
+
+    `symbol` narrows a per-symbol source (equity earnings); category-wide sources
+    (FOMC seed, FRED releases, listings diff) ignore it. Wall-clock-sensitive with
+    **no `as_of`**: these are forward-looking scheduled facts and repeated calls
+    legitimately differ as the calendar advances (ADR-0107, the sentiment-source
+    posture). Members of the event-calendar registry, keyed by category and composed
+    behind the `event_calendar` tool, built in the composition root (ADR-0031) —
+    adding a provider is one registry entry."""
+
+    def fetch_events(self, *, symbol: str | None = None) -> CalendarFetch: ...
 
 
 @runtime_checkable

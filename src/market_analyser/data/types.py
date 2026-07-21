@@ -12,7 +12,8 @@ time so downstream code (strategies, backtests, the chart) can trust the values.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -375,6 +376,65 @@ class PredictionMarket(BaseModel):
         return v.astimezone(UTC)
 
 
+# The event-calendar category vocabulary (Plan 0113 / ADR-0107): a closed set
+# naming the kind of scheduled forward fact. Token unlocks are deferred (ADR-0107 —
+# no keyless source, spend paused), so v1 is macro / earnings / listings; the set
+# extends additively when a funded unlocks source lands.
+EventCategory = Literal["macro", "earnings", "listings"]
+
+
+class MarketEvent(BaseModel):
+    """One scheduled forward market event (Plan 0113 / ADR-0107) — a *dated future
+    fact* (a FOMC/CPI/PCE release, an equity earnings date, a crypto listing/
+    delisting), structurally unlike a published news item and never a buy/sell call
+    (ADR-0029: conditions only, so there is deliberately no action/signal/side/
+    direction field — the read reports what IS scheduled, never what to DO).
+
+    Boundary-validated: `scheduled_at` is timezone-aware UTC (a listing uses its
+    detection time); `magnitude` — an optional per-event number where one applies
+    (e.g. an EPS estimate) — is finite when present. `note` carries an honest
+    coverage caveat or degrade reason for the individual event; source-level notes
+    (an inert/unconfigured provider) ride the tool payload's `notes` list instead.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    category: EventCategory
+    title: str = Field(min_length=1)
+    symbol: str | None = None  # equity/crypto symbol where applicable; None for macro
+    scheduled_at: datetime  # the event's date/time (UTC); listings use detection time
+    magnitude: float | None = None  # e.g. EPS estimate; None where not applicable
+    source: str = Field(min_length=1)  # "fomc_seed" | "fred" | "finnhub" | "binance" | ...
+    note: str | None = None  # honest coverage caveat / degrade reason for this event
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def _scheduled_at_must_be_utc(cls, v: datetime) -> datetime:
+        if v.tzinfo is None:
+            raise ValueError("scheduled_at must be timezone-aware (UTC)")
+        return v.astimezone(UTC)
+
+    @field_validator("magnitude")
+    @classmethod
+    def _magnitude_must_be_finite(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("magnitude must be finite (no NaN/Inf)")
+        return v
+
+
+@dataclass(frozen=True)
+class CalendarFetch:
+    """One event-calendar source's contribution (Plan 0113 / ADR-0107): the events
+    it could read, plus any source-level `notes` (a degrade/inert reason not tied to
+    a single event — e.g. "FRED unconfigured", "upstream rate-limited"). Honest-
+    degrade by charter (ADR-0019): a dead, blocked, or unconfigured source returns
+    an empty `events` with a `notes` entry, never an exception and never a
+    fabricated event. A plain carrier — its events were validated at construction."""
+
+    events: Sequence[MarketEvent]
+    notes: Sequence[str] = field(default_factory=tuple)
+
+
 @dataclass(frozen=True)
 class Coverage:
     """Cache-only read result for backfill scheduling (Plan 0013): the bars
@@ -402,10 +462,13 @@ __all__ = [
     "AccountHoldings",
     "BackfillResult",
     "Bar",
+    "CalendarFetch",
     "Coverage",
     "CryptoRegime",
+    "EventCategory",
     "FuturesPosition",
     "MacroContext",
+    "MarketEvent",
     "MarketOutcome",
     "MarketSentimentSample",
     "NewsItem",

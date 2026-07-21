@@ -4,7 +4,7 @@
 
 # MCP tools
 
-The 58 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
+The 59 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registry.
 
 | Tool | Summary |
 | --- | --- |
@@ -27,6 +27,7 @@ The 58 agent-callable MCP tools mounted at `/mcp`, from the live FastMCP registr
 | [`detect_divergences`](#detectdivergences) | Detect price↔oscillator divergences on one symbol's cached bars for the chosen oscillator (rsi, macd_hist, obv, or mfi). |
 | [`detect_levels`](#detectlevels) | Detect support/resistance levels on the cached bars and draw them on the chart in one call: clusters confirmed swing pivots into zones, ranks each zone's strength by touch count weighted by the volume traded at that price (volume-by-price), returns the ranked levels as data, AND publishes a single `chart.show v1` event carrying one `price_line` overlay per level (role support/resistance, labels S1/R1/... |
 | [`evaluate_signals`](#evaluatesignals) | Evaluate a strategy against the CURRENT bar of one symbol — a live signal read, not a historical backtest. |
+| [`event_calendar`](#eventcalendar) | List upcoming SCHEDULED market events for a category — dated forward facts (a timestamp, sometimes a magnitude), never buy/sell advice (a CONDITION). |
 | [`find_convergence_opportunities`](#findconvergenceopportunities) | Screen prediction markets matching a query for CONVERGENCE opportunities — markets nearing resolution whose top outcome is near-certain, where a price converging to 1.00 leaves a few percent of implied upside. |
 | [`forecast`](#forecast) | Forecast a cached symbol over a window; `kind` selects WHAT is predicted, all read-only conditions (never a buy/sell call, never a price level). |
 | [`get_backtest`](#getbacktest) | Fetch a persisted backtest's full detail by run_id (the id run_backtest returns). |
@@ -469,6 +470,20 @@ Evaluate a strategy against the CURRENT bar of one symbol — a live signal read
 | `fresh_signal` | boolean |
 
 **Source:** [`src/market_analyser/api/mcp_tools/evaluate_signals.py`](../../src/market_analyser/api/mcp_tools/evaluate_signals.py)
+
+## `event_calendar`
+
+List upcoming SCHEDULED market events for a category — dated forward facts (a timestamp, sometimes a magnitude), never buy/sell advice (a CONDITION). Returns {category, events: [{category, title, symbol, scheduled_at (UTC ISO-8601), magnitude, source, note}], notes, queried_at}, events sorted by scheduled_at ascending. category='macro': upcoming FOMC rate-decision dates (from a curated seed — dates only, no consensus/actual numbers) plus CPI and PCE release dates from FRED. FRED needs a free `fred_api_key` secret; WITHOUT the key the macro read is FOMC-only and a `notes` entry says FRED is unconfigured (inert — zero requests). Coverage is honestly incomplete: release DATES, not the printed figures, and the curated FOMC seed can lag a Fed reschedule. Each degraded or unconfigured provider adds a `notes` entry rather than failing the call. Wall-clock-sensitive: forward-looking, no historical replay (no as_of) — repeated calls legitimately differ as the calendar advances.
+
+**Parameters**
+
+| Name | Type | Required | Default |
+| --- | --- | --- | --- |
+| `params` | EventCalendarInput | yes | — |
+
+**Returns:** `dict[str, Any]`
+
+**Source:** [`src/market_analyser/api/mcp_tools/event_calendar.py`](../../src/market_analyser/api/mcp_tools/event_calendar.py)
 
 ## `find_convergence_opportunities`
 

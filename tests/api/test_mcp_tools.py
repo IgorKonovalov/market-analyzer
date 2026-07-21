@@ -538,6 +538,7 @@ EXPECTED_FULL_TOOLSET = {
     "detect_divergences",
     "detect_levels",
     "evaluate_signals",
+    "event_calendar",
     "find_convergence_opportunities",
     "forecast",
     "get_backtest",

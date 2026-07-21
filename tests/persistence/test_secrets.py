@@ -148,6 +148,20 @@ def test_reddit_oauth_keys_are_known_secrets(secrets_path: Path) -> None:
         assert SecretsStore(secrets_path, environ={}).get(key) == f"file-{key}"
 
 
+def test_fred_api_key_is_a_known_secret(secrets_path: Path) -> None:
+    """Plan 0113 / ADR-0107: the event-calendar macro provider's FRED credential is a
+    registered key — settable, retrievable, env-overridable, and default-unset — so a
+    `secrets.json` carrying it loads (the store is `extra="forbid"`)."""
+    assert SecretsStore(secrets_path, environ={}).get("fred_api_key") is None
+    assert SecretsStore(secrets_path, environ={}).status()["fred_api_key"] == "unset"
+    env_store = SecretsStore(secrets_path, environ={"MARKET_ANALYSER_FRED_API_KEY": "env_fred"})
+    assert env_store.get("fred_api_key") == "env_fred"
+    assert env_store.status()["fred_api_key"] == "set"
+    file_store = SecretsStore(secrets_path, environ={})
+    file_store.set("fred_api_key", "sk-file-fred")
+    assert SecretsStore(secrets_path, environ={}).get("fred_api_key") == "sk-file-fred"
+
+
 def test_repr_redacts_the_value(secrets_path: Path) -> None:
     store = SecretsStore(secrets_path, environ={})
     store.set("zerion_api_key", ZERION_KEY)

@@ -60,6 +60,11 @@ ENV_VAR_PREFIX = "MARKET_ANALYSER_"
 # the adapter obtains a `client_credentials` bearer and searches `oauth.reddit.com`
 # to climb over the keyless-JSON anti-bot wall; either absent → today's keyless
 # path stands unchanged (honest-empty when blocked), so the pair is optional.
+# `fred_api_key` is the Plan 0113 / ADR-0107 event-calendar macro provider's free
+# self-serve credential (St. Louis Fed FRED — CPI/PCE release dates); read-only,
+# injected server-side as a query param (path-only failure logging keeps it out of
+# logs) — absent the key the FRED provider is inert and the macro read is FOMC-only,
+# so the key is optional by design.
 SecretKey = Literal[
     "zerion_api_key",
     "graph_api_key",
@@ -71,6 +76,7 @@ SecretKey = Literal[
     "lunarcrush_api_key",
     "reddit_client_id",
     "reddit_client_secret",
+    "fred_api_key",
 ]
 KNOWN_SECRET_KEYS: tuple[SecretKey, ...] = get_args(SecretKey)
 SecretStatus = Literal["set", "unset"]
@@ -95,6 +101,7 @@ class SecretsFile(BaseModel):
     lunarcrush_api_key: str | None = None
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
+    fred_api_key: str | None = None
 
 
 class SecretsStore:

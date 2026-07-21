@@ -1,6 +1,6 @@
 # 0113 — Event / economic calendar data source
 
-> **Status:** approved
+> **Status:** in-progress
 > **Created:** 2026-07-21
 > **Owner skill(s):** dev (×3), human (×1 live smoke)
 > **Related ADRs:** [0107-event-calendar-composed-source](../adrs/0107-event-calendar-composed-source.md) (accepts at close), [0104-mcp-tool-surface-granularity](../adrs/0104-mcp-tool-surface-granularity.md) (one-verb tool), [0038-third-party-api-key-storage](../adrs/0038-third-party-api-key-storage.md) (free keys), [0019-external-http-adapter-resilience](../adrs/0019-external-http-adapter-resilience.md) (honest-degrade), [0029-advisory-recommendation-boundary](../adrs/0029-advisory-recommendation-boundary.md) (conditions-only), [0069-crypto-first-asset-class-positioning](../adrs/0069-crypto-first-asset-class-positioning.md)

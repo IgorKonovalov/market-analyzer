@@ -53,6 +53,10 @@ from market_analyser.api.mcp_tools.detect_chart_patterns import register_detect_
 from market_analyser.api.mcp_tools.detect_divergences import register_detect_divergences
 from market_analyser.api.mcp_tools.detect_levels import register_detect_levels
 from market_analyser.api.mcp_tools.evaluate_signals import register_evaluate_signals
+from market_analyser.api.mcp_tools.event_calendar import (
+    build_event_calendar_registry,
+    register_event_calendar,
+)
 from market_analyser.api.mcp_tools.forecast import register_forecast
 from market_analyser.api.mcp_tools.get_backtest import register_get_backtest
 from market_analyser.api.mcp_tools.get_chart_drawings import register_get_chart_drawings
@@ -297,6 +301,17 @@ def create_mcp_components(
     register_crypto_fear_greed(server, provider=provider)
     register_bitcoin_market_pulse(server, provider=provider)
     register_market_snapshot(server, provider=provider)
+
+    # `event_calendar` (Plan 0113, ADR-0107): scheduled forward events (FOMC/CPI/PCE
+    # dates in phase 1) as one discriminated conditions-only verb. Registered
+    # unconditionally — the macro category's FOMC seed is keyless and always
+    # available; the FRED release-dates provider is built with `secrets_store` (which
+    # may be None) and stays inert without `fred_api_key`, so an absent key narrows
+    # coverage instead of dropping the tool. Wall-clock-sensitive (no as_of).
+    register_event_calendar(
+        server,
+        registry=build_event_calendar_registry(secrets_store),
+    )
 
     # Prediction-market odds (Plan 0040, ADR-0041): read-only Polymarket odds via
     # the ADR-0031 selector registry. Keyless (public Gamma reads — no secret, no
