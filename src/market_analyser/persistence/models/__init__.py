@@ -30,6 +30,7 @@ from market_analyser.persistence.models.defi_position_watches import (
     DefiPositionWatchRow,
 )
 from market_analyser.persistence.models.defi_tx import DefiTxRow
+from market_analyser.persistence.models.listing_snapshots import ListingSnapshotRow
 from market_analyser.persistence.models.metric_points import MetricPointRow
 from market_analyser.persistence.models.price_snapshots import PriceSnapshotRow
 from market_analyser.persistence.models.watches import AlertRow, WatchRow
@@ -86,6 +87,7 @@ __all__ = [
     "DefiPositionAlertRow",
     "DefiPositionWatchRow",
     "DefiTxRow",
+    "ListingSnapshotRow",
     "MetricPointRow",
     "PriceSnapshotRow",
     "WatchRow",

@@ -22,13 +22,17 @@ from mcp.server.fastmcp import FastMCP
 
 from market_analyser.api.mcp_tools.event_calendar import (
     _event_calendar_response,
+    build_event_calendar_registry,
     register_event_calendar,
 )
 from market_analyser.data._http import HttpResponse, ResilientHttpClient
 from market_analyser.data.adapters.finnhub_earnings import FinnhubEarningsSource
 from market_analyser.data.adapters.fomc_seed import FomcSeedSource
 from market_analyser.data.adapters.fred_releases import FredReleasesSource
+from market_analyser.data.adapters.listings_diff import ListingsDiffSource, ListingVenueSource
 from market_analyser.data.sources import EventCalendarSource
+from market_analyser.persistence.engine import apply_migrations, make_engine, make_session_factory
+from market_analyser.persistence.repositories.listing_snapshots import ListingSnapshotsRepository
 from market_analyser.persistence.secrets import SecretsStore
 
 _FROZEN_NOW = datetime(2026, 7, 21, 0, 0, tzinfo=UTC)
@@ -188,6 +192,43 @@ def test_unregistered_category_raises(monkeypatch: pytest.MonkeyPatch, tmp_path:
     # 'unlocks' is the ADR-0107 deferred category — never registered.
     with pytest.raises(ValueError, match="not supported"):
         anyio.run(lambda: _event_calendar_response(registry=registry, category="unlocks"))
+
+
+class _FakeVenue(ListingVenueSource):
+    def __init__(self, symbols: set[str]) -> None:
+        self.symbols = symbols
+
+    def fetch_symbols(self) -> set[str]:
+        return set(self.symbols)
+
+
+def _listings_repo() -> ListingSnapshotsRepository:
+    engine = make_engine(":memory:")
+    apply_migrations(engine)
+    return ListingSnapshotsRepository(make_session_factory(engine))
+
+
+def test_listings_category_cold_start_then_diff() -> None:
+    repo = _listings_repo()
+    venue = _FakeVenue({"BTCUSDT", "ETHUSDT"})
+    registry = {
+        "listings": [ListingsDiffSource(repository=repo, venues={"binance": venue}, clock=None)]
+    }
+
+    cold = anyio.run(lambda: _event_calendar_response(registry=registry, category="listings"))
+    assert cold["events"] == []  # first run: baseline only
+    assert any("baseline recorded" in note for note in cold["notes"])
+
+    venue.symbols = {"BTCUSDT", "SOLUSDT"}
+    diff = anyio.run(lambda: _event_calendar_response(registry=registry, category="listings"))
+    kinds = {(event["symbol"], event["title"].split()[1]) for event in diff["events"]}
+    assert kinds == {("SOLUSDT", "listed"), ("ETHUSDT", "delisted")}
+
+
+def test_registry_offers_listings_only_with_a_repo() -> None:
+    assert "listings" not in build_event_calendar_registry(None)
+    with_repo = build_event_calendar_registry(None, listing_snapshots_repository=_listings_repo())
+    assert "listings" in with_repo
 
 
 def test_registered_tool_is_callable_in_process(

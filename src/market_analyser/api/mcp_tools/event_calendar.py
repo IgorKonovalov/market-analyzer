@@ -40,13 +40,15 @@ from pydantic import BaseModel, ConfigDict
 from market_analyser.data.adapters.finnhub_earnings import FinnhubEarningsSource
 from market_analyser.data.adapters.fomc_seed import FomcSeedSource
 from market_analyser.data.adapters.fred_releases import FredReleasesSource
+from market_analyser.data.adapters.listings_diff import ListingsDiffSource, default_listing_venues
 from market_analyser.data.sources import EventCalendarSource
 from market_analyser.data.types import MarketEvent
+from market_analyser.persistence.repositories.listing_snapshots import ListingSnapshotsRepository
 from market_analyser.persistence.secrets import SecretsStore
 
-# Phase 1 exposed `macro`; phase 2 adds `earnings`. Phase 3 extends this to `listings`
-# (one registry entry + one enum value each).
-EventCalendarCategory = Literal["macro", "earnings"]
+# Phase 1 exposed `macro`; phase 2 added `earnings`; phase 3 adds `listings` (one
+# registry entry + one enum value each). Token unlocks stay deferred (ADR-0107).
+EventCalendarCategory = Literal["macro", "earnings", "listings"]
 
 # The forward look-ahead horizon the `earnings` category bounds its calendar query by
 # (ignored by the date-driven macro sources). Default 90d.
@@ -75,6 +77,12 @@ EVENT_CALENDAR_DESCRIPTION = (
     "carries the session (before/after market), quarter/year, revenue estimate, and "
     "any gated field. Finnhub needs a free `finnhub_api_key` secret; WITHOUT the key "
     "the earnings read is honest-empty with a `notes` entry (inert — zero requests). "
+    "category='listings': keyless crypto listings/delistings detected by self-diffing "
+    "Binance and Coinbase tradeable-symbol sets against a persisted prior snapshot — "
+    "one event per tradeable add (listing) or remove (delisting), `scheduled_at` is the "
+    "DETECTION time. Honestly incomplete: forward announcements and forks/upgrades are "
+    "NOT covered, and a first run (no prior snapshot) records a baseline and detects "
+    "nothing (both disclosed in `notes`); `symbol`/`window` do not apply. "
     "Each degraded or unconfigured provider adds a `notes` entry rather than failing "
     "the call. "
     "Wall-clock-sensitive: forward-looking, no historical replay (no as_of) — "
@@ -84,13 +92,18 @@ EVENT_CALENDAR_DESCRIPTION = (
 
 def build_event_calendar_registry(
     secrets_store: SecretsStore | None,
+    *,
+    listing_snapshots_repository: ListingSnapshotsRepository | None = None,
 ) -> dict[str, list[EventCalendarSource]]:
     """Build the default `category → [sources]` registry (Plan 0113). `secrets_store`
     is threaded to the keyed providers (FRED, Finnhub), which stay inert until their
-    key is present; it may be `None` (the apiref wiring / a store-less test), in which
-    case the keyed providers report unconfigured. Constructed network-free — the
-    providers reach out only on an actual call."""
-    return {
+    key is present; it may be `None` (a store-less test), in which case the keyed
+    providers report unconfigured. The keyless `listings` category needs a persisted
+    snapshot store to diff against, so it is included only when
+    `listing_snapshots_repository` is wired (persistence present) — absent it, the
+    category is simply not offered. Constructed network-free — the providers reach out
+    only on an actual call."""
+    registry: dict[str, list[EventCalendarSource]] = {
         "macro": [
             FomcSeedSource(),
             FredReleasesSource(secrets_store=secrets_store),
@@ -99,6 +112,14 @@ def build_event_calendar_registry(
             FinnhubEarningsSource(secrets_store=secrets_store),
         ],
     }
+    if listing_snapshots_repository is not None:
+        registry["listings"] = [
+            ListingsDiffSource(
+                repository=listing_snapshots_repository,
+                venues=default_listing_venues(),
+            ),
+        ]
+    return registry
 
 
 class EventCalendarInput(BaseModel):

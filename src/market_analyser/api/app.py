@@ -114,6 +114,7 @@ from market_analyser.persistence.repositories.defi_position_watches import (
     DefiPositionAlertsRepository,
     DefiPositionWatchesRepository,
 )
+from market_analyser.persistence.repositories.listing_snapshots import ListingSnapshotsRepository
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
@@ -198,6 +199,7 @@ def create_app(
     position_alerts_repository: DefiPositionAlertsRepository | None = None
     defi_tx_repository: DefiTxRepository | None = None
     advice_ledger_repository: AdviceLedgerRepository | None = None
+    listing_snapshots_repository: ListingSnapshotsRepository | None = None
     if engine is not None:
         apply_migrations(engine)
         session_factory = make_session_factory(engine)
@@ -218,6 +220,11 @@ def create_app(
         # exists — the position-watch MCP toolset and the monitor key off these.
         position_watches_repository = DefiPositionWatchesRepository(session_factory)
         position_alerts_repository = DefiPositionAlertsRepository(session_factory)
+        # The event-calendar listings baseline (Plan 0113, ADR-0107): the per-venue
+        # tradeable-symbol snapshot the keyless listings self-diff compares against.
+        # Built whenever persistence exists — the `event_calendar` tool's `listings`
+        # category keys off it; absent persistence, that category is simply not offered.
+        listing_snapshots_repository = ListingSnapshotsRepository(session_factory)
         # The P&L caches (Plan 0035, ADR-0036): the immutable decoded-tx store
         # behind the gap-fetch ingestion, and the first-write-wins price
         # snapshots that make a replay revision-proof. Both price adapters are
@@ -453,6 +460,7 @@ def create_app(
             defi_dust_tokens=frozenset(defi_dust_tokens),
             aerodrome_deep_reader=aerodrome_deep_reader,
             secrets_store=secrets_store,
+            listing_snapshots_repository=listing_snapshots_repository,
         )
         if mcp_secret is not None and annotations_repository is not None
         else None

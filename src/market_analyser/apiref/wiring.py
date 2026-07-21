@@ -72,6 +72,7 @@ from market_analyser.persistence.repositories.defi_position_watches import (
     DefiPositionAlertsRepository,
     DefiPositionWatchesRepository,
 )
+from market_analyser.persistence.repositories.listing_snapshots import ListingSnapshotsRepository
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
@@ -223,6 +224,7 @@ def build_wired_mcp_server(runs_dir: Path) -> FastMCP:
             position_alerts_repository=DefiPositionAlertsRepository(session_factory),
             account_holdings_sources={"binance": _NullAccountSource()},
             manual_positions_path=runs_dir / "portfolio.json",
+            listing_snapshots_repository=ListingSnapshotsRepository(session_factory),
         )
     finally:
         setattr(mcp_app, "FastMCP", original)  # noqa: B010

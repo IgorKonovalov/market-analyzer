@@ -130,6 +130,7 @@ from market_analyser.persistence.repositories.defi_position_watches import (
     DefiPositionAlertsRepository,
     DefiPositionWatchesRepository,
 )
+from market_analyser.persistence.repositories.listing_snapshots import ListingSnapshotsRepository
 from market_analyser.persistence.repositories.metric_points import MetricPointsRepository
 from market_analyser.persistence.repositories.watches import (
     AlertsRepository,
@@ -175,6 +176,7 @@ def create_mcp_components(
     unclaimed_rewards_sources: Mapping[str, UnclaimedRewardsSource] | None = None,
     defi_dust_tokens: frozenset[str] = frozenset(),
     secrets_store: SecretsStore | None = None,
+    listing_snapshots_repository: ListingSnapshotsRepository | None = None,
 ) -> tuple[StreamableHTTPSessionManager, StreamableHTTPASGIApp]:
     """Build the FastMCP server and return its session manager + ASGI handler.
 
@@ -302,15 +304,20 @@ def create_mcp_components(
     register_bitcoin_market_pulse(server, provider=provider)
     register_market_snapshot(server, provider=provider)
 
-    # `event_calendar` (Plan 0113, ADR-0107): scheduled forward events (FOMC/CPI/PCE
-    # dates in phase 1) as one discriminated conditions-only verb. Registered
-    # unconditionally — the macro category's FOMC seed is keyless and always
-    # available; the FRED release-dates provider is built with `secrets_store` (which
-    # may be None) and stays inert without `fred_api_key`, so an absent key narrows
-    # coverage instead of dropping the tool. Wall-clock-sensitive (no as_of).
+    # `event_calendar` (Plan 0113, ADR-0107): scheduled forward events (macro
+    # FOMC/CPI/PCE dates, Finnhub earnings, keyless crypto listings/delistings) as one
+    # discriminated conditions-only verb. Registered unconditionally — the macro
+    # category's FOMC seed is keyless and always available; the FRED / Finnhub
+    # providers are built with `secrets_store` (which may be None) and stay inert
+    # without their key. The `listings` category needs the snapshot store to diff
+    # against, so it is offered only when that repository is wired. Wall-clock-
+    # sensitive (no as_of).
     register_event_calendar(
         server,
-        registry=build_event_calendar_registry(secrets_store),
+        registry=build_event_calendar_registry(
+            secrets_store,
+            listing_snapshots_repository=listing_snapshots_repository,
+        ),
     )
 
     # Prediction-market odds (Plan 0040, ADR-0041): read-only Polymarket odds via
