@@ -1,6 +1,6 @@
 # 0112 — Living behavioral-spec layer (`docs/architecture/specs/`)
 
-> **Status:** approved
+> **Status:** in-progress — phases 1 & 3 (human/architect-authored specs) landed 2026-07-21: `specs/` layer (`_template.md`, `README.md`, four seed specs — backtest-engine pilot + data-provider + advisory-boundary + mcp-tool-surface) + close-ceremony reconcile step added to architect SKILL.md. Phase 2 (dev-owned `specs --check` freshness gate) outstanding.
 > **Created:** 2026-07-21
 > **Owner skill(s):** human (architect-authored specs), dev (freshness gate)
 > **Related ADRs:** [0106-spec-system-posture-and-living-specs](../adrs/0106-spec-system-posture-and-living-specs.md) (accepts at close), [0064-generated-sidecar-api-reference](../adrs/0064-generated-sidecar-api-reference.md) (the mechanical counterpart)
