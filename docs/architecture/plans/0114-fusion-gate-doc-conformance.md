@@ -3,6 +3,7 @@
 > **Status:** in-progress
 > **Created:** 2026-09-04
 > **Owner skill(s):** dev, architect, skill-creator
+> **Owner-tag note (2026-09-04):** phases 3 and 4 were authored with tags (`architect`, `skill-creator`) that were **outside** the then-five-value vocabulary; `dev` correctly refused phase 4 and escalated. [ADR-0108](../adrs/0108-owner-skill-vocabulary-includes-doc-owners.md) extends the vocabulary to include both, so these tags are valid as written and are **not** retagged. Rollout of that vocabulary across its five restatement sites is [Plan 0115](0115-owner-vocabulary-rollout.md); phase 4 here does not depend on it landing first.
 > **Related ADRs:** [0071](../adrs/0071-non-directional-forecasts-non-voting.md) (the decision the docs drifted from — direction leg demoted to non-gating, non-directional forecasts non-voting), [0029](../adrs/0029-advisory-recommendation-boundary.md) (the fuse contract ADR-0071 amends), [0070](../adrs/0070-non-directional-forecast-targets.md) (why the direction leg has near-absent edge), [0106](../adrs/0106-spec-system-posture-and-living-specs.md) (the living-spec layer this plan extends)
 
 ## TL;DR
