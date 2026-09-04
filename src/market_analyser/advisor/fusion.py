@@ -7,13 +7,17 @@ It consumes those layers' *output models only* (`ConditionSnapshot`,
 `SignalEvaluation`, `WalkForwardResult`, `ForecastResult`), never their
 internals — guarded by an import-lint test.
 
-**A directional call requires every leg to agree; anything less is flat.**
-The forecast must ship a probability (baseline beaten, ADR-0030) whose argmax
-is directional; at least one live signal must imply the same direction with
-none opposing; and the walk-forward edge must be positive **and belong to one
-of the agreeing strategies** (an edge for a strategy that did not vote backs
-nothing). Each failed leg becomes a named blocker in the flat recommendation's
-rationale — an honest "no actionable edge", never a fabricated call.
+**A directional call requires every *voting* leg to agree; anything less is
+flat.** At least one live signal must imply the direction with none opposing,
+and the walk-forward edge must be positive **and belong to one of the agreeing
+strategies** (an edge for a strategy that did not vote backs nothing). The
+direction forecast leg votes **conditionally** (ADR-0071): it gates only when
+its out-of-sample skill margin clears `DIRECTION_SKILL_MARGIN`; below that it
+is demoted to advisory, so it can neither veto a call the other legs
+corroborate nor be the deciding vote — it still cannot manufacture one. Each
+failed *gating* leg becomes a named blocker in the flat recommendation's
+rationale — an honest "no actionable edge", never a fabricated call. A demoted
+leg's failed checks are recorded with `gating=False` and block nothing.
 
 **Every gate is recorded** (Plan 0063, ADR-0058): `basis.checks` carries the
 structured fusion trace — leg, check, threshold, actual, outcome — in a fixed
