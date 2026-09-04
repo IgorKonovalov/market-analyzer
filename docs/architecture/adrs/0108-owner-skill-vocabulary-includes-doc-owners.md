@@ -1,6 +1,6 @@
 # ADR-0108 — The plan-phase owner-skill vocabulary includes `architect` and `skill-creator`
 
-> **Status:** proposed
+> **Status:** accepted (2026-09-04, Plan 0115 close)
 > **Date:** 2026-09-04
 > **Related plan(s):** 0115 (rollout), 0114 (the plan that surfaced it), 0112 (the first occurrence)
 
