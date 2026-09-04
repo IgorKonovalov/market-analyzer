@@ -22,14 +22,30 @@ replayable line by line (directional exactly when every check passed). The
 trace records the decision; it never alters it.
 
 **Conviction is derived, never invented** (the plan's open question, resolved
-here as the documented monotone mapping):
+here as the documented monotone mapping). It has **two branches**, selected by
+whether the direction leg gates (ADR-0071) — i.e. whether it shipped a
+probability at all:
 
-    conviction = P(direction) * clamp(sharpe_mean / SHARPE_FULL_CREDIT, 0, 1)
+    edge_credit = clamp(sharpe_mean / SHARPE_FULL_CREDIT, 0, 1)
+
+    # direction leg gating (skill margin >= DIRECTION_SKILL_MARGIN):
+    conviction = P(direction) * edge_credit * regime_factor
+    # direction leg demoted (no probability shipped):
+    conviction =                edge_credit * regime_factor
 
 where ``P(direction)`` is the calibrated forecast probability of the called
-direction and ``sharpe_mean`` the walk-forward out-of-sample aggregate. The
-mapping is monotone in both inputs and zero when either shows no edge: a
+direction, ``sharpe_mean`` the walk-forward out-of-sample aggregate, and
+``regime_factor`` the non-voting regime dampener (``1.0`` unless a *trusted*
+transition model expects the current regime to break). The mapping is monotone
+in each input it uses and zero when the backtested edge shows nothing: a
 marginal forecast or a thin backtest reads as low conviction by construction.
+
+The demoted branch is **not** an edge case — the direction forecaster rarely
+beats baseline (ADR-0070), so it is the common path in practice. On it,
+conviction is a statement about the *backtest alone*: a saturated ``1.0`` means
+``sharpe_mean >= SHARPE_FULL_CREDIT``, never "certain to be right". Consumers
+that narrate conviction must say which branch produced it (see the
+advisory-boundary spec under ``docs/architecture/specs/``).
 
 **Levels are chart geometry, not opinion**: the entry zone is a band of
 ``ENTRY_BAND_ATR`` around the last close; the stop sits beyond the nearest

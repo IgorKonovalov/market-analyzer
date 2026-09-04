@@ -1,6 +1,6 @@
 # 0114 — Fusion gate doc conformance: bring the advisor's documented contract back to ADR-0071
 
-> **Status:** draft
+> **Status:** in-progress
 > **Created:** 2026-09-04
 > **Owner skill(s):** dev, architect, skill-creator
 > **Related ADRs:** [0071](../adrs/0071-non-directional-forecasts-non-voting.md) (the decision the docs drifted from — direction leg demoted to non-gating, non-directional forecasts non-voting), [0029](../adrs/0029-advisory-recommendation-boundary.md) (the fuse contract ADR-0071 amends), [0070](../adrs/0070-non-directional-forecast-targets.md) (why the direction leg has near-absent edge), [0106](../adrs/0106-spec-system-posture-and-living-specs.md) (the living-spec layer this plan extends)
