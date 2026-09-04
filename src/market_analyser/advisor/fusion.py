@@ -22,7 +22,8 @@ leg's failed checks are recorded with `gating=False` and block nothing.
 **Every gate is recorded** (Plan 0063, ADR-0058): `basis.checks` carries the
 structured fusion trace — leg, check, threshold, actual, outcome — in a fixed
 deterministic order, on directional and flat verdicts alike, so any verdict is
-replayable line by line (directional exactly when every check passed). The
+replayable line by line (directional exactly when every *gating* check passed;
+a demoted leg's failed checks carry ``gating=False`` and block nothing). The
 trace records the decision; it never alters it.
 
 **Conviction is derived, never invented** (the plan's open question, resolved
@@ -371,8 +372,10 @@ def _build_trace(
     drift from its gate.
 
     The invariant the trace guarantees (pinned by the replayability test):
-    **the verdict is directional exactly when every check passed** — each
-    `fuse()` blocker maps to at least one failed check, and the genuinely
+    **the verdict is directional exactly when every *gating* check passed**
+    (ADR-0071 — a demoted direction leg's failed checks are recorded with
+    `gating=False` and block nothing) — each
+    `fuse()` blocker maps to at least one failed gating check, and the genuinely
     unconditional facts (alignment, which raises before any verdict exists;
     the condition snapshot; individual signal votes) always pass. The
     calibrated-P(direction) gate is not unconditional: it mirrors the
