@@ -347,7 +347,15 @@ class TestDirectionalCall:
 
 
 class TestConvictionMapping:
-    """Conviction = P(direction) * clamp(sharpe_mean, 0, 1) — monotone, derived."""
+    """Conviction is derived, never invented — and has two branches (ADR-0071).
+
+    Gating direction leg:  conviction = P(direction) * edge_credit * regime_factor
+    Demoted direction leg: conviction =                edge_credit * regime_factor
+
+    where ``edge_credit = clamp(sharpe_mean / SHARPE_FULL_CREDIT, 0, 1)``. The
+    demoted branch is the common production shape — the direction forecaster
+    rarely beats baseline (ADR-0070) — so both branches are pinned here.
+    """
 
     def _conviction(self, *, prob_up: float, sharpe_mean: float) -> float:
         rec = fuse(
@@ -370,13 +378,60 @@ class TestConvictionMapping:
         strong = self._conviction(prob_up=0.60, sharpe_mean=0.9)
         assert strong > thin  # maps from the walk-forward edge
 
-    def test_conviction_is_the_documented_product(self) -> None:
+    def test_gating_leg_conviction_is_the_documented_product(self) -> None:
+        """The gating branch only: P(direction) is a factor because the leg
+        shipped one. See the demoted-branch tests below for the other case."""
         assert self._conviction(prob_up=0.60, sharpe_mean=0.5) == pytest.approx(0.30)
 
     def test_edge_credit_saturates_at_full_credit(self) -> None:
         at_one = self._conviction(prob_up=0.60, sharpe_mean=1.0)
         beyond = self._conviction(prob_up=0.60, sharpe_mean=2.5)
         assert at_one == beyond == pytest.approx(0.60)
+
+    def _demoted_conviction(self, *, sharpe_mean: float) -> float:
+        """Conviction on the demoted branch: the direction leg ships no
+        probability at all (`prob_*` None, `no_edge`) — the shape every live
+        `recommend` call returned in the 2026-09-04 BTC-USD sweep."""
+
+        rec = fuse(
+            snapshot=make_snapshot(),
+            signals=[make_signal()],
+            walk_forward=make_walk_forward(sharpe_mean=sharpe_mean),
+            forecast=make_forecast(
+                prob_up=None,
+                prob_down=None,
+                prob_flat=None,
+                beats_baseline=False,
+                edge_strength="no_edge",
+            ),
+            last_close=LAST_CLOSE,
+        )
+        assert rec.direction == "long"  # corroborated by signal + backtest
+        assert rec.direction_leg is not None and rec.direction_leg.gating is False
+        return rec.conviction
+
+    def test_demoted_leg_conviction_is_the_edge_credit_alone(self) -> None:
+        """ADR-0071: with no shipped probability the P(direction) factor drops out
+        entirely — conviction *is* the clamped walk-forward edge credit. Regresses
+        if the mapping ever applies P unconditionally."""
+
+        assert self._demoted_conviction(sharpe_mean=0.5) == pytest.approx(0.5)
+        assert self._demoted_conviction(sharpe_mean=0.87) == pytest.approx(0.87)
+
+    def test_demoted_conviction_saturates_at_full_credit_not_certainty(self) -> None:
+        """A demoted conviction of 1.0 means `sharpe_mean >= SHARPE_FULL_CREDIT`,
+        not a probability of being right — the misreading Plan 0114 came from."""
+
+        assert self._demoted_conviction(sharpe_mean=2.5) == pytest.approx(1.0)
+
+    def test_demoted_branch_is_not_the_gating_product(self) -> None:
+        """The two branches are not interchangeable: at the same backtested edge
+        the demoted conviction is strictly larger, because a shipped P < 1 always
+        shrinks the gating product."""
+
+        assert self._demoted_conviction(sharpe_mean=0.5) > self._conviction(
+            prob_up=0.60, sharpe_mean=0.5
+        )
 
 
 class TestFlatVerdicts:
