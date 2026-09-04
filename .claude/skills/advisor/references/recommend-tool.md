@@ -41,30 +41,46 @@ Structural guarantees (enforced by the pydantic models — you never need to dou
 
 ## How the verdict is decided
 
-A **directional** call requires all of:
+Only **gating** checks decide the verdict. A **directional** call requires all of:
 
-1. The forecast shipped probabilities (it ships `null`s when it has no edge over baseline) and its argmax is strictly `up` or `down` (ties and flat-argmax are conservative flats).
-2. At least one live strategy signal implies the same direction, and **no** signal opposes it.
-3. The walk-forward `sharpe_mean` is positive **and** belongs to a strategy that voted the direction.
+1. At least one live strategy signal implies the direction, and **no** signal opposes it.
+2. The walk-forward `sharpe_mean` is positive **and** belongs to a strategy that voted the direction.
+3. *If — and only if — the direction forecast leg gates*, its argmax agrees with that direction.
 
-Each failed condition becomes a named blocker in the flat verdict's rationale:
+**The direction leg gates conditionally** (ADR-0071). It votes only when its out-of-sample beats-baseline margin clears the pinned `DIRECTION_SKILL_MARGIN`. Below that — including whenever it shipped no probabilities at all — it is **demoted**: its checks still appear in the trace but carry `gating=False`, so they **block nothing**. A demoted leg cannot veto a corroborated call and cannot be the deciding vote; it also cannot manufacture one. Because the direction target has near-absent edge (ADR-0070), **expect the demoted path to be the normal case**, and expect `reason.direction_leg_nongating` in the rationale rather than a `forecast: P(long)=…` line.
 
-- `forecast shows no edge over baseline (no probability shipped)`
-- `forecast direction is flat or undecided`
+Failed **gating** checks become named blockers in the flat verdict's rationale:
+
 - `live signals conflict: long=[...], short=[...]`
 - `no live strategy signal implies a direction`
-- `live signals (X) disagree with the forecast direction (Y)`
+- `live signals (X) disagree with the forecast direction (Y)` — only reachable while the leg gates
 - `no walk-forward backtest basis supplied`
 - `no backtested edge: walk-forward sharpe_mean=...`
 - `walk-forward edge is for '...', which is not among the agreeing signals`
 
+These two appear as **non-gating** trace rows, not blockers — seeing them does **not** mean the verdict is flat:
+
+- `probabilities shipped (baseline beaten out-of-sample)` failing
+- `argmax direction is directional` failing
+
+The non-directional forecasts (volatility, regime) are likewise non-voting: they shape sizing, stop distance and conviction magnitude only.
+
 ## Conviction
 
 ```
-conviction = P(direction) × clamp(sharpe_mean / 1.0, 0, 1)
+edge_credit = clamp(sharpe_mean / 1.0, 0, 1)
+
+# direction leg GATING (skill margin >= DIRECTION_SKILL_MARGIN):
+conviction = P(direction) × edge_credit × regime_factor
+# direction leg DEMOTED (no probability shipped) — the common case:
+conviction =                edge_credit × regime_factor
 ```
 
-`P(direction)` is the calibrated forecast probability of the called direction; the second factor is the walk-forward edge credit — linear up to `sharpe_mean = 1.0`, saturating at full credit above it, zero at or below zero. Monotone in both inputs. When narrating: a conviction of 0.30 from `P(long)=0.60 × edge=0.50` is a different story from `P(long)=0.75 × edge=0.40` — say the factors, not just the product.
+`edge_credit` is the walk-forward edge — linear up to `sharpe_mean = 1.0`, saturating at full credit above it, zero at or below zero. `P(direction)` is the calibrated forecast probability of the called direction, and it is a factor **only when the direction leg gated**; on the demoted path there is no probability, so conviction rests on the backtested edge alone. `regime_factor` is the non-voting regime dampener (`1.0` unless a *trusted* transition model expects the regime to break).
+
+**When narrating, name the branch — this is the failure mode the reference exists to prevent.** On the gating path, say the factors: a conviction of 0.30 from `P(long)=0.60 × edge=0.50` is a different story from `P(long)=0.75 × edge=0.40`. On the **demoted** path there are no factors to split, and the number means something narrower than it looks: conviction *is* the sharpe credit, so `1.0` means `sharpe_mean >= 1.0`, **not** near-certainty. Reporting a saturated demoted conviction as confidence that the call is right misrepresents a backtest as a probability — the boundary violation this contract is written to stop.
+
+Check `direction_leg.gating` (and `basis.forecast.prob_up`/`prob_down` being `null`) to know which branch you are on before writing a word about conviction.
 
 ## Levels (chart geometry, not opinion)
 
@@ -88,5 +104,5 @@ The strategy leg shapes the whole recommendation — `recommend` evaluates **one
 | Error: no bars | cache empty for the window | offer `backfill_ohlcv` (visible step), then retry |
 | Error: unknown strategy_id | typo / stale memory | the error lists known ids — pick from it |
 | Error: timeframe not supported by strategy | strategy's `META.timeframes` is narrower | switch timeframe or strategy; tell the user |
-| Flat with `no probability shipped` | forecast found no edge over baseline | honest no-edge; more history or a different horizon *may* change it — don't fish |
+| **Directional** with `reason.direction_leg_nongating` | forecast found no edge over baseline, so the leg demoted — **not** a bug and **not** a flat | the normal case (ADR-0070); read conviction as edge credit alone, and say so |
 | Flat with everything blocked | thin history starving all legs | check `range_start` gives several hundred bars before concluding "no edge" |
