@@ -1,6 +1,6 @@
 # 0115 — Roll ADR-0108's owner-skill vocabulary out across all five enumeration sites
 
-> **Status:** draft
+> **Status:** in-progress
 > **Created:** 2026-09-04
 > **Owner skill(s):** architect, skill-creator
 > **Related ADRs:** [0108](../adrs/0108-owner-skill-vocabulary-includes-doc-owners.md) (the decision this plan executes — accepts at close), [0106](../adrs/0106-spec-system-posture-and-living-specs.md) (recorded the same gap from the living-spec side and is left append-only)
