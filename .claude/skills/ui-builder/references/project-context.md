@@ -79,13 +79,14 @@ What exists right now depends on which Plan 0001 phases have shipped. Always `Gl
 
 | Owner skill       | Code area                                       | Their job vs yours                                            |
 |-------------------|-------------------------------------------------|---------------------------------------------------------------|
-| `architect`       | `docs/architecture/`                            | Decides architecture (ADRs, plans, diagrams). Route CSP/IPC/library questions here. |
+| `architect`       | `docs/architecture/`                            | Decides architecture (ADRs, plans, diagrams, living specs). Route CSP/IPC/library questions here. Also owns doc phases — boundary is manual. |
 | `dev`             | API routes, data layer, persistence, vendoring, CI | Owns the Python sidecar end-to-end. You consume its HTTP API; don't shim it from the renderer. |
 | `strategy-author` | `src/market_analyser/strategies/`               | Writes strategies. You render their `Params.model_json_schema()` and call the sidecar to run them. |
 | `backtester`      | `src/market_analyser/backtest/`, `runs/`        | Computes Sharpe / drawdown / equity. You render `BacktestResult`; never compute metrics in the renderer. |
+| `skill-creator`   | `.claude/skills/`                               | Skill contracts and their references — including this file. Not yours to edit mid-plan. |
 | **`ui-builder` (you)** | `desktop/`                                  | Everything renderer-side + Electron main/preload + IPC channels. |
 
-When in doubt, the plan's `Owner skill` field is authoritative.
+With `human` (user-only tasks: live smokes, credential setup) that is the full seven-value vocabulary, closed per [ADR-0108](../../../../docs/architecture/adrs/0108-owner-skill-vocabulary-includes-doc-owners.md). When in doubt, the plan's `Owner skill` field is authoritative.
 
 ## Canonical commands
 

@@ -158,7 +158,7 @@ When the boundary fires (default path):
 3. Build the handoff payload from the cross-skill-handoff template, filling in every bracketed slot.
 4. **Route by next owner:**
    - **`ui-builder`:** announce in one line ("Phase N owned by ui-builder — handing off via /ui-builder."), then call `Skill(skill="ui-builder", args="<payload>")`. Once the call returns, your session is done — do not loop back.
-   - **`strategy-author` or `backtester`:** emit the payload as your final message and stop. The user copy-pastes it verbatim as the first message of a fresh `/<sibling>` session.
+   - **`strategy-author`, `backtester`, `architect`, or `skill-creator`:** emit the payload as your final message and stop. The user copy-pastes it verbatim as the first message of a fresh `/<owner>` session.
    - **`human`:** surface the task and stop; the user picks up.
 5. Do not start the sibling-owned phase yourself. Do not re-prompt after emitting (manual) or after the Skill call returns (auto).
 

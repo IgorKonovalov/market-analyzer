@@ -99,7 +99,7 @@ Otherwise (fresh-session path), steps:
 4. **Implement phase by phase, strictly within scope.** For each phase:
    - **Re-anchor on the phase, and check the owner tag.** If the owner is `ui-builder`: proceed. If the owner is `human`: surface and stop. If the owner is a sibling: do not implement — run the cross-skill handoff per the template, with two transport variants:
      - **Next owner is `dev` → auto-handoff in-session.** Confirm the previous phase is committed and `git status` is clean, build the payload, announce in one line ("Phase N owned by dev — handing off via /dev per the ui-builder↔dev auto-handoff protocol."), then invoke the sibling directly: `Skill(skill="dev", args="<filled-in payload>")`. The receiver runs its abbreviated restatement and waits for the user's "go" — auto-handoff removes the copy-paste step, not the gate. Your part of the session is done once the Skill call returns.
-     - **Next owner is `strategy-author` or `backtester` → manual handoff.** Emit the filled-in payload as your final message and stop; the user pastes it into a fresh `/<sibling>` session. Auto-handoff is scoped to `ui-builder` ↔ `dev` only because they pair most often in mixed-owner plans (Plans 0006, 0007, 0008); other boundaries stay manual until the same volume emerges.
+     - **Next owner is `strategy-author`, `backtester`, `architect`, or `skill-creator` → manual handoff.** Emit the filled-in payload as your final message and stop; the user pastes it into a fresh `/<owner>` session. Auto-handoff is scoped to `ui-builder` ↔ `dev` only because they pair most often in mixed-owner plans (Plans 0006, 0007, 0008); other boundaries stay manual until the same volume emerges (ADR-0108).
      
      (Override: if the user at Step 2 explicitly authorized you to implement sibling-owned phases too, proceed in-session; echo the override once at Step 2, don't re-confirm per phase.)
    - Files listed in "Files touched" — no more. Silent scope expansion rots plans.
@@ -110,7 +110,7 @@ Otherwise (fresh-session path), steps:
    - **If it's the last phase in the plan**, run the close-ceremony handoff: show `git log --oneline -n <N>` for the commits, prompt the user to open a fresh `/architect` session to review, flip status, and move the plan to `docs/architecture/plans/done/`. You don't review your own work. **Architect close handoffs always stay manual** — never auto-invoke `/architect` via the Skill tool; the fresh-session boundary is the gate.
    - **If there are remaining phases owned by a sibling**, run the cross-skill handoff per the template. Commit the last in-scope phase, verify `git status` is clean, then route by next owner:
      - **`dev`:** auto-handoff via `Skill(skill="dev", args="<payload>")`, after the one-line announcement.
-     - **`strategy-author` / `backtester`:** emit the handoff payload as the final message and stop.
+     - **`strategy-author` / `backtester` / `architect` / `skill-creator`:** emit the handoff payload as the final message and stop.
 
 If a phase you're implementing turns out wrong (path conflicts with reality, ADR-0008 contradicts the phase, lightweight-charts behaves differently than the plan assumes), **stop and surface it**. Don't silently work around the plan — that destroys its value as a record. Options to offer the user: (a) change the code to match the plan, (b) update the plan via `/architect`, (c) write a new ADR if the rule itself needs to change.
 

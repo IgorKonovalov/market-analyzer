@@ -19,7 +19,7 @@ Exception: the user can override at Step 2 ("go") by explicitly authorizing in-s
 
 Scoped exception: when the boundary is `dev` ↔ `ui-builder`, the sender invokes the sibling in-session via the Skill tool (`Skill(skill="<sibling>", args="<payload>")`) instead of stopping and emitting the prompt for the user to paste. The receiving skill still runs the abbreviated restatement and waits for the user's "go" before writing code — **auto-handoff removes the user's copy-paste step, not the gate.**
 
-All other sibling boundaries (`dev` → `strategy-author`, `dev` → `backtester`, `ui-builder` → `strategy-author`, `ui-builder` → `backtester`, and the reverses) stay manual: the sender emits the payload as its final message and stops; the user pastes it into a fresh `/<sibling>` session.
+All other boundaries stay manual: `dev`/`ui-builder` → `strategy-author`, → `backtester`, → `architect`, → `skill-creator`, and the reverses. The sender emits the payload as its final message and stops; the user pastes it into a fresh `/<owner>` session.
 
 Auto-handoff is scoped to `dev` ↔ `ui-builder` only because those two siblings pair the most in mixed-owner plans (Plans 0006, 0007, 0008) — the friction-removal pays for itself there. Other boundaries stay manual until the same volume emerges.
 
@@ -36,7 +36,7 @@ When the boundary fires:
 3. **Build the handoff payload** from the template below, filling in every bracketed slot.
 4. **Route by next owner:**
    - **`ui-builder` (when sender is `dev`) or `dev` (when sender is `ui-builder`) → auto-handoff.** Announce the handoff in one line ("Phase N owned by <sibling> — handing off via /<sibling>."), then invoke `Skill(skill="<sibling>", args="<payload>")`. Once the call returns, the sender's session is done — do not loop back.
-   - **`strategy-author`, `backtester`, or any other sibling → manual handoff.** Emit the payload as your final message and stop.
+   - **`strategy-author`, `backtester`, `architect`, `skill-creator`, or any other owner → manual handoff.** Emit the payload as your final message and stop. (`architect` and `skill-creator` are owners but not implementer *siblings*; ADR-0108 keeps both boundaries manual.)
 5. **Stop.** Do not start the sibling-owned phase yourself. Do not re-prompt or re-explain after emitting (manual) or after the Skill call returns (auto) — the structured prompt is self-contained.
 
 ## Handoff prompt template
@@ -112,7 +112,7 @@ After the final phase commits, the active skill runs the **close-ceremony handof
 ## Edge cases
 
 - **Owner tag missing.** Phase has no `**Owner skill:**` line. Stop and route to `/architect` — the plan is incomplete, and implementing under a guess silently violates the contract. Mode 4 review flags this as a blocker before the plan goes in-progress, but if you find one in flight, treat it as a plan bug.
-- **Owner tag value not in vocabulary.** e.g. `**Owner skill:** mobile-builder`. Same handling — stop, route to architect to fix the plan.
+- **Owner tag value not in vocabulary.** The vocabulary is seven values and closed (ADR-0108): `dev`, `ui-builder`, `strategy-author`, `backtester`, `architect`, `skill-creator`, `human`. Anything else — e.g. `**Owner skill:** mobile-builder` — gets the same handling: stop, route to architect to fix the plan.
 - **Phase owner changes mid-phase via plan amendment.** Don't happen. ADRs and plans are append-only after going in-progress; the only edit allowed is `Status:` flips. If you genuinely need the phase ownership to change, the answer is a new plan that supersedes the old one, not an in-place edit.
 - **Two consecutive phases share an owner.** Stay in-session. The handoff fires on owner *change*, not on every phase boundary.
 - **User override at Step 2.** Allowed and on the record. Echo it back in one sentence; proceed across owners; do not hand off.

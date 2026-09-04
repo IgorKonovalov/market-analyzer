@@ -69,7 +69,7 @@ These skills consume your plans/ADRs. Design with them in mind. Full description
 
 (A future **`trader`** skill is mandated by [ADR-0025](../../../../docs/architecture/adrs/0025-trade-execution-feasibility.md) invariant 3 for the execution arc — Plan 0044's companion step; it does not exist yet.)
 
-When you write a plan, **name the sibling skill that will own each phase** via the `**Owner skill:**` tag (fixed vocabulary: `dev` / `strategy-author` / `backtester` / `ui-builder` / `human`). That's the handoff seam — see [`templates/cross-skill-handoff.md`](templates/cross-skill-handoff.md).
+When you write a plan, **name the skill that will own each phase** via the `**Owner skill:**` tag (fixed vocabulary, seven values, closed — [ADR-0108](../../../../docs/architecture/adrs/0108-owner-skill-vocabulary-includes-doc-owners.md): `dev` / `ui-builder` / `strategy-author` / `backtester` / `architect` / `skill-creator` / `human`; the canonical table with a gloss per value lives in [`plans/README.md`](../../../../docs/architecture/plans/README.md#owner-skill-vocabulary-per-phase)). That's the handoff seam — see [`templates/cross-skill-handoff.md`](templates/cross-skill-handoff.md).
 
 ## Close-ceremony handoff from the implementing skill
 

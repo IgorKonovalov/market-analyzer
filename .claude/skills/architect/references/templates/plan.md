@@ -2,7 +2,7 @@
 
 > **Status:** draft | in-progress | done | abandoned
 > **Created:** YYYY-MM-DD
-> **Owner skill(s):** <dev | strategy-author | backtester | ui-builder | human> (list all that appear in phase owner tags below)
+> **Owner skill(s):** <dev | ui-builder | strategy-author | backtester | architect | skill-creator | human> (list all that appear in phase owner tags below)
 > **Related ADRs:** NNNN-foo, NNNN-bar (link if any)
 
 ## TL;DR
@@ -32,7 +32,7 @@ Each phase is a discrete unit of work that ships as its own commit. The implemen
 **Phase owner tags are machine-readable.** Every phase MUST carry a single `**Owner skill:**` line with exactly one value from the fixed seven-value vocabulary: `dev`, `ui-builder`, `strategy-author`, `backtester`, `architect`, `skill-creator`, `human` (ADR-0108; canonical table with a gloss per value in `plans/README.md`). The implementing skills read this tag at the start of each phase and hand off to the named owner when it changes — see `cross-skill-handoff.md`. Only `dev` ↔ `ui-builder` auto-hands-off in-session; every other boundary is manual. Plans that mix owners across phases without the tag are unimplementable cleanly; Mode 4 review flags missing, malformed, or out-of-vocabulary tags as a blocker.
 
 ### Phase 1 — <name>
-- **Owner skill:** <dev | strategy-author | backtester | ui-builder | human>
+- **Owner skill:** <dev | ui-builder | strategy-author | backtester | architect | skill-creator | human>
 - **What:** One sentence on what this phase produces.
 - **Files touched:** Rough list — `src/market_analyser/foo/bar.py`, etc.
 - **Done when:** Concrete acceptance — "running `uv run market-analyser screener BTCUSDT` returns a JSON list of indicators". For test files, phrase the behavioral claim the spec defends, not "spec X passes" — see the `feedback_tests_are_acceptance_criteria` memory.

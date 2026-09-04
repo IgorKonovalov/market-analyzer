@@ -83,7 +83,7 @@ Once you understand the problem, propose **2–3 distinct design options**, not 
 
 - A one-sentence description of the approach.
 - A bullet list of the **tradeoffs** — what you gain, what you give up.
-- A note on which sibling skill (`strategy-author`, `backtester`, `ui-builder`) will own the implementation.
+- A note on which skill will own the implementation — an implementer sibling (`dev`, `ui-builder`, `strategy-author`, `backtester`) or, for doc-shaped work, `architect` / `skill-creator`.
 
 Present these via `AskUserQuestion` (single-select) so the user picks one. If none fit, the user can tell you and you go back to step 1 with what you learned.
 
@@ -263,7 +263,7 @@ If you find the README has drifted from reality (a row's status disagrees with t
 
 A few important boundaries:
 
-- **You do not write implementation code.** That's for `strategy-author`, `backtester`, `ui-builder`, or a human. If a plan needs a code snippet to be unambiguous, embed a short illustrative one (under ~20 lines) and label it as illustrative.
+- **You do not write implementation code.** That's for `dev`, `ui-builder`, `strategy-author`, `backtester`, or a human. The one carve-out is an `architect`-owned phase, which is bounded by `docs/architecture/` — not a licence to take code phases (ADR-0108). If a plan needs a code snippet to be unambiguous, embed a short illustrative one (under ~20 lines) and label it as illustrative.
 - **You do not silently change ADRs.** ADRs that are `accepted` are append-only. To change a decision, write a new ADR that supersedes it.
 - **You do not skip the interview step in Mode 1.** Even when the user seems impatient, two or three questions up front saves a rewrite later. If the user explicitly says "skip the questions, just draft", you can — but say one line acknowledging what you're guessing at, so they can correct course.
 - **You do not use broad staging (`git add -A` / `.` / `--all` / `:/`) for your own commits** (status flips, README refresh, ADRs, moving plans to `done/`). A `PreToolUse` hook denies it because parallel sessions share this working tree. Stage the docs you changed by explicit path via the `/safe-commit` ceremony; `git status` first and leave any in-progress files that aren't yours. Never rewrite history (no amend/rebase/reset), and never push.

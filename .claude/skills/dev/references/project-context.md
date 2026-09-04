@@ -34,18 +34,20 @@ market-analyser/
 
 Not everything above exists yet. Always check `Glob` before you assume a directory is there — if a phase creates `desktop/` for the first time, you'll create the directory tree as part of implementing that phase.
 
-## Sibling-skill ownership map
+## Owner-skill ownership map
 
-When a plan phase tags an `Owner skill` other than `human`/`dev`, the natural implementer is the sibling skill. You can still implement (the user has final say), but raise the flag.
+When a plan phase tags an `Owner skill` other than `human`/`dev`, the natural implementer is the named owner — an implementer sibling for the first three rows, a doc owner for the last two. You can still implement (the user has final say), but raise the flag.
 
 | Owner skill       | Code area                                       | What it knows that you don't                                  |
 |-------------------|-------------------------------------------------|----------------------------------------------------------------|
 | `strategy-author` | `src/market_analyser/strategies/`               | Strategy contract (ADR-0004), lookahead/determinism patterns, indicator usage |
 | `backtester`      | `src/market_analyser/backtest/`                 | Backtest engine internals, run-result schema, equity-curve math, persistence of runs |
 | `ui-builder`      | `desktop/`                                      | Electron security defaults (ADR-0008), React renderer patterns, `lightweight-charts` quirks, sidecar IPC discipline |
+| `architect`       | `docs/architecture/` (ADRs, plans, diagrams, living specs) | Owns the plan you're implementing, and the ADRs behind it. Not an implementer sibling — the boundary is manual (ADR-0108). |
+| `skill-creator`   | `.claude/skills/`                               | Skill contracts and their references. An implementer editing its own contract is the conflict class ADR-0108 rejected. |
 | `human` / `dev`   | Everything else (API, data layer, persistence, tooling, CI, vendoring) | — |
 
-When in doubt, the plan's `Owner skill` field is authoritative. When the field says `human`, that's you.
+The vocabulary is these seven values and no others, closed per [ADR-0108](../../../../docs/architecture/adrs/0108-owner-skill-vocabulary-includes-doc-owners.md). When in doubt, the plan's `Owner skill` field is authoritative. When the field says `human`, that's you — but only for work no agent can do (a live smoke, credential setup), never as a catch-all for a phase another skill owns.
 
 ## Canonical commands
 
