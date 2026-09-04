@@ -29,7 +29,7 @@ flowchart LR
 
 Each phase is a discrete unit of work that ships as its own commit. The implementer runs all phases they own in one batch — no architect review between phases — and the architect reviews the whole plan once at the end. Order phases so the first one is valuable on its own (a "walking skeleton"), not just plumbing.
 
-**Phase owner tags are machine-readable.** Every phase MUST carry a single `**Owner skill:**` line with exactly one value from the fixed vocabulary: `dev`, `strategy-author`, `backtester`, `ui-builder`, `human`. The implementing skills read this tag at the start of each phase and hand off to the named sibling when the owner changes — see `cross-skill-handoff.md`. Plans that mix owners across phases without the tag are unimplementable cleanly; Mode 4 review flags missing tags as a blocker.
+**Phase owner tags are machine-readable.** Every phase MUST carry a single `**Owner skill:**` line with exactly one value from the fixed seven-value vocabulary: `dev`, `ui-builder`, `strategy-author`, `backtester`, `architect`, `skill-creator`, `human` (ADR-0108; canonical table with a gloss per value in `plans/README.md`). The implementing skills read this tag at the start of each phase and hand off to the named owner when it changes — see `cross-skill-handoff.md`. Only `dev` ↔ `ui-builder` auto-hands-off in-session; every other boundary is manual. Plans that mix owners across phases without the tag are unimplementable cleanly; Mode 4 review flags missing, malformed, or out-of-vocabulary tags as a blocker.
 
 ### Phase 1 — <name>
 - **Owner skill:** <dev | strategy-author | backtester | ui-builder | human>

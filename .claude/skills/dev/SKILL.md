@@ -22,7 +22,9 @@ The reads and project lookups described below are **task-grounded, not startup r
 - **`backtester`** — owns code under `src/market_analyser/backtest/`. Sharpe / drawdown / equity curve, persistence of runs.
 - **`ui-builder`** — owns code under `desktop/`. Electron shell, React renderer, charts.
 
-If any phase the user names is tagged with an owner other than `human` or `dev`, **say so** before starting and offer to route to that sibling skill. The user may still tell you to proceed — that's allowed, just don't let the ownership note pass silently.
+Two more owners appear in phase tags without being implementer siblings: **`architect`** (`docs/architecture/` — ADRs, plans, diagrams, living specs) and **`skill-creator`** (`.claude/skills/`). See ADR-0108.
+
+If any phase the user names is tagged with an owner other than `human` or `dev`, **say so** before starting and offer to route to that owner. The user may still tell you to proceed — that's allowed, just don't let the ownership note pass silently.
 
 ---
 
@@ -77,12 +79,13 @@ Now you write code. For **each phase in order**:
 
 1. **Re-anchor on the phase, and check the owner tag.** Re-read the phase block in the plan — it tells you which files to touch and what done-when to satisfy. Don't carry assumptions from the previous phase. **Read the `**Owner skill:**` line:**
    - If the owner is `dev`: proceed to step 2 (this is your phase).
-   - If the owner is a sibling: **do not implement.** This is the cross-skill boundary. Confirm the previous phase is committed and `git status` is clean, build the handoff payload from `.claude/skills/architect/references/templates/cross-skill-handoff.md`, then route it according to the next owner:
+   - If the owner is anyone other than `dev` or `human` — a sibling implementer (`ui-builder`, `strategy-author`, `backtester`) or a doc owner (`architect`, `skill-creator`): **do not implement.** This is the cross-skill boundary. Confirm the previous phase is committed and `git status` is clean, build the handoff payload from `.claude/skills/architect/references/templates/cross-skill-handoff.md`, then route it according to the next owner:
      - **Next owner is `ui-builder` → auto-handoff in-session.** Announce in one line ("Phase N owned by ui-builder — handing off via /ui-builder per the dev↔ui-builder auto-handoff protocol."), then invoke the sibling directly: `Skill(skill="ui-builder", args="<filled-in handoff payload>")`. The receiver runs its abbreviated restatement and waits for the user's "go" before writing code — auto-handoff removes the copy-paste step, not the gate. Your part of the session is done once the Skill call returns; do not loop back to pick up later phases.
-     - **Next owner is `strategy-author` or `backtester` → manual handoff.** Emit the filled-in payload as your final message and stop; the user pastes it into a fresh `/<sibling>` session. Auto-handoff is deliberately scoped to `dev` ↔ `ui-builder` only — those two siblings pair the most in mixed-owner plans (Plans 0006, 0007, 0008), so the friction-removal pays for itself; other boundaries stay manual until the same volume emerges.
+     - **Next owner is `strategy-author`, `backtester`, `architect`, or `skill-creator` → manual handoff.** Emit the filled-in payload as your final message and stop; the user pastes it into a fresh `/<owner>` session. Auto-handoff is deliberately scoped to `dev` ↔ `ui-builder` only — those two pair the most in mixed-owner plans (Plans 0006, 0007, 0008), so the friction-removal pays for itself; other boundaries stay manual until the same volume emerges (ADR-0108).
      
      Either variant: do not start the sibling-owned phase, do not "just get it ready", do not draft files for the sibling to finish.
-   - If the owner is `human`: surface that this is a user task and stop. Don't infer it.
+   - If the owner is `human`: surface that this is a user task and stop. Don't infer it — `human` means no agent can do it (a live smoke, credential setup), never "some other skill owns this".
+   - If the tag is **out of vocabulary** (not one of the seven) or missing: that's a plan bug, not a judgement call. Stop and route to `/architect` for an owner-tag amendment; do not guess the owner and do not implement it yourself.
    - **Override:** if at Step 2 the user explicitly authorized you to do sibling-owned phases too ("go, you do the ui-builder phases too"), you have license — implement them in-session. Confirm the override once at Step 2; do not re-confirm per phase.
 2. **Implement strictly within the phase scope.** Files listed in "Files touched" — no more. If you find yourself needing to write code outside the phase's stated scope, stop, surface it, and either get explicit user approval to expand scope or kick it back to architect as a plan-update task. Silent scope expansion is how plans rot.
 3. **Run the phase's done-when checks before moving on.** If the phase says `mypy --strict` must pass, run it. If it says a specific `curl` produces a 200, run that `curl`. The done-when list is the gate. Use whatever tooling the plan calls for (`uv run pytest`, `pnpm --filter desktop test`, `pre-commit run`, etc.). Read `references/project-context.md` for the canonical commands.
@@ -133,12 +136,14 @@ This protocol is slow on purpose. The cost of a wrong-plan phase that ships is f
 
 ## When a plan mixes owner skills
 
-Plans tag each phase with an `**Owner skill:**`. Vocabulary: `dev`, `strategy-author`, `backtester`, `ui-builder`, `human`.
+Plans tag each phase with an `**Owner skill:**`. Vocabulary (seven values, closed — ADR-0108): `dev`, `ui-builder`, `strategy-author`, `backtester`, `architect`, `skill-creator`, `human`.
+
+`architect` owns `docs/architecture/` (ADRs, plans, diagrams, living specs); `skill-creator` owns `.claude/skills/`. Both own genuinely plan-shaped work, which is why they're in the set — a phase reconciling a living spec or correcting a skill's documented contract is a discrete, committable chunk with its own done-when, exactly like a code phase. Neither is yours to implement.
 
 **Default behavior: hand off at every owner change**, using the cross-skill handoff protocol at `.claude/skills/architect/references/templates/cross-skill-handoff.md`. The active skill implements the contiguous run it owns, commits, then transfers control to the sibling. The transfer has two transport variants depending on the next owner:
 
 - **`dev` ↔ `ui-builder`: auto-handoff in-session.** The active skill builds the handoff payload from the template, announces the handoff in one line, then invokes the sibling directly via `Skill(skill="<sibling>", args="<payload>")`. The receiver runs its abbreviated restatement and waits for the user's "go" before writing code — auto-handoff removes the user's copy-paste step, **not** the gate. Scoped to these two siblings only because they pair most often in mixed-owner plans (Plans 0006, 0007, 0008); the friction-removal pays for itself there. Other sibling boundaries stay manual until the same volume emerges.
-- **Every other sibling boundary (`dev` → `strategy-author`, `dev` → `backtester`, and the reverses): manual handoff.** Emit the filled-in payload as your final message and stop; the user pastes it into a fresh `/<sibling>` session.
+- **Every other boundary — `dev` → `strategy-author`, `dev` → `backtester`, `dev` → `architect`, `dev` → `skill-creator`, and the reverses: manual handoff.** Emit the filled-in payload as your final message and stop; the user pastes it into a fresh `/<owner>` session. ADR-0108 keeps the two doc-owner boundaries manual for the same reason as the others: there is no evidence of enough volume there to justify widening auto-handoff, and an `architect` boundary additionally wants the fresh-context gate.
 
 **Architect ↔ implementer handoffs always stay manual either way.** The "go" approval at session start and the fresh-session close review are gates whose value comes from the fresh-context boundary; a Skill-tool invocation in the same session can't replace either. Auto-handoff is implementer↔implementer only.
 
