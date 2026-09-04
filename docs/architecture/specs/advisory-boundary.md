@@ -2,8 +2,8 @@
 
 > **Subsystem:** The fact/decision boundary — analyst skills report conditions and never recommend; the single sanctioned carve-out is the `advisor` layer, which may recommend (labeled, basis-backed) but never acts.
 > **Source:** src/market_analyser/advisor/ (Recommendation model + fusion; consumed by the `advisor` skill via the `recommend`/`recommend_rebalance` tools), and the read-only analyst surfaces under `analysis/` and `defi/`
-> **Reconciled-through:** Plan 0112
-> **Governing ADRs:** 0029-advisory-recommendation-boundary, 0015-claude-code-primary-control-surface, 0025-trade-execution-feasibility, 0068-technical-read-advisory-tier
+> **Reconciled-through:** Plan 0114
+> **Governing ADRs:** 0029-advisory-recommendation-boundary, 0015-claude-code-primary-control-surface, 0025-trade-execution-feasibility, 0068-technical-read-advisory-tier, 0071-non-directional-forecasts-non-voting
 
 The whole skill ecosystem is built on one load-bearing principle: *conditions are
 facts, decisions are the user's.* This spec states where that boundary holds, where
@@ -50,6 +50,35 @@ it is deliberately relaxed, and the three rules that contain the crossing.
   give a bounded technical read but carries no conviction/levels of a full
   recommendation and still never acts.  (ADR-0068, extending ADR-0029)
 
+- **A directional call requires the *voting* legs to agree — and the direction leg
+  votes only conditionally.** A `long`/`short` verdict MUST require every *gating*
+  check to pass: at least one live strategy signal implying that direction with none
+  opposing, and a positive walk-forward edge belonging to a strategy that actually
+  voted. The direction forecast leg is a **conditional** voter: it gates only when its
+  own out-of-sample beats-baseline margin clears the pinned skill-margin threshold
+  (the constant lives in `advisor/fusion.py`; this spec deliberately does not restate
+  its value). Below that threshold the leg is **demoted to advisory** — it MUST NOT
+  veto a call the voting legs corroborate, and it MUST NOT be the sole deciding vote.
+  A demoted leg still cannot *manufacture* a call. The demotion MUST be recorded
+  explicitly in the replayable gate trace (`gating=False` rows plus a
+  `reason.direction_leg_nongating` code), never silently dropped. Non-directional
+  forecasts (volatility, regime-transition) are **non-voting**: they may shape sizing,
+  stop distance and conviction magnitude, but MUST NOT flip or conjure a direction.
+  (ADR-0071, amending ADR-0029's all-legs-agree gate)
+
+- **Conviction is derived from what actually shipped, never invented.** Conviction MUST
+  be the walk-forward edge credit (the aggregate out-of-sample `sharpe_mean`, clamped to
+  full credit at its pinned ceiling) multiplied by the calibrated forecast probability of
+  the called direction **only when the direction leg shipped one**, then scaled by the
+  non-voting regime factor and bounded to `[0, 1]`. When the leg is demoted and ships no
+  probability — the common case, since the direction forecaster rarely beats baseline
+  (ADR-0070) — conviction rests on the backtested edge **alone**. A consumer narrating
+  conviction MUST therefore say *which* branch produced it: a saturated `1.0` from edge
+  credit alone is a statement about a backtest, not a probability of being right, and
+  reporting it as certainty is a boundary violation of the honest-uncertainty rule above.
+  Conviction MUST NOT be rounded up, re-derived, or editorialised downstream.
+  (ADR-0071; ADR-0029 carve-out rule 2)
+
 ## Scenarios
 
 - WHEN the user asks "what's the trend on SPY" / "check my Aave health" THEN an
@@ -72,6 +101,18 @@ it is deliberately relaxed, and the three rules that contain the crossing.
 - WHEN a plan proposes adding a recommend/advice path to `market-analyst` or
   `defi-analyst` THEN it is a boundary violation to be redirected to the advisor
   layer, not folded into the analyst.  (ADR-0029 Alternative A, rejected)
+
+- WHEN the direction forecast ships no probabilities (`edge_strength: "no_edge"`,
+  `edge_margin` below the pinned threshold) but the live signal and a positive
+  walk-forward edge agree THEN the verdict is **directional**, not flat: the demoted
+  leg does not veto it, the gate trace records the demotion as non-gating, and
+  conviction equals the edge credit scaled by the regime factor — carrying no
+  probability. A flat verdict here would be the pre-ADR-0071 behaviour and is a
+  regression.  (ADR-0071)
+
+- WHEN a consumer reports such a conviction THEN it MUST name the branch — "edge
+  credit alone, no forecast probability" — rather than presenting a saturated value as
+  confidence that the call is right.  (ADR-0071; ADR-0029 carve-out rule 2)
 
 ## Known gaps / honest nulls
 
